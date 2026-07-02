@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(gh api *)",
+      "Bash(curl -s https://api.github.com/repos/nextlevelbuilder/ui-ux-pro-max-skill/contents/)",
+      "Bash(curl -s https://raw.githubusercontent.com/nextlevelbuilder/ui-ux-pro-max-skill/main/.claude-plugin/plugin.json)",
+      "Bash(curl -s https://api.github.com/repos/nextlevelbuilder/ui-ux-pro-max-skill/contents/.claude-plugin)",
+      "Bash(curl -s https://raw.githubusercontent.com/nextlevelbuilder/ui-ux-pro-max-skill/main/skill.json)",
+      "Bash(curl -s https://raw.githubusercontent.com/nextlevelbuilder/ui-ux-pro-max-skill/main/.claude-plugin/marketplace.json)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(claude plugin *)",
+      "Bash(rm *)",
+      "Bash(npx --yes create-next-app@latest . --typescript --tailwind --eslint --app --src-dir --import-alias @/* --use-npm --turbopack --yes)",
+      "Bash(mkdir -p /tmp/aicc_asset_holdout)",
+      "Bash(mv images *)"
+    ]
+  }
+}
