@@ -45,16 +45,14 @@ export function RecoPose({ pose, size = 220, className, float = true, priority =
       style={{ width: size, height: size * (meta.height / meta.width) }}
     >
       <GradientGlow tone={meta.glow} className="left-1/2 top-1/2 h-[85%] w-[85%] -translate-x-1/2 -translate-y-1/2 opacity-80" />
-      <div className="relative h-full w-full overflow-hidden rounded-[1.75rem] bg-white p-3 shadow-[0_20px_45px_-15px_rgba(15,23,42,0.25)] ring-1 ring-black/5">
-        <Image
-          src={meta.src}
-          alt={meta.alt}
-          width={meta.width}
-          height={meta.height}
-          priority={priority}
-          className="h-full w-full object-contain"
-        />
-      </div>
+      <Image
+        src={meta.src}
+        alt={meta.alt}
+        width={meta.width}
+        height={meta.height}
+        priority={priority}
+        className="relative h-full w-full object-contain drop-shadow-[0_20px_35px_rgba(15,23,42,0.25)]"
+      />
     </div>
   );
 }
