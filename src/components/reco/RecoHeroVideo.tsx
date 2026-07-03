@@ -4,6 +4,7 @@ import { useEffect, useRef } from "react";
 import { motion } from "framer-motion";
 import { TrendingUp, MousePointerClick, Sparkles, Lightbulb, Package } from "lucide-react";
 import { useCursorParallax } from "@/lib/useCursorParallax";
+import { basePath } from "@/lib/basePath";
 import { GradientGlow } from "@/components/ui/GradientGlow";
 
 const chips = [
@@ -45,8 +46,8 @@ export function RecoHeroVideo() {
         <video
           ref={videoRef}
           className="fade-radial h-full w-full scale-110 object-contain drop-shadow-[0_30px_60px_rgba(30,58,138,0.25)]"
-          src="/videos/reco-hero.mp4"
-          poster="/images/reco/reco-hero-poster.jpg"
+          src={`${basePath}/videos/reco-hero.mp4`}
+          poster={`${basePath}/images/reco/reco-hero-poster.jpg`}
           autoPlay
           loop
           muted

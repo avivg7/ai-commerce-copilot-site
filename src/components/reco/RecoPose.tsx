@@ -1,26 +1,27 @@
 import Image from "next/image";
 import { cn } from "@/lib/cn";
+import { basePath } from "@/lib/basePath";
 import { GradientGlow } from "@/components/ui/GradientGlow";
 
 export type RecoPoseName = "celebrate" | "thinking" | "concerned";
 
 const poseMeta: Record<RecoPoseName, { src: string; width: number; height: number; alt: string; glow: "primary" | "secondary" | "accent" }> = {
   celebrate: {
-    src: "/images/reco/reco-celebrate.png",
+    src: `${basePath}/images/reco/reco-celebrate.png`,
     width: 2096,
     height: 2280,
     alt: "Reco the AI Commerce Copilot mascot celebrating rising revenue",
     glow: "secondary",
   },
   thinking: {
-    src: "/images/reco/reco-thinking.png",
+    src: `${basePath}/images/reco/reco-thinking.png`,
     width: 1592,
     height: 2280,
     alt: "Reco the AI Commerce Copilot mascot thinking and pointing at a recommended product",
     glow: "accent",
   },
   concerned: {
-    src: "/images/reco/reco-concerned.png",
+    src: `${basePath}/images/reco/reco-concerned.png`,
     width: 1552,
     height: 2280,
     alt: "Reco the AI Commerce Copilot mascot looking curious and concerned",

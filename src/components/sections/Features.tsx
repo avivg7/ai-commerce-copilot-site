@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import Image from "next/image";
+import { basePath } from "@/lib/basePath";
 import { features, type FeatureIcon } from "@/data/features";
 import { SectionHeading } from "@/components/ui/SectionHeading";
 import { BentoCard } from "@/components/ui/BentoCard";
@@ -59,7 +60,7 @@ export function Features() {
                   corner={
                     isPeekCard ? (
                       <Image
-                        src="/images/reco/reco-thinking.png"
+                        src={`${basePath}/images/reco/reco-thinking.png`}
                         alt=""
                         aria-hidden="true"
                         width={1592}
