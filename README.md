@@ -1,36 +1,51 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# AI Commerce Copilot
+
+Marketing landing page for **AI Commerce Copilot** — an AI-powered commerce intelligence platform for WooCommerce that recommends products customers are likely to buy together, explains why they perform well, and surfaces actionable merchant insights.
+
+Meet **Reco**, the product's AI merchandising copilot and mascot, featured throughout the page.
+
+## Tech Stack
+
+- [Next.js](https://nextjs.org) (App Router, Turbopack)
+- [React](https://react.dev) 19
+- [Tailwind CSS](https://tailwindcss.com) 4
+- [Framer Motion](https://www.framer.com/motion/) for scroll reveals and micro-interactions
+- TypeScript
 
 ## Getting Started
 
-First, run the development server:
+Install dependencies and run the dev server:
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000) to view it.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Scripts
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- `npm run dev` — start the development server
+- `npm run build` — create a production build
+- `npm run start` — serve the production build
+- `npm run lint` — run ESLint
 
-## Learn More
+## Project Structure
 
-To learn more about Next.js, take a look at the following resources:
+```
+src/
+  app/            # App Router pages, layout, metadata, sitemap/robots
+  components/
+    layout/        # Navbar, Footer, logo
+    sections/      # Page sections (Hero, Features, Dashboard, etc.)
+    ui/            # Shared UI primitives (Button, GlassCard, Reveal, ...)
+    reco/          # Reco mascot components (pose art, hero video)
+  data/            # Static content for sections (features, metrics, comparison, ...)
+  lib/             # Small utilities and motion/animation helpers
+public/
+  images/, videos/ # Served assets (mascot art, hero video, poster)
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Deployment
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+This is a standard Next.js app and deploys cleanly to [Vercel](https://vercel.com/new) or any platform that supports Next.js. See the [Next.js deployment docs](https://nextjs.org/docs/app/building-your-application/deploying) for details.
