@@ -2,7 +2,7 @@ import type { NextConfig } from "next";
 
 // Must match the GitHub repo name — GitHub Pages serves project sites from
 // https://<user>.github.io/<repo>/, not the domain root.
-const basePath = "/ai-commerce-copilot-site";
+const basePath = "";
 
 const nextConfig: NextConfig = {
   output: "export",
