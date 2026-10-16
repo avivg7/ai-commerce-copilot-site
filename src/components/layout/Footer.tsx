@@ -1,71 +1,85 @@
-import Link from "next/link";
-import { Logomark } from "./Logomark";
+import type { Locale } from "@/i18n/config";
+import type { Dictionary } from "@/i18n";
+import { localePath, type RouteId } from "@/lib/routes";
+import { Rich } from "@/lib/rich";
+import { Logo } from "@/components/ui/Logo";
+import { LocaleLink } from "@/components/ui/LocaleLink";
+import { LanguageSwitcher } from "./LanguageSwitcher";
+import { A11yControl } from "./A11yControl";
 
-const columns = [
-  {
-    heading: "Product",
-    links: [
-      { label: "Features", href: "#features" },
-      { label: "How it Works", href: "#how-it-works" },
-      { label: "Insights", href: "#insights" },
-      { label: "Pricing", href: "#pricing" },
-    ],
-  },
-  {
-    heading: "Resources",
-    links: [
-      { label: "Documentation", href: "#documentation" },
-      { label: "GitHub", href: "#github" },
-      { label: "Contact", href: "#contact" },
-    ],
-  },
-  {
-    heading: "Legal",
-    links: [
-      { label: "Privacy", href: "#privacy" },
-      { label: "Terms", href: "#terms" },
-    ],
-  },
-];
-
-export function Footer() {
+export function Footer({ locale, route, t }: { locale: Locale; route: RouteId; t: Dictionary }) {
+  const c = t.common;
+  const ctx = { locale, t };
+  const aicc: [RouteId, string][] = [
+    ["product", c.pageNames.product],
+    ["pricing", c.pageNames.pricing],
+    ["questions", c.pageNames.questions],
+  ];
+  const trust: [RouteId, string][] = [
+    ["data-and-trust", c.pageNames.dataTrust],
+    ["privacy", c.pageNames.privacy],
+    ["terms", c.pageNames.terms],
+    ["refund-policy", c.pageNames.refund],
+    ["accessibility", c.pageNames.accessibility],
+  ];
   return (
-    <footer className="border-t border-white/10 bg-navy text-white/70">
-      <div className="mx-auto max-w-7xl px-6 py-16 lg:px-8">
-        <div className="grid gap-12 sm:grid-cols-2 lg:grid-cols-4">
-          <div>
-            <div className="flex items-center gap-2.5">
-              <Logomark />
-              <span className="text-base font-semibold text-white">AI Commerce Copilot</span>
-            </div>
-            <p className="mt-4 max-w-xs text-sm leading-relaxed">
-              AI-powered commerce intelligence for WooCommerce. Meet Reco, your AI merchandising copilot.
-            </p>
+    <footer className="aicc-footer aicc-on-dark">
+      <div className="aicc-container">
+        <div className="aicc-footer__grid">
+          <div style={{ display: "grid", gap: "1rem", alignContent: "start" }}>
+            <Logo href={localePath(locale, "home")} full={t.meta.siteName} onDark />
+            <p style={{ maxInlineSize: "28ch" }}>{c.footer.tagline}</p>
           </div>
-
-          {columns.map((col) => (
-            <div key={col.heading}>
-              <h3 className="text-sm font-semibold text-white">{col.heading}</h3>
-              <ul className="mt-4 space-y-3">
-                {col.links.map((link) => (
-                  <li key={link.label}>
-                    <Link
-                      href={link.href}
-                      className="rounded text-sm transition-colors hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-navy"
-                    >
-                      {link.label}
-                    </Link>
-                  </li>
-                ))}
-              </ul>
+          <nav aria-labelledby="footer-product">
+            <h2 id="footer-product">{c.footer.productHeading}</h2>
+            <ul>
+              {aicc.map(([r, label]) => (
+                <li key={r}>
+                  <LocaleLink locale={locale} route={r} aria-current={r === route ? "page" : undefined}>
+                    {label}
+                  </LocaleLink>
+                </li>
+              ))}
+            </ul>
+          </nav>
+          <nav aria-labelledby="footer-trust">
+            <h2 id="footer-trust">{c.footer.trustHeading}</h2>
+            <ul>
+              {trust.map(([r, label]) => (
+                <li key={r}>
+                  <LocaleLink locale={locale} route={r} aria-current={r === route ? "page" : undefined}>
+                    {label}
+                  </LocaleLink>
+                </li>
+              ))}
+            </ul>
+          </nav>
+          <div style={{ display: "grid", gap: "1rem", alignContent: "start" }}>
+            <h2>{c.footer.languageHeading}</h2>
+            <LanguageSwitcher
+              locale={locale}
+              route={route}
+              label={c.language.label}
+              currentLabel={c.language.current}
+              variant="list"
+            />
+            <div>
+              <A11yControl
+                strings={c.a11y}
+                statementHref={localePath(locale, "accessibility")}
+                className="aicc-btn aicc-btn--ghost"
+              />
             </div>
-          ))}
+          </div>
         </div>
-
-        <div className="mt-14 border-t border-white/10 pt-8 text-sm">
-          © {new Date().getFullYear()} AI Commerce Copilot. All rights reserved.
+        <div className="aicc-footer__base">
+          <p>
+            <Rich text={c.footer.copyright} ctx={ctx} />
+          </p>
+          <p>{c.footer.note}</p>
         </div>
       </div>
     </footer>
   );
 }
+

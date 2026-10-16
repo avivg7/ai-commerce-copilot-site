@@ -2,35 +2,68 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { cn } from "@/lib/cn";
 
-interface ButtonProps {
-  href: string;
-  children: ReactNode;
-  variant?: "primary" | "secondary" | "ghost";
+type Variant = "primary" | "secondary" | "ghost" | "quiet";
+
+interface CommonProps {
+  variant?: Variant;
   size?: "md" | "lg";
+  block?: boolean;
   className?: string;
-  icon?: ReactNode;
-  onClick?: () => void;
+  children: ReactNode;
 }
 
-export function Button({ href, children, variant = "primary", size = "md", className, icon, onClick }: ButtonProps) {
+type LinkProps = CommonProps & { href: string; onClick?: () => void };
+type ButtonProps = CommonProps & {
+  href?: undefined;
+  type?: "button" | "submit";
+  disabled?: boolean;
+  onClick?: () => void;
+  "aria-label"?: string;
+};
+
+function classes({ variant = "secondary", size = "md", block, className }: CommonProps) {
+  return cn(
+    "aicc-btn",
+    variant === "primary" && "aicc-btn--primary",
+    variant === "ghost" && "aicc-btn--ghost",
+    variant === "quiet" && "aicc-btn--quiet",
+    size === "lg" && "aicc-btn--lg",
+    block && "aicc-btn--block",
+    className,
+  );
+}
+
+/**
+ * Button. Renders a link when `href` is given (internal hrefs use next/link and get basePath), otherwise a <button>.
+ * States: hover lift, focus-visible ring (tokens), active press, disabled. Min 44px tall.
+ */
+export function Button(props: LinkProps | ButtonProps) {
+  if (props.href !== undefined) {
+    const { href, onClick, children } = props;
+    const external = /^(https?:|mailto:)/.test(href);
+    if (external) {
+      return (
+        <a href={href} className={classes(props)} onClick={onClick}>
+          {children}
+        </a>
+      );
+    }
+    return (
+      <Link href={href} className={classes(props)} onClick={onClick}>
+        {children}
+      </Link>
+    );
+  }
+  const { type = "button", disabled, onClick, children } = props;
   return (
-    <Link
-      href={href}
+    <button
+      type={type}
+      className={classes(props)}
+      disabled={disabled}
       onClick={onClick}
-      className={cn(
-        "group inline-flex items-center justify-center gap-2 rounded-full font-medium transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg",
-        size === "lg" ? "px-8 py-4 text-base" : "px-6 py-3 text-sm",
-        variant === "primary" &&
-          "bg-gradient-to-r from-primary-bright to-secondary text-white shadow-[0_8px_30px_-8px_rgb(37_99_235_/_0.55)] hover:shadow-[0_12px_36px_-6px_rgb(37_99_235_/_0.65)] hover:-translate-y-0.5",
-        variant === "secondary" &&
-          "glass text-ink hover:-translate-y-0.5 hover:bg-white/80",
-        variant === "ghost" &&
-          "text-white/90 ring-1 ring-white/25 hover:bg-white/10 hover:-translate-y-0.5",
-        className,
-      )}
+      aria-label={props["aria-label"]}
     >
       {children}
-      {icon && <span className="transition-transform duration-300 group-hover:translate-x-0.5">{icon}</span>}
-    </Link>
+    </button>
   );
 }
