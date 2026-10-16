@@ -1,18 +1,29 @@
 import type { NextConfig } from "next";
 
-// Must match the GitHub repo name — GitHub Pages serves project sites from
-// https://<user>.github.io/<repo>/, not the domain root.
-const basePath = "/ai-commerce-copilot-site";
+/**
+ * Static export. basePath rules:
+ *  - AICC_BASE_PATH set (even to an empty string) wins. Use "" to build for a domain root (copilt.org).
+ *  - otherwise production builds use the GitHub Pages project path, dev builds use none.
+ * SITE_URL (canonical / sitemap / hreflang origin) is independent of basePath; see docs/AUTHORITY.md.
+ */
+const basePath =
+  process.env.AICC_BASE_PATH ??
+  (process.env.NODE_ENV === "production" ? "/ai-commerce-copilot-site" : "");
 
 const nextConfig: NextConfig = {
   output: "export",
-  basePath,
+  trailingSlash: true,
+  basePath: basePath || undefined,
   images: {
-    // next/image's optimization API needs a server; GitHub Pages is static-only.
+    // next/image's optimisation API needs a server; this is a static export.
     unoptimized: true,
   },
   env: {
     NEXT_PUBLIC_BASE_PATH: basePath,
+  },
+  experimental: {
+    // Unmatched URLs get a branded 404.html even though the root layout lives in a dynamic segment.
+    globalNotFound: true,
   },
 };
 
