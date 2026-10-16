@@ -18,7 +18,8 @@
     "test:interaction": "node scripts/interaction-test.mjs",
     "og:build": "node scripts/build-og.mjs",
     "shots": "node scripts/shots.mjs",
-    "vitals": "node scripts/vitals.mjs"
+    "vitals": "node scripts/vitals.mjs",
+    "test:links": "node scripts/link-check.mjs"
   },
   "dependencies": {
     "clsx": "^2.1.1",

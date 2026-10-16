@@ -978,7 +978,7 @@ export const es: Dictionary = {
 
     accessibility: {
       title: "Declaración de accesibilidad",
-      intro: "Última revisión: {date}.",
+      intro: "Queremos que todas las personas que visitan este sitio puedan usarlo, incluidas las que usan teclado, lector de pantalla, zoom o alto contraste.",
       s: {
         commitment: {
           h: "Nuestro compromiso",

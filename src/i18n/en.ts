@@ -987,7 +987,7 @@ export const en = {
 
     accessibility: {
       title: "Accessibility statement",
-      intro: "Last reviewed {date}.",
+      intro: "We want this website to be usable by everyone who visits it, including people who use a keyboard, a screen reader, zoom, or high contrast.",
       s: {
         commitment: {
           h: "Our commitment",

@@ -29,8 +29,18 @@ jobs:
         uses: actions/configure-pages@v5
       - name: Install dependencies
         run: npm ci
+      - name: Checks
+        run: |
+          npm run lint
+          npm run tokens:check
+          npm run pricing:check
+          npm run i18n:check
+          npm run copy:check
+          npm run contrast:check
       - name: Build
         run: npm run build
+      - name: Performance budget
+        run: npm run perf:check
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
