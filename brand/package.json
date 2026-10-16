@@ -1,0 +1,1 @@
+{ "name": "aicc-brand-kit", "private": true, "type": "module", "description": "Shared AICC brand kit (tokens, CSS, vanilla ES modules, assets, strings). Edited only in the ai_copilot_site repo; see README.md." }

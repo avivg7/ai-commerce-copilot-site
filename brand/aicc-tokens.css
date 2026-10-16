@@ -1,11 +1,13 @@
 /*
  * AICC design tokens — the single source of truth for the AICC visual system.
  *
- * Consumed by BOTH customer-facing surfaces so they cannot drift:
+ * Part of the AICC BRAND KIT (brand/ in the site repo). Consumed by BOTH customer-facing surfaces so they cannot drift:
  *   - marketing site:   ai_copilot_site  (imported by src/app/globals.css)
- *   - commerce/account: Control Plane WordPress theme (aicc-admin/assets/css/aicc-tokens.css — a
- *     byte-identical copy; `npm run tokens:check` in the site repo and tests/run_design_token_parity_tests.php
- *     in the Control Plane repo fail if the two ever differ)
+ *   - commerce/account: Control Plane WordPress theme (aicc-admin/assets/css/aicc-tokens.css, delivered byte-identical by
+ *     `node scripts/sync-brand-kit.mjs --to <theme dir>`; `npm run tokens:check` in the site repo and
+ *     tests/run_design_token_parity_tests.php + tests/run_brand_kit_parity_tests.php in the Control Plane repo fail if they differ)
+ * Values below that carry the LEGACY LOOK (the live copilt.org buttons, glass, header) are measured from the live site, not
+ * invented; see brand/README.md ("Visual contract").
  *
  * Derived from the established brand (blue → emerald → cyan, Geist, Reco). Values that changed are
  * changed for ONE reason, documented in docs/unified-experience/design-system.md: WCAG 2.2 AA contrast.
@@ -78,8 +80,16 @@
 	   the original #10b981 is only 2.54:1; this one is >= 5.17:1 along its whole length. */
 	--aicc-gradient-decor: linear-gradient(100deg, #2563eb, #10b981 55%, #22d3ee);
 	--aicc-gradient-logomark: linear-gradient(135deg, #2563eb, #10b981);
-	--aicc-gradient-action: linear-gradient(100deg, #2563eb 0%, #047857 100%);
-	--aicc-gradient-action-hover: linear-gradient(100deg, #1d4ed8 0%, #065f46 100%);
+	/* BUTTON gradient: the live site's exact value (Tailwind 4 interpolates in oklab). White text on its #10b981 end is
+	   2.54:1: an owner-mandated look. Enhanced contrast (data-aicc-contrast="high") swaps in the AA variant below. */
+	--aicc-gradient-action: linear-gradient(to right in oklab, #2563eb 0%, #10b981 100%);
+	--aicc-gradient-action-hover: linear-gradient(to right in oklab, #2563eb 0%, #10b981 100%); /* the live hover keeps the gradient */
+	/* AA-safe variant (>= 5.17:1 white along its whole length): used by small text-bearing surfaces (badges, step numbers,
+	   pressed toggles) and by buttons in Enhanced contrast. */
+	--aicc-gradient-action-aa: linear-gradient(to right in oklab, #2563eb 0%, #047857 100%);
+	/* Headline emphasis (clipped to text): the live .text-gradient. Below 4.5:1 at its cyan end; Enhanced contrast uses solid text. */
+	--aicc-gradient-text: linear-gradient(100deg, #2563eb, #10b981 55%, #22d3ee);
+	--aicc-text-gradient-solid: #1e3a8a;
 
 	/* Focus: 2px ring + 2px offset. 5.2:1 against white, 12.9:1 on navy (>= 3:1 required by WCAG 2.2 AA). */
 	--aicc-focus: #2563eb;
@@ -130,14 +140,29 @@
 	--aicc-shadow-sm: 0 1px 2px rgb(15 23 42 / 0.06);
 	--aicc-shadow-md: 0 8px 24px -12px rgb(15 23 42 / 0.18);
 	--aicc-shadow-lg: 0 24px 48px -24px rgb(15 23 42 / 0.28);
-	--aicc-shadow-action: 0 10px 28px -12px rgb(37 99 235 / 0.55); /* primary button only */
+	--aicc-shadow-action: 0 8px 30px -8px rgb(37 99 235 / 0.55); /* primary button (live value) */
+	--aicc-shadow-action-hover: 0 12px 36px -6px rgb(37 99 235 / 0.65);
+	--aicc-shadow-glass-chip: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1); /* Tailwind shadow-lg */
+	--aicc-shadow-header: 0 4px 30px -10px rgb(15 23 42 / 0.15);
+	--aicc-drop-hero: drop-shadow(0 30px 60px rgb(30 58 138 / 0.25));
 
-	--aicc-container: 75rem;     /* 1200 */
+	/* Glass (live .glass) and the fixed header */
+	--aicc-glass-bg: rgb(255 255 255 / 0.6);
+	--aicc-glass-bg-hover: rgb(255 255 255 / 0.8);
+	--aicc-glass-border: rgb(255 255 255 / 0.5);
+	--aicc-header-h: 4.75rem;           /* 76px */
+	--aicc-header-bg-scrolled: rgb(248 250 252 / 0.95);
+	--aicc-header-border-scrolled: #e2e8f0;
+	--aicc-eyebrow-bg: rgb(30 58 138 / 0.08);  /* live: bg-primary/8 where primary is #1e3a8a */
+
+	--aicc-container: 80rem;     /* 1280: the live site (max-w-7xl) and the header share it */
 	--aicc-container-narrow: 46rem; /* 736 — prose, legal, forms */
 	--aicc-tap: 2.75rem;         /* 44px minimum interactive target */
 
 	/* ── Motion ──────────────────────────────────────────────────────────── */
 	--aicc-ease: cubic-bezier(0.16, 1, 0.3, 1);
+	--aicc-ease-legacy: cubic-bezier(0.4, 0, 0.2, 1); /* Tailwind default: the live buttons and header */
+	--aicc-dur-legacy: 300ms;
 	--aicc-dur-fast: 150ms;
 	--aicc-dur: 220ms;
 	--aicc-dur-slow: 360ms;
@@ -150,13 +175,16 @@
 }
 
 /* ── User preference modes (set by the subtle accessibility control; see accessibility.md) ───────── */
+/* Enhanced contrast (the first-party accessibility control) swaps every owner-mandated low-contrast treatment for an AA-safe one. */
 :root[data-aicc-contrast="high"] {
+	--aicc-gradient-action: var(--aicc-gradient-action-aa);
+	--aicc-gradient-action-hover: var(--aicc-gradient-action-aa);
+	--aicc-gradient-text: linear-gradient(var(--aicc-text-gradient-solid), var(--aicc-text-gradient-solid));
 	--aicc-text-muted: var(--aicc-slate-900);
 	--aicc-text-subtle: var(--aicc-slate-700);
 	--aicc-border: #64748b;
 	--aicc-border-strong: #475569;
 	--aicc-link: #1e3a8a;
-	--aicc-gradient-action: linear-gradient(100deg, #1d4ed8 0%, #065f46 100%);
 }
 :root[data-aicc-text="large"] {
 	font-size: 118.75%; /* 19px root: every rem-based size scales together */
@@ -165,12 +193,14 @@
 	--aicc-dur-fast: 0.01ms;
 	--aicc-dur: 0.01ms;
 	--aicc-dur-slow: 0.01ms;
+	--aicc-dur-legacy: 0.01ms;
 }
 @media (prefers-reduced-motion: reduce) {
 	:root {
 		--aicc-dur-fast: 0.01ms;
 		--aicc-dur: 0.01ms;
 		--aicc-dur-slow: 0.01ms;
+		--aicc-dur-legacy: 0.01ms;
 	}
 }
 

@@ -48,3 +48,4 @@ next-env.d.ts
 .claude/settings.local.json
 .audit/
 .gstack/
+/public/brand-kit/
