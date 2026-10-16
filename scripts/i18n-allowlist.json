@@ -1,0 +1,6 @@
+{
+  "_comment": "Key paths (exact) whose translated value may equal the English value, e.g. plan names or words that are identical in that language. Add sparingly. Brand tokens (AICC, Reco, WooCommerce, WordPress, Solo, Studio, Agency, digits, currency) are always allowed.",
+  "es": [],
+  "he": [],
+  "ru": []
+}
