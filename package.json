@@ -19,7 +19,8 @@
     "og:build": "node scripts/build-og.mjs",
     "shots": "node scripts/shots.mjs",
     "vitals": "node scripts/vitals.mjs",
-    "test:links": "node scripts/link-check.mjs"
+    "test:links": "node scripts/link-check.mjs",
+    "launch:check": "node scripts/launch-check.mjs"
   },
   "dependencies": {
     "clsx": "^2.1.1",

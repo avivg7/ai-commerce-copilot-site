@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import ReactDOM from "react-dom";
 import "../globals.css";
 import { geistExt, geistLatin } from "../fonts";
 import { LOCALES, LOCALE_META, DEFAULT_LOCALE } from "@/i18n/config";
@@ -7,6 +8,9 @@ import { allStaticParams, parseSlug } from "@/lib/routes";
 import { SkipLink } from "@/components/ui/SkipLink";
 import { Header, type HeaderStrings } from "@/components/layout/Header";
 import { Footer } from "@/components/layout/Footer";
+import { A11yDialog } from "@/components/layout/A11yControl";
+import { withBase } from "@/lib/site";
+import { localePath } from "@/lib/routes";
 import { LanguageSuggestion, type SuggestStrings } from "@/components/layout/LanguageSuggestion";
 
 export const dynamicParams = false;
@@ -29,6 +33,7 @@ export default async function RootLayout({
   const { locale, route } = parsed;
   const t = getDictionary(locale);
   const meta = LOCALE_META[locale];
+  if (locale === "he") ReactDOM.preload(withBase("/fonts/heebo-hebrew.woff2"), { as: "font", type: "font/woff2", crossOrigin: "anonymous" });
 
   const headerStrings: HeaderStrings = {
     navLabel: t.common.nav.label,
@@ -43,7 +48,7 @@ export default async function RootLayout({
     logoFull: t.meta.siteName,
     languageLabel: t.common.language.label,
     languageCurrent: t.common.language.current,
-    a11y: t.common.a11y,
+    a11yLabel: t.common.a11y.button,
   };
   const suggest = Object.fromEntries(
     LOCALES.map((l) => [l, getDictionary(l).common.langSuggest]),
@@ -58,15 +63,26 @@ export default async function RootLayout({
     >
       <head>
         <script dangerouslySetInnerHTML={{ __html: PREFS_SCRIPT }} />
+        {locale === "he" ? (
+          <>
+            {/* Heebo (SIL OFL, public/fonts/OFL-Heebo.txt), Hebrew subset, only declared and preloaded on Hebrew pages. */}
+            <style
+              dangerouslySetInnerHTML={{
+                __html: `@font-face{font-family:"AICC Heebo";src:url(${withBase("/fonts/heebo-hebrew.woff2")}) format("woff2");font-weight:100 900;font-display:swap;unicode-range:U+0590-05FF,U+200C-2010,U+20AA,U+25CC,U+FB1D-FB4F}html:lang(he) body{font-family:var(--font-geist-sans),var(--font-geist-ext),"AICC Heebo",var(--aicc-font-sans)}`,
+              }}
+            />
+          </>
+        ) : null}
       </head>
       <body>
         <SkipLink label={t.common.skip} />
+        <LanguageSuggestion locale={locale} route={route} strings={suggest} />
         <Header locale={locale} route={route} s={headerStrings} />
         <main id="main" tabIndex={-1}>
           {children}
         </main>
         <Footer locale={locale} route={route} t={t} />
-        <LanguageSuggestion locale={locale} route={route} strings={suggest} />
+        <A11yDialog strings={t.common.a11y} statementHref={localePath(locale, "accessibility")} />
       </body>
     </html>
   );

@@ -51,7 +51,7 @@ function stripComments(src) {
 
 const hits = [];
 let scanned = 0;
-for (const f of files(path.join(ROOT, "src"))) {
+for (const f of [...files(path.join(ROOT, "src")), ...files(path.join(ROOT, "docs")), path.join(ROOT, "README.md")]) {
   scanned++;
   const text = stripComments(fs.readFileSync(f, "utf8"));
   text.split("\n").forEach((line, i) => {

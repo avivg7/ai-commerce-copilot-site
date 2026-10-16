@@ -3,10 +3,9 @@ import type { Locale } from "@/i18n/config";
 import type { Dictionary } from "@/i18n";
 import { Rich, type RichCtx } from "@/lib/rich";
 import { Accordion } from "@/components/ui/Accordion";
-import { DraftNotice } from "@/components/ui/DraftNotice";
 import { LocaleLink } from "@/components/ui/LocaleLink";
 import { Container } from "@/components/ui/Primitives";
-import { FAQ_SELECTION, faqById, type FaqPageKey } from "@/data/faq";
+import { FAQ_SELECTION, type FaqPageKey } from "@/data/faq";
 import { ldScript } from "@/lib/jsonld";
 
 export function JsonLd({ data }: { data: unknown }) {
@@ -58,18 +57,14 @@ export function Faq({ locale, t, page, ids }: { locale: Locale; t: Dictionary; p
   const ctx: RichCtx = { locale, t };
   const list = (ids ?? FAQ_SELECTION[page]) as readonly string[];
   const items = list.map((id) => {
-    const meta = faqById(id);
     const it = t.faq.items[id as keyof typeof t.faq.items];
     return {
       id: `faq-${id}`,
       question: <Rich text={it.q} ctx={ctx} />,
       answer: (
-        <>
-          <p>
-            <Rich text={it.a} ctx={ctx} />
-          </p>
-          {meta.legalReview ? <DraftNotice label={t.common.draft.badge} /> : null}
-        </>
+        <p>
+          <Rich text={it.a} ctx={ctx} />
+        </p>
       ),
     };
   });

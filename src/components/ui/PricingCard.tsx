@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import { Badge } from "./Primitives";
 import { Button } from "./Button";
 import { cn } from "@/lib/cn";
-import { formatPrice } from "@/data/plans";
+import { currencySuffix, formatPrice } from "@/data/plans";
 import { planUrl, type PlanId } from "@/lib/site";
 
 export interface PricingCardProps {
@@ -17,6 +17,7 @@ export interface PricingCardProps {
   features: string[];
   cta: string;
   compact?: boolean;
+  locale?: string;
   headingLevel?: 2 | 3;
   extra?: ReactNode;
 }
@@ -30,15 +31,15 @@ export function PricingCard(p: PricingCardProps) {
   return (
     <article className={cn("aicc-plan", p.featuredLabel && "aicc-plan--featured", p.compact && "aicc-plan--compact")} aria-labelledby={`plan-${p.id}`}>
       <div>
+        <div className="aicc-plan__badgerow">{p.featuredLabel ? <Badge tone="brand">{p.featuredLabel}</Badge> : null}</div>
         <H id={`plan-${p.id}`} className="aicc-plan__name">
           <bdi>{p.name}</bdi>
-          {p.featuredLabel ? <Badge tone="brand">{p.featuredLabel}</Badge> : null}
         </H>
         <p className="aicc-muted aicc-small" style={{ marginBlockStart: 4 }}>{p.fit}</p>
       </div>
       <p className="aicc-plan__price">
-        <span className="aicc-plan__amount"><bdi>{formatPrice(p.price)}</bdi></span>
-        <span className="aicc-plan__per">{p.perYear}</span>
+        <span className="aicc-plan__amount"><bdi>{formatPrice(p.price, p.locale)}</bdi></span>
+        <span className="aicc-plan__per">{p.perYear}{currencySuffix(p.locale ?? "en")}</span>
       </p>
       <p className="aicc-plan__stores">{p.storesLabel}</p>
       {!p.compact ? (

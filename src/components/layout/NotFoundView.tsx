@@ -7,7 +7,7 @@ import { readStoredLang } from "@/lib/prefs";
 import { Logo } from "@/components/ui/Logo";
 import { RecoImage } from "@/components/ui/RecoImage";
 
-export type NotFoundStrings = Record<Locale, { heading: string; body: string; home: string; questions: string; siteName: string }>;
+export type NotFoundStrings = Record<Locale, { heading: string; body: string; home: string; questions: string; siteName: string; title: string }>;
 
 /**
  * Branded 404. A static host cannot know the visitor's language, so the page picks it from the URL prefix
@@ -28,7 +28,12 @@ export function NotFoundView({ strings }: { strings: NotFoundStrings }) {
   useEffect(() => {
     document.documentElement.lang = meta.htmlLang;
     document.documentElement.dir = meta.dir;
-  }, [meta]);
+    // Next renders the English <title> from static metadata (the host cannot know the language); replace it after hydration.
+    const set = () => { document.title = s.title; };
+    set();
+    const t = window.setTimeout(set, 150);
+    return () => window.clearTimeout(t);
+  }, [meta, s.title]);
   return (
     <>
       <header className="aicc-header">
@@ -38,7 +43,7 @@ export function NotFoundView({ strings }: { strings: NotFoundStrings }) {
       </header>
       <main id="main" tabIndex={-1} className="aicc-notfound">
         <div className="aicc-notfound__inner">
-          <RecoImage pose="concerned" displayWidth={140} priority />
+          <RecoImage pose="thinking" displayWidth={140} priority />
           <h1 className="aicc-display" style={{ fontSize: "var(--aicc-text-3xl)" }}>{s.heading}</h1>
           <p className="aicc-lead" style={{ marginInline: "auto" }}>{s.body}</p>
           <div className="aicc-hero__actions">

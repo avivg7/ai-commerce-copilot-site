@@ -112,7 +112,8 @@ async function tabTo(p, test, max = 40) { for (let i = 0; i < max; i++) { await 
   check("faq: all 40 questions are present", (await p.$$("details")).length === 40);
   const ld = await p.$$eval('script[type="application/ld+json"]', (s) => s.map((x) => JSON.parse(x.textContent)));
   const faq = ld.find((x) => x["@type"] === "FAQPage");
-  check("faq: FAQPage JSON-LD has the same 40 Q&As that are visible", faq && faq.mainEntity.length === 40);
+  const visibleQs = await p.$$eval("details summary span", (e) => e.map((x) => x.textContent.trim()));
+  check("faq: FAQPage JSON-LD lists only visible Q&As and omits the 6 legal-flagged ones until approved (34 of 40)", faq && faq.mainEntity.length === 34 && faq.mainEntity.every((q) => visibleQs.includes(q.name)), String(faq?.mainEntity?.length));
   await ctx.close();
 }
 
@@ -124,6 +125,8 @@ for (const loc of ["en", "he"]) {
   await p.waitForSelector(".aicc-demo input[type=checkbox]", { timeout: 5000 });
   const boxes = await p.$$(".aicc-demo input[type=checkbox]");
   check(`demo[${loc}]: at least 3 product cards with real checkboxes`, boxes.length >= 4);
+  check(`demo[${loc}]: opens on "Without AICC" with the nudge line`, (await p.$eval(".aicc-demo", (e) => e.dataset.mode)) === "without" && !!(await p.$(".aicc-demo__nudge")));
+  check(`demo[${loc}]: exactly one status region inside the demo (summary), no aria-live on the rationale`, (await p.$$eval(".aicc-demo [role=status]", (e) => e.length)) === 1 && !(await p.$(".aicc-demo__why p:not(.aicc-demo__bubble)[aria-live]")));
   check(`demo[${loc}]: labelled "Illustrative demo" and no store data`, await p.evaluate(() => !!document.querySelector(".aicc-demo__label") && !/%|revenue|conversion/i.test(document.querySelector(".aicc-demo").textContent)));
   const total = () => p.$eval(".aicc-demo__total strong", (e) => e.textContent.trim());
   const t0 = await total();
@@ -137,11 +140,11 @@ for (const loc of ["en", "he"]) {
   check(`demo[${loc}]: ${nextKey} moves to the next product (follows reading direction)`, await p.evaluate(() => document.activeElement === document.querySelectorAll(".aicc-demo input[type=checkbox]")[1]));
   await p.keyboard.press("ArrowDown");
   check(`demo[${loc}]: ArrowDown moves on`, await p.evaluate(() => document.activeElement === document.querySelectorAll(".aicc-demo input[type=checkbox]")[2]));
-  const why1 = await p.$eval(".aicc-demo__why p[aria-live]", (e) => e.textContent);
+  const why1 = await p.$eval(".aicc-demo__why p:not(.aicc-demo__bubble)", (e) => e.textContent);
   await p.click(".aicc-demo__mode[aria-pressed=false]");
   const mode = await p.$eval(".aicc-demo", (e) => e.dataset.mode);
-  const why2 = await p.$eval(".aicc-demo__why p[aria-live]", (e) => e.textContent);
-  check(`demo[${loc}]: before/after toggle switches mode and the rationale (${mode})`, mode === "without" && why1 !== why2);
+  const why2 = await p.$eval(".aicc-demo__why p:not(.aicc-demo__bubble)", (e) => e.textContent);
+  check(`demo[${loc}]: starts on Without AICC, the toggle switches to With AICC and the rationale changes (${mode})`, mode === "with" && why1 !== why2);
   const ow = await p.evaluate(() => document.documentElement.scrollWidth <= innerWidth);
   check(`demo[${loc}]: no horizontal scroll at 1280`, ow);
   await ctx.close();
@@ -154,13 +157,15 @@ for (const loc of ["en", "he", "es", "ru"]) {
   await p.waitForSelector(".aicc-demo input[type=checkbox]");
   const fits = await p.evaluate(() => document.documentElement.scrollWidth <= innerWidth && [...document.querySelectorAll(".aicc-demo *")].every((e) => e.getBoundingClientRect().right <= innerWidth + 1));
   check(`demo[${loc}] @360: fits without horizontal scroll`, fits);
-  const dur = await p.evaluate(() => getComputedStyle(document.querySelector(".aicc-demo__meter i")).transitionDuration);
-  check(`demo[${loc}] @360: prefers-reduced-motion disables meter/line transitions (${dur})`, parseFloat(dur) < 0.01, dur);
   const boxes = await p.$$(".aicc-demo input[type=checkbox]");
   await boxes[3].focus(); await p.keyboard.press("Space");
   await p.waitForTimeout(40);
   const t = await p.$eval(".aicc-demo__total strong", (e) => e.textContent.trim());
-  check(`demo[${loc}] @360 reduced motion: total updates immediately without counting animation (${t})`, t === "$104", t);
+  check(`demo[${loc}] @360 reduced motion: total updates immediately without counting animation (${t})`, t === "$62", t);
+  await p.click(".aicc-demo__mode[aria-pressed=false]");
+  const dur = await p.evaluate(() => getComputedStyle(document.querySelector(".aicc-demo__bar i")).animationDuration);
+  check(`demo[${loc}] @360: prefers-reduced-motion disables the link-strength animation (${dur})`, parseFloat(dur) < 0.01, dur);
+  check(`demo[${loc}] @360: still fits after switching to With AICC`, await p.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
   await ctx.close();
 }
 { // site's own motion attribute
@@ -169,21 +174,101 @@ for (const loc of ["en", "he", "es", "ru"]) {
   await p.goto(urlFor("en", ""));
   await p.evaluate(() => document.querySelector("#demo").scrollIntoView());
   await p.waitForSelector(".aicc-demo input[type=checkbox]");
-  const dur = await p.evaluate(() => getComputedStyle(document.querySelector(".aicc-demo__meter i")).transitionDuration);
   const boxes = await p.$$(".aicc-demo input[type=checkbox]");
   await boxes[3].focus(); await p.keyboard.press("Space"); await p.waitForTimeout(40);
   const t = await p.$eval(".aicc-demo__total strong", (e) => e.textContent.trim());
-  check(`demo: data-aicc-motion="reduce" disables transitions (${dur}) and counters (${t})`, parseFloat(dur) < 0.01 && t === "$104", `${dur} ${t}`);
+  await p.click(".aicc-demo__mode[aria-pressed=false]");
+  const dur = await p.evaluate(() => getComputedStyle(document.querySelector(".aicc-demo__bar i")).animationDuration);
+  check(`demo: data-aicc-motion="reduce" disables transitions (${dur}) and counters (${t})`, parseFloat(dur) < 0.01 && t === "$62", `${dur} ${t}`);
   const heroAnim = await p.evaluate(() => getComputedStyle(document.querySelector(".aicc-hero__copy > *")).animationName);
   check(`site: data-aicc-motion="reduce" removes the hero entrance animation (${heroAnim})`, heroAnim === "none", heroAnim);
   await ctx.close();
+}
+// 5c. Review-round regressions
+{
+  // S2: one dialog; Esc inside it does not close the mobile menu behind it; focus returns to a visible trigger
+  const [ctx, p] = await fresh({ viewport: { width: 390, height: 844 } });
+  await p.goto(urlFor("en", ""));
+  check("a11y: exactly one dialog element on the page", (await p.$$("dialog")).length === 1);
+  await p.click(".aicc-header__menu-btn");
+  await p.click(".aicc-mobilemenu button.aicc-btn");
+  check("a11y: dialog opens from the mobile menu", await p.evaluate(() => !!document.querySelector("dialog[open]")));
+  await p.keyboard.press("Escape");
+  const st = await p.evaluate(() => ({ dlg: !!document.querySelector("dialog[open]"), menu: document.querySelector(".aicc-header__menu-btn").getAttribute("aria-expanded"), vis: (() => { const a = document.activeElement; const r = a.getBoundingClientRect(); return r.width > 0 && r.height > 0 && getComputedStyle(a).visibility !== "hidden"; })() }));
+  check("a11y: Esc closes only the dialog; the menu stays open and focus lands on a visible control", !st.dlg && st.menu === "true" && st.vis, JSON.stringify(st));
+  await ctx.close();
+}
+for (const [w, h] of [[390, 844], [320, 256]]) {
+  // S1: the language suggestion never hides the focused control
+  const [ctx, p] = await fresh({ viewport: { width: w, height: h }, reducedMotion: "reduce" });
+  await p.addInitScript(() => localStorage.setItem("aicc_lang", "he"));
+  await p.goto(urlFor("en", ""));
+  await p.waitForSelector(".aicc-suggest");
+  const first = await p.evaluate(() => { document.activeElement?.blur(); return null; });
+  void first;
+  let hidden = 0, steps = 0;
+  const firstTabbed = [];
+  for (let i = 0; i < 90; i++) {
+    await p.keyboard.press("Tab"); steps++;
+    await p.waitForTimeout(15);
+    const r = await p.evaluate(() => {
+      const a = document.activeElement; if (!a || a === document.body) return null;
+      const ar = a.getBoundingClientRect(); const b = document.querySelector(".aicc-suggest");
+      if (!b) return { ok: true, id: a.className };
+      const br = b.getBoundingClientRect(); if (getComputedStyle(b).position !== "fixed") return { ok: true, id: a.className };
+      const fully = ar.top >= br.top - 0.5 && ar.bottom <= br.bottom + 0.5 && ar.left >= br.left - 0.5 && ar.right <= br.right + 0.5 && !b.contains(a);
+      const inView = ar.bottom > 0 && ar.top < innerHeight;
+      return { ok: !fully && inView, id: a.className || a.tagName };
+    });
+    if (r && !r.ok) hidden++;
+    if (i < 2) firstTabbed.push(await p.evaluate(() => document.activeElement?.closest(".aicc-suggest") ? "suggest" : "other"));
+  }
+  check(`suggestion @${w}x${h}: no focused control is hidden behind it (${steps} Tab stops)`, hidden === 0, `${hidden} hidden`);
+  check(`suggestion @${w}x${h}: it is right after the skip link in the tab order and labelled "Language suggestion" in the suggested language`, firstTabbed[1] === "suggest" && (await p.$eval(".aicc-suggest", (e) => e.getAttribute("aria-label"))).length > 3);
+  await ctx.close();
+}
+{
+  const [ctx, p] = await fresh();
+  await p.goto(urlFor("en", ""));
+  check("language button name is 'Language: English' (no duplicated short code)", (await p.getAttribute(".aicc-lang button", "aria-label")) === "Language: English");
+  await p.click(".aicc-lang button"); await p.focus(".aicc-lang__menu a"); await p.keyboard.press("Shift+Tab"); await p.keyboard.press("Shift+Tab"); await p.keyboard.press("Shift+Tab");
+  check("language menu closes when focus leaves it", await p.evaluate(() => document.querySelector(".aicc-lang__menu").hidden));
+  check("home has no draft pills and no pending lines; hero says the new headline", await p.evaluate(() => !document.querySelector("[data-legal-draft]") && !document.querySelector("[data-pending]") && /buy together\./.test(document.querySelector("h1").textContent) && !/actually/.test(document.querySelector("h1").textContent)));
+  await p.goto(urlFor("en", "pricing"));
+  check("pricing: no draft pill on marketing content; one muted pending line pattern absent here", await p.evaluate(() => !document.querySelector("[data-legal-draft]")));
+  const tops = await p.$$eval(".aicc-plan__amount", (e) => e.map((x) => Math.round(x.getBoundingClientRect().top)));
+  check(`pricing: the three prices align (badge row reserved): ${tops.join(",")}`, tops.length === 3 && new Set(tops).size === 1);
+  const btn = await p.$$eval(".aicc-plan .aicc-btn", (e) => e.map((x) => x.classList.contains("aicc-btn--primary")));
+  check("pricing: only Studio's button uses the action gradient", btn.join() === "false,true,false");
+  await p.goto(urlFor("en", "privacy"));
+  check("privacy: draft notices and exactly the muted pending lines are visible on the legal page", await p.evaluate(() => document.querySelectorAll("[data-legal-draft]").length > 3 && document.querySelectorAll("[data-pending]").length > 0 && !/\[.*pending.*\]/.test(document.querySelector("main").textContent)));
+  await ctx.close();
+}
+{
+  // M6: smooth scrolling respects the OS setting; Heebo only on Hebrew pages
+  for (const [pref, want] of [["reduce", "auto"], ["no-preference", "smooth"]]) {
+    const [ctx, p] = await fresh({ reducedMotion: pref });
+    await p.goto(urlFor("en", ""));
+    const sb = await p.evaluate(() => getComputedStyle(document.documentElement).scrollBehavior);
+    check(`smooth scroll with prefers-reduced-motion:${pref} is ${want}`, sb === want, sb);
+    await ctx.close();
+  }
+  for (const [loc, expect] of [["en", false], ["he", true]]) {
+    const [ctx, p] = await fresh();
+    const fonts = [];
+    p.on("request", (r) => /heebo/i.test(r.url()) && fonts.push(r.url()));
+    await p.goto(urlFor(loc, ""));
+    await p.waitForTimeout(800);
+    check(`Heebo is ${expect ? "" : "not "}loaded on the ${loc} page`, (fonts.length > 0) === expect, fonts.join());
+    await ctx.close();
+  }
 }
 // 6. 404
 {
   const [ctx, p] = await fresh();
   const r = await p.goto(`${BASE}/he/nope/`);
   await p.waitForTimeout(400);
-  check("404: unknown URL returns 404 with the branded page, in Hebrew under /he/", r.status() === 404 && (await p.evaluate(() => document.documentElement.lang === "he" && document.documentElement.dir === "rtl" && !!document.querySelector("h1"))));
+  check("404: unknown URL returns 404 with the branded page, in Hebrew under /he/, with a translated title", r.status() === 404 && (await p.evaluate(() => document.documentElement.lang === "he" && document.documentElement.dir === "rtl" && !!document.querySelector("h1") && !/not found/i.test(document.title) && document.title.length > 2)), await p.title());
   await ctx.close();
 }
 await browser.close();

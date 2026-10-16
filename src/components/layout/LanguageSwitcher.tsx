@@ -75,18 +75,25 @@ export function LanguageSwitcher({ locale, route, label, variant, currentLabel }
 
   const cur = LOCALE_META[locale];
   return (
-    <div className="aicc-lang" ref={rootRef}>
+    <div
+      className="aicc-lang"
+      ref={rootRef}
+      onBlur={(e) => {
+        // Close when focus leaves the whole control (Tab out), not when it moves between its own parts.
+        if (open && !e.currentTarget.contains(e.relatedTarget as Node | null)) setOpen(false);
+      }}
+    >
       <button
         ref={btnRef}
         type="button"
         className="aicc-iconbtn"
         aria-expanded={open}
         aria-controls={id}
+        aria-label={`${label}: ${cur.endonym}`}
         onClick={() => setOpen((o) => !o)}
       >
         <Globe size={20} aria-hidden="true" />
-        <span>{cur.short}</span>
-        <span className="aicc-sr-only">{`, ${label}: ${cur.endonym}`}</span>
+        <span aria-hidden="true">{cur.short}</span>
       </button>
       <ul id={id} className="aicc-lang__menu" hidden={!open}>
         {links.map(({ l, m, href, current }) => (

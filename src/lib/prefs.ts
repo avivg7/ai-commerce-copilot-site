@@ -90,7 +90,8 @@ export function storeLang(locale: Locale) {
     localStorage.setItem(LANG_KEY, locale);
   } catch {}
   try {
-    document.cookie = `${LANG_KEY}=${locale}; Path=/; Max-Age=31536000; SameSite=Lax`;
+    const secure = typeof location !== "undefined" && location.protocol === "https:" ? "; Secure" : "";
+    document.cookie = `${LANG_KEY}=${locale}; Path=/; Max-Age=31536000; SameSite=Lax${secure}`;
   } catch {}
   emit();
 }

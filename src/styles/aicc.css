@@ -14,13 +14,15 @@ html {
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
 }
-html:not([data-aicc-motion="reduce"]) {
-  scroll-behavior: smooth;
-}
-@media (prefers-reduced-motion: reduce) {
-  html {
-    scroll-behavior: auto;
+/* Smooth scrolling only when the OS has not asked for reduced motion AND the site's own control is off. */
+@media (prefers-reduced-motion: no-preference) {
+  html:not([data-aicc-motion="reduce"]) {
+    scroll-behavior: smooth;
   }
+}
+/* A fixed language suggestion must never hide the focused control (WCAG 2.4.11). */
+html:has(.aicc-suggest) {
+  scroll-padding-bottom: 12rem;
 }
 
 body {
@@ -115,20 +117,10 @@ main:focus {
   transform: scaleX(-1);
 }
 
-/* Obvious placeholder for values the owner has not supplied. */
+/* Values the owner has not supplied yet: one plain muted line, never a pill. */
 .aicc-pending {
-  display: inline;
-  background: var(--aicc-warning-bg);
-  color: var(--aicc-warning);
-  border: 1px dashed var(--aicc-warning);
-  border-radius: var(--aicc-radius-sm);
-  padding-inline: 0.35em;
-  font-weight: 600;
-  font-size: 0.95em;
-  white-space: normal;
-  overflow-wrap: anywhere;
-  box-decoration-break: clone;
-  -webkit-box-decoration-break: clone;
+  color: var(--aicc-text-muted);
+  font-style: italic;
 }
 
 /* ── Layout ───────────────────────────────────────────────────────────── */
@@ -138,11 +130,12 @@ main:focus {
   margin-inline: auto;
   padding-inline: var(--aicc-gutter);
 }
-.aicc-container--narrow {
-  max-inline-size: calc(var(--aicc-container-narrow) + 2 * var(--aicc-gutter));
+/* Narrow = a reading measure that stays aligned to the page grid (not centred in the middle of it). */
+.aicc-container--narrow > * {
+  max-inline-size: var(--aicc-container-narrow);
 }
 .aicc-section {
-  padding-block: var(--aicc-section-y);
+  padding-block: clamp(3rem, 2rem + 3.5vw, 5rem); /* tighter than --aicc-section-y so the home page stays short */
   position: relative;
 }
 .aicc-section--tight {
@@ -623,6 +616,7 @@ main:focus {
 .aicc-iconbtn:active {
   background: var(--aicc-border);
 }
+.aicc-header__menu-btn { border-color: var(--aicc-border-strong); }
 .aicc-iconbtn[aria-expanded="true"] {
   background: var(--aicc-surface-sunken);
   border-color: var(--aicc-border-strong);
@@ -738,7 +732,7 @@ main:focus {
   color: var(--aicc-white);
 }
 
-/* Language suggestion (fixed so it never shifts layout) */
+/* Language suggestion: fixed (never shifts layout), first in the tab order, in-flow on very short viewports. */
 .aicc-suggest {
   position: fixed;
   inset-inline: var(--aicc-space-3);
@@ -756,6 +750,17 @@ main:focus {
 }
 .aicc-suggest p { color: var(--aicc-text-inverse); font-size: var(--aicc-text-sm); }
 .aicc-suggest__actions { display: flex; gap: var(--aicc-space-2); flex-wrap: wrap; }
+.aicc-suggest .aicc-btn:focus-visible { outline-color: var(--aicc-focus-on-dark); }
+@media (max-height: 32rem) {
+  .aicc-suggest {
+    position: static;
+    max-inline-size: none;
+    margin: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+  html:has(.aicc-suggest) { scroll-padding-bottom: 0; }
+}
 
 /* Accessibility dialog */
 .aicc-dialog {
@@ -879,6 +884,10 @@ main:focus {
 }
 .aicc-hero__copy { display: grid; gap: var(--aicc-space-5); justify-items: start; }
 .aicc-hero__actions { display: flex; flex-wrap: wrap; gap: var(--aicc-space-3); }
+@media (max-width: 30rem) {
+  .aicc-hero__actions { flex-direction: column; align-items: stretch; inline-size: 100%; }
+  .aicc-hero__actions .aicc-btn { inline-size: 100%; }
+}
 .aicc-hero__facts {
   list-style: none;
   padding: 0;
@@ -983,6 +992,7 @@ main:focus {
 }
 @media (min-width: 62rem) {
   .aicc-steps { grid-template-columns: repeat(4, 1fr); }
+  .aicc-steps--three { grid-template-columns: repeat(3, 1fr); }
 }
 .aicc-step {
   position: relative;
@@ -1076,13 +1086,15 @@ main:focus {
   box-shadow: var(--aicc-shadow-sm);
 }
 .aicc-plan--featured {
+  margin: -1px; /* 2px border vs 1px: keeps content (and prices) aligned across the three cards */
   border: 2px solid transparent;
   background:
     linear-gradient(var(--aicc-surface), var(--aicc-surface)) padding-box,
     var(--aicc-gradient-action) border-box;
   box-shadow: var(--aicc-shadow-md);
 }
-.aicc-plan__name { font-size: var(--aicc-text-xl); font-weight: 700; display: flex; gap: .75rem; align-items: center; flex-wrap: wrap; }
+.aicc-plan__badgerow { min-block-size: 1.75rem; display: flex; align-items: center; }
+.aicc-plan__name { font-size: var(--aicc-text-xl); font-weight: 700; }
 .aicc-plan__price { display: flex; align-items: baseline; gap: 0.5rem; flex-wrap: wrap; }
 .aicc-plan__amount { font-size: 3rem; font-weight: 750; line-height: 1; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; }
 .aicc-plan__per { color: var(--aicc-text-muted); font-weight: 600; }
@@ -1236,9 +1248,7 @@ main:focus {
   gap: var(--aicc-space-6);
   align-items: center;
 }
-@media (min-width: 52rem) {
-  .aicc-final { grid-template-columns: 1fr auto; }
-}
+
 .aicc-final::before {
   content: "";
   position: absolute;
@@ -1248,7 +1258,6 @@ main:focus {
     radial-gradient(34rem 20rem at 85% 20%, rgb(34 211 238 / 0.22), transparent 70%),
     radial-gradient(30rem 20rem at 5% 100%, rgb(16 185 129 / 0.2), transparent 70%);
 }
-.aicc-final img { inline-size: 11rem; block-size: auto; margin-inline: auto; }
 
 /* ── 404 ──────────────────────────────────────────────────────────────── */
 .aicc-notfound {
@@ -1276,4 +1285,30 @@ main:focus {
   .aicc-btn--primary, .aicc-plan--featured { border: 2px solid ButtonText; }
   .aicc-switch__track { forced-color-adjust: none; background: ButtonText; }
   .aicc-switch[aria-checked="true"] .aicc-switch__track { background: Highlight; }
+}
+
+/* "Which plan?": three explicit rows. */
+.aicc-which { display: grid; gap: 0; padding: 0; overflow: hidden; }
+.aicc-which__row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--aicc-space-4);
+  padding: var(--aicc-space-4) var(--aicc-space-5);
+  font-size: var(--aicc-text-lg);
+}
+.aicc-which__row + .aicc-which__row { border-block-start: 1px solid var(--aicc-border); }
+.aicc-which__row strong { font-weight: 700; }
+.aicc-countline { text-align: center; color: var(--aicc-text-muted); font-size: var(--aicc-text-sm); }
+
+/* Forced colours (Windows high contrast): state must not depend on background colour alone. */
+@media (forced-colors: active) {
+  [aria-pressed="true"], .aicc-demo__mode[aria-pressed="true"] { outline: 2px solid Highlight; outline-offset: -2px; text-decoration: underline; }
+  [aria-current="page"], [aria-current="true"] { outline: 2px solid Highlight; outline-offset: -2px; }
+  .aicc-lang__chip[aria-current="true"], .aicc-lang__item[aria-current="true"] { border: 2px solid Highlight; }
+  .aicc-demo__bar { border: 1px solid CanvasText; }
+  .aicc-demo__bar i { background: Highlight; forced-color-adjust: none; }
+  .aicc-demo-card[data-checked="true"] { border: 2px solid Highlight; }
+  .aicc-btn, .aicc-iconbtn { border: 1px solid ButtonText; }
+  .aicc-suggest, .aicc-dialog { border: 1px solid CanvasText; }
 }

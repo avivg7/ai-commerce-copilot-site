@@ -2,7 +2,7 @@ import type { Locale } from "@/i18n/config";
 import type { Dictionary } from "@/i18n";
 import { Rich, type RichCtx } from "@/lib/rich";
 import { LEGAL_DOCS, TRANSLATION_REVIEW, type LegalDocId } from "@/data/legal";
-import { LEGAL_DRAFT_NOTICE, REVIEWED_ON } from "@/lib/site";
+import { ACCESSIBILITY_REVIEWED_ON, DRAFT_UPDATED_ON, LEGAL_DRAFT_NOTICE } from "@/lib/site";
 import { formatDate } from "@/lib/format";
 import type { RouteId } from "@/lib/routes";
 import { Container, Section, Banner } from "@/components/ui/Primitives";
@@ -36,8 +36,11 @@ export function LegalPage({ locale, t, doc }: { locale: Locale; t: Dictionary; d
   const route = DOC_ROUTE[doc];
   const pageName = t.common.pageNames[PAGE_NAME[doc]];
   const translated = TRANSLATION_REVIEW[locale] === "native-legal-review-required";
-  const date = formatDate(REVIEWED_ON, locale);
+  const isStatement = doc === "accessibility";
+  const stamp = isStatement ? ACCESSIBILITY_REVIEWED_ON : DRAFT_UPDATED_ON;
+  const date = formatDate(stamp, locale);
   const intro = d.intro.replace("{date}", date);
+  // dataTrust is a summary of the privacy policy; it carries the draft notices on its flagged blocks, not a page banner.
   const showStatus = doc !== "dataTrust" && doc !== "accessibility";
 
   return (
@@ -45,7 +48,7 @@ export function LegalPage({ locale, t, doc }: { locale: Locale; t: Dictionary; d
       <JsonLd data={breadcrumbLd(locale, route, t, pageName)} />
       <PageHead locale={locale} t={t} pageName={pageName} title={d.title} lead={<Rich text={intro} ctx={ctx} />}>
         <p className="aicc-muted aicc-small">
-          {t.common.lastReviewed}: <time dateTime={REVIEWED_ON}>{date}</time>
+          {isStatement ? t.common.lastReviewed : t.common.draftUpdated}: <time dateTime={stamp}>{date}</time>
           {showStatus ? <> &middot; {t.common.version}: {t.common.versionDraft}</> : null}
         </p>
       </PageHead>

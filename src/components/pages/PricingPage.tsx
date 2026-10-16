@@ -5,7 +5,6 @@ import { Rich, type RichCtx } from "@/lib/rich";
 import { PLANS } from "@/data/plans";
 import { Container, Section, SectionHeading } from "@/components/ui/Primitives";
 import { PricingCard } from "@/components/ui/PricingCard";
-import { DraftNotice } from "@/components/ui/DraftNotice";
 import { LocaleLink } from "@/components/ui/LocaleLink";
 import { PlanFinder } from "@/components/home/PlanFinder";
 import { Faq, JsonLd, PageHead } from "./shared";
@@ -35,6 +34,7 @@ export function PricingPage({ locale, t }: { locale: Locale; t: Dictionary }) {
                 id={pl.id}
                 name={p.plans[pl.id].name}
                 price={pl.price}
+                locale={locale}
                 storesLabel={storesLabel(pl.stores)}
                 fit={p.plans[pl.id].fit}
                 perYear={t.common.plan.perYear}
@@ -45,7 +45,8 @@ export function PricingPage({ locale, t }: { locale: Locale; t: Dictionary }) {
               />
             ))}
           </div>
-          <p className="aicc-muted" style={{ marginBlockStart: "1.5rem", textAlign: "center" }}>{p.cta.body}</p>
+          <p className="aicc-countline" style={{ marginBlockStart: "1.5rem" }}>{t.common.plan.countHelper}</p>
+          <p className="aicc-countline">{p.cta.body} {t.common.plan.usd}</p>
         </Container>
       </Section>
 
@@ -72,10 +73,15 @@ export function PricingPage({ locale, t }: { locale: Locale; t: Dictionary }) {
       <Section tone="surface" labelledBy="which-title">
         <Container narrow>
           <SectionHeading id="which-title" title={p.which.title} lead={p.which.lead} />
-          <ul className="aicc-prose" style={{ marginBlockEnd: "1.5rem" }}>
-            {(["solo", "studio", "agency"] as const).map((k) => <li key={k}>{p.which.items[k]}</li>)}
-          </ul>
-          <p className="aicc-prose" style={{ marginBlockEnd: "1.5rem" }}>{R(p.which.outro)}</p>
+          <div className="aicc-card aicc-which" role="list">
+            {(["solo", "studio", "agency"] as const).map((k) => (
+              <p key={k} className="aicc-which__row" role="listitem">
+                <span>{p.which.items[k]}</span>
+                <strong><bdi>{p.plans[k].name}</bdi></strong>
+              </p>
+            ))}
+          </div>
+          <p className="aicc-prose" style={{ marginBlock: "1.5rem" }}>{R(p.which.outro)}</p>
           <PlanFinder
             s={{
               label: p.finder.label,
@@ -98,7 +104,6 @@ export function PricingPage({ locale, t }: { locale: Locale; t: Dictionary }) {
             {(["term", "renewal", "billing", "guarantee", "account"] as const).map((k) => <li key={k}>{p.terms.items[k]}</li>)}
           </ul>
           <p style={{ marginBlockStart: "1rem" }}>{p.refunds.p1}</p>
-          <DraftNotice label={t.common.draft.badge} />
           <p style={{ marginBlockStart: "1rem" }}>
             <LocaleLink locale={locale} route="refund-policy" className="aicc-link">{p.terms.policy}</LocaleLink>
           </p>

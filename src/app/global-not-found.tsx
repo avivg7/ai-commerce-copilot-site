@@ -15,7 +15,7 @@ export default function GlobalNotFound() {
   const strings = Object.fromEntries(
     LOCALES.map((l) => {
       const t = getDictionary(l);
-      return [l, { ...t.notFound, siteName: t.meta.siteName }];
+      return [l, { ...t.notFound, siteName: t.meta.siteName, title: t.meta.pages.notFound.title }];
     }),
   ) as NotFoundStrings;
   return (

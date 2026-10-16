@@ -4,7 +4,8 @@ import { PLANS, CURRENCY } from "@/data/plans";
 import { SITE_URL, absoluteUrl } from "@/lib/site";
 import type { RouteId } from "@/lib/routes";
 import { formatPlain, type RichCtx } from "@/lib/rich";
-import { FAQ_SELECTION, type FaqPageKey } from "@/data/faq";
+import { FAQ_SELECTION, faqById, type FaqPageKey } from "@/data/faq";
+import { LEGAL_REVIEW_APPROVED } from "@/lib/site";
 
 /** Truthful structured data only: no aggregateRating, no reviews, no invented address, phone or sameAs. */
 export function organizationLd(t: Dictionary) {
@@ -61,7 +62,8 @@ export function faqLd(locale: Locale, t: Dictionary, page: FaqPageKey) {
   return {
     "@context": "https://schema.org",
     "@type": "FAQPage",
-    mainEntity: FAQ_SELECTION[page].map((id) => {
+    // Q&As that touch rights, retention, refunds or privacy stay out of structured data until a person with legal authority approves them.
+    mainEntity: (FAQ_SELECTION[page] as readonly string[]).filter((id) => LEGAL_REVIEW_APPROVED || !faqById(id).legalReview).map((id) => {
       const it = t.faq.items[id as keyof typeof t.faq.items];
       return {
         "@type": "Question",

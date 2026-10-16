@@ -27,10 +27,15 @@ export function planUrl(plan: PlanId): string {
   return `${GET_STARTED_URL}${sep}plan=${plan}`;
 }
 
-/** Visible "Draft - pending legal review" notices. On unless NEXT_PUBLIC_LEGAL_DRAFT_NOTICE is exactly "off". */
-export const LEGAL_DRAFT_NOTICE = process.env.NEXT_PUBLIC_LEGAL_DRAFT_NOTICE !== "off";
+/**
+ * Legal review gate. Draft notices on the legal pages stay visible until a person with legal authority has approved the
+ * text AND the build sets NEXT_PUBLIC_LEGAL_REVIEW_APPROVED=true. Supplying the company values does NOT hide them.
+ * NEXT_PUBLIC_LEGAL_DRAFT_NOTICE=off only hides the pills (for screenshots); `npm run launch:check` still fails without approval.
+ */
+export const LEGAL_REVIEW_APPROVED = process.env.NEXT_PUBLIC_LEGAL_REVIEW_APPROVED === "true";
+export const LEGAL_DRAFT_NOTICE = !LEGAL_REVIEW_APPROVED && process.env.NEXT_PUBLIC_LEGAL_DRAFT_NOTICE !== "off";
 
-/** Owner-supplied values. Unset means the page renders an obvious "[... -- pending]" token. Never invent these. */
+/** Owner-supplied values. Unset means the page renders one plain muted line (pending.line). Never invent these. */
 export const COMPANY = {
   legalName: process.env.NEXT_PUBLIC_AICC_LEGAL_NAME || "",
   address: process.env.NEXT_PUBLIC_AICC_ADDRESS || "",
@@ -42,5 +47,7 @@ export const COMPANY = {
 
 export type CompanyKey = keyof typeof COMPANY;
 
-/** Date the accessibility statement and legal drafts were last reviewed (ISO). */
-export const REVIEWED_ON = "2026-10-16";
+/** When the legal drafts were last updated (shown as "Draft last updated"). */
+export const DRAFT_UPDATED_ON = "2026-10-16";
+/** When the accessibility statement was last reviewed (a separate review, separate date). */
+export const ACCESSIBILITY_REVIEWED_ON = "2026-10-16";

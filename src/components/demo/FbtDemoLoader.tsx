@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState, type ComponentType } from "react";
 import { Info } from "lucide-react";
 import type { Dictionary } from "@/i18n";
+import type { Locale } from "@/i18n/config";
 
 type Demo = Dictionary["demo"];
 
@@ -10,9 +11,9 @@ type Demo = Dictionary["demo"];
  * placeholder is about to scroll into view, so it costs nothing on first load. The placeholder reserves the demo's
  * height (no layout shift) and already carries the "Illustrative demo: not store data" label.
  */
-export function FbtDemoLoader({ s, rtl }: { s: Demo; rtl: boolean }) {
+export function FbtDemoLoader({ s, rtl, locale }: { s: Demo; rtl: boolean; locale: Locale }) {
   const ref = useRef<HTMLDivElement>(null);
-  const [Demo, setDemo] = useState<ComponentType<{ s: Demo; rtl: boolean }> | null>(null);
+  const [Demo, setDemo] = useState<ComponentType<{ s: Demo; rtl: boolean; locale: Locale }> | null>(null);
 
   useEffect(() => {
     const el = ref.current;
@@ -40,10 +41,10 @@ export function FbtDemoLoader({ s, rtl }: { s: Demo; rtl: boolean }) {
     return () => io.disconnect();
   }, []);
 
-  if (Demo) return <Demo s={s} rtl={rtl} />;
+  if (Demo) return <Demo s={s} rtl={rtl} locale={locale} />;
   return (
     <div ref={ref} className="aicc-demo aicc-demo--placeholder" aria-busy="true">
-      <div className="aicc-demo__widget">
+      <div className="aicc-demo__main"><div className="aicc-demo__widget">
         <div className="aicc-demo__top">
           <p className="aicc-demo__label">
             <Info size={18} aria-hidden="true" />
@@ -54,7 +55,7 @@ export function FbtDemoLoader({ s, rtl }: { s: Demo; rtl: boolean }) {
           <h3>{s.widget.title}</h3>
           <p>{s.widget.subtitle}</p>
         </div>
-      </div>
+      </div></div>
     </div>
   );
 }

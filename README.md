@@ -29,8 +29,9 @@ npm run serve:out -- --port 3011   # serve out/ locally (add --prefix /ai-commer
 | `AICC_BASE_PATH` | `/ai-commerce-copilot-site` in production, empty in dev | URL prefix of the deployment |
 | `SITE_URL` | `https://copilt.org` | origin for canonical, hreflang, sitemap and Open Graph URLs |
 | `NEXT_PUBLIC_AICC_ACCOUNT_URL` | `https://copilt.org/my-account/` | the single "Get started" destination (`?plan=solo|studio|agency` is added on plan buttons) |
-| `NEXT_PUBLIC_LEGAL_DRAFT_NOTICE` | on | `off` hides the "Draft: pending legal review" notices |
-| `NEXT_PUBLIC_AICC_LEGAL_NAME`, `..._ADDRESS`, `..._SUPPORT_EMAIL`, `..._GOVERNING_LAW`, `..._PAYMENT_PROCESSOR`, `..._HOSTING_REGION` | unset | owner values; unset renders a visible `[... -- pending]` token |
+| `NEXT_PUBLIC_LEGAL_REVIEW_APPROVED` | unset | `true` only after a lawyer approves the legal text: removes the draft notices and lets flagged FAQ answers into JSON-LD |
+| `NEXT_PUBLIC_LEGAL_DRAFT_NOTICE` | on | `off` hides the draft pills (screenshots only); `launch:check` still fails without approval |
+| `NEXT_PUBLIC_AICC_LEGAL_NAME`, `..._ADDRESS`, `..._SUPPORT_EMAIL`, `..._GOVERNING_LAW`, `..._PAYMENT_PROCESSOR`, `..._HOSTING_REGION` | unset | owner values; unset renders one plain "will be published before launch" line |
 
 ## Checks
 
@@ -40,11 +41,12 @@ npm run serve:out -- --port 3011   # serve out/ locally (add --prefix /ai-commer
 | `npm run tokens:check` | `design/aicc-tokens.css` is byte-identical to the Control Plane theme copy (passes with a note if the peer is absent) |
 | `npm run pricing:check` | prices and limits equal 99/1, 199/3, 499/10 and the Control Plane bootstrap file; no hard-coded prices in copy |
 | `npm run i18n:check` | every key in en/he/es/ru, no untranslated values, placeholder/markup parity, terminology table, legal + FAQ structure |
-| `npm run copy:check` | banned phrases (fabricated claims, "Start Free", "Trend", ...) in every locale source |
+| `npm run copy:check` | banned phrases (fabricated results, free-tier and urgency claims, unshipped features) in every locale source, plus `docs/` and this file |
 | `npm run contrast:check` | WCAG contrast of every token pair the components use |
 | `npm run perf:check` | gzip first-load JS per route against the budgets (needs a build) |
 | `npm run audit` | axe-core + structure + overflow on every page, locale and width (needs `serve:out`) |
 | `npm run test:interaction` | keyboard walks, reduced motion, language persistence (needs `serve:out`) |
+| `npm run launch:check` | what would be published pending, drafted or unapproved (`--strict` fails) |
 | `npm run og:build` / `npm run shots` | regenerate Open Graph images / visual evidence screenshots |
 
 ## Where things are

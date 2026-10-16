@@ -14,6 +14,12 @@ export const ROUTES = {
 } as const;
 
 export type RouteId = keyof typeof ROUTES;
+
+/**
+ * Pages whose authoritative copy lives in the Control Plane (WordPress) until the domain cutover. Here they are MIRRORS:
+ * same facts and wording, guarded by pricing:check (numbers) and a manual diff (legal text). See docs/AUTHORITY.md.
+ */
+export const MIRROR_ROUTES: readonly RouteId[] = ["pricing", "privacy", "terms", "refund-policy", "accessibility"];
 export const ROUTE_IDS = Object.keys(ROUTES) as RouteId[];
 
 export function isRouteId(value: string): value is RouteId {

@@ -2,7 +2,7 @@ import type { MetadataRoute } from "next";
 import { LOCALES, LOCALE_META } from "@/i18n/config";
 import { ROUTE_IDS } from "@/lib/routes";
 import { absoluteUrl } from "@/lib/site";
-import { REVIEWED_ON } from "@/lib/site";
+import { DRAFT_UPDATED_ON as REVIEWED_ON } from "@/lib/site";
 
 export const dynamic = "force-static";
 

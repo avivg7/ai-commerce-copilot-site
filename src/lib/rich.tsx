@@ -2,11 +2,11 @@ import { Fragment, type ReactNode } from "react";
 import Link from "next/link";
 import { LOCALE_META, type Locale } from "@/i18n/config";
 import type { Dictionary } from "@/i18n";
-import { formatPrice, planById } from "@/data/plans";
+import { currencySuffix, formatPrice, planById } from "@/data/plans";
 import { COMPANY, type CompanyKey } from "@/lib/site";
 import { localePath, isRouteId } from "@/lib/routes";
 import { formatDate, formatYear } from "@/lib/format";
-import { REVIEWED_ON } from "@/lib/site";
+import { ACCESSIBILITY_REVIEWED_ON } from "@/lib/site";
 
 /**
  * Renders the dictionary mini-markup (see src/i18n/en.ts header): **bold**, [label](route:x), [label](https://...),
@@ -18,22 +18,27 @@ export interface RichCtx {
   vars?: Record<string, string>;
 }
 
-type Resolved = { text: string; pending?: boolean; href?: string };
+type Resolved = { text: string; pending?: "line" | "detail"; href?: string };
 
 function resolveToken(name: string, ctx: RichCtx): Resolved | null {
-  const { t, locale } = ctx;
+  const { locale } = ctx;
   if (ctx.vars && name in ctx.vars) return { text: ctx.vars[name] };
   const priceMatch = /^price(Solo|Studio|Agency)$/.exec(name);
-  if (priceMatch) return { text: formatPrice(planById(priceMatch[1].toLowerCase() as "solo").price) };
+  if (priceMatch) return { text: formatPrice(planById(priceMatch[1].toLowerCase() as "solo").price, locale) + currencySuffix(locale) };
   const storesMatch = /^stores(Solo|Studio|Agency)$/.exec(name);
   if (storesMatch) return { text: String(planById(storesMatch[1].toLowerCase() as "solo").stores) };
   if (name === "year") return { text: formatYear(locale) };
-  if (name === "date") return { text: formatDate(REVIEWED_ON, locale) };
+  if (name === "date") return { text: formatDate(ACCESSIBILITY_REVIEWED_ON, locale) };
+  if (name === "companyDetails") {
+    // Both name and address, or neither: half a company identity is worse than the plain pending line.
+    if (COMPANY.legalName && COMPANY.address) return { text: `${COMPANY.legalName}, ${COMPANY.address}` };
+    return { text: "", pending: "line" };
+  }
   if (name in COMPANY) {
     const key = name as CompanyKey;
     const value = COMPANY[key];
     if (value) return { text: value, href: key === "supportEmail" ? `mailto:${value}` : undefined };
-    return { text: `[${t.pending[key]} — ${t.pending.suffix}]`, pending: true };
+    return { text: "", pending: key === "supportEmail" || key === "legalName" || key === "address" ? "line" : "detail" };
   }
   return null;
 }
@@ -45,7 +50,7 @@ function isolate(text: string, rtl: boolean, keyBase: string): ReactNode {
   const parts = text.split(LATIN_RUN);
   if (parts.length === 1) return text;
   return parts.map((part, i) =>
-    i % 2 === 1 ? <bdi key={`${keyBase}-${i}`}>{part}</bdi> : part,
+    i % 2 === 1 ? <bdi key={`${keyBase}-${i}`} lang="en">{part}</bdi> : part,
   );
 }
 
@@ -88,7 +93,7 @@ export function Rich({ text, ctx }: { text: string; ctx: RichCtx }): ReactNode {
           if (r.pending) {
             return (
               <span key={key} className="aicc-pending" data-pending="true">
-                <bdi>{r.text}</bdi>
+                {ctx.t.pending[r.pending]}
               </span>
             );
           }
@@ -112,6 +117,10 @@ export function formatPlain(text: string, ctx: RichCtx): string {
   return text
     .replace(/\*\*([^*]+)\*\*/g, "$1")
     .replace(/\[([^\]]+)\]\((?:route:[a-z-]+|https?:\/\/[^)]+)\)/g, "$1")
-    .replace(/\{([A-Za-z0-9]+)\}/g, (m, name: string) => resolveToken(name, ctx)?.text ?? m);
+    .replace(/\{([A-Za-z0-9]+)\}/g, (m, name: string) => {
+      const r = resolveToken(name, ctx);
+      if (!r) return m;
+      return r.pending ? ctx.t.pending[r.pending] : r.text;
+    });
 }
 

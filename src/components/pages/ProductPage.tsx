@@ -3,7 +3,6 @@ import { LOCALE_META } from "@/i18n/config";
 import type { Dictionary } from "@/i18n";
 import { Rich, type RichCtx } from "@/lib/rich";
 import { Container, Section, SectionHeading } from "@/components/ui/Primitives";
-import { DraftNotice } from "@/components/ui/DraftNotice";
 import { FbtDemoLoader } from "@/components/demo/FbtDemoLoader";
 import { Faq, JsonLd, PageHead } from "./shared";
 import { breadcrumbLd, faqLd, softwareLd } from "@/lib/jsonld";
@@ -58,7 +57,7 @@ export function ProductPage({ locale, t }: { locale: Locale; t: Dictionary }) {
       <Section tone="sunken" labelledBy="see-working">
         <Container>
           <SectionHeading id="see-working" title={p.demoHeading} lead={t.demo.intro} />
-          <FbtDemoLoader s={t.demo} rtl={rtl} />
+          <FbtDemoLoader s={t.demo} rtl={rtl} locale={locale} />
         </Container>
       </Section>
 
@@ -113,7 +112,7 @@ export function ProductPage({ locale, t }: { locale: Locale; t: Dictionary }) {
 
             <section aria-labelledby="returning">
               <h2 id="returning">{p.returning.title}</h2>
-              <div className="aicc-prose"><p>{p.returning.p1}</p><DraftNotice label={t.common.draft.badge} /></div>
+              <div className="aicc-prose"><p>{p.returning.p1}</p></div>
             </section>
 
             <section aria-labelledby="languages">

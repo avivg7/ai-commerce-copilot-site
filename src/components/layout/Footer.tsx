@@ -5,11 +5,12 @@ import { Rich } from "@/lib/rich";
 import { Logo } from "@/components/ui/Logo";
 import { LocaleLink } from "@/components/ui/LocaleLink";
 import { LanguageSwitcher } from "./LanguageSwitcher";
-import { A11yControl } from "./A11yControl";
+import { A11yTrigger } from "./A11yControl";
+import { COMPANY } from "@/lib/site";
 
 export function Footer({ locale, route, t }: { locale: Locale; route: RouteId; t: Dictionary }) {
   const c = t.common;
-  const ctx = { locale, t };
+  const ctx = { locale, t, vars: { name: COMPANY.legalName || "AICC" } };
   const aicc: [RouteId, string][] = [
     ["product", c.pageNames.product],
     ["pricing", c.pageNames.pricing],
@@ -64,11 +65,7 @@ export function Footer({ locale, route, t }: { locale: Locale; route: RouteId; t
               variant="list"
             />
             <div>
-              <A11yControl
-                strings={c.a11y}
-                statementHref={localePath(locale, "accessibility")}
-                className="aicc-btn aicc-btn--ghost"
-              />
+              <A11yTrigger label={c.a11y.button} className="aicc-btn aicc-btn--ghost" />
             </div>
           </div>
         </div>

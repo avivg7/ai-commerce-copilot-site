@@ -5,7 +5,6 @@ import { FAQ, FAQ_TOPICS } from "@/data/faq";
 import { Container, Section } from "@/components/ui/Primitives";
 import { Faq, JsonLd, PageHead } from "./shared";
 import { breadcrumbLd, faqLd } from "@/lib/jsonld";
-import { RecoImage } from "@/components/ui/RecoImage";
 
 export function QuestionsPage({ locale, t }: { locale: Locale; t: Dictionary }) {
   const ctx: RichCtx = { locale, t };
@@ -40,9 +39,6 @@ export function QuestionsPage({ locale, t }: { locale: Locale; t: Dictionary }) 
                 </section>
               );
             })}
-          </div>
-          <div style={{ display: "grid", placeItems: "center", marginBlockStart: "3rem" }}>
-            <RecoImage pose="concerned" sizes="120px" displayWidth={110} />
           </div>
         </Container>
       </Section>

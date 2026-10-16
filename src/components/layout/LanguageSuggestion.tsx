@@ -6,12 +6,14 @@ import { localePath, type RouteId } from "@/lib/routes";
 import { withBase } from "@/lib/site";
 import { dismissLang, langSubscribe, langSuggestionSnapshot, storeLang } from "@/lib/prefs";
 
-export type SuggestStrings = Record<Locale, { text: string; accept: string; dismiss: string }>;
+export type SuggestStrings = Record<Locale, { label: string; text: string; accept: string; dismiss: string }>;
 
 /**
  * A small, dismissible suggestion (never a redirect, so crawlers and static hosting are unaffected).
  * Shown when the visitor previously chose another language, or, with no saved choice, when their browser prefers one.
- * Text is written in the suggested language. It is position:fixed, so it cannot shift the layout.
+ * Text is written in the suggested language. It sits first in the tab order (right after the skip link) and is position:fixed
+ * so it cannot shift the layout; while it is shown `html` gets scroll-padding-bottom (see aicc.css) so a focused control
+ * is never hidden behind it. On very short viewports it becomes an in-flow bar at the top instead.
  */
 export function LanguageSuggestion({ locale, route, strings }: { locale: Locale; route: RouteId; strings: SuggestStrings }) {
   const target = useSyncExternalStore(
@@ -23,7 +25,7 @@ export function LanguageSuggestion({ locale, route, strings }: { locale: Locale;
   const s = strings[target];
   const m = LOCALE_META[target];
   return (
-    <aside className="aicc-suggest" lang={m.htmlLang} dir={m.dir} aria-label={m.endonym}>
+    <aside className="aicc-suggest" lang={m.htmlLang} dir={m.dir} aria-label={s.label}>
       <p style={{ display: "flex", gap: "0.6rem", alignItems: "center" }}>
         <Languages size={20} aria-hidden="true" style={{ flex: "none" }} />
         <span>{s.text}</span>

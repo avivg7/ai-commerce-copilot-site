@@ -7,7 +7,7 @@ import { localePath, type RouteId } from "@/lib/routes";
 import { GET_STARTED_URL } from "@/lib/site";
 import { Logo } from "@/components/ui/Logo";
 import { LanguageSwitcher } from "./LanguageSwitcher";
-import { A11yControl, type A11yStrings } from "./A11yControl";
+import { A11yTrigger } from "./A11yControl";
 
 export interface HeaderStrings {
   navLabel: string;
@@ -17,7 +17,7 @@ export interface HeaderStrings {
   logoFull: string;
   languageLabel: string;
   languageCurrent: string;
-  a11y: A11yStrings;
+  a11yLabel: string;
 }
 
 /**
@@ -34,12 +34,14 @@ export function Header({ locale, route, s }: { locale: Locale; route: RouteId; s
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
+      // A modal dialog (accessibility settings) handles its own Esc; do not close the menu behind it.
+      if (e.key === "Escape" && !document.querySelector("dialog[open]")) {
         setOpen(false);
         btnRef.current?.focus();
       }
     };
     const onPointer = (e: PointerEvent) => {
+      if (document.querySelector("dialog[open]")) return;
       if (headerRef.current && !headerRef.current.contains(e.target as Node)) setOpen(false);
     };
     const mq = window.matchMedia("(min-width: 64rem)");
@@ -54,7 +56,6 @@ export function Header({ locale, route, s }: { locale: Locale; route: RouteId; s
     };
   }, [open]);
 
-  const statementHref = localePath(locale, "accessibility");
   const links = s.nav.map((n) => (
     <Link
       key={n.route}
@@ -87,7 +88,7 @@ export function Header({ locale, route, s }: { locale: Locale; route: RouteId; s
             currentLabel={s.languageCurrent}
             variant="menu"
           />
-          <A11yControl strings={s.a11y} statementHref={statementHref} className="aicc-iconbtn aicc-header__a11y" />
+          <A11yTrigger label={s.a11yLabel} className="aicc-iconbtn aicc-header__a11y" />
           <Link href={GET_STARTED_URL} className="aicc-btn aicc-btn--primary aicc-header__cta">
             {s.getStarted}
           </Link>
@@ -114,7 +115,7 @@ export function Header({ locale, route, s }: { locale: Locale; route: RouteId; s
             </ul>
           </nav>
           <div style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem" }}>
-            <A11yControl strings={s.a11y} statementHref={statementHref} className="aicc-btn aicc-btn--secondary" />
+            <A11yTrigger label={s.a11yLabel} className="aicc-btn aicc-btn--secondary" />
           </div>
           <Link href={GET_STARTED_URL} className="aicc-btn aicc-btn--primary aicc-btn--lg aicc-btn--block">
             {s.getStarted}

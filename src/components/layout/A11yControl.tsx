@@ -1,5 +1,5 @@
 "use client";
-import { useRef, useSyncExternalStore, useId } from "react";
+import { useEffect, useRef, useSyncExternalStore, useId } from "react";
 import Link from "next/link";
 import { Accessibility, X, RotateCcw } from "lucide-react";
 import { a11ySnapshot, a11ySubscribe, a11yServerSnapshot, parseA11y, resetA11y, setA11y, type A11yPrefs } from "@/lib/prefs";
@@ -18,28 +18,50 @@ export interface A11yStrings {
   close: string;
   statement: string;
   disclaimer: string;
+  storage: string;
+}
+
+const OPEN_EVENT = "aicc:a11y-open";
+
+/**
+ * Trigger button. There can be several (header, mobile menu, footer) but only ONE dialog exists on the page
+ * (A11yDialog, mounted once in the layout), so Esc, focus return and the focus trap are handled in one place.
+ */
+export function A11yTrigger({ label, className }: { label: string; className?: string }) {
+  return (
+    <button
+      type="button"
+      className={className ?? "aicc-iconbtn"}
+      onClick={() => window.dispatchEvent(new Event(OPEN_EVENT))}
+      aria-haspopup="dialog"
+    >
+      <Accessibility size={20} aria-hidden="true" />
+      <span>{label}</span>
+    </button>
+  );
 }
 
 /**
  * First-party accessibility settings (not an overlay product). A native <dialog> opened with showModal(), so the
- * browser provides the focus trap, Esc to close, inert background and focus return to the trigger.
+ * browser provides the focus trap, Esc to close, inert background and focus return to the element that opened it.
  * Sets data-aicc-motion / data-aicc-contrast / data-aicc-text on <html> (the tokens implement them) and remembers
  * them in localStorage; a tiny inline script in <head> re-applies them before first paint. It does not claim to make
  * the site conformant.
  */
-export function A11yControl({
-  strings,
-  statementHref,
-  className,
-}: {
-  strings: A11yStrings;
-  statementHref: string;
-  className?: string;
-}) {
+export function A11yDialog({ strings, statementHref }: { strings: A11yStrings; statementHref: string }) {
   const ref = useRef<HTMLDialogElement>(null);
   const titleId = useId();
   const snap = useSyncExternalStore(a11ySubscribe, a11ySnapshot, a11yServerSnapshot);
   const prefs = parseA11y(snap);
+
+  useEffect(() => {
+    const open = () => {
+      const d = ref.current;
+      if (d && !d.open) d.showModal();
+    };
+    window.addEventListener(OPEN_EVENT, open);
+    return () => window.removeEventListener(OPEN_EVENT, open);
+  }, []);
 
   const rows: { key: keyof A11yPrefs; label: string; help: string }[] = [
     { key: "motion", label: strings.motion, help: strings.motionHelp },
@@ -48,62 +70,52 @@ export function A11yControl({
   ];
 
   return (
-    <>
-      <button
-        type="button"
-        className={className ?? "aicc-iconbtn"}
-        onClick={() => ref.current?.showModal()}
-        aria-haspopup="dialog"
-      >
-        <Accessibility size={20} aria-hidden="true" />
-        <span>{strings.button}</span>
-      </button>
-      <dialog
-        ref={ref}
-        className="aicc-dialog"
-        aria-labelledby={titleId}
-        onClick={(e) => {
-          if (e.target === ref.current) ref.current?.close();
-        }}
-      >
-        <div className="aicc-dialog__inner">
-          <div className="aicc-dialog__head">
-            <h2 id={titleId}>{strings.title}</h2>
-            <button type="button" className="aicc-iconbtn" onClick={() => ref.current?.close()} aria-label={strings.close}>
-              <X size={22} aria-hidden="true" />
-            </button>
-          </div>
-          <p className="aicc-muted aicc-small">{strings.intro}</p>
-          <div style={{ display: "grid", gap: "0.75rem" }}>
-            {rows.map((r) => (
-              <button
-                key={r.key}
-                type="button"
-                role="switch"
-                aria-checked={prefs[r.key]}
-                className="aicc-switch"
-                onClick={() => setA11y(r.key, !prefs[r.key])}
-              >
-                <span className="aicc-switch__text">
-                  <strong>{r.label}</strong>
-                  <span>{r.help}</span>
-                </span>
-                <span className="aicc-switch__track" aria-hidden="true" />
-              </button>
-            ))}
-          </div>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem", alignItems: "center", justifyContent: "space-between" }}>
-            <button type="button" className="aicc-btn aicc-btn--quiet" onClick={resetA11y}>
-              <RotateCcw size={18} aria-hidden="true" />
-              {strings.reset}
-            </button>
-            <Link href={statementHref} className="aicc-link" onClick={() => ref.current?.close()}>
-              {strings.statement}
-            </Link>
-          </div>
-          <p className="aicc-muted aicc-small">{strings.disclaimer}</p>
+    <dialog
+      ref={ref}
+      className="aicc-dialog"
+      aria-labelledby={titleId}
+      onClick={(e) => {
+        if (e.target === ref.current) ref.current?.close();
+      }}
+    >
+      <div className="aicc-dialog__inner">
+        <div className="aicc-dialog__head">
+          <h2 id={titleId}>{strings.title}</h2>
+          <button type="button" className="aicc-iconbtn" onClick={() => ref.current?.close()} aria-label={strings.close}>
+            <X size={22} aria-hidden="true" />
+          </button>
         </div>
-      </dialog>
-    </>
+        <p className="aicc-muted aicc-small">{strings.intro}</p>
+        <div style={{ display: "grid", gap: "0.75rem" }}>
+          {rows.map((r) => (
+            <button
+              key={r.key}
+              type="button"
+              role="switch"
+              aria-checked={prefs[r.key]}
+              className="aicc-switch"
+              onClick={() => setA11y(r.key, !prefs[r.key])}
+            >
+              <span className="aicc-switch__text">
+                <strong>{r.label}</strong>
+                <span>{r.help}</span>
+              </span>
+              <span className="aicc-switch__track" aria-hidden="true" />
+            </button>
+          ))}
+        </div>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem", alignItems: "center", justifyContent: "space-between" }}>
+          <button type="button" className="aicc-btn aicc-btn--quiet" onClick={resetA11y}>
+            <RotateCcw size={18} aria-hidden="true" />
+            {strings.reset}
+          </button>
+          <Link href={statementHref} className="aicc-link" onClick={() => ref.current?.close()}>
+            {strings.statement}
+          </Link>
+        </div>
+        <p className="aicc-muted aicc-small">{strings.disclaimer}</p>
+        <p className="aicc-muted aicc-small">{strings.storage}</p>
+      </div>
+    </dialog>
   );
 }

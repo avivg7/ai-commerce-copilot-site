@@ -3,12 +3,14 @@ import type { Locale } from "@/i18n/config";
 /** Dates use Intl in the reader's locale, Gregorian calendar, Western digits, month spelled out. */
 export function formatDate(iso: string, locale: Locale): string {
   const d = new Date(`${iso}T12:00:00Z`);
-  return new Intl.DateTimeFormat(`${locale}-u-nu-latn-ca-gregory`, {
+  const out = new Intl.DateTimeFormat(`${locale}-u-nu-latn-ca-gregory`, {
     year: "numeric",
     month: "long",
     day: "numeric",
     timeZone: "UTC",
   }).format(d);
+  // Russian prints "2026 г."; followed by a sentence period that becomes "г..", so spell it out.
+  return locale === "ru" ? out.replace(/\sг\.$/, " года") : out;
 }
 
 export function formatYear(locale: Locale, now = new Date()): string {
