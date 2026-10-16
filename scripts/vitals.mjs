@@ -21,16 +21,16 @@ for (const [locale, route] of targets) {
     await page.goto(urlFor(locale, route), { waitUntil: "load" });
     await page.waitForTimeout(1500);
     // interactions: menu or language, demo toggle if present
-    const menu = vp.width < 1024 ? ".aicc-header__menu-btn" : ".aicc-lang button";
+    const menu = vp.width < 1024 ? ".aicc-site-header__menu-btn" : ".aicc-lang button";
     await page.click(menu); await page.waitForTimeout(150); await page.keyboard.press("Escape");
     if (await page.$("#demo")) {
       await page.evaluate(() => document.querySelector("#demo").scrollIntoView());
-      await page.waitForSelector(".aicc-demo input[type=checkbox]", { timeout: 4000 }).catch(() => {});
+      await page.waitForSelector(".aicc-fbt input[type=checkbox]", { timeout: 4000 }).catch(() => {});
       await page.waitForTimeout(400);
-      const box = await page.$(".aicc-demo input[type=checkbox]:not(:checked)");
+      const box = await page.$(".aicc-fbt input[type=checkbox]:not(:checked)");
       if (box) await box.click();
       await page.waitForTimeout(150);
-      const mode = await page.$(".aicc-demo__mode[aria-pressed=false]");
+      const mode = await page.$(".aicc-fbt__mode[aria-pressed=false]");
       if (mode) await mode.click();
       await page.waitForTimeout(300);
     }

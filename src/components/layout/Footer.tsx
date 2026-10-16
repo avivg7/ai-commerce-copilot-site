@@ -4,7 +4,7 @@ import { localePath, type RouteId } from "@/lib/routes";
 import { Rich } from "@/lib/rich";
 import { Logo } from "@/components/ui/Logo";
 import { LocaleLink } from "@/components/ui/LocaleLink";
-import { LanguageSwitcher } from "./LanguageSwitcher";
+import { LangMenu } from "@/components/brand/LangMenu";
 import { A11yTrigger } from "./A11yControl";
 import { COMPANY } from "@/lib/site";
 
@@ -57,13 +57,7 @@ export function Footer({ locale, route, t }: { locale: Locale; route: RouteId; t
           </nav>
           <div style={{ display: "grid", gap: "1rem", alignContent: "start" }}>
             <h2>{c.footer.languageHeading}</h2>
-            <LanguageSwitcher
-              locale={locale}
-              route={route}
-              label={c.language.label}
-              currentLabel={c.language.current}
-              variant="list"
-            />
+            <LangMenu locale={locale} route={route} label={c.language.label} currentWord={c.language.current} idSuffix="footer" up />
             <div>
               <A11yTrigger label={c.a11y.button} className="aicc-btn aicc-btn--ghost" />
             </div>

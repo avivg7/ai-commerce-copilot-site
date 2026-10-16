@@ -29,6 +29,7 @@ npm run serve:out -- --port 3011   # serve out/ locally (add --prefix /ai-commer
 | `AICC_BASE_PATH` | `/ai-commerce-copilot-site` in production, empty in dev | URL prefix of the deployment |
 | `SITE_URL` | `https://copilt.org` | origin for canonical, hreflang, sitemap and Open Graph URLs |
 | `NEXT_PUBLIC_AICC_ACCOUNT_URL` | `https://copilt.org/my-account/` | the single "Get started" destination (`?plan=solo|studio|agency` is added on plan buttons) |
+| `NEXT_PUBLIC_AICC_DEMO_VIDEO`, `..._POSTER`, `..._CAPTIONS` | unset | the Watch demo video; unset shows a labelled placeholder (a `launch:check` blocker). No fake footage |
 | `NEXT_PUBLIC_LEGAL_REVIEW_APPROVED` | unset | `true` only after a lawyer approves the legal text: removes the draft notices and lets flagged FAQ answers into JSON-LD |
 | `NEXT_PUBLIC_LEGAL_DRAFT_NOTICE` | on | `off` hides the draft pills (screenshots only); `launch:check` still fails without approval |
 | `NEXT_PUBLIC_AICC_LEGAL_NAME`, `..._ADDRESS`, `..._SUPPORT_EMAIL`, `..._GOVERNING_LAW`, `..._PAYMENT_PROCESSOR`, `..._HOSTING_REGION` | unset | owner values; unset renders one plain "will be published before launch" line |
@@ -38,7 +39,9 @@ npm run serve:out -- --port 3011   # serve out/ locally (add --prefix /ai-commer
 | Command | What it enforces |
 |---|---|
 | `npm run lint` | ESLint (Next core-web-vitals + TypeScript) |
-| `npm run tokens:check` | `design/aicc-tokens.css` is byte-identical to the Control Plane theme copy (passes with a note if the peer is absent) |
+| `npm run tokens:check` | `brand/aicc-tokens.css` is byte-identical to the Control Plane theme copy (passes with a note if the peer is absent; FAILS until the theme is synced from the kit) |
+| `npm run brand:check` | `brand/i18n/strings.json` and `brand/MANIFEST.json` are current (`npm run brand:build` regenerates them) |
+| `npm run test:visual-contract` | computed-style, placement, behaviour and pixel parity against the live copilt.org for the site and the Control Plane (`:site` = site only) |
 | `npm run pricing:check` | prices and limits equal 99/1, 199/3, 499/10 and the Control Plane bootstrap file; no hard-coded prices in copy |
 | `npm run i18n:check` | every key in en/he/es/ru, no untranslated values, placeholder/markup parity, terminology table, legal + FAQ structure |
 | `npm run copy:check` | banned phrases (fabricated results, free-tier and urgency claims, unshipped features) in every locale source, plus `docs/` and this file |
@@ -47,7 +50,7 @@ npm run serve:out -- --port 3011   # serve out/ locally (add --prefix /ai-commer
 | `npm run audit` | axe-core + structure + overflow on every page, locale and width (needs `serve:out`) |
 | `npm run test:interaction` | keyboard walks, reduced motion, language persistence (needs `serve:out`) |
 | `npm run launch:check` | what would be published pending, drafted or unapproved (`--strict` fails) |
-| `npm run og:build` / `npm run shots` | regenerate Open Graph images / visual evidence screenshots |
+| `npm run og:build` / `npm run shots` / `npm run shots:brand` | regenerate Open Graph images / visual evidence screenshots |
 
 ## Where things are
 
@@ -57,8 +60,9 @@ src/i18n/              config + one typed dictionary per language (en.ts is the 
 src/data/              plans.ts (the only prices), faq.ts and legal.ts (structure + review flags)
 src/components/ui      Button, Card/Badge/Banner/Container/SectionHeading/FormField, Accordion, PricingCard, Logo, RecoImage, ...
 src/components/layout  Header, Footer, LanguageSwitcher, A11yControl, LanguageSuggestion
-src/components/demo    FbtDemo (lazy)
+src/components/brand   thin wrappers around the brand kit (RecoHero, LangMenu, FbtSection, WatchDemo, BrandInit)
 src/styles             aicc.css (components), demo.css
-design/aicc-tokens.css the shared design tokens (do not edit one copy only)
+brand/                 the shared BRAND KIT (tokens, CSS, vanilla JS modules, assets, strings, MANIFEST): see brand/README.md
+design/source/         original Reco PNGs
 docs/AUTHORITY.md      who owns what; full architecture notes live in the Control Plane repo docs/unified-experience/site-architecture.md
 ```

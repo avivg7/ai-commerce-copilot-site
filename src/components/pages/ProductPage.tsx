@@ -1,9 +1,10 @@
 import type { Locale } from "@/i18n/config";
-import { LOCALE_META } from "@/i18n/config";
 import type { Dictionary } from "@/i18n";
 import { Rich, type RichCtx } from "@/lib/rich";
 import { Container, Section, SectionHeading } from "@/components/ui/Primitives";
-import { FbtDemoLoader } from "@/components/demo/FbtDemoLoader";
+import { FbtSection } from "@/components/brand/FbtSection";
+import { WatchDemo } from "@/components/brand/WatchDemo";
+import { ArrowRight } from "lucide-react";
 import { Faq, JsonLd, PageHead } from "./shared";
 import { breadcrumbLd, faqLd, softwareLd } from "@/lib/jsonld";
 import { Button } from "@/components/ui/Button";
@@ -13,7 +14,6 @@ export function ProductPage({ locale, t }: { locale: Locale; t: Dictionary }) {
   const p = t.product;
   const ctx: RichCtx = { locale, t };
   const R = (x: string) => <Rich text={x} ctx={ctx} />;
-  const rtl = LOCALE_META[locale].dir === "rtl";
   const toc = [
     ["shopper", p.toc.shopper],
     ["merchant", p.toc.merchant],
@@ -34,6 +34,10 @@ export function ProductPage({ locale, t }: { locale: Locale; t: Dictionary }) {
       <JsonLd data={softwareLd(locale, t)} />
       <JsonLd data={faqLd(locale, t, "product")} />
       <PageHead locale={locale} t={t} pageName={t.common.pageNames.product} title={p.hero.title} lead={p.hero.lead}>
+        <div className="aicc-hero-actions">
+          <Button href={GET_STARTED_URL} variant="primary" size="lg" icon={<ArrowRight size={16} className="aicc-flip" aria-hidden="true" />}>{t.common.getStarted}</Button>
+          <WatchDemo locale={locale} t={t} />
+        </div>
         <nav aria-label={t.common.toc}>
           <ul className="aicc-chips">
             {toc.map(([id, label]) => (
@@ -43,6 +47,8 @@ export function ProductPage({ locale, t }: { locale: Locale; t: Dictionary }) {
         </nav>
       </PageHead>
 
+      <FbtSection locale={locale} t={t} />
+
       <Section tone="surface">
         <Container narrow>
           <div className="aicc-sections aicc-prose" style={{ maxInlineSize: "none" }}>
@@ -51,13 +57,6 @@ export function ProductPage({ locale, t }: { locale: Locale; t: Dictionary }) {
               <div className="aicc-prose"><p>{p.shopper.p1}</p><p>{p.shopper.p2}</p><p>{p.shopper.p3}</p></div>
             </section>
           </div>
-        </Container>
-      </Section>
-
-      <Section tone="sunken" labelledBy="see-working">
-        <Container>
-          <SectionHeading id="see-working" title={p.demoHeading} lead={t.demo.intro} />
-          <FbtDemoLoader s={t.demo} rtl={rtl} locale={locale} />
         </Container>
       </Section>
 
@@ -135,7 +134,7 @@ export function ProductPage({ locale, t }: { locale: Locale; t: Dictionary }) {
         <Container narrow>
           <SectionHeading id="product-questions" title={t.questionsPage.hero.title} />
           <Faq locale={locale} t={t} page="product" />
-          <div className="aicc-hero__actions" style={{ marginBlockStart: "2rem" }}>
+          <div className="aicc-hero-actions" style={{ marginBlockStart: "2rem" }}>
             <Button href={GET_STARTED_URL} variant="primary" size="lg">{t.common.getStarted}</Button>
           </div>
         </Container>

@@ -82,6 +82,7 @@ export const en = {
       dataTrust: "Data and trust",
       questions: "Questions",
       menu: "Menu",
+      account: "Account",
     },
     pageNames: {
       product: "Product",
@@ -160,6 +161,26 @@ export const en = {
     draftUpdated: "Draft last updated",
     version: "Status",
     versionDraft: "Draft",
+  },
+
+  // Brand kit strings (also exported to brand/i18n/strings.json by `npm run brand:strings`).
+  brand: {
+    watchDemo: "Watch demo",
+    signIn: "Sign in",
+    chips: {
+      orders: "Order history",
+      clicks: "Click rate",
+      recs: "Recommendations",
+      insights: "Insights",
+      bundles: "Bundles",
+    },
+    modal: {
+      title: "Product demo",
+      close: "Close",
+      placeholder: "The product demo video will appear here.",
+      placeholderBadge: "placeholder",
+      captionsLabel: "Captions",
+    },
   },
 
   notFound: {
@@ -245,7 +266,9 @@ export const en = {
 
   home: {
     hero: {
-      title: "Show shoppers what your own customers buy together.",
+      eyebrow: "Frequently Bought Together for WooCommerce",
+      titleLead: "Show shoppers what your own customers",
+      titleAccent: "buy together.",
       lead:
         "AICC adds a Frequently Bought Together widget to your WooCommerce product and cart pages. It learns from your store's own orders, so what shoppers see comes from your catalog and your customers, not from a generic list. Where a product has little history, AICC fills the gaps from the same category and your newest products, and says so.",
       facts: {
@@ -505,6 +528,10 @@ export const en = {
     cta: {
       title: "Choose your plan",
       body: "You'll confirm your plan in your AICC account.",
+    },
+    teaser: {
+      text: "Curious how the widget decides? Try it with sample products.",
+      link: "Open the interactive demo",
     },
   },
 
@@ -1009,6 +1036,7 @@ export const en = {
             "Hebrew, Spanish and Russian texts have not yet been reviewed by native speakers, including for accessibility.",
             "Automated and manual checks cannot confirm everything, such as whether alternative text is the best description or whether the reading order feels natural with every screen reader. We have not tested with a screen reader or with every combination of browser and assistive technology.",
             "The Reco illustrations contain short words inside the pictures. They are decorative and the same information is in the page text.",
+            "The colours of the main buttons, of the emphasised words in the headline and of the small label above it follow the brand's original design. In places they are below the AA contrast minimum (white text on the green end of the button gradient is 2.5:1). The Enhanced contrast setting in the accessibility menu replaces them with colours that meet AA.",
           ],
         },
         report: {

@@ -74,6 +74,7 @@ export const es: Dictionary = {
       dataTrust: "Datos y confianza",
       questions: "Preguntas",
       menu: "Menú",
+      account: "Cuenta",
     },
     pageNames: {
       product: "Producto",
@@ -152,6 +153,26 @@ export const es: Dictionary = {
     draftUpdated: "Borrador actualizado por última vez",
     version: "Estado",
     versionDraft: "Borrador",
+  },
+
+  // Brand kit strings (also exported to brand/i18n/strings.json by `npm run brand:strings`).
+  brand: {
+    watchDemo: "Ver demostración",
+    signIn: "Iniciar sesión",
+    chips: {
+      orders: "Historial de pedidos",
+      clicks: "Tasa de clics",
+      recs: "Recomendaciones",
+      insights: "Información útil",
+      bundles: "Paquetes",
+    },
+    modal: {
+      title: "Demostración del producto",
+      close: "Cerrar",
+      placeholder: "El vídeo de demostración del producto aparecerá aquí.",
+      placeholderBadge: "marcador de posición",
+      captionsLabel: "Subtítulos",
+    },
   },
 
   notFound: {
@@ -237,7 +258,9 @@ export const es: Dictionary = {
 
   home: {
     hero: {
-      title: "Muestre a sus compradores lo que sus propios clientes compran juntos.",
+      eyebrow: "Comprados juntos con frecuencia para WooCommerce",
+      titleLead: "Muestre a sus compradores lo que sus propios clientes",
+      titleAccent: "compran juntos.",
       lead:
         "AICC añade un widget de «Comprados juntos con frecuencia» a las páginas de producto y de carrito de su WooCommerce. Aprende de los pedidos de su propia tienda, así que lo que ven los compradores sale de su catálogo y de sus clientes, no de una lista genérica. Cuando un producto tiene poco historial, AICC completa los huecos con productos de la misma categoría y con sus productos más nuevos, y se lo dice.",
       facts: {
@@ -497,6 +520,10 @@ export const es: Dictionary = {
     cta: {
       title: "Elija su plan",
       body: "Confirmará su plan en su cuenta de AICC.",
+    },
+    teaser: {
+      text: "¿Quiere ver cómo decide el widget? Pruébelo con productos de ejemplo.",
+      link: "Abrir la demostración interactiva",
     },
   },
 
@@ -1001,6 +1028,7 @@ export const es: Dictionary = {
             "Los textos en hebreo, español y ruso aún no han sido revisados por hablantes nativos, tampoco en cuanto a accesibilidad.",
             "Las comprobaciones automáticas y manuales no pueden confirmarlo todo, por ejemplo si el texto alternativo es la mejor descripción o si el orden de lectura resulta natural con cada lector de pantalla. No hemos probado con un lector de pantalla ni con todas las combinaciones de navegador y tecnología de asistencia.",
             "Las ilustraciones de Reco contienen palabras cortas dentro de las imágenes. Son decorativas y la misma información está en el texto de la página.",
+            "Los colores de los botones principales, de las palabras destacadas del titular y de la pequeña etiqueta que lo precede siguen el diseño original de la marca. En algunos puntos quedan por debajo del mínimo de contraste AA (el texto blanco sobre el extremo verde del degradado del botón es 2,5:1). El ajuste «Contraste mejorado» del menú de accesibilidad los sustituye por colores que cumplen AA.",
           ],
         },
         report: {

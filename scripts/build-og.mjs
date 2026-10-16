@@ -17,7 +17,7 @@ const font = fs.existsSync(mediaDir) ? fs.readdirSync(mediaDir).find((f) => f.en
 const fontCss = font ? `@font-face{font-family:'OG';src:url('file://${path.join(mediaDir, font)}') format('woff2');font-weight:100 900}` : "";
 const file = (p) => "file://" + path.join(ROOT, p);
 const titles = (t) => ({
-  home: t.home.hero.title,
+  home: `${t.home.hero.titleLead} ${t.home.hero.titleAccent}`,
   product: t.product.hero.title,
   pricing: t.pricing.hero.title,
   "data-and-trust": t.legal.dataTrust.title,
@@ -48,9 +48,9 @@ h1{font-size:${big ? 54 : 56}px;line-height:1.08;font-weight:750;letter-spacing:
 p{margin-top:24px;font-size:24px;line-height:1.35;color:#cbd5e1;max-width:620px}
 .card{border-radius:36px;overflow:hidden;box-shadow:0 30px 80px -20px rgba(0,0,0,.6);aspect-ratio:1/1;position:relative;background:#dbeafe}
 .card img{width:100%;height:100%;object-fit:cover;object-position:42% 50%;transform:scale(1.05)}
-</style><body><div><div class="brand"><img src="${file("public/brand/aicc-logomark.svg")}" alt=""><span>AI Commerce Copilot</span></div>
+</style><body><div><div class="brand"><img src="${file("brand/assets/aicc-logomark.svg")}" alt=""><span>AI Commerce Copilot</span></div>
 <h1>${title.replace(/</g, "&lt;")}</h1><p>${t.common.footer.tagline.replace(/</g, "&lt;")}</p></div>
-<div class="card"><img src="${file("public/images/reco/reco-hero-960.webp")}" alt=""></div></body></html>`;
+<div class="card"><img src="${file("brand/assets/reco-hero-960.webp")}" alt=""></div></body></html>`;
     const f = path.join(tmp, "og.html");
     fs.writeFileSync(f, html);
     await page.goto("file://" + f);

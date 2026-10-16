@@ -46,7 +46,7 @@ export function NotFoundView({ strings }: { strings: NotFoundStrings }) {
           <RecoImage pose="thinking" displayWidth={140} priority />
           <h1 className="aicc-display" style={{ fontSize: "var(--aicc-text-3xl)" }}>{s.heading}</h1>
           <p className="aicc-lead" style={{ marginInline: "auto" }}>{s.body}</p>
-          <div className="aicc-hero__actions">
+          <div className="aicc-hero-actions">
             <a className="aicc-btn aicc-btn--primary aicc-btn--lg" href={withBase(localePath(locale, "home"))}>{s.home}</a>
             <a className="aicc-btn aicc-btn--lg" href={withBase(localePath(locale, "questions"))}>{s.questions}</a>
           </div>

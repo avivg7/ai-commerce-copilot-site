@@ -53,7 +53,7 @@ export function PricingCard(p: PricingCardProps) {
         </ul>
       ) : null}
       {p.extra}
-      <Button href={planUrl(p.id)} variant={p.featuredLabel ? "primary" : "secondary"} block size="lg">
+      <Button href={planUrl(p.id)} variant={p.featuredLabel ? "primary" : "outline"} block size="lg">
         {p.cta}
       </Button>
     </article>

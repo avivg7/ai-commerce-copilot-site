@@ -1,6 +1,6 @@
 @import "tailwindcss";
-/* Single source of truth for the visual system, byte-identical with the Control Plane theme copy
-   (checked by `npm run tokens:check`). */
-@import "../../design/aicc-tokens.css";
+/* The brand kit (brand/ at the repo root) is the single source of the visual system; the Control Plane theme receives the
+   same files from `node scripts/sync-brand-kit.mjs`. Site-specific page layout lives in ../styles/aicc.css. */
+@import "../../brand/aicc-tokens.css";
+@import "../../brand/aicc-brand.css";
 @import "../styles/aicc.css";
-@import "../styles/demo.css";

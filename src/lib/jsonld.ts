@@ -16,7 +16,7 @@ export function organizationLd(t: Dictionary) {
     name: "AICC",
     alternateName: t.meta.siteName,
     url: `${SITE_URL}/`,
-    logo: `${SITE_URL}/brand/icon-512.png`,
+    logo: `${SITE_URL}/brand-kit/icon-512.png`,
   };
 }
 

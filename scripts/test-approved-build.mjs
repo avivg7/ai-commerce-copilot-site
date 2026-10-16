@@ -17,6 +17,7 @@ const env = {
   NEXT_PUBLIC_AICC_GOVERNING_LAW: "Example law",
   NEXT_PUBLIC_AICC_PAYMENT_PROCESSOR: "Example Pay",
   NEXT_PUBLIC_AICC_HOSTING_REGION: "Example region",
+  NEXT_PUBLIC_AICC_DEMO_VIDEO: "https://example.test/demo.mp4",
 };
 const b = spawnSync("npm", ["run", "-s", "build"], { cwd: ROOT, env, encoding: "utf8" });
 if (b.status !== 0) { console.error("build failed\n" + b.stdout + b.stderr); process.exit(1); }
@@ -25,7 +26,7 @@ process.stdout.write(l.stdout);
 const errors = [];
 if (l.status !== 0) errors.push("launch:check --strict failed on the approved build");
 let pending = 0, drafts = 0, faq = [];
-const walk = (d) => { for (const e of fs.readdirSync(d, { withFileTypes: true })) { const p = path.join(d, e.name); if (e.isDirectory()) { if (!["_next", "brand", "images", "og", "fonts"].includes(e.name)) walk(p); } else if (e.name.endsWith(".html")) { const h = fs.readFileSync(p, "utf8"); pending += (h.match(/data-pending="true"/g) || []).length; drafts += (h.match(/data-legal-draft="true"/g) || []).length; if (p.endsWith("/questions/index.html") && p.split("/").length === path.join(ROOT, "out", "questions", "index.html").split("/").length) { const m = [...h.matchAll(/<script type="application\/ld\+json">(.*?)<\/script>/g)].map((x) => JSON.parse(x[1])).find((x) => x["@type"] === "FAQPage"); faq = m ? m.mainEntity : []; } } } };
+const walk = (d) => { for (const e of fs.readdirSync(d, { withFileTypes: true })) { const p = path.join(d, e.name); if (e.isDirectory()) { if (!["_next", "brand-kit", "og", "fonts"].includes(e.name)) walk(p); } else if (e.name.endsWith(".html")) { const h = fs.readFileSync(p, "utf8"); pending += (h.match(/data-pending="true"/g) || []).length; drafts += (h.match(/data-legal-draft="true"/g) || []).length; if (p.endsWith("/questions/index.html") && p.split("/").length === path.join(ROOT, "out", "questions", "index.html").split("/").length) { const m = [...h.matchAll(/<script type="application\/ld\+json">(.*?)<\/script>/g)].map((x) => JSON.parse(x[1])).find((x) => x["@type"] === "FAQPage"); faq = m ? m.mainEntity : []; } } } };
 walk(path.join(ROOT, "out"));
 if (pending) errors.push(`${pending} pending lines in the approved build`);
 if (drafts) errors.push(`${drafts} draft notices in the approved build`);

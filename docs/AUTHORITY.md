@@ -13,8 +13,8 @@ other side carries a **mirror**: the same facts and wording, flagged as a mirror
 | `/`, `/product/`, `/data-and-trust/`, `/questions/` | **this site** (`src/i18n/*.ts`) | the Control Plane links to them |
 | `/pricing/`, `/privacy/`, `/terms/`, `/refund-policy/`, `/data-processing-addendum/`, `/accessibility/` | **Control Plane (WordPress)** | `/pricing/`, `/privacy/`, `/terms/`, `/refund-policy/`, `/accessibility/` here are MIRRORS (`MIRROR_ROUTES` in `src/lib/routes.ts`); the DPA is not mirrored |
 | Checkout, cart, account, connect, renew, Plans & Stores | **Control Plane** | this site only links (`GET_STARTED_URL`; plan buttons add `?plan=solo\|studio\|agency`) |
-| The interactive Frequently Bought Together demo | **this site** (`src/components/demo`) | |
-| Design tokens | `design/aicc-tokens.css`, one file in two repos | byte-identical copy in the Control Plane theme (`npm run tokens:check`) |
+| The interactive Frequently Bought Together demo (`brand/js/fbt-demo.js`) | **this repo (brand kit)** | the Control Plane home page renders the same module; strings come from `brand/i18n/strings.json` |
+| **Brand kit** (tokens, button/header/language/hero/modal/FBT CSS and vanilla JS, Reco assets, shared strings) | **this repo** (`brand/`) | the Control Plane theme, delivered byte-for-byte by `node scripts/sync-brand-kit.mjs --to <theme dir>` and verified against `brand/MANIFEST.json` (`tokens:check`, `sync-brand-kit --verify`, `test:visual-contract`) |
 | Plan prices and store limits **as purchased** | **Control Plane** (WooCommerce products, `scripts/bootstrap-commercial-products.php`) | `src/data/plans.ts` (`npm run pricing:check`) |
 | Facts, voice, claims allowed and not allowed | Control Plane repo `docs/unified-experience/content-source.md` and `claims-inventory.md` | dictionaries here (`npm run copy:check`) |
 

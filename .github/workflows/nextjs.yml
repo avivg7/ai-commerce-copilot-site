@@ -37,6 +37,7 @@ jobs:
           npm run i18n:check
           npm run copy:check
           npm run contrast:check
+          npm run brand:check
       - name: Build
         run: npm run build
       - name: Performance budget

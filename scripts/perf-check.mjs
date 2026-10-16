@@ -21,13 +21,13 @@ const size = (rel) => {
 
 // Locate the lazy demo chunk(s): any chunk containing the demo's marker attribute.
 const chunkDir = path.join(OUT, "_next/static/chunks");
-const demoChunks = fs.readdirSync(chunkDir).filter((f) => f.endsWith(".js") && fs.readFileSync(path.join(chunkDir, f), "utf8").includes("data-aicc-demo"));
+const demoChunks = fs.readdirSync(chunkDir).filter((f) => f.endsWith(".js") && fs.readFileSync(path.join(chunkDir, f), "utf8").includes("aicc-fbt__widget"));
 const demoBytes = demoChunks.reduce((n, f) => n + gz(path.join(chunkDir, f)), 0);
 
 function* pages(dir) {
   for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
     const p = path.join(dir, e.name);
-    if (e.isDirectory()) { if (!["_next", "brand", "images", "og"].includes(e.name)) yield* pages(p); }
+    if (e.isDirectory()) { if (!["_next", "brand-kit", "og", "fonts"].includes(e.name)) yield* pages(p); }
     else if (e.name === "index.html" || e.name === "404.html") yield p;
   }
 }
@@ -43,7 +43,7 @@ for (const file of pages(OUT)) {
   const js = [...srcs].filter((s) => s.includes("/_next/")).reduce((n, s) => n + size(s.slice(s.indexOf("/_next"))), 0);
   const css = [...html.matchAll(/<link[^>]+rel="stylesheet"[^>]+href="([^"]+)"/g)].reduce((n, m) => n + size(m[1].slice(m[1].indexOf("/_next"))), 0);
   const fonts = (html.match(/rel="preload"[^>]+as="font"/g) || []).length;
-  const hasDemo = html.includes("aicc-demo--placeholder") || html.includes('data-aicc-demo');
+  const hasDemo = html.includes("data-aicc-fbt");
   const total = js + (hasDemo ? demoBytes : 0);
   const budget = hasDemo ? BUDGET_DEMO : BUDGET_CONTENT;
   const ok = total <= budget && fonts <= 2;

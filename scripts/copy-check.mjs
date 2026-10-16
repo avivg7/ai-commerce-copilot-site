@@ -3,9 +3,11 @@ import fs from "node:fs";
 import path from "node:path";
 import { ROOT } from "./lib/load.mjs";
 
+// "Watch demo" is allowed since the owner visual pass: the modal is an honest labelled placeholder until a real video is configured,
+// and `npm run launch:check` blocks a production launch while the placeholder is active.
 const RULES = [
   // English
-  [/start free/i, "free tier / trial claim"], [/no credit card/i, "no credit card"], [/watch demo/i, "Watch Demo (no asset exists)"],
+  [/start free/i, "free tier / trial claim"], [/no credit card/i, "no credit card"], 
   [/\btrend/i, "Trend (not a shipped feature)"], [/market pulse/i, "Market Pulse"], [/\bmomentum\b/i, "Momentum"],
   [/ai-written/i, "AI-written"], [/ai-generated/i, "AI-generated"], [/most popular/i, "Most Popular"], [/trusted by/i, "Trusted by"],
   [/(?<![.\w])join\b(?!\()/i, "Join (implies a customer base)"], [/subscription/i, "subscription"], [/auto-?renew/i, "auto-renew"],
@@ -22,17 +24,17 @@ const RULES = [
   [/חינם|בחינם/, "he: free"], [/ללא כרטיס אשראי/, "he: no credit card"], [/מגמות|מגמה|טרנד/, "he: trends"], [/מנוי/, "he: subscription"],
   [/מתחדש\w* אוטומטית/, "he: auto-renew"], [/ביטול בכל עת|בטל בכל עת/, "he: cancel anytime"], [/30 יום/, "he: 30-day"],
   [/הפופולרי ביותר|הנפוץ ביותר/, "he: most popular"], [/תוצאות אמיתיות/, "he: real results"], [/הצטרפו/, "he: join"], [/סומכים עלינו|מהימן על ידי/, "he: trusted by"],
-  [/צפו בדמו|צפה בהדגמה|צפו בהדגמה/, "he: watch demo"], [/תואם ל?-?GDPR|עומד ב-?GDPR/, "he: GDPR compliant"],
+  [/תואם ל?-?GDPR|עומד ב-?GDPR/, "he: GDPR compliant"],
   // Spanish
   [/\bgratis\b|prueba gratuita|gratuito/i, "es: free"], [/sin tarjeta de cr[eé]dito/i, "es: no credit card"], [/tendencia/i, "es: trends"],
   [/suscripci[oó]n/i, "es: subscription"], [/renovaci[oó]n autom[aá]tica/i, "es: auto-renew"], [/cancela cuando quieras/i, "es: cancel anytime"],
   [/30 d[ií]as/i, "es: 30-day"], [/m[aá]s popular/i, "es: most popular"], [/resultados reales/i, "es: real results"], [/[uú]nete\b|[uú]nase/i, "es: join"],
-  [/conf[ií]an en nosotros/i, "es: trusted by"], [/ver demo\b/i, "es: watch demo"],
+  [/conf[ií]an en nosotros/i, "es: trusted by"],
   // Russian
   [/бесплатн/i, "ru: free"], [/без банковской карты|без кредитной карты/i, "ru: no credit card"], [/тренд/i, "ru: trends"], [/подписк/i, "ru: subscription"],
   [/автопродлен|автоматическое продление|автоматически продлева/i, "ru: auto-renew"], [/отмен\w* в любой момент/i, "ru: cancel anytime"],
   [/30 дней/i, "ru: 30-day"], [/самый популярный|самый востребованный/i, "ru: most popular"], [/реальные результаты/i, "ru: real results"],
-  [/присоединяйтесь/i, "ru: join"], [/нам доверяют/i, "ru: trusted by"], [/смотреть демо|посмотреть демо/i, "ru: watch demo"],
+  [/присоединяйтесь/i, "ru: join"], [/нам доверяют/i, "ru: trusted by"],
 ];
 
 const SKIP_DIR = new Set(["node_modules", ".next", "out"]);

@@ -33,16 +33,16 @@ for (const locale of LOCALES) {
     // demo states
     await page.goto(urlFor(locale, ""));
     await page.evaluate(() => document.querySelector("#demo").scrollIntoView());
-    await page.waitForSelector(".aicc-demo input[type=checkbox]");
+    await page.waitForSelector(".aicc-fbt input[type=checkbox]");
     await page.waitForTimeout(700);
     // Element screenshots re-lay the page out; keep sticky/fixed chrome out of them.
-    await page.addStyleTag({ content: ".aicc-header,.aicc-skip,.aicc-suggest{visibility:hidden!important}" });
+    await page.addStyleTag({ content: ".aicc-site-header,.aicc-skip,.aicc-suggest{visibility:hidden!important}" });
     const demo = page.locator("#demo");
     await demo.screenshot({ path: path.join(OUT, `${locale}-demo-1-default-${label}.png`) }); n++;
-    const boxes = page.locator(".aicc-demo input[type=checkbox]");
+    const boxes = page.locator(".aicc-fbt input[type=checkbox]");
     await boxes.nth(2).check(); await boxes.nth(3).check(); await page.waitForTimeout(700);
     await demo.screenshot({ path: path.join(OUT, `${locale}-demo-2-selected-${label}.png`) }); n++;
-    await page.locator(".aicc-demo__mode[aria-pressed=false]").click(); await page.waitForTimeout(700);
+    await page.locator(".aicc-fbt__mode[aria-pressed=false]").click(); await page.waitForTimeout(700);
     await demo.screenshot({ path: path.join(OUT, `${locale}-demo-4-after-toggle-${label}.png`) }); n++;
     await ctx.close();
     // reduced motion
@@ -51,9 +51,9 @@ for (const locale of LOCALES) {
     const rp = await rctx.newPage();
     await rp.goto(urlFor(locale, ""));
     await rp.evaluate(() => document.querySelector("#demo").scrollIntoView());
-    await rp.waitForSelector(".aicc-demo input[type=checkbox]");
-    await rp.addStyleTag({ content: ".aicc-header,.aicc-skip,.aicc-suggest{visibility:hidden!important}" });
-    await rp.locator(".aicc-demo input[type=checkbox]").nth(2).check();
+    await rp.waitForSelector(".aicc-fbt input[type=checkbox]");
+    await rp.addStyleTag({ content: ".aicc-site-header,.aicc-skip,.aicc-suggest{visibility:hidden!important}" });
+    await rp.locator(".aicc-fbt input[type=checkbox]").nth(2).check();
     await rp.waitForTimeout(150);
     await rp.locator("#demo").screenshot({ path: path.join(OUT, `${locale}-demo-3-reduced-motion-${label}.png`) }); n++;
     await rctx.close();

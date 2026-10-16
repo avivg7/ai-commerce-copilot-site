@@ -4,7 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { ROOT } from "./lib/load.mjs";
 
-const full = fs.readFileSync(path.join(ROOT, "design/aicc-tokens.css"), "utf8");
+const full = fs.readFileSync(path.join(ROOT, "brand/aicc-tokens.css"), "utf8");
 // Only the base :root block (the high-contrast overrides are checked explicitly below).
 const css = full.slice(full.indexOf(":root {"), full.indexOf("/* ── User preference modes"));
 const raw = {};
@@ -21,7 +21,8 @@ const rgb = (hex) => { let h = hex.slice(1); if (h.length === 3) h = [...h].map(
 const lum = (hex) => { const [r, g, b] = rgb(hex).map((v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
 const ratio = (a, b) => { const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p); return (x + 0.05) / (y + 0.05); };
 // Over a gradient, check both stops.
-const GRAD = { "gradient-action": ["#2563eb", "#047857"], "gradient-action-hover": ["#1d4ed8", "#065f46"], "gradient-action-high-contrast": ["#1d4ed8", "#065f46"] };
+// gradient-action = the owner-mandated LEGACY button gradient (live site); -aa = the AA-safe variant used by small text surfaces and by Enhanced contrast.
+const GRAD = { "gradient-action": ["#2563eb", "#10b981"], "gradient-action-aa": ["#2563eb", "#047857"], "gradient-action-high-contrast": ["#2563eb", "#047857"], "gradient-text-legacy": ["#2563eb", "#10b981", "#22d3ee"] };
 
 const PAIRS = [
   // [label, fg, bg, min]
@@ -35,8 +36,10 @@ const PAIRS = [
   ["success text on success-bg", "success", "success-bg", 4.5], ["success text on surface", "success", "surface", 4.5],
   ["warning text on warning-bg", "warning", "warning-bg", 4.5], ["danger text on danger-bg", "danger", "danger-bg", 4.5], ["danger text on surface", "danger", "surface", 4.5],
   ["info text on info-bg", "info", "info-bg", 4.5], ["primary-strong icon on info-bg", "primary-strong", "info-bg", 3],
-  ["white on action gradient (both stops)", "white", "gradient-action", 4.5], ["white on action gradient hover", "white", "gradient-action-hover", 4.5],
-  ["white on high-contrast action gradient", "white", "gradient-action-high-contrast", 4.5],
+  ["white on AA action gradient (badges, step numbers, pressed toggles)", "white", "gradient-action-aa", 4.5],
+  ["white on Enhanced-contrast button gradient", "white", "gradient-action-high-contrast", 4.5],
+  ["Enhanced-contrast headline text (solid #1e3a8a) on page", "#1e3a8a", "bg", 4.5],
+  ["Enhanced-contrast eyebrow pill (primary-strong on info-bg)", "primary-strong", "info-bg", 4.5],
   ["focus ring on surface (UI >= 3)", "focus", "surface", 3], ["focus ring on page", "focus", "bg", 3], ["focus ring on navy", "focus-on-dark", "surface-inverse", 3],
   ["form-control border (slate-500) on surface (UI >= 3)", "slate-500", "surface", 3], ["form-control border on sunken", "slate-500", "surface-sunken", 3], ["switch track (slate-500) on surface", "slate-500", "surface", 3],
   ["switch track on (success) on surface", "success", "surface", 3],
@@ -47,6 +50,12 @@ const HC = [
   ["[high contrast] border on surface", "slate-500", "surface", 3], ["[high contrast] link on surface", "#1e3a8a", "surface", 4.5],
 ];
 
+// OWNER-MANDATED LEGACY LOOK: reported, not hidden, and not counted as failures. Enhanced contrast swaps them for the AA pairs above.
+const KNOWN = [
+  ["white on legacy button gradient (its #10b981 end)", "white", "gradient-action", 4.5],
+  ["legacy headline gradient text on page (its cyan end)", "#22d3ee", "bg", 3],
+  ["legacy eyebrow pill text (#2563eb on its 8% navy tint #e7ebf3)", "#2563eb", "#e7ebf3", 4.5],
+];
 let fail = 0;
 const rows = [];
 const run = (label, fg, bg, min) => {
@@ -59,6 +68,8 @@ const run = (label, fg, bg, min) => {
 };
 for (const [l, f, b, m] of PAIRS) run(l, f, b, m);
 for (const [l, f, b, m] of HC) run(l, f, b, m);
+const known = KNOWN.map(([l, f, b, m]) => { const bgs = GRAD[b] ?? [b.startsWith("#") ? b : val(b)]; const fg = f.startsWith("#") ? f : val(f); const worst = Math.min(...bgs.map((x) => ratio(fg, x))); return `KNOWN ${worst.toFixed(2).padStart(5)}:1  (min ${m}) ${l}`; });
 console.log(rows.join("\n"));
+console.log("\nOwner-mandated legacy treatments below the AA minimum (accepted by the owner; Enhanced contrast swaps in the AA pairs above):\n" + known.join("\n"));
 console.log(fail ? `\nFAIL: ${fail} pair(s) below minimum` : `\nPASS: ${rows.length} token pairs meet WCAG 2.2 AA minimums`);
 process.exit(fail ? 1 : 0);

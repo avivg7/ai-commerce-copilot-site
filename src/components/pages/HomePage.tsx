@@ -1,24 +1,24 @@
 import { ArrowRight, Check, Gauge, SlidersHorizontal, ShoppingCart, ShieldCheck, Lock, Undo2, PlugZap } from "lucide-react";
 import type { Locale } from "@/i18n/config";
-import { LOCALE_META } from "@/i18n/config";
 import type { Dictionary } from "@/i18n";
 import { Rich, type RichCtx } from "@/lib/rich";
-import { PLANS, formatPrice } from "@/data/plans";
-import { GET_STARTED_URL, withBase } from "@/lib/site";
+import { PLANS } from "@/data/plans";
+import { GET_STARTED_URL } from "@/lib/site";
 import { localePath } from "@/lib/routes";
 import { Button } from "@/components/ui/Button";
 import { Card, Container, Section, SectionHeading } from "@/components/ui/Primitives";
 import { PricingCard } from "@/components/ui/PricingCard";
 import { LocaleLink } from "@/components/ui/LocaleLink";
 import { RecoImage } from "@/components/ui/RecoImage";
-import { FbtDemoLoader } from "@/components/demo/FbtDemoLoader";
+import { RecoHero } from "@/components/brand/RecoHero";
+import { FbtSection } from "@/components/brand/FbtSection";
+import { WatchDemo } from "@/components/brand/WatchDemo";
 import { Faq, JsonLd } from "./shared";
 import { faqLd, organizationLd, softwareLd } from "@/lib/jsonld";
 
 export function HomePage({ locale, t }: { locale: Locale; t: Dictionary }) {
   const h = t.home;
   const ctx: RichCtx = { locale, t };
-  const rtl = LOCALE_META[locale].dir === "rtl";
   const R = (text: string) => <Rich text={text} ctx={ctx} />;
   const arrow = <ArrowRight size={18} className="aicc-flip" aria-hidden="true" />;
 
@@ -28,54 +28,35 @@ export function HomePage({ locale, t }: { locale: Locale; t: Dictionary }) {
       <JsonLd data={softwareLd(locale, t)} />
       <JsonLd data={faqLd(locale, t, "home")} />
 
-      {/* Hero */}
+      {/* Hero: the live copilt.org composition (eyebrow, gradient headline, CTAs, animated Reco) */}
       <section className="aicc-hero" aria-labelledby="hero-title">
-        <Container>
-          <div className="aicc-hero__grid">
-            <div className="aicc-hero__copy">
-              <h1 id="hero-title" className="aicc-display">{h.hero.title}</h1>
-              <p className="aicc-lead">{h.hero.lead}</p>
-              <div className="aicc-hero__actions">
-                <Button href={GET_STARTED_URL} variant="primary" size="lg">
-                  {t.common.getStarted}
-                  {arrow}
-                </Button>
-                <Button href="#demo" size="lg">
-                  {t.common.seeHow}
-                </Button>
-              </div>
-              <ul className="aicc-hero__facts">
-                <li><Check size={18} aria-hidden="true" /><span>{R(h.hero.facts.price)}</span></li>
-                <li><Check size={18} aria-hidden="true" /><span>{h.hero.facts.guarantee}</span></li>
-                <li><Check size={18} aria-hidden="true" /><span>{h.hero.facts.noCharge}</span></li>
-              </ul>
+        <div className="aicc-hero__grid">
+          <div className="aicc-hero__copy">
+            <span className="aicc-eyebrow-pill aicc-fade-up" style={{ ["--i" as string]: 0 }}>{h.hero.eyebrow}</span>
+            <h1 id="hero-title" className="aicc-hero-title aicc-fade-up" style={{ ["--i" as string]: 1 }}>
+              {h.hero.titleLead} <span className="aicc-text-gradient">{h.hero.titleAccent}</span>
+            </h1>
+            <p className="aicc-hero-lead aicc-fade-up" style={{ ["--i" as string]: 2 }}>{h.hero.lead}</p>
+            <div className="aicc-hero-actions aicc-fade-up" style={{ ["--i" as string]: 3 }}>
+              <Button href={GET_STARTED_URL} variant="primary" size="lg" icon={<ArrowRight size={16} className="aicc-flip" aria-hidden="true" />}>
+                {t.common.getStarted}
+              </Button>
+              <WatchDemo locale={locale} t={t} />
             </div>
-            <div className="aicc-hero__visual">
-              <div className="aicc-hero__stage">
-                <RecoImage pose="hero" priority className="aicc-hero__photo" sizes="(min-width: 62rem) 520px, 100vw" />
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img className="aicc-hero__mark" src={withBase("/brand/aicc-logomark.svg")} alt="" width={44} height={44} loading="lazy" decoding="async" />
-              </div>
-              <div className="aicc-hero__widget aicc-card aicc-card--glass" role="group" aria-label={h.hero.cardLabel}>
-                <p className="aicc-hero__widget-title"><ShoppingCart size={16} aria-hidden="true" />{h.hero.cardTitle}</p>
-                <ul>
-                  <li><span>{t.demo.products.kit}</span><bdi>{formatPrice(38)}</bdi></li>
-                  <li><span>{t.demo.products.filters}</span><bdi>{formatPrice(14)}</bdi></li>
-                </ul>
-                <p className="aicc-muted" style={{ fontSize: "var(--aicc-text-xs)" }}>{h.hero.cardLabel}</p>
-              </div>
-            </div>
+            <ul className="aicc-hero__facts aicc-fade-up" style={{ ["--i" as string]: 4 }}>
+              <li><Check size={18} aria-hidden="true" /><span>{R(h.hero.facts.price)}</span></li>
+              <li><Check size={18} aria-hidden="true" /><span>{h.hero.facts.guarantee}</span></li>
+              <li><Check size={18} aria-hidden="true" /><span>{h.hero.facts.noCharge}</span></li>
+            </ul>
           </div>
-        </Container>
+          <div className="aicc-hero__visual">
+            <RecoHero labels={[t.brand.chips.orders, t.brand.chips.clicks, t.brand.chips.recs, t.brand.chips.insights, t.brand.chips.bundles]} />
+          </div>
+        </div>
       </section>
 
-      {/* Interactive demo, directly after the hero */}
-      <Section id="demo" tone="sunken" labelledBy="demo-title">
-        <Container>
-          <SectionHeading id="demo-title" title={h.demo.title} lead={h.demo.lead} />
-          <FbtDemoLoader s={t.demo} rtl={rtl} locale={locale} />
-        </Container>
-      </Section>
+      {/* Frequently-bought-together, actually learned: directly after the hero */}
+      <FbtSection locale={locale} t={t} />
 
       {/* How it works: three steps */}
       <Section id="how-it-works" tone="surface" labelledBy="how-title">
@@ -189,7 +170,7 @@ export function HomePage({ locale, t }: { locale: Locale; t: Dictionary }) {
             <div className="aicc-stack aicc-stack--lg">
               <h2 id="final-title" className="aicc-h2">{h.final.title}</h2>
               <p className="aicc-lead">{h.final.body}</p>
-              <div className="aicc-hero__actions">
+              <div className="aicc-hero-actions">
                 <Button href={GET_STARTED_URL} variant="primary" size="lg">
                   {t.common.getStarted}
                   {arrow}

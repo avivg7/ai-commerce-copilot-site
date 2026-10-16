@@ -27,16 +27,17 @@ const OPEN_EVENT = "aicc:a11y-open";
  * Trigger button. There can be several (header, mobile menu, footer) but only ONE dialog exists on the page
  * (A11yDialog, mounted once in the layout), so Esc, focus return and the focus trap are handled in one place.
  */
-export function A11yTrigger({ label, className }: { label: string; className?: string }) {
+export function A11yTrigger({ label, className, iconOnly }: { label: string; className?: string; iconOnly?: boolean }) {
   return (
     <button
       type="button"
       className={className ?? "aicc-iconbtn"}
       onClick={() => window.dispatchEvent(new Event(OPEN_EVENT))}
       aria-haspopup="dialog"
+      aria-label={iconOnly ? label : undefined}
     >
       <Accessibility size={20} aria-hidden="true" />
-      <span>{label}</span>
+      {iconOnly ? null : <span>{label}</span>}
     </button>
   );
 }

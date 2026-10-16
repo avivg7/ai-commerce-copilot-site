@@ -6,7 +6,8 @@ import { LOCALES, LOCALE_META, DEFAULT_LOCALE } from "@/i18n/config";
 import { getDictionary } from "@/i18n";
 import { allStaticParams, parseSlug } from "@/lib/routes";
 import { SkipLink } from "@/components/ui/SkipLink";
-import { Header, type HeaderStrings } from "@/components/layout/Header";
+import { SiteHeader } from "@/components/layout/SiteHeader";
+import { BrandInit } from "@/components/brand/BrandInit";
 import { Footer } from "@/components/layout/Footer";
 import { A11yDialog } from "@/components/layout/A11yControl";
 import { withBase } from "@/lib/site";
@@ -35,21 +36,6 @@ export default async function RootLayout({
   const meta = LOCALE_META[locale];
   if (locale === "he") ReactDOM.preload(withBase("/fonts/heebo-hebrew.woff2"), { as: "font", type: "font/woff2", crossOrigin: "anonymous" });
 
-  const headerStrings: HeaderStrings = {
-    navLabel: t.common.nav.label,
-    nav: [
-      { route: "product", label: t.common.nav.product },
-      { route: "pricing", label: t.common.nav.pricing },
-      { route: "data-and-trust", label: t.common.nav.dataTrust },
-      { route: "questions", label: t.common.nav.questions },
-    ],
-    menu: t.common.nav.menu,
-    getStarted: t.common.getStarted,
-    logoFull: t.meta.siteName,
-    languageLabel: t.common.language.label,
-    languageCurrent: t.common.language.current,
-    a11yLabel: t.common.a11y.button,
-  };
   const suggest = Object.fromEntries(
     LOCALES.map((l) => [l, getDictionary(l).common.langSuggest]),
   ) as SuggestStrings;
@@ -77,7 +63,8 @@ export default async function RootLayout({
       <body>
         <SkipLink label={t.common.skip} />
         <LanguageSuggestion locale={locale} route={route} strings={suggest} />
-        <Header locale={locale} route={route} s={headerStrings} />
+        <SiteHeader locale={locale} route={route} t={t} />
+        <BrandInit />
         <main id="main" tabIndex={-1}>
           {children}
         </main>

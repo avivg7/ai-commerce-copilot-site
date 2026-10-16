@@ -1,5 +1,5 @@
 import { cn } from "@/lib/cn";
-import { withBase } from "@/lib/site";
+import { kitAsset } from "@/lib/brand";
 
 const POSES = {
   hero: { w: 960, h: 540, set: [[960, "reco-hero-960.webp"]] },
@@ -30,8 +30,8 @@ export function RecoImage({
   displayWidth?: number;
 }) {
   const p = POSES[pose];
-  const srcSet = p.set.map(([w, f]) => `${withBase(`/images/reco/${f}`)} ${w}w`).join(", ");
-  const src = withBase(`/images/reco/${p.set[0][1]}`);
+  const srcSet = p.set.map(([w, f]) => `${kitAsset(f)} ${w}w`).join(", ");
+  const src = kitAsset(p.set[0][1]);
   return (
     // eslint-disable-next-line @next/next/no-img-element
     <img

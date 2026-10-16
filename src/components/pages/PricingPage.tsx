@@ -47,6 +47,10 @@ export function PricingPage({ locale, t }: { locale: Locale; t: Dictionary }) {
           </div>
           <p className="aicc-countline" style={{ marginBlockStart: "1.5rem" }}>{t.common.plan.countHelper}</p>
           <p className="aicc-countline">{p.cta.body} {t.common.plan.usd}</p>
+          <p className="aicc-countline" style={{ marginBlockStart: "0.75rem" }}>
+            {p.teaser.text}{" "}
+            <LocaleLink locale={locale} route="product" hash="demo" className="aicc-link">{p.teaser.link}</LocaleLink>
+          </p>
         </Container>
       </Section>
 

@@ -5,6 +5,7 @@
  * Both stores expose subscribe/getSnapshot for useSyncExternalStore (no setState-in-effect, no hydration mismatch).
  */
 import { LANG_KEY, LOCALES, type Locale, isLocale } from "@/i18n/config";
+import { storeLang as kitStoreLang } from "../../brand/js/lang-store.js";
 
 export const A11Y_KEY = "aicc_a11y";
 export type A11yPrefs = { motion: boolean; contrast: boolean; text: boolean };
@@ -84,15 +85,9 @@ export function readStoredLang(): Locale | null {
   return null;
 }
 
-/** Remember an explicit choice in BOTH a cookie (1 year, site-wide, first-party) and localStorage. */
+/** Remember an explicit choice in a cookie (1 year, first party, Secure on https) AND localStorage: implemented once, in the brand kit. */
 export function storeLang(locale: Locale) {
-  try {
-    localStorage.setItem(LANG_KEY, locale);
-  } catch {}
-  try {
-    const secure = typeof location !== "undefined" && location.protocol === "https:" ? "; Secure" : "";
-    document.cookie = `${LANG_KEY}=${locale}; Path=/; Max-Age=31536000; SameSite=Lax${secure}`;
-  } catch {}
+  kitStoreLang(locale);
   emit();
 }
 

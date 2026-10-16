@@ -21,7 +21,19 @@
     "vitals": "node scripts/vitals.mjs",
     "test:links": "node scripts/link-check.mjs",
     "launch:check": "node scripts/launch-check.mjs",
-    "test:approved": "node scripts/test-approved-build.mjs"
+    "test:approved": "node scripts/test-approved-build.mjs",
+    "brand:icons": "node scripts/build-brand-icons.mjs",
+    "brand:strings": "node scripts/build-brand-strings.mjs",
+    "brand:manifest": "node scripts/build-brand-manifest.mjs",
+    "brand:build": "node scripts/build-brand-strings.mjs && node scripts/build-brand-manifest.mjs",
+    "brand:check": "node scripts/build-brand-strings.mjs --check && node scripts/build-brand-manifest.mjs --check",
+    "brand:sync": "node scripts/sync-brand-kit.mjs",
+    "brand:publish": "node scripts/publish-brand-assets.mjs",
+    "prebuild": "node scripts/publish-brand-assets.mjs",
+    "predev": "node scripts/publish-brand-assets.mjs",
+    "test:visual-contract": "node scripts/visual-contract.mjs",
+    "test:visual-contract:site": "node scripts/visual-contract.mjs --surfaces=site",
+    "shots:brand": "node scripts/shots-brand.mjs"
   },
   "dependencies": {
     "clsx": "^2.1.1",

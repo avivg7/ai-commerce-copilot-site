@@ -3,7 +3,8 @@ import { notFound } from "next/navigation";
 import { LOCALES, LOCALE_META, type Locale } from "@/i18n/config";
 import { getDictionary } from "@/i18n";
 import { allStaticParams, parseSlug, type RouteId } from "@/lib/routes";
-import { SITE_URL, absoluteUrl, withBase } from "@/lib/site";
+import { SITE_URL, absoluteUrl } from "@/lib/site";
+import { kitAsset } from "@/lib/brand";
 import { formatPlain } from "@/lib/rich";
 import { HomePage } from "@/components/pages/HomePage";
 import { ProductPage } from "@/components/pages/ProductPage";
@@ -52,10 +53,10 @@ export async function generateMetadata({ params }: { params: Promise<Params> }):
     alternates: { canonical: url, languages },
     icons: {
       icon: [
-        { url: withBase("/brand/favicon.svg"), type: "image/svg+xml" },
-        { url: withBase("/brand/icon-192.png"), sizes: "192x192", type: "image/png" },
+        { url: kitAsset("favicon.svg"), type: "image/svg+xml" },
+        { url: kitAsset("icon-192.png"), sizes: "192x192", type: "image/png" },
       ],
-      apple: [{ url: withBase("/brand/icon-180.png"), sizes: "180x180" }],
+      apple: [{ url: kitAsset("icon-180.png"), sizes: "180x180" }],
     },
     openGraph: {
       type: "website",
