@@ -93,7 +93,7 @@ export function LanguageSwitcher({ locale, route, label, variant, currentLabel }
         onClick={() => setOpen((o) => !o)}
       >
         <Globe size={20} aria-hidden="true" />
-        <span aria-hidden="true">{cur.short}</span>
+        <span className="aicc-lang__name">{cur.endonym}</span>
       </button>
       <ul id={id} className="aicc-lang__menu" hidden={!open}>
         {links.map(({ l, m, href, current }) => (

@@ -665,6 +665,8 @@ main:focus {
 
 /* Language switcher */
 .aicc-lang { position: relative; }
+/* The visible text is the endonym, which is contained in the accessible name ("Language: English"); icon only on narrow phones. */
+@media (max-width: 29.99rem) { .aicc-lang__name { display: none; } }
 .aicc-lang__menu {
   position: absolute;
   inset-inline-end: 0;

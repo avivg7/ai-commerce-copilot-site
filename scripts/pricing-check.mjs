@@ -41,6 +41,17 @@ if (fs.existsSync(BOOTSTRAP)) {
   console.log(`Control Plane bootstrap file not found (${BOOTSTRAP}); compared to accepted values only.`);
 }
 
+// Money format per language (shared decision 16): es "US$99", ru "$99" + " (USD)", en/he "$99".
+{
+  const { formatPrice, currencySuffix } = await loadTs("src/data/plans.ts");
+  const want = { en: "$99", he: "$99", es: "US$99", ru: "$99 (USD)" };
+  for (const [l, w] of Object.entries(want)) {
+    const got = formatPrice(99, l) + currencySuffix(l);
+    if (got !== w) errors.push(`[${l}] price format "${got}" != "${w}"`);
+  }
+  console.log("money format      :", Object.keys(want).map((l) => formatPrice(99, l) + currencySuffix(l)).join("  "));
+}
+
 // No literal price in any dictionary may differ from a plan price (copy uses {priceSolo} etc.).
 const dicts = await loadDictionaries();
 const prices = new Set(PLANS.map((p) => p.price));

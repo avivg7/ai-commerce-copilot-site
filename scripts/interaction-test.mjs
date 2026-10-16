@@ -2,6 +2,8 @@
 // FAQ accordion and the demo, plus reduced-motion behaviour and the language-persistence rules. Needs the export served.
 import { launch, urlFor, BASE } from "./lib/browser.mjs";
 
+const PREFIX = new URL(BASE).pathname.replace(/\/$/, "");
+
 const results = [];
 const check = (name, ok, detail = "") => { results.push({ name, ok: !!ok, detail }); console.log(`${ok ? "PASS" : "FAIL"}  ${name}${ok ? "" : "  -> " + detail}`); };
 const browser = await launch();
@@ -43,7 +45,7 @@ async function tabTo(p, test, max = 40) { for (let i = 0; i < max; i++) { await 
   await p.addInitScript(() => Object.defineProperty(navigator, "languages", { get: () => ["ru-RU", "ru"] }));
   await p.goto(urlFor("en", ""));
   await p.waitForTimeout(500);
-  check("language: first visit stays on the URL's language (no redirect)", new URL(p.url()).pathname === "/");
+  check("language: first visit stays on the URL's language (no redirect)", new URL(p.url()).pathname === `${PREFIX}/`);
   check("language: browser-language suggestion appears (Russian)", await p.evaluate(() => document.querySelector(".aicc-suggest")?.lang === "ru"));
   await ctx.close();
 }
@@ -93,7 +95,7 @@ async function tabTo(p, test, max = 40) { for (let i = 0; i < max; i++) { await 
   check("mobile menu: Tab goes into the panel (first link)", (await active(p)).startsWith("a|aicc-navlink"), await active(p));
   await p.keyboard.press("Escape");
   check("mobile menu: Esc closes and focus returns to the menu button", (await p.getAttribute(btn, "aria-expanded")) === "false" && (await p.evaluate((b) => document.activeElement === document.querySelector(b), btn)));
-  await p.click(btn); await p.click(".aicc-mobilemenu a[href='/pricing/']"); await p.waitForURL("**/pricing/");
+  await p.click(btn); await p.click(`.aicc-mobilemenu a[href='${PREFIX}/pricing/']`); await p.waitForURL("**/pricing/");
   await p.waitForTimeout(300);
   check("mobile menu: choosing a link navigates and closes the menu", (await p.getAttribute(btn, "aria-expanded")) === "false" && !(await p.isVisible(".aicc-mobilemenu")));
   check("mobile menu: aria-current marks the current page", await p.evaluate(() => !!document.querySelector('.aicc-header a[aria-current="page"]')));
@@ -262,6 +264,19 @@ for (const [w, h] of [[390, 844], [320, 256]]) {
     check(`Heebo is ${expect ? "" : "not "}loaded on the ${loc} page`, (fonts.length > 0) === expect, fonts.join());
     await ctx.close();
   }
+}
+// M1: demo reflow at 320 wide with Larger text, in en/es/ru (and he)
+for (const loc of ["en", "es", "ru", "he"]) {
+  const [ctx, p] = await fresh({ viewport: { width: 320, height: 640 } });
+  await p.addInitScript(() => localStorage.setItem("aicc_a11y", JSON.stringify({ text: "large" })));
+  await p.goto(urlFor(loc, ""));
+  await p.evaluate(() => document.querySelector("#demo").scrollIntoView());
+  await p.waitForSelector(".aicc-demo input[type=checkbox]");
+  await p.click(".aicc-demo__mode[aria-pressed=false]");
+  await p.waitForTimeout(400);
+  const r = await p.evaluate(() => ({ sw: document.documentElement.scrollWidth, iw: innerWidth, out: [...document.querySelectorAll(".aicc-demo *")].filter((e) => { const b = e.getBoundingClientRect(); return b.width > 0 && (b.right > innerWidth + 1 || b.left < -1); }).length }));
+  check(`demo[${loc}] @320 + Larger text: no horizontal overflow (scrollWidth ${r.sw}/${r.iw}, ${r.out} elements outside)`, r.sw <= r.iw && r.out === 0);
+  await ctx.close();
 }
 // 6. 404
 {

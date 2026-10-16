@@ -314,7 +314,7 @@ export const es: Dictionary = {
     },
     pricing: {
       title: "Planes anuales sencillos.",
-      lead: "Los precios son por plan, por año, en dólares estadounidenses. Todos los planes tienen todas las funciones; solo cambia el número de tiendas. La renovación es manual y no se cobra nada automáticamente.",
+      lead: "Los precios son por plan, por año, en dólares estadounidenses (USD). Todos los planes tienen todas las funciones; solo cambia el número de tiendas. La renovación es manual y no se cobra nada automáticamente.",
       link: "Compare los planes y lea los detalles",
     },
     questions: {

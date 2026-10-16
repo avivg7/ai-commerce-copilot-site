@@ -29,7 +29,7 @@ for (const locale of LOCALES.filter((l) => !ONLY.length || ONLY.includes(l))) {
       const consoleErrors = [];
       page.on("pageerror", (e) => consoleErrors.push(String(e)));
       page.on("console", (m) => m.type() === "error" && consoleErrors.push(m.text()));
-      await page.goto(url, { waitUntil: "load" });
+      try { await page.goto(url, { waitUntil: "load", timeout: 60000 }); } catch { await page.goto(url, { waitUntil: "load", timeout: 60000 }); } // one retry: a cold machine can stall a navigation
       await page.waitForTimeout(500);
       // Scroll through so lazy content (the demo) is present before auditing.
       const h = await page.evaluate(() => document.documentElement.scrollHeight);
