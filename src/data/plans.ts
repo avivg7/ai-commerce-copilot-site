@@ -23,11 +23,13 @@ export function planById(id: PlanId) {
   return PLANS.find((p) => p.id === id)!;
 }
 
-/** "$199" in every language: the price is USD everywhere. */
-export function formatPrice(amount: number): string {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: CURRENCY,
-    maximumFractionDigits: 0,
-  }).format(amount);
+/** Money, per language: "$199" (en, he), "US$199" (es), "$199" with "(USD)" added by the caller in ru. Always USD. */
+export function formatPrice(amount: number, locale: string = "en"): string {
+  const n = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(amount);
+  return locale === "es" ? `US$${n}` : `$${n}`;
+}
+
+/** Suffix that makes the currency explicit where the decision requires it ("$99 (USD)" in Russian). */
+export function currencySuffix(locale: string): string {
+  return locale === "ru" ? " (USD)" : "";
 }

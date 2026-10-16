@@ -30,7 +30,7 @@ export const LEGAL_DOCS: Record<LegalDocId, { sections: LegalSection[] }> = {
       s("who", p("a", true), p("b")),
       s("website", p("a", true), p("b", true)),
       s("account", p("a"), p("b", true)),
-      s("storeData", p("a"), ul("b", true), p("c")),
+      s("storeData", p("a"), ul("b", true), p("c", true), ul("d", true), p("e", true)),
       s("cookies", p("a"), ul("b", true), p("c", true)),
       s("use", ul("a")),
       s("separate", p("a")),
@@ -65,7 +65,8 @@ export const LEGAL_DOCS: Record<LegalDocId, { sections: LegalSection[] }> = {
       s("guarantee", p("a", true), p("b", true)),
       s("start", p("a", true)),
       s("renewals", p("a", true)),
-      s("how", p("a", true), p("b")),
+      s("how", p("a", true), p("b", true)),
+      s("exceptions", ul("a", true)),
       s("after", p("a", true), p("b")),
       s("data", p("a", true)),
       s("nothingElse", p("a")),
@@ -76,10 +77,11 @@ export const LEGAL_DOCS: Record<LegalDocId, { sections: LegalSection[] }> = {
     sections: [
       s("reads", p("a"), ul("b", true)),
       s("never", ul("a", true)),
-      s("cookies", p("a", true), ul("b"), p("c")),
+      s("cookies", p("a", true), ul("b"), p("c", true), ul("d", true)),
       s("apart", p("a")),
-      s("outage", p("a"), ul("b")),
-      s("retention", p("a", true), p("b", true)),
+      s("woo", p("a")),
+      s("outage", p("a"), ul("b", true)),
+      s("retention", p("a", true), p("b", true), p("c")),
       s("requests", p("a", true)),
       s("pending", p("a")),
     ],
@@ -105,5 +107,20 @@ export const TRANSLATION_REVIEW: Record<Locale, "source-draft-pending-legal-revi
   ru: "native-legal-review-required",
 };
 
-/** Non-legal-page copy that needs the same review: dictionary key paths. */
-export const LEGAL_REVIEW_KEYS = ["home.returning.body", "home.returning.gap", "product.returning.p1", "pricing.refunds.p1"] as const;
+/**
+ * Marketing copy that is not on a legal page but states something with legal weight (retention, refund, privacy facts).
+ * Not rendered with a draft pill (marketing cards stay clean); `npm run launch:check` lists them so a person with legal
+ * authority approves them together with the legal pages before launch.
+ */
+export const LEGAL_REVIEW_KEYS = [
+  "home.hero.facts.guarantee",
+  "home.control.items.dormant.body",
+  "home.control.items.remove.body",
+  "product.returning.p1",
+  "product.measure.p2",
+  "product.data.p1",
+  "pricing.terms.items.guarantee",
+  "pricing.terms.items.billing",
+  "pricing.refunds.p1",
+  "common.plan.guarantee",
+] as const;
