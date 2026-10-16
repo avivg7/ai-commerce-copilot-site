@@ -212,7 +212,7 @@ const legacy = await probe(legacyPage, "legacy");
 const legacyVideoSrc = legacy.videoInfo?.src;
 const legacyHash = legacyVideoSrc ? crypto.createHash("sha256").update(Buffer.from(await (await fetch(legacyVideoSrc)).arrayBuffer())).digest("hex") : null;
 // legacy hover values
-const hover = async (page, sel, extra = () => {}) => {
+const hover = async (page, sel) => {
   const el = typeof sel === "function" ? await page.evaluateHandle(sel) : await page.$(sel);
   await el.asElement().scrollIntoViewIfNeeded();
   const box = await el.asElement().boundingBox();

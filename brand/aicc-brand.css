@@ -635,7 +635,9 @@ html.aicc-scroll-lock { overflow: hidden; scrollbar-gutter: stable; }
     color: var(--aicc-text-inverse);
     border-radius: var(--aicc-radius-xl);
     padding: var(--aicc-space-5);
-    align-self: stretch;
+    align-self: start;
+    position: sticky;
+    inset-block-start: calc(var(--aicc-header-h) + 1rem);
   }
 }
 .aicc-fbt__why h3 { color: var(--aicc-text-inverse); font-size: var(--aicc-text-lg); }
