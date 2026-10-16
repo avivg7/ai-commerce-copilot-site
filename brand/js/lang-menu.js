@@ -44,7 +44,7 @@ export function initLangMenu(root) {
   };
   btn.addEventListener("click", (e) => (isOpen() ? close(false) : open(e.detail === 0)));
   btn.addEventListener("keydown", (e) => {
-    if (e.key === "ArrowDown") { e.preventDefault(); open(true); }
+    if (e.key === "ArrowDown") { e.preventDefault(); e.stopPropagation(); open(true); } // stop: the root handler would move on to the 2nd item
   });
   root.addEventListener("keydown", (e) => {
     if (e.key === "Escape" && isOpen()) { e.stopPropagation(); close(true); return; }
