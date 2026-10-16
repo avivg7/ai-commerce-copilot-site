@@ -35,6 +35,8 @@ for (const locale of LOCALES) {
     await page.evaluate(() => document.querySelector("#demo").scrollIntoView());
     await page.waitForSelector(".aicc-demo input[type=checkbox]");
     await page.waitForTimeout(700);
+    // Element screenshots re-lay the page out; keep sticky/fixed chrome out of them.
+    await page.addStyleTag({ content: ".aicc-header,.aicc-skip,.aicc-suggest{visibility:hidden!important}" });
     const demo = page.locator("#demo");
     await demo.screenshot({ path: path.join(OUT, `${locale}-demo-1-default-${label}.png`) }); n++;
     const boxes = page.locator(".aicc-demo input[type=checkbox]");
@@ -50,6 +52,7 @@ for (const locale of LOCALES) {
     await rp.goto(urlFor(locale, ""));
     await rp.evaluate(() => document.querySelector("#demo").scrollIntoView());
     await rp.waitForSelector(".aicc-demo input[type=checkbox]");
+    await rp.addStyleTag({ content: ".aicc-header,.aicc-skip,.aicc-suggest{visibility:hidden!important}" });
     await rp.locator(".aicc-demo input[type=checkbox]").nth(2).check();
     await rp.waitForTimeout(150);
     await rp.locator("#demo").screenshot({ path: path.join(OUT, `${locale}-demo-3-reduced-motion-${label}.png`) }); n++;
