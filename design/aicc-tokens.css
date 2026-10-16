@@ -1,0 +1,181 @@
+/*
+ * AICC design tokens — the single source of truth for the AICC visual system.
+ *
+ * Consumed by BOTH customer-facing surfaces so they cannot drift:
+ *   - marketing site:   ai_copilot_site  (imported by src/app/globals.css)
+ *   - commerce/account: Control Plane WordPress theme (aicc-admin/assets/css/aicc-tokens.css — a
+ *     byte-identical copy; `npm run tokens:check` in the site repo and tests/run_design_token_parity_tests.php
+ *     in the Control Plane repo fail if the two ever differ)
+ *
+ * Derived from the established brand (blue → emerald → cyan, Geist, Reco). Values that changed are
+ * changed for ONE reason, documented in docs/unified-experience/design-system.md: WCAG 2.2 AA contrast.
+ * Every foreground/background pair used by a component is listed in that document with its measured ratio.
+ *
+ * Rules: components use SEMANTIC tokens (--aicc-*), never raw hex; direction-sensitive spacing uses
+ * logical properties (margin-inline, padding-inline, inset-inline) so Hebrew RTL mirrors for free.
+ */
+
+:root {
+	/* ── Brand palette (raw) ─────────────────────────────────────────────── */
+	--aicc-navy-950: #0b1220;
+	--aicc-navy-900: #101a2e;
+	--aicc-slate-900: #0f172a;
+	--aicc-slate-700: #334155;
+	--aicc-slate-600: #475569;
+	--aicc-slate-500: #64748b;
+	--aicc-slate-300: #cbd5e1;
+	--aicc-slate-200: #e2e8f0;
+	--aicc-slate-100: #f1f5f9;
+	--aicc-mist: #f8fafc;
+	--aicc-white: #ffffff;
+
+	--aicc-blue-700: #1d4ed8;
+	--aicc-blue-600: #2563eb;
+	--aicc-blue-50: #eff6ff;
+	--aicc-emerald-700: #047857;
+	--aicc-emerald-500: #10b981;
+	--aicc-emerald-50: #ecfdf5;
+	--aicc-cyan-400: #22d3ee;
+	--aicc-cyan-300: #67e8f9;
+
+	--aicc-amber-800: #92400e;
+	--aicc-amber-50: #fffbeb;
+	--aicc-red-700: #b91c1c;
+	--aicc-red-50: #fef2f2;
+
+	/* ── Semantic colour ─────────────────────────────────────────────────── */
+	--aicc-bg: var(--aicc-mist);
+	--aicc-surface: var(--aicc-white);
+	--aicc-surface-sunken: var(--aicc-slate-100);
+	--aicc-surface-inverse: var(--aicc-navy-950);
+	--aicc-surface-inverse-raised: var(--aicc-navy-900);
+
+	--aicc-text: var(--aicc-slate-900);            /* 17.1:1 on bg */
+	--aicc-text-muted: var(--aicc-slate-600);      /*  7.2:1 on bg */
+	--aicc-text-subtle: var(--aicc-slate-500);     /*  4.8:1 on white — secondary captions only, never body */
+	--aicc-text-inverse: var(--aicc-white);        /* 18.7:1 on navy */
+	--aicc-text-inverse-muted: var(--aicc-slate-300); /* 12.6:1 on navy */
+
+	--aicc-border: var(--aicc-slate-200);
+	--aicc-border-strong: #cbd5e1;
+
+	--aicc-link: var(--aicc-blue-700);             /*  6.4:1 on bg */
+	--aicc-link-hover: var(--aicc-navy-950);
+
+	--aicc-primary: var(--aicc-blue-600);          /*  white text 5.17:1 */
+	--aicc-primary-strong: var(--aicc-blue-700);   /*  white text 6.70:1 */
+	--aicc-success: var(--aicc-emerald-700);       /*  5.48:1 on white, 5.21:1 on success-bg */
+	--aicc-success-bg: var(--aicc-emerald-50);
+	--aicc-warning: var(--aicc-amber-800);         /*  6.84:1 on warning-bg */
+	--aicc-warning-bg: var(--aicc-amber-50);
+	--aicc-danger: var(--aicc-red-700);            /*  5.91:1 on danger-bg */
+	--aicc-danger-bg: var(--aicc-red-50);
+	--aicc-info: var(--aicc-blue-700);
+	--aicc-info-bg: var(--aicc-blue-50);
+
+	/* Brand gradients. The DECORATIVE gradient keeps the original three stops (logomark, hero glow, Reco
+	   halos). The ACTION gradient (any surface that carries text) ends on emerald-700 because white on
+	   the original #10b981 is only 2.54:1; this one is >= 5.17:1 along its whole length. */
+	--aicc-gradient-decor: linear-gradient(100deg, #2563eb, #10b981 55%, #22d3ee);
+	--aicc-gradient-logomark: linear-gradient(135deg, #2563eb, #10b981);
+	--aicc-gradient-action: linear-gradient(100deg, #2563eb 0%, #047857 100%);
+	--aicc-gradient-action-hover: linear-gradient(100deg, #1d4ed8 0%, #065f46 100%);
+
+	/* Focus: 2px ring + 2px offset. 5.2:1 against white, 12.9:1 on navy (>= 3:1 required by WCAG 2.2 AA). */
+	--aicc-focus: #2563eb;
+	--aicc-focus-on-dark: #67e8f9;
+	--aicc-focus-ring: 0 0 0 2px var(--aicc-surface), 0 0 0 4px var(--aicc-focus);
+	--aicc-focus-ring-on-dark: 0 0 0 2px var(--aicc-surface-inverse), 0 0 0 4px var(--aicc-focus-on-dark);
+
+	/* ── Typography ──────────────────────────────────────────────────────── */
+	/* Geist (Latin + Cyrillic) first; Hebrew falls through to a Hebrew-capable system face (Geist has no
+	   Hebrew glyphs). Heebo (OFL) is the planned self-hosted Hebrew face once fonts can be bundled. */
+	--aicc-font-sans: "Geist", "Heebo", "Noto Sans Hebrew", "Arial Hebrew", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+	--aicc-font-mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+	--aicc-text-xs: 0.8125rem;   /* 13 — captions, legal */
+	--aicc-text-sm: 0.9375rem;   /* 15 — UI, secondary */
+	--aicc-text-base: 1.0625rem; /* 17 — body */
+	--aicc-text-lg: 1.25rem;     /* 20 */
+	--aicc-text-xl: 1.5rem;      /* 24 */
+	--aicc-text-2xl: clamp(1.75rem, 1.4rem + 1.2vw, 2.25rem);
+	--aicc-text-3xl: clamp(2rem, 1.5rem + 2vw, 3rem);
+	--aicc-text-display: clamp(2.5rem, 1.6rem + 3.6vw, 4.25rem);
+
+	--aicc-leading-tight: 1.15;
+	--aicc-leading-snug: 1.3;
+	--aicc-leading-body: 1.6;
+	--aicc-tracking-display: -0.025em;
+	--aicc-measure: 68ch;        /* max body line length */
+
+	/* ── Space (4-pt rhythm), radii, elevation, layout ───────────────────── */
+	--aicc-space-1: 0.25rem;
+	--aicc-space-2: 0.5rem;
+	--aicc-space-3: 0.75rem;
+	--aicc-space-4: 1rem;
+	--aicc-space-5: 1.5rem;
+	--aicc-space-6: 2rem;
+	--aicc-space-7: 3rem;
+	--aicc-space-8: 4rem;
+	--aicc-space-9: 6rem;
+	--aicc-section-y: clamp(4rem, 3rem + 5vw, 7rem);
+	--aicc-gutter: clamp(1rem, 0.5rem + 2.5vw, 2rem);
+
+	--aicc-radius-sm: 0.5rem;    /* chips, small inputs */
+	--aicc-radius-md: 0.75rem;   /* inputs, controls */
+	--aicc-radius-lg: 1rem;      /* cards */
+	--aicc-radius-xl: 1.5rem;    /* hero surfaces, pricing */
+	--aicc-radius-pill: 999px;   /* buttons, badges */
+
+	--aicc-shadow-sm: 0 1px 2px rgb(15 23 42 / 0.06);
+	--aicc-shadow-md: 0 8px 24px -12px rgb(15 23 42 / 0.18);
+	--aicc-shadow-lg: 0 24px 48px -24px rgb(15 23 42 / 0.28);
+	--aicc-shadow-action: 0 10px 28px -12px rgb(37 99 235 / 0.55); /* primary button only */
+
+	--aicc-container: 75rem;     /* 1200 */
+	--aicc-container-narrow: 46rem; /* 736 — prose, legal, forms */
+	--aicc-tap: 2.75rem;         /* 44px minimum interactive target */
+
+	/* ── Motion ──────────────────────────────────────────────────────────── */
+	--aicc-ease: cubic-bezier(0.16, 1, 0.3, 1);
+	--aicc-dur-fast: 150ms;
+	--aicc-dur: 220ms;
+	--aicc-dur-slow: 360ms;
+
+	/* ── Z layers ────────────────────────────────────────────────────────── */
+	--aicc-z-header: 50;
+	--aicc-z-menu: 60;
+	--aicc-z-toast: 80;
+	--aicc-z-skip: 100;
+}
+
+/* ── User preference modes (set by the subtle accessibility control; see accessibility.md) ───────── */
+:root[data-aicc-contrast="high"] {
+	--aicc-text-muted: var(--aicc-slate-900);
+	--aicc-text-subtle: var(--aicc-slate-700);
+	--aicc-border: #64748b;
+	--aicc-border-strong: #475569;
+	--aicc-link: #1e3a8a;
+	--aicc-gradient-action: linear-gradient(100deg, #1d4ed8 0%, #065f46 100%);
+}
+:root[data-aicc-text="large"] {
+	font-size: 118.75%; /* 19px root: every rem-based size scales together */
+}
+:root[data-aicc-motion="reduce"] {
+	--aicc-dur-fast: 0.01ms;
+	--aicc-dur: 0.01ms;
+	--aicc-dur-slow: 0.01ms;
+}
+@media (prefers-reduced-motion: reduce) {
+	:root {
+		--aicc-dur-fast: 0.01ms;
+		--aicc-dur: 0.01ms;
+		--aicc-dur-slow: 0.01ms;
+	}
+}
+
+/* Hebrew and Russian read slightly better with a touch more air and no negative display tracking. */
+:root:lang(he), :root:lang(ru) {
+	--aicc-leading-body: 1.7;
+	--aicc-tracking-display: 0;
+}
