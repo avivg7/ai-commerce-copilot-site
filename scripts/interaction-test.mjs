@@ -2,8 +2,9 @@
 // FAQ accordion and the demo, plus reduced-motion behaviour and the language-persistence rules. Needs the export served.
 import fs from "node:fs";
 import { launch, urlFor, BASE } from "./lib/browser.mjs";
-import { loadFallbacks } from "./lib/load.mjs";
+import { loadFallbacks, loadDictionaries } from "./lib/load.mjs";
 
+const DICTS = await loadDictionaries(); // the strings each locale renders (translated, or English where a unit still falls back)
 const FALLBACK_UNITS = await loadFallbacks(); // which kit sets of each locale are still English (a translated set carries the page language instead)
 
 const PACK = JSON.parse(fs.readFileSync(new URL("../brand/content/faq.en.json", import.meta.url), "utf8"));
@@ -167,8 +168,61 @@ for (const loc of ["he", "es", "ru"]) {
   await ctx.close();
 }
 
+// 4c. The fallback mechanism itself, with a SYNTHETIC English fallback (every locale is fully translated now, so nothing falls back for real).
+// The served he/es home pages get English kit strings flagged _fallback:true (exactly what kitStrings() emits for an untranslated unit): every kit module must mark itself lang=en dir=ltr,
+// must not wrap admin labels (it is all English already), and the page itself must stay in its own language.
+for (const loc of ["he", "es"]) {
+  const [ctx, p] = await fresh();
+  const enHtml = await (await ctx.request.get(urlFor("en", ""))).text();
+  const attr = (h) => [...h.matchAll(/data-strings="([^"]*)"/g)].map((m) => m[1]);
+  const enAttrs = attr(enHtml);
+  let swapped = 0;
+  await p.route(new RegExp(`/${loc}/$`), async (r) => {
+    const res = await r.fetch();
+    const html = await res.text();
+    let i = 0;
+    const body = html.replace(/data-strings="([^"]*)"/g, () => { const en = enAttrs[i++]; swapped++; return `data-strings="${en.replace(/^\{/, "{&quot;_fallback&quot;:true,")}"`; });
+    const headers = { ...res.headers() }; delete headers["content-length"];
+    await r.fulfill({ status: res.status(), headers, body });
+  });
+  await p.goto(urlFor(loc, ""));
+  await p.waitForTimeout(300);
+  await p.evaluate(() => document.querySelector("#demo").scrollIntoView()); await p.waitForTimeout(700);
+  await p.click("#ws-t-control"); await p.waitForTimeout(700); await p.click("#ws-t-insights"); await p.waitForTimeout(500); await p.click("#ws-t-ask"); await p.waitForTimeout(300);
+  const probe = await p.evaluate(async () => { for (const sel of ["#demo", "[data-aicc-rules]", ".aicc-dash", ".aicc-ask"]) { document.querySelector(sel)?.scrollIntoView(); await new Promise((r) => setTimeout(r, 400)); } const at = (sel) => { const e = document.querySelector(sel); return e ? `${e.getAttribute("lang")}/${e.getAttribute("dir")}` : "missing"; }; return { doc: document.documentElement.lang, demo: at(".aicc-fbt"), rules: at("[data-aicc-rules]"), dash: at(".aicc-dash"), ask: at(".aicc-ask"), labels: document.querySelectorAll(".aicc-fbt .aicc-admin-label, [data-aicc-rules] .aicc-admin-label").length }; });
+  check(`synthetic fallback[${loc}]: ${swapped} client-mounted kit string sets swapped for English + _fallback; the demo and the rules demo become lang=en dir=ltr, the page stays ${loc} (${JSON.stringify(probe)})`, swapped >= 2 && probe.doc === loc && probe.demo === "en/ltr" && probe.rules === "en/ltr", JSON.stringify(probe));
+  check(`synthetic fallback[${loc}]: an English fallback does not wrap admin labels again (everything is already lang=en)`, probe.labels === 0, String(probe.labels));
+  await ctx.close();
+}
+// The server-rendered kit renderers (dashboard preview, Ask Reco, flows, loop) take the same flag: English + _fallback -> lang=en dir=ltr and no label re-wrapping; translated -> the page language,
+// with each real English admin label (es, ru) a lang=en dir=ltr leaf and Hebrew labels left as Hebrew.
+{
+  const dashMod = await import(new URL("../brand/js/dash-preview.js", import.meta.url));
+  const askMod = await import(new URL("../brand/js/reco-ask.js", import.meta.url));
+  for (const loc of ["he", "es", "ru"]) {
+    const dir = loc === "he" ? "rtl" : "ltr";
+    const synth = dashMod.renderDashPreviewHTML({ ...DICTS.en.dash, _fallback: true }, { locale: loc, dir, variant: "full" });
+    check(`synthetic fallback[${loc}]: the dashboard preview renderer marks an English fallback lang=en dir=ltr and adds no label wrappers`, /lang="en" dir="ltr"/.test(synth) && !/aicc-admin-label/.test(synth));
+    const real = dashMod.renderDashPreviewHTML(DICTS[loc].dash, { locale: loc, dir, variant: "full" });
+    const leaf = [...real.matchAll(/<span lang="en" dir="ltr" class="aicc-admin-label">([^<]*)<\/span>/g)].map((m) => m[1]);
+    check(`replica labels[${loc}]: ${loc === "he" ? "the Hebrew admin labels are not wrapped as English" : `English admin labels are lang=en dir=ltr leaves (${leaf.length}: ${leaf.slice(0, 3).join(", ")} ...)`}`, loc === "he" ? leaf.length === 0 && /צפיות בהמלצות/.test(real) : leaf.length >= 8 && leaf.includes("Recommendation Views") && leaf.includes("Merchant Insights") && !leaf.some((x) => /\p{L}/u.test(x.replace(/[A-Za-z0-9\s,.\-+{}%/]/g, ""))));
+    const askSynth = askMod.renderRecoAskHTML({ ...DICTS.en.ask, _fallback: true }, { locale: loc, dir, assetsBase: "" });
+    check(`synthetic fallback[${loc}]: the Ask Reco renderer marks an English fallback lang=en dir=ltr`, /lang="en" dir="ltr"/.test(askSynth) && !/aicc-admin-label/.test(askSynth));
+  }
+}
+// Node-level proof of the merge itself: an untranslated unit comes back as English and is reported, a translated one is kept.
+{
+  const { loadTs } = await import("./lib/load.mjs");
+  const { mergeOverEnglish, unitOf } = await loadTs("src/i18n/merge.ts");
+  const en = { home: { hero: { title: "Hello", lead: "World" }, why: { title: "Why" } }, demo: { a: "A", b: "B" } };
+  const { dict, fallback } = mergeOverEnglish(en, { home: { hero: { title: "Shalom" }, why: { title: "Lama" } }, demo: { a: "Alef", b: "Bet" } });
+  check("merge: a unit with a missing string falls back WHOLE to English and is reported (home.hero), a complete unit is kept (home.why, demo)", fallback.has("home.hero") && dict.home.hero.title === "Hello" && dict.home.hero.lead === "World" && !fallback.has("home.why") && dict.home.why.title === "Lama" && !fallback.has("demo") && dict.demo.a === "Alef" && unitOf("demo.b") === "demo");
+  const none = mergeOverEnglish(en, undefined);
+  check("merge: with no translation at all, every unit is English and reported", ["home.hero", "home.why", "demo"].every((u) => none.fallback.has(u)) && none.dict.demo.a === "A");
+}
+
 // 5. Demo
-for (const loc of ["en", "he"]) {
+for (const loc of ["en", "he", "es", "ru"]) {
   const [ctx, p] = await fresh();
   await p.goto(urlFor(loc, ""));
   await p.evaluate(() => document.querySelector("#demo").scrollIntoView());
@@ -197,7 +251,7 @@ for (const loc of ["en", "he"]) {
   const mode = await p.$eval(".aicc-fbt", (e) => e.dataset.mode);
   const why2 = await p.$eval(".aicc-fbt__why p[data-why]", (e) => e.textContent);
   const plain = await p.evaluate(() => ({ list: [...document.querySelectorAll("[data-plainlist] li")].length, ticks: document.querySelectorAll("[data-plain] input").length, total: !!document.querySelector("[data-plain] [data-total], [data-plain] [data-add]"), heading: document.querySelector("[data-title]").textContent, result: document.querySelector("[data-result]").textContent }));
-  check(`demo[${loc}]: "Plain related products" draws WooCommerce's own block (a heading and ${plain.list} product tiles; no ticks, total or button) and the result line says so`, mode === "without" && plain.list === 3 && plain.ticks === 0 && !plain.total && plain.heading === "Related products" && /Plain related products pick from the same category/.test(plain.result), JSON.stringify(plain));
+  check(`demo[${loc}]: "Plain related products" draws WooCommerce's own block (a heading and ${plain.list} product tiles; no ticks, total or button) and the result line says so`, mode === "without" && plain.list === 3 && plain.ticks === 0 && !plain.total && plain.heading === DICTS[loc].demo.plain.title && plain.result.startsWith(DICTS[loc].demo.result.without.split("{names}")[0]), JSON.stringify(plain));
   check(`demo[${loc}]: the rationale changes between the two states`, why1 !== why2);
   const ow = await p.evaluate(() => document.documentElement.scrollWidth <= innerWidth);
   check(`demo[${loc}]: no horizontal scroll at 1280`, ow);
@@ -614,12 +668,17 @@ for (const route of ["", "product"]) {
   const nj = await p2.evaluate(() => ({ details: document.querySelectorAll("details[id^='q']").length, search: !!document.querySelector("input[type=search]") }));
   check(`faq search without JavaScript: the page is the plain full list (${nj.details} questions, no dead search box)`, nj.details === ACTIVE.length && !nj.search, JSON.stringify(nj));
   await c2.close();
-  // he: the search UI is the English fallback and is marked; with translated strings it would be RTL
-  const [c3, p3] = await fresh();
-  await p3.goto(urlFor("he", "questions"));
-  await p3.waitForSelector("[data-aicc-faq-search] input");
-  check("faq search[he]: the English fallback UI is marked lang=en dir=ltr on a Hebrew page", await p3.evaluate(() => document.querySelector("[data-aicc-faq-search]").getAttribute("lang") === "en" && document.querySelector("[data-aicc-faq-search]").getAttribute("dir") === "ltr" && document.documentElement.lang === "he"));
-  await c3.close();
+  // he / es / ru: the search UI carries the page language when its strings are translated, and lang=en dir=ltr only while that unit is still an English fallback
+  for (const loc of ["he", "es", "ru"]) {
+    const [c3, p3] = await fresh();
+    await p3.goto(urlFor(loc, "questions"));
+    await p3.waitForSelector("[data-aicc-faq-search] input");
+    const fb = FALLBACK_UNITS[loc].includes("faqSearch");
+    const got = await p3.evaluate(() => { const e = document.querySelector("[data-aicc-faq-search]"); return { lang: e.getAttribute("lang"), dir: e.getAttribute("dir"), doc: document.documentElement.lang, placeholder: e.querySelector("input").getAttribute("placeholder") || "", label: (e.querySelector("label")?.textContent || "").trim() }; });
+    const wantDir = fb ? "ltr" : loc === "he" ? "rtl" : "ltr";
+    check(`faq search[${loc}]: the search UI is ${fb ? "an English fallback marked lang=en dir=ltr" : `translated (lang=${loc})`} on a ${loc} page`, got.doc === loc && (fb ? got.lang === "en" && got.dir === "ltr" : (got.lang === loc || got.lang === null) && (got.dir === wantDir || got.dir === null)) && got.label === DICTS[loc].faqSearch.label, JSON.stringify(got));
+    await c3.close();
+  }
   await ctx.close();
 }
 // 15. Review batch: Questions search (first, visible count, >= 2 characters, empty topics hidden, one Clear, debounced announcement)

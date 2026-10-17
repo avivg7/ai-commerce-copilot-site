@@ -8,13 +8,14 @@ const BRAND = [...REPLICA_LABELS, "AI Commerce Copilot", "AICC", "Ask Reco", "Re
 const browser = await launch();
 const problems = [];
 let nodes = 0, pages = 0;
-async function scan(locale, route, mutate) {
+async function scan(locale, route, inject) {
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
   await ctx.addInitScript(() => { try { localStorage.setItem("aicc_lang_dismissed", "1"); } catch {} });
   const p = await ctx.newPage();
-  if (mutate) await p.route(/\/$/, async (r) => { const res = await r.fetch(); await r.fulfill({ response: res, body: mutate(await res.text()) }); });
   await p.goto(urlFor(locale, route), { waitUntil: "load" });
   await p.waitForTimeout(300);
+  // self-test only: put English into the hydrated DOM, as an untranslated unit would render it (the server HTML is not edited: React would drop an unknown node on hydration)
+  if (inject) await p.evaluate((html) => document.querySelector("main").insertAdjacentHTML("afterbegin", html), inject);
   // mount the lazy kit modules and open every tab so their text exists
   await p.evaluate(async () => { for (const t of document.querySelectorAll('[role="tab"]')) { t.click(); await new Promise((r) => setTimeout(r, 400)); document.querySelectorAll("[data-aicc-fbt],[data-aicc-rules]").forEach((e) => e.scrollIntoView()); await new Promise((r) => setTimeout(r, 300)); } document.querySelectorAll("[data-aicc-fbt]").forEach((e) => e.scrollIntoView()); await new Promise((r) => setTimeout(r, 900)); });
   const found = await p.evaluate(({ BRAND, locale }) => {
@@ -42,10 +43,16 @@ async function scan(locale, route, mutate) {
   await ctx.close();
   return found;
 }
-// The gate must bite: with every lang="en" marker stripped from the served HTML, the Hebrew pricing page has to be flagged.
-{
-  const bad = await scan("he", "pricing", (h) => h.replace(/ lang="en"/g, ""));
-  if (!bad.out.length) { console.error("FAIL: selftest: stripping lang=en from /he/pricing/ was not detected"); process.exit(1); }
+// The gate must bite. Every locale is fully translated now, so nothing is English by itself: the self-test INJECTS English into a translated page (what an untranslated unit would render).
+// An English paragraph without lang="en" must be flagged; the same paragraph marked lang="en" dir="ltr" (what the fallback mechanism emits) must not be.
+const INJECT = "<p>This sentence is untranslated English text that the page should mark with a language attribute.</p>";
+for (const locale of ["he", "es", "ru"]) {
+  const bare = await scan(locale, "pricing", INJECT);
+  if (!bare.out.some((x) => x.startsWith("This sentence is untranslated English"))) { console.error(`FAIL: selftest: English injected into /${locale}/pricing/ without lang=en was not detected`); process.exit(1); }
+  const marked = await scan(locale, "pricing", INJECT.replace("<p>", '<p lang="en" dir="ltr">'));
+  if (marked.out.some((x) => x.startsWith("This sentence is untranslated English"))) { console.error(`FAIL: selftest: English marked lang=en on /${locale}/pricing/ was still flagged`); process.exit(1); }
+  const clean = await scan(locale, "pricing");
+  if (clean.out.length) { console.error(`FAIL: selftest: the untouched /${locale}/pricing/ already has unmarked English: ${clean.out[0]}`); process.exit(1); }
 }
 for (const locale of ["he", "es", "ru"]) for (const route of ROUTES) {
   const found = await scan(locale, route);
