@@ -141,8 +141,6 @@ export const es: DeepPartial<Dictionary> = {
     modal: {
       title: "Demostración del producto",
       close: "Cerrar",
-      placeholder: "El vídeo de demostración del producto aparecerá aquí.",
-      placeholderBadge: "marcador de posición",
       captionsLabel: "Subtítulos",
     },
   },
@@ -168,10 +166,7 @@ export const es: DeepPartial<Dictionary> = {
       addFew: "Añadir {count} productos al carrito",
     },
     mode: {
-      without: "Sin AICC",
       with: "Con AICC",
-      captionWithout: "Reco: misma categoría, no por pedidos.",
-      captionWith: "Reco: lo que más se compra junto.",
       withoutCaption: "Los productos relacionados de WooCommerce salen de la misma categoría o de las mismas etiquetas. No se basan en lo que los compradores compran juntos.",
       withCaption: "AICC muestra los productos que aparecen en los mismos pedidos que el producto que se está viendo.",
     },
@@ -185,13 +180,6 @@ export const es: DeepPartial<Dictionary> = {
       scale: "Taza de viaje",
     },
     anchorTag: "Viendo este producto",
-    why: {
-      heading: "Por qué estos",
-      without: "Sin AICC, estos son simplemente productos de la misma categoría. Nada de ellos procede de lo que sus compradores compran juntos.",
-    },
-    reco: {
-      without: "Reco: estos salen de la categoría, no de los pedidos.",
-    },
     keyboardHint: "Use Tab y la barra espaciadora para marcar productos. Las teclas de flecha permiten pasar de uno a otro.",
     sample: "Ejemplo",
   },
@@ -217,12 +205,6 @@ export const es: DeepPartial<Dictionary> = {
         },
       },
     },
-    pricing: {
-      link: "Compare los planes y lea los detalles",
-    },
-    final: {
-      title: "Listo cuando lo esté su tienda.",
-    },
   },
   product: {
     shopper: {
@@ -233,7 +215,6 @@ export const es: DeepPartial<Dictionary> = {
     plans: {
       solo: {
         name: "Solo",
-        fit: "Una tienda.",
       },
       studio: {
         name: "Studio",
@@ -262,7 +243,6 @@ export const es: DeepPartial<Dictionary> = {
     },
     finder: {
       label: "¿Cuántas tiendas va a conectar?",
-      hint: "Introduzca un número entero del 1 al 10.",
       error: "Introduzca un número entero del 1 al 10.",
       resultSolo: "El plan Solo cubre 1 tienda.",
       resultStudio: "El plan Studio cubre hasta 3 tiendas.",
@@ -500,7 +480,6 @@ export const es: DeepPartial<Dictionary> = {
     },
     dataTrust: {
       title: "Datos y confianza",
-      intro: "Un resumen en lenguaje sencillo. La [política de privacidad](route:privacy) es el texto completo.",
       s: {
         reads: {
           h: "Qué lee AICC de su tienda",
@@ -553,7 +532,6 @@ export const es: DeepPartial<Dictionary> = {
           a: "Escriba a soporte desde el correo de su cuenta. Estas solicitudes se gestionan a mano. La eliminación borra eventos, impresiones, clics y conversiones y anonimiza los pedidos; el registro de la tienda, la configuración, los datos derivados del catálogo y los registros de licencia y de auditoría siguen su propia conservación, y WooCommerce puede exigir que se conserven algunos registros. Las exportaciones se preparan manualmente. Dirección de soporte: {supportEmail}",
         },
         pending: {
-          h: "Lo que aún no hemos ultimado",
           a: "Algunos detalles todavía no se han publicado: los datos de la empresa, la dirección de soporte, la ley aplicable, el procesador de pagos y la región de alojamiento. Se publicarán antes del lanzamiento.",
         },
       },

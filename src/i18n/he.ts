@@ -141,8 +141,6 @@ export const he: DeepPartial<Dictionary> = {
     modal: {
       title: "הדגמת המוצר",
       close: "סגירה",
-      placeholder: "סרטון ההדגמה של המוצר יופיע כאן.",
-      placeholderBadge: "מקום שמור",
       captionsLabel: "כתוביות",
     },
   },
@@ -168,10 +166,7 @@ export const he: DeepPartial<Dictionary> = {
       addFew: "הוספת {count} מוצרים לעגלה",
     },
     mode: {
-      without: "בלי AICC",
       with: "עם AICC",
-      captionWithout: "Reco: אותה קטגוריה, לא מהזמנות.",
-      captionWith: "Reco: נרכשים יחד יותר מכל דבר אחר.",
       withoutCaption: "המוצרים הקשורים של WooCommerce עצמו מגיעים מאותה קטגוריה או מאותן תגיות. הם לא מבוססים על מה שהקונים רוכשים יחד.",
       withCaption: "AICC מציג את המוצרים שמופיעים באותן הזמנות יחד עם המוצר שנצפה.",
     },
@@ -185,13 +180,6 @@ export const he: DeepPartial<Dictionary> = {
       scale: "כוס נסיעות",
     },
     anchorTag: "המוצר הנצפה",
-    why: {
-      heading: "למה דווקא אלה",
-      without: "בלי AICC, אלה פשוט מוצרים מאותה קטגוריה. שום דבר בהם לא נובע ממה שהקונים שלכם רוכשים יחד.",
-    },
-    reco: {
-      without: "Reco: אלה מגיעים מהקטגוריה ולא מהזמנות.",
-    },
     keyboardHint: "השתמשו ב־Tab וברווח כדי לסמן מוצרים. מקשי החיצים עוברים ביניהם.",
     sample: "דוגמה",
   },
@@ -217,12 +205,6 @@ export const he: DeepPartial<Dictionary> = {
         },
       },
     },
-    pricing: {
-      link: "השוואת תוכניות וקריאת הפרטים",
-    },
-    final: {
-      title: "מוכנים כשהחנות מוכנה.",
-    },
   },
   product: {
     shopper: {
@@ -233,7 +215,6 @@ export const he: DeepPartial<Dictionary> = {
     plans: {
       solo: {
         name: "Solo",
-        fit: "חנות אחת.",
       },
       studio: {
         name: "Studio",
@@ -262,7 +243,6 @@ export const he: DeepPartial<Dictionary> = {
     },
     finder: {
       label: "כמה חנויות תחברו?",
-      hint: "יש להזין מספר שלם מ־1 עד 10.",
       error: "יש להזין מספר שלם מ־1 עד 10.",
       resultSolo: "Solo מכסה חנות אחת.",
       resultStudio: "Studio מכסה עד 3 חנויות.",
@@ -500,7 +480,6 @@ export const he: DeepPartial<Dictionary> = {
     },
     dataTrust: {
       title: "נתונים ואמון",
-      intro: "סיכום בשפה פשוטה. ה[מדיניות הפרטיות](route:privacy) היא הטקסט המלא.",
       s: {
         reads: {
           h: "מה AICC קורא מהחנות שלכם",
@@ -553,7 +532,6 @@ export const he: DeepPartial<Dictionary> = {
           a: "שלחו אימייל לתמיכה מכתובת האימייל של החשבון. הבקשות האלה מטופלות ידנית. מחיקה מסירה אירועים, חשיפות, הקלקות והמרות ומסתירה את הזהות בהזמנות; רשומת החנות, ההגדרות, נתונים שנגזרו מהקטלוג ורשומות הרישיון והביקורת כפופים לשמירה משלהם, ו־WooCommerce עשוי לחייב לשמור רשומות מסוימות. ייצוא מוכן ידנית. כתובת התמיכה: {supportEmail}",
         },
         pending: {
-          h: "מה עוד לא סיימנו לקבוע",
           a: "חלק מהפרטים עדיין לא פורסמו: פרטי החברה, כתובת התמיכה, הדין החל, מעבד התשלומים ואזור האחסון. הם יפורסמו לפני ההשקה.",
         },
       },

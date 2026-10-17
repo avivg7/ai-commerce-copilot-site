@@ -252,6 +252,9 @@ for (const l of LOCALES.filter((x) => x !== "en")) {
   const q = faqMod.faqFallbackIds(l);
   fbReport[l] = { units: fallbacks[l].length, faq: q.length };
   console.log(`  ${l}: ${fallbacks[l].length} dictionary unit(s) and ${q.length}/${FAQ.length} FAQ question(s) fall back to English (marked lang=en dir=ltr)`);
+  // <title> and <meta description> cannot carry lang: a page whose title is still English is listed here so the locale agents translate titles first (WCAG 2.4.2).
+  const metaFb = fallbacks[l].filter((u) => u.startsWith("meta.pages.")).map((u) => u.split(".")[2]);
+  console.log(`  ${l}: page title/description still English for: ${metaFb.length ? metaFb.join(", ") : "none"}`);
 }
 if (STRICT && Object.values(fbReport).some((r) => r.units || r.faq)) { for (const l of Object.keys(fbReport)) if (fbReport[l].units || fbReport[l].faq) err(l, "fallback", `--strict: ${fbReport[l].units} unit(s) and ${fbReport[l].faq} question(s) still untranslated`); }
 if (warnings.length) {

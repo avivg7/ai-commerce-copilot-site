@@ -18,11 +18,11 @@
     { "id": "safety", "title": "Reliability" },
     { "id": "data", "title": "Data and privacy" }
   ],
-  "mostAskedBeforeBuying": ["q41", "q57", "q58", "q44", "q45", "q46", "q05", "q53", "q56"],
+  "mostAskedBeforeBuying": ["q41", "q57", "q58", "q42", "q51", "q44", "q45", "q05", "q33", "q56"],
   "selection": {
-    "home": ["q41", "q01", "q57", "q58", "q46", "q05", "q56"],
-    "product": ["q41", "q02", "q44", "q45", "q47", "q49", "q31", "q05", "q39", "q33"],
-    "pricing": ["q09", "q10", "q55", "q13", "q12", "q18", "q19", "q20", "q26", "q22"],
+    "home": ["q41", "q57", "q58", "q51", "q05", "q33", "q56"],
+    "product": ["q42", "q02", "q44", "q45", "q47", "q49", "q31", "q06", "q39", "q33"],
+    "pricing": ["q09", "q55", "q13", "q12", "q18", "q19", "q17", "q26", "q54", "q22"],
     "questions": "all"
   },
   "retired": {
@@ -37,7 +37,7 @@
     "q41": {
       "layer": "sales", "topic": "why",
       "q": "What makes AICC different from WooCommerce Related Products?",
-      "a": "WooCommerce's related products tell you which products belong together by category or tag. AICC adds the signal you would otherwise have to guess: which products your customers actually buy together.\n\nIt counts the products that appear in the same completed and processing orders and lists the most frequent partners first. Around that it adds a dashboard, rules you control, plain-English observations and Ask Reco. When a product has little history, AICC falls back to its category and your newest in-stock products, so the widget always has something sensible to show."
+      "a": "WooCommerce's related products tell you which products belong together by category or tag. AICC adds the signal you would otherwise have to guess: which products your customers actually buy together.\n\nIt counts the products that appear in the same completed and processing orders and lists the most frequent partners first. Around that it adds a dashboard, rules you control, plain-English observations and Ask Reco. When a product has little history, AICC falls back to its category and your newest in-stock products, so the widget has something to show."
     },
     "q57": {
       "layer": "sales", "topic": "why",
@@ -72,17 +72,17 @@
     "q43": {
       "layer": "sales", "topic": "recs",
       "q": "What does AICC learn from my store?",
-      "a": "Which of your products are bought together. AICC reads your catalog and the products in your completed and processing orders, then counts how often each pair appears in the same order. If you choose to import your order history, it can learn from up to 24 months of past orders from the start.\n\nIt does not build a profile of each shopper. [Data and trust](route:data-and-trust) lists exactly what is used."
+      "a": "Which of your products are bought together. AICC reads your catalog and your orders, and counts pairs from completed and processing orders: how often each pair of products appears in the same order. If you choose to import your order history, it can learn from up to 24 months of past orders from the start.\n\nIt does not build a profile of each shopper. [Data and trust](route:data-and-trust) lists exactly what is used."
     },
     "q44": {
       "layer": "sales", "topic": "recs",
       "q": "What happens when a product has little or no order history?",
-      "a": "AICC still has something sensible to show. The spots that purchase history can't fill are filled with in-stock products from the same category, then your newest in-stock products, and real co-purchases take over as orders come in.\n\nToday the widget heading is the same for every item, so a fallback product can appear under “Frequently Bought Together”. In the Recommendation Preview in your dashboard, learned partners show how many times they were bought together; fallback products don't."
+      "a": "AICC fills the spots that purchase history can't: first with in-stock products from the same category, then with your newest in-stock products. Real co-purchases take over as orders come in.\n\nToday the widget heading is the same for every item, so a fallback product can appear under “Frequently Bought Together”. In the Recommendation Preview in your dashboard, learned partners show how many times they were bought together; fallback products don't."
     },
     "q48": {
       "layer": "sales", "topic": "recs",
       "q": "Does AICC personalize recommendations for each shopper?",
-      "a": "No. Recommendations follow the product being viewed, not the person viewing it, so two shoppers on the same product page see the same bundle. That keeps the logic easy to explain and means AICC needs no profile of each shopper."
+      "a": "No. Recommendations follow the product being viewed, not a profile of the shopper. Products already in a shopper's cart are left out of the widget.\n\nThat keeps the logic easy to explain and means AICC needs no profile of each shopper."
     },
     "q45": {
       "layer": "sales", "topic": "merchant",
@@ -92,7 +92,7 @@
     "q46": {
       "layer": "sales", "topic": "merchant",
       "q": "What will I actually see in the AICC dashboard?",
-      "a": "A dashboard in your WordPress admin that shows what your recommendations are doing: setup readiness, recommendation views, clicks and click rate, bundle add-to-carts, and the orders and revenue associated with the widget over the last 30 days.\n\nWith at least 10 orders in the period you also get plain-English observations from your own data, such as top sellers and strong bundles. A preview shows what the widget recommends for any product, and product performance exports to CSV."
+      "a": "A dashboard in your WordPress admin that shows what your recommendations are doing: setup readiness, recommendation views, clicks and click rate, bundle add-to-carts, and the orders and revenue associated with the widget over the last 30 days.\n\nWith at least 10 orders in the period you also get plain-English observations from your own data, such as top sellers and strong bundles. A preview shows what AICC recommends for any product, and product performance exports to CSV."
     },
     "q47": {
       "layer": "sales", "topic": "merchant",
@@ -106,18 +106,18 @@
     },
     "q50": {
       "layer": "sales", "topic": "merchant",
-      "q": "Does AICC claim it generated my revenue?",
-      "a": "No. AICC shows the orders and revenue associated with the widget. It does not run a control group or estimate what you would have sold anyway, so it reports association and leaves the conclusion to you."
+      "q": "Did AICC generate the revenue shown on the dashboard?",
+      "a": "It is revenue associated with the widget: orders where a shopper added a bundle from it and bought one of those products within 24 hours. AICC reports the association and leaves the conclusion to you."
     },
     "q51": {
       "layer": "sales", "topic": "setup",
       "q": "How soon can I start seeing recommendations?",
-      "a": "AICC prepares your store in the background after you connect: it syncs your catalog and checks that the widget is ready. Timing varies with catalog size and your site's scheduled tasks.\n\nOnce the catalog is synced the widget can show same-category and newest-product recommendations. Recommendations learned from your orders grow as orders are processed, and faster if you import your order history."
+      "a": "AICC prepares your store in the background after you connect: it syncs your catalog and checks that the widget is ready. Timing varies with catalog size and your site's scheduled tasks.\n\nOnce your store is ready, the widget starts with same-category and newest products, then moves to real bought-together pairs as orders are counted. Import your past orders (optional) to start with pairs already learned."
     },
     "q31": {
       "layer": "product", "topic": "setup",
       "q": "Do I have to import my order history?",
-      "a": "No, it's optional. After your store is connected, AICC offers to import up to 24 months of past orders so it can learn your existing product relationships from the start. If you skip it, AICC begins with same-category and newest-product recommendations and learns from new orders.\n\nNothing from your past orders is sent until you choose to import."
+      "a": "No, it's optional. After your store is connected, AICC offers to import up to 24 months of past orders so it can learn your existing product relationships from the start. If you skip it, AICC begins with same-category and newest-product recommendations and learns from new orders.\n\nAICC doesn't import your past orders until you choose. Orders placed before you connected are not sent unless you import them; orders placed after connecting are sent as they are created or updated."
     },
     "q32": {
       "layer": "product", "topic": "setup",
@@ -177,7 +177,7 @@
     "q13": {
       "layer": "account", "topic": "plans",
       "q": "Do I have to pay again to move a store to another free slot?",
-      "a": "No. Disconnect the old store and connect the new one. Disconnecting frees the slot immediately, with no transfer fee and no limit on moves."
+      "a": "No. Disconnect the old store and connect the new one. Disconnecting frees the slot immediately, with no transfer fee."
     },
     "q14": {
       "layer": "account", "topic": "plans",
@@ -201,8 +201,8 @@
     },
     "q25": {
       "layer": "account", "topic": "plans",
-      "q": "Do you fabricate recommendation history for the inactive period?",
-      "a": "Never. Past orders are imported as orders. No impressions, clicks or attributed revenue are created for a time when AICC wasn't running."
+      "q": "Will AICC invent history for the time it was inactive?",
+      "a": "No. Past orders are imported as orders. No impressions, clicks or attributed revenue are created for a time when AICC wasn't running."
     },
     "q53": {
       "layer": "sales", "topic": "billing",
@@ -272,7 +272,7 @@
     "q05": {
       "layer": "product", "topic": "safety",
       "q": "Can AICC slow down or break my checkout?",
-      "a": "AICC is built so your checkout never depends on it. Placing an order never waits on AICC: order details are queued and sent in the background.\n\nIf AICC or its servers are slow or down, the widget hides and WooCommerce keeps selling. [How AICC stays out of the way](route:product)."
+      "a": "AICC is built so checkout doesn't wait on it. Placing an order never waits on AICC: order details are queued and sent in the background.\n\nIf AICC or its servers are slow or down, the widget hides and WooCommerce keeps selling. [How AICC stays out of the way](route:product)."
     },
     "q16": {
       "layer": "product", "topic": "safety",

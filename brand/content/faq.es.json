@@ -39,10 +39,6 @@
     "q30": {
       "q": "¿Un reembolso afecta a mi tienda WooCommerce?",
       "a": "No. Los productos, pedidos, clientes y el proceso de pago siguen como estaban."
-    },
-    "q25": {
-      "q": "¿Se inventa historial de recomendaciones para el periodo inactivo?",
-      "a": "Nunca. Los pedidos anteriores se importan como pedidos. No se crean impresiones, clics ni ingresos atribuidos para un periodo en que AICC no estaba funcionando."
     }
   }
 }
