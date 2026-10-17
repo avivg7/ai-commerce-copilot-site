@@ -4,15 +4,16 @@
 // With no video configured the same frame shows a calm, clearly labelled placeholder (data-demo-placeholder="true"), which
 // `npm run launch:check` treats as a launch blocker.
 import { icon } from "./icons.js";
-import { esc } from "./motion.js";
+import { esc, motionAllowed } from "./motion.js";
 
 let counter = 0;
 
-/** strings: { title, close, placeholder, placeholderBadge, captionsLabel } */
+/** strings: { title, close, placeholder, tryDemo, captionsLabel } */
 export function initVideoModal(trigger, strings) {
   if (!trigger || trigger.dataset.aiccReady) return;
   trigger.dataset.aiccReady = "1";
   let dialog = null;
+  let goDemo = false;
 
   const build = () => {
     const id = `aicc-modal-${++counter}`;
@@ -29,15 +30,27 @@ export function initVideoModal(trigger, strings) {
       `<div class="aicc-modal__player">` +
       (video
         ? `<video controls playsinline preload="metadata"${poster ? ` poster="${esc(poster)}"` : ""}><source src="${esc(video)}">${caps ? `<track kind="captions" src="${esc(caps)}" srclang="${esc(capsLang)}" label="${esc(strings.captionsLabel)}" default>` : ""}</video>`
-        : `<div class="aicc-modal__placeholder" data-demo-placeholder="true">${icon("video", 36)}<p>${esc(strings.placeholder)}</p><span class="aicc-modal__badge">${esc(strings.placeholderBadge)}</span></div>`) +
+        : `<div class="aicc-modal__placeholder" data-demo-placeholder="true">${icon("video", 36)}<p>${esc(strings.placeholder)}</p><button type="button" class="aicc-btn aicc-btn--primary" data-aicc-try-demo>${esc(strings.tryDemo)}</button></div>`) +
       `</div>`;
     document.body.appendChild(dialog);
     dialog.querySelector(".aicc-modal__close").addEventListener("click", () => dialog.close());
     dialog.addEventListener("click", (e) => { if (e.target === dialog) dialog.close(); });
+    // With no video yet, the useful next step is the interactive demo: close the dialog, bring #demo into view and put focus on its heading.
+    dialog.querySelector("[data-aicc-try-demo]")?.addEventListener("click", () => { goDemo = true; dialog.close(); });
     dialog.addEventListener("close", () => {
       document.documentElement.classList.remove("aicc-scroll-lock");
       const v = dialog.querySelector("video");
       if (v) { v.pause(); try { v.currentTime = 0; } catch {} }
+      if (goDemo) {
+        goDemo = false;
+        const target = document.querySelector(trigger.dataset.demoTarget || "#demo");
+        if (target) {
+          target.scrollIntoView({ behavior: motionAllowed() ? "smooth" : "auto", block: "start" });
+          const h = target.querySelector("h2, h3");
+          if (h) { h.setAttribute("tabindex", "-1"); h.focus({ preventScroll: true }); }
+          return;
+        }
+      }
       trigger.focus();
     });
   };

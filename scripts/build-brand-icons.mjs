@@ -7,7 +7,7 @@ import { pathToFileURL } from "node:url";
 
 const NAMES = ["globe", "chevron-down", "menu", "x", "play", "arrow-right", "trending-up", "mouse-pointer-click", "sparkles", "lightbulb",
   "package", "coffee", "filter", "cog", "flame", "cup-soda", "layers", "shopping-cart", "info", "check", "accessibility", "video",
-  "clock", "send", "eye-off", "rotate-ccw", "lock", "circle-check", "shield-check", "message-square", "chart-column", "pin", "ban", "arrow-up", "arrow-down", "database", "triangle-alert"];
+  "clock", "send", "eye-off", "rotate-ccw", "lock", "circle-check", "shield-check", "message-square", "chart-column", "pin", "ban", "arrow-up", "arrow-down", "database", "triangle-alert", "pause", "chevron-right", "search"];
 const dir = path.resolve("node_modules/lucide-react/dist/esm/icons");
 const out = {};
 for (const n of NAMES) {

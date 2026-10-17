@@ -3,7 +3,7 @@
 // Pin -> first place; Exclude -> removed and always wins; Prefer -> up one place; Deprioritize -> down one place; out-of-stock products stay out even when pinned.
 // Keyboard: a native <select> for the product, four toggle buttons (aria-pressed), Reset; every change is announced in one polite live region.
 // Reduced motion: nothing animates here except a short highlight that is switched off by the motion tokens.
-import { esc } from "./motion.js";
+import { esc, setLang } from "./motion.js";
 import { applyRules, RULE_ACTIONS } from "./rules-core.js";
 
 const BASE = [
@@ -22,7 +22,7 @@ export function mountRules(el, opts) {
   const s = opts.strings;
   const locale = opts.locale || "en";
   const fallback = !!s._fallback;
-  if (fallback) { el.setAttribute("lang", "en"); el.setAttribute("dir", "ltr"); }
+  setLang(el, s, locale, opts.dir || el.dataset.dir);
   const num = new Intl.NumberFormat(fallback ? "en" : locale);
   const id = `aicc-rules-${++uid}`;
   const state = { product: BASE[0].id, rules: [], seq: 0, effect: "", help: "none", announce: "", moved: null };
@@ -99,7 +99,9 @@ export function mountRules(el, opts) {
         state.help = action;
         const after = applyRules(BASE, state.rules).shown.findIndex((b) => b.id === pid);
         effect = s.effect[action];
-        if ((action === "prefer" || action === "deprioritize") && after === before) effect = s.effect.stays;
+        // The ranking is the backend's own (rules-core.js): a nudge can be blocked by a group boundary or by another product with the same kind of rule.
+        if (action === "prefer" && after !== before - 1) effect = s.effect.stays;
+        if (action === "deprioritize" && after <= before) effect = s.effect.stays;
         if (action === "pin" && !BASE.find((b) => b.id === pid).inStock) effect = s.effect.outOfStock;
       }
       state.effect = effect;

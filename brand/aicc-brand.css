@@ -71,7 +71,8 @@ html { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
   -webkit-backdrop-filter: blur(16px);
   border: 1px solid var(--aicc-glass-border);
 }
-.aicc-btn--secondary { color: var(--aicc-text); }
+/* Documented deviation 9: a visible boundary (slate-500, 4.76:1 on the page background) instead of the live 1px white border, so the button meets WCAG 1.4.11 non-text contrast. */
+.aicc-btn--secondary { color: var(--aicc-text); border-color: var(--aicc-slate-500); }
 .aicc-btn--secondary:hover { background: var(--aicc-glass-bg-hover); translate: 0 -2px; }
 .aicc-btn--secondary:active { translate: 0 0; }
 
@@ -479,7 +480,6 @@ html.aicc-scroll-lock { overflow: hidden; scrollbar-gutter: stable; }
   padding: 0.5rem 0.75rem;
 }
 .aicc-fbt__nudge { font-size: var(--aicc-text-sm); color: var(--aicc-text-muted); margin-block-start: calc(var(--aicc-space-2) * -1); }
-@media (min-width: 62rem) { .aicc-fbt__caption { display: none; } }
 .aicc-fbt__head h3 { font-size: var(--aicc-text-xl); font-weight: 700; }
 .aicc-fbt__head p { color: var(--aicc-text-muted); font-size: var(--aicc-text-sm); margin-block-start: 0.25rem; }
 
@@ -492,7 +492,7 @@ html.aicc-scroll-lock { overflow: hidden; scrollbar-gutter: stable; }
   gap: var(--aicc-space-3);
 }
 @media (min-width: 48rem) {
-  .aicc-fbt__cands { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .aicc-fbt__cands { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 .aicc-fbt__cands > li { min-inline-size: 0; }
 
@@ -719,7 +719,6 @@ html.aicc-scroll-lock { overflow: hidden; scrollbar-gutter: stable; }
 .aicc-dash__block { position: relative; padding: var(--aicc-space-4) var(--aicc-space-4) 0; display: grid; gap: var(--aicc-space-3); }
 .aicc-dash__tiles { list-style: none; padding: 0; margin: 0; display: grid; gap: var(--aicc-space-3); }
 .aicc-dash__tiles--three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-@media (max-width: 36rem) { .aicc-dash__tiles--three { grid-template-columns: minmax(0, 1fr); } }
 .aicc-dash__tile { display: grid; gap: 0.2rem; align-content: start; padding: var(--aicc-space-3) var(--aicc-space-4); border: 1px solid var(--aicc-border); border-radius: var(--aicc-radius-lg); background: var(--aicc-surface); min-inline-size: 0; }
 .aicc-dash__tlabel { font-size: var(--aicc-text-xs); font-weight: 650; color: var(--aicc-text-muted); }
 .aicc-dash__tile strong { font-size: 1.5rem; line-height: 1.15; font-variant-numeric: tabular-nums; }
@@ -768,7 +767,7 @@ html.aicc-scroll-lock { overflow: hidden; scrollbar-gutter: stable; }
 .aicc-ask__who { font-size: var(--aicc-text-xs); font-weight: 700; color: var(--aicc-info); }
 .aicc-ask__a p { font-size: var(--aicc-text-sm); color: var(--aicc-text); }
 .aicc-ask__link { display: inline-flex; gap: 0.4rem; align-items: center; font-size: var(--aicc-text-sm); font-weight: 650; color: var(--aicc-link); }
-.aicc-ask__input { display: flex; justify-content: space-between; align-items: center; gap: var(--aicc-space-3); padding: 0.7rem 1rem; border: 1.5px solid var(--aicc-border-strong); border-radius: var(--aicc-radius-pill); color: var(--aicc-text-muted); font-size: var(--aicc-text-sm); background: var(--aicc-bg); }
+.aicc-ask__try { margin: 0; font-size: var(--aicc-text-sm); font-weight: 650; color: var(--aicc-text-muted); }
 .aicc-ask__foot { font-size: var(--aicc-text-sm); color: var(--aicc-text-muted); }
 .aicc-section--inverse .aicc-ask__label, .aicc-section--inverse .aicc-ask__label span { color: var(--aicc-text); }
 .aicc-section--inverse .aicc-ask__panel p, .aicc-section--inverse .aicc-ask__a p { color: var(--aicc-text); }
@@ -833,7 +832,6 @@ html.aicc-scroll-lock { overflow: hidden; scrollbar-gutter: stable; }
   .aicc-loop__step > a, .aicc-loop__step > span { flex-direction: column; align-items: flex-start; gap: var(--aicc-space-2); padding-inline-end: var(--aicc-space-3); }
   /* desktop: a horizontal rail from node to node (RTL flips with the logical offsets) */
   .aicc-loop__step:not(:last-child)::before { inset-block-start: calc(0.25rem + 1rem - 1px); inset-inline-start: 2rem; block-size: 2px; inline-size: calc(100% - 2rem); margin-inline-start: 0; margin-block-start: 0; }
-  .aicc-loop__step:last-child::after { content: "\21BB" / ""; position: absolute; inset-block-start: 0.2rem; inset-inline-start: 2.5rem; color: var(--aicc-text-muted); font-size: 1.1rem; line-height: 1.5rem; }
 }
 @media (prefers-reduced-motion: no-preference) {
   :root:not([data-aicc-motion="reduce"]) .aicc-loop[data-play="true"] .aicc-loop__n { animation: aicc-loop-lit var(--aicc-dur-slow) var(--aicc-ease) both; animation-delay: calc(var(--i, 0) * 150ms); }
@@ -861,7 +859,7 @@ html.aicc-scroll-lock { overflow: hidden; scrollbar-gutter: stable; }
 .aicc-faqsearch__form { display: grid; gap: var(--aicc-space-2); }
 .aicc-faqsearch__label { font-weight: 700; font-size: var(--aicc-text-base); }
 .aicc-faqsearch__field { position: relative; display: flex; align-items: center; }
-.aicc-faqsearch input[type="search"] { inline-size: 100%; min-block-size: 3rem; padding-block: 0; padding-inline: var(--aicc-space-4) 5.5rem; border: 1.5px solid var(--aicc-border-strong); border-radius: var(--aicc-radius-pill); background: var(--aicc-surface); color: var(--aicc-text); font: inherit; font-size: var(--aicc-text-base); -webkit-appearance: none; appearance: none; }
+.aicc-faqsearch input[type="search"] { inline-size: 100%; min-block-size: 3rem; padding-block: 0; padding-inline: var(--aicc-space-4) 5.5rem; border: 1.5px solid var(--aicc-slate-500); border-radius: var(--aicc-radius-pill); background: var(--aicc-surface); color: var(--aicc-text); font: inherit; font-size: var(--aicc-text-base); -webkit-appearance: none; appearance: none; }
 .aicc-faqsearch input[type="search"]::-webkit-search-cancel-button { -webkit-appearance: none; display: none; }
 .aicc-faqsearch input[type="search"]::placeholder { color: var(--aicc-text-muted); opacity: 1; }
 .aicc-faqsearch__clear { position: absolute; inset-inline-end: 0.375rem; min-block-size: 2.25rem; padding-inline: var(--aicc-space-4); border: 0; border-radius: var(--aicc-radius-pill); background: var(--aicc-surface-sunken); color: var(--aicc-text); font: inherit; font-size: var(--aicc-text-sm); font-weight: 650; cursor: pointer; }
@@ -908,3 +906,53 @@ html.aicc-scroll-lock { overflow: hidden; scrollbar-gutter: stable; }
   .aicc-tabs__tab { padding-inline: var(--aicc-space-3); }
 }
 @media (max-width: 40rem) { .aicc-fbt__controls { justify-content: flex-start; } }
+
+/* ── Hero pause control (WCAG 2.2.2) and the phone spacing of the Reco hero ───────────────────────────────────────────────── */
+.aicc-reco-hero__pause { position: absolute; inset-block-end: 0.5rem; inset-inline-end: 0.5rem; z-index: 3; display: grid; place-items: center; inline-size: 2.75rem; block-size: 2.75rem; border-radius: 50%; border: 1px solid var(--aicc-border-strong); background: var(--aicc-surface); color: var(--aicc-text); cursor: pointer; box-shadow: var(--aicc-shadow-sm); }
+.aicc-reco-hero__pause:hover { background: var(--aicc-info-bg); }
+.aicc-reco-hero__pause [hidden] { display: none; }
+.aicc-reco-hero[data-paused="true"] .aicc-reco-hero__chip { animation-play-state: paused; }
+@media (prefers-reduced-motion: reduce) { .aicc-reco-hero__pause { display: none; } }
+:root[data-aicc-motion="reduce"] .aicc-reco-hero__pause { display: none; }
+/* Phone: the square frame left a ~400px near-empty band around the 16:9 video; a shorter frame keeps the same art without the dead space. */
+@media (max-width: 39.99rem) {
+  .aicc-reco-hero { padding-block: 0.5rem 1rem; }
+  .aicc-reco-hero__frame { aspect-ratio: 16 / 10; }
+  .aicc-reco-hero__glow { block-size: 18rem; }
+}
+
+/* ── FBT demo: two different kinds of toggle, a live result line, the plain related-products block, the live shopper list ───────── */
+.aicc-fbt__views { display: inline-flex; gap: var(--aicc-space-4); border-block-end: 1px solid var(--aicc-border-strong); }
+.aicc-fbt__view { min-block-size: var(--aicc-tap); padding: 0 0.25rem; border: 0; border-block-end: 3px solid transparent; margin-block-end: -1px; background: transparent; color: var(--aicc-text-muted); font: inherit; font-size: var(--aicc-text-sm); font-weight: 650; cursor: pointer; touch-action: manipulation; }
+.aicc-fbt__view:hover { color: var(--aicc-text); }
+.aicc-fbt__view[aria-pressed="true"] { color: var(--aicc-text); border-block-end-color: var(--aicc-primary); }
+/* Merchant view: the compare group stays in place but is unavailable. Not dimmed by opacity (text stays AA); the current choice is outlined instead of filled. */
+.aicc-fbt__mode:disabled { cursor: not-allowed; color: var(--aicc-text-muted); }
+.aicc-fbt__mode:disabled:hover { background: transparent; }
+.aicc-fbt__mode:disabled[aria-pressed="true"] { background: var(--aicc-surface); color: var(--aicc-text); box-shadow: inset 0 0 0 1.5px var(--aicc-border-strong); }
+.aicc-fbt__controls { justify-content: space-between; inline-size: 100%; }
+.aicc-fbt__result { margin: 0; font-weight: 600; font-size: var(--aicc-text-sm); color: var(--aicc-text); background: var(--aicc-info-bg); border-radius: var(--aicc-radius-md); padding: 0.6rem 0.85rem; min-block-size: 2.75rem; }
+.aicc-fbt__plain { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--aicc-space-3); }
+@media (min-width: 40rem) { .aicc-fbt__plain { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.aicc-fbt-plain { display: grid; gap: 0.35rem; justify-items: start; padding: var(--aicc-space-3); border: 1px solid var(--aicc-border); border-radius: var(--aicc-radius-lg); background: var(--aicc-surface); }
+.aicc-fbt__now { margin: 0; padding: 0.6rem 0.85rem; border-radius: var(--aicc-radius-md); background: var(--aicc-success-bg); font-size: var(--aicc-text-sm); }
+.aicc-fbt__recointro { margin: 0; font-size: var(--aicc-text-sm); color: var(--aicc-text-inverse-muted); }
+@media (hover: none), (pointer: coarse) { .aicc-fbt__hint[data-kbd] { display: none; } }
+.aicc-insights__banner { display: inline-flex; align-items: center; gap: 0.4rem; margin: 0; justify-self: start; padding: 0.2rem 0.7rem; border-radius: var(--aicc-radius-pill); background: var(--aicc-info-bg); color: var(--aicc-eyebrow-fg); font-size: var(--aicc-text-sm); font-weight: 700; }
+
+/* Wide screens: every tab panel shares one grid cell, so the workspace keeps the height of its tallest panel and nothing below it jumps when you switch tabs
+   (hidden panels stay laid out, invisible and inert; lazy modules inside them mount early, so anchors below land where they should). */
+@media (min-width: 48rem) {
+  .aicc-tabs[data-enhanced] .aicc-tabs__stack { display: grid; }
+  .aicc-tabs[data-enhanced] .aicc-tabs__stack > .aicc-tabs__panel { grid-area: 1 / 1; }
+  .aicc-tabs[data-enhanced] .aicc-tabs__panel[data-inactive="true"] { visibility: hidden; }
+}
+.aicc-tabs__panel:focus-visible { outline: none; box-shadow: var(--aicc-focus-ring); border-radius: var(--aicc-radius-md); }
+.aicc-faqsearch { scroll-margin-top: 7rem; }
+.aicc-faqsearch__count { margin: 0; min-block-size: 1.5rem; font-weight: 650; color: var(--aicc-text); }
+.aicc-fbt__fieldset + .aicc-fbt__hint { margin-block-start: var(--aicc-space-3); }
+/* Loop strip: the steps are links, so they look like links (underlined label, chevron-free) */
+.aicc-loop__step > a .aicc-loop__t { text-decoration: underline; text-decoration-color: var(--aicc-border-strong); text-underline-offset: 0.25em; text-decoration-thickness: 1px; }
+.aicc-loop__step > a:hover .aicc-loop__t { text-decoration-color: currentColor; }
+/* Phone: two dashboard tiles per row (was one per row: a 1,500px panel). */
+@media (max-width: 40rem) { .aicc-dash__tiles--three { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

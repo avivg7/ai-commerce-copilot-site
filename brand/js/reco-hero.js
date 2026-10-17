@@ -10,13 +10,16 @@ export const CHIP_ICONS = ["trending-up", "mouse-pointer-click", "sparkles", "li
 const CHIP_TIMING = [["true", "0s"], ["false", "0.6s"], ["false", "1.1s"], ["true", "0.3s"], ["true", "1.5s"]];
 
 /** Markup. labels: five truthful strings (no numbers). assets: { video, poster }. */
-export function renderRecoHeroHTML({ labels, assets, videoLabel = "" }) {
-  const chips = labels.map((label, i) => `<div class="aicc-reco-hero__chip" data-pos="${i + 1}" data-slow="${CHIP_TIMING[i][0]}" style="animation-delay:${CHIP_TIMING[i][1]}"><div class="aicc-reco-hero__chip-inner">${icon(CHIP_ICONS[i], 14)}${esc(label)}</div></div>`).join("");
+export function renderRecoHeroHTML({ labels, assets, videoLabel = "", motion = { pause: "Pause animation", play: "Play animation" } }) {
+  const chips = labels.map((label, i) => `<div class="aicc-reco-hero__chip" aria-hidden="true" data-pos="${i + 1}" data-slow="${CHIP_TIMING[i][0]}" style="animation-delay:${CHIP_TIMING[i][1]}"><div class="aicc-reco-hero__chip-inner">${icon(CHIP_ICONS[i], 14)}${esc(label)}</div></div>`).join("");
   return `<div class="aicc-reco-hero" data-aicc-reco-hero>` +
     `<div class="aicc-reco-hero__glow" aria-hidden="true"></div>` +
     `<div class="aicc-reco-hero__frame" data-aicc-reco-frame>` +
     `<video class="aicc-reco-hero__video" src="${esc(assets.video)}" poster="${esc(assets.poster)}" width="1280" height="720" muted loop playsinline preload="metadata" aria-hidden="true" tabindex="-1"${videoLabel ? ` data-label="${esc(videoLabel)}"` : ""}></video>` +
-    chips + `</div></div>`;
+    chips + `</div>` +
+    // WCAG 2.2.2: the looping video and floating chips can be paused. Hidden when motion is already off (nothing to pause).
+    `<button type="button" class="aicc-reco-hero__pause" data-aicc-pause aria-pressed="false" data-pause-label="${esc(motion.pause)}" data-play-label="${esc(motion.play)}" aria-label="${esc(motion.pause)}"><span data-ic="pause">${icon("pause", 18)}</span><span data-ic="play" hidden>${icon("play", 18)}</span></button>` +
+    `</div>`;
 }
 
 export function initRecoHero(root) {
@@ -25,12 +28,25 @@ export function initRecoHero(root) {
   const frame = root.querySelector("[data-aicc-reco-frame]") || root;
   const video = root.querySelector("video");
   let visible = false;
+  let userPaused = false;
+  const pauseBtn = root.querySelector("[data-aicc-pause]");
 
   const sync = () => {
     if (!video) return;
-    if (visible && motionAllowed()) video.play().catch(() => {});
+    if (visible && motionAllowed() && !userPaused) video.play().catch(() => {});
     else video.pause();
   };
+  if (pauseBtn) {
+    pauseBtn.addEventListener("click", () => {
+      userPaused = !userPaused;
+      root.dataset.paused = String(userPaused);
+      pauseBtn.setAttribute("aria-pressed", String(userPaused));
+      pauseBtn.setAttribute("aria-label", userPaused ? pauseBtn.dataset.playLabel : pauseBtn.dataset.pauseLabel);
+      pauseBtn.querySelector('[data-ic="pause"]').hidden = userPaused;
+      pauseBtn.querySelector('[data-ic="play"]').hidden = !userPaused;
+      sync();
+    });
+  }
   let io;
   if (video && "IntersectionObserver" in window) {
     io = new IntersectionObserver(([entry]) => { visible = entry.isIntersecting; sync(); }, { threshold: 0.25 });

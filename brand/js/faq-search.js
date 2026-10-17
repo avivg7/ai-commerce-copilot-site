@@ -6,13 +6,15 @@
 //        data-target="#faq-browse" data-hide="#faq-top"></div>
 //   #faq-browse   contains the questions: any number of <details id="qNN"> (optionally inside .aicc-accordion__item) and, optionally,
 //                 [data-faq-group] wrappers (a topic: heading + its questions) that are hidden when none of their questions match.
-//   data-hide     (optional) selector of blocks that duplicate questions (e.g. "Most asked before buying"); hidden while a filter is active.
+//   data-hide     (optional) selector(s), comma-separated, of blocks that only make sense without a filter (e.g. "Most asked before buying", the topic
+//                 chips); hidden while a filter is active.
 // The module injects: a labelled <input type="search"> inside <form role="search">, a polite live region with the result count,
 // and an empty state with a Clear button. It matches the question AND the answer, case- and diacritic-insensitively (Hebrew niqqud included),
-// every word of the query has to appear (AND). ?q=term is read on load and kept in sync with history.replaceState.
+// every word of the query has to appear (AND); a query shorter than 2 characters does not filter. The result count is VISIBLE under the field and is also the
+// polite live region. ?q=term is read on load (and scrolled into view) and kept in sync with history.replaceState.
 // A #qNN link to a question the filter is hiding clears the filter first, so the anchor always works.
 // Strings: strings.json[locale].faqSearch. strings._fallback === true means English text on another language's page (lang="en" dir="ltr").
-import { esc } from "./motion.js";
+import { esc, setLang } from "./motion.js";
 
 const norm = (s) => String(s).normalize("NFD").replace(/\p{M}+/gu, "").toLowerCase().replace(/\s+/g, " ").trim();
 let uid = 0;
@@ -26,8 +28,7 @@ export function initFaqSearch(root, opts = {}) {
   const locale = root.dataset.locale || opts.locale || document.documentElement.lang || "en";
   const id = `aicc-faqs-${++uid}`;
   const s = strings;
-  if (s._fallback) { root.setAttribute("lang", "en"); root.setAttribute("dir", "ltr"); }
-  else if (root.dataset.dir) root.setAttribute("dir", root.dataset.dir);
+  setLang(root, s, locale, root.dataset.dir);
 
   root.classList.add("aicc-faqsearch");
   root.classList.remove("aicc-faqsearch--placeholder");
@@ -38,11 +39,14 @@ export function initFaqSearch(root, opts = {}) {
     `<div class="aicc-faqsearch__field"><input id="${id}-q" type="search" name="q" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="search" placeholder="${esc(s.placeholder)}" aria-describedby="${id}-hint">` +
     `<button type="button" class="aicc-faqsearch__clear" data-clear hidden>${esc(s.clear)}</button></div>` +
     `<p class="aicc-faqsearch__hint" id="${id}-hint">${esc(s.hint)}</p></form>` +
-    `<p class="aicc-sr-only" role="status" aria-live="polite" data-count></p>` +
+    `<p class="aicc-faqsearch__count" aria-hidden="true" data-count></p>` +
+    `<p class="aicc-sr-only" role="status" aria-live="polite" data-announce></p>` +
     `<div class="aicc-faqsearch__empty" data-empty hidden><p data-empty-text></p><button type="button" class="aicc-btn aicc-btn--outline aicc-btn--sm" data-clear>${esc(s.clear)}</button></div>`;
 
   const input = root.querySelector("input");
   const count = root.querySelector("[data-count]");
+  const announce = root.querySelector("[data-announce]");
+  let announceTimer = 0;
   const empty = root.querySelector("[data-empty]");
   const emptyText = root.querySelector("[data-empty-text]");
   const inlineClear = root.querySelector(".aicc-faqsearch__clear");
@@ -58,22 +62,26 @@ export function initFaqSearch(root, opts = {}) {
 
   function apply(raw, { syncUrl = true } = {}) {
     const q = raw.trim();
-    const words = norm(q).split(" ").filter(Boolean);
+    // At least two characters before the list is filtered (one letter matches almost everything and only makes the page jump).
+    const words = q.length < 2 ? [] : norm(q).split(" ").filter(Boolean);
     let shown = 0;
     for (const it of items) {
       const hit = !words.length || words.every((w) => it.text.includes(w));
       it.box.hidden = !hit;
       if (hit) shown++;
     }
-    for (const g of groups) g.hidden = !!words.length && !g.querySelector(".aicc-accordion__item:not([hidden]), details[id]:not([hidden])");
+    for (const g of groups) g.hidden = !!words.length && !items.some((it) => g.contains(it.d) && !it.box.hidden);
     for (const b of hideBlocks) b.hidden = !!words.length;
     target.hidden = !!words.length && shown === 0;
     empty.hidden = !(words.length && shown === 0);
-    inlineClear.hidden = !input.value;
+    inlineClear.hidden = !input.value || (words.length > 0 && shown === 0); // the empty state has its own Clear button
     if (words.length) {
       emptyText.textContent = s.empty.replace("{q}", q);
-      count.textContent = shown ? message(shown, q) : s.empty.replace("{q}", q);
+      count.textContent = shown ? message(shown, q) : "";
     } else count.textContent = "";
+    // The visible count updates at once; the screen-reader announcement waits for the typing to pause and then says only the final count.
+    clearTimeout(announceTimer);
+    announceTimer = setTimeout(() => { announce.textContent = words.length ? (shown ? message(shown, q) : s.empty.replace("{q}", q)) : ""; }, 450);
     root.dataset.filtering = words.length ? "true" : "false";
     if (syncUrl) {
       const u = new URL(location.href);
@@ -98,6 +106,9 @@ export function initFaqSearch(root, opts = {}) {
   window.addEventListener("hashchange", reveal);
 
   const initial = new URL(location.href).searchParams.get("q");
-  if (initial) { input.value = initial; apply(initial, { syncUrl: false }); }
+  if (initial) {
+    input.value = initial; apply(initial, { syncUrl: false });
+    if (!location.hash) requestAnimationFrame(() => root.scrollIntoView({ block: "start" }));
+  }
   reveal();
 }

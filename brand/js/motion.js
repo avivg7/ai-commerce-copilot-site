@@ -26,3 +26,18 @@ export function onMotionChange(cb) {
 export function esc(s) {
   return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 }
+
+/**
+ * lang/dir attributes (as an HTML string) for a kit block: English fallback strings -> lang="en" dir="ltr"; translated strings on a non-English page ->
+ * the page language (o.locale, o.dir), so the block also resets an enclosing fallback wrapper (WCAG 3.1.2). English pages need nothing.
+ */
+export function langAttrs(s, o = {}) {
+  if (s._fallback) return ' lang="en" dir="ltr"';
+  if (o.locale && o.locale !== "en") return ` lang="${o.locale}" dir="${o.dir || "ltr"}"`;
+  return "";
+}
+/** Same for a mounted element (the mount functions get locale and dir from the container's data attributes). */
+export function setLang(el, s, locale, dir) {
+  if (s._fallback) { el.setAttribute("lang", "en"); el.setAttribute("dir", "ltr"); }
+  else if (locale && locale !== "en") { el.setAttribute("lang", locale); if (dir) el.setAttribute("dir", dir); }
+}

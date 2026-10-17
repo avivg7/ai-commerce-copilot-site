@@ -42,9 +42,10 @@ MANIFEST.json     SHA-256 and size of every file; the contract both surfaces ver
 - **Reco hero**: `renderRecoHeroHTML({ labels: [5 strings], assets: { video, poster } })`. The video is `preload="metadata"`, has no `autoplay` attribute (played only while 25% in view and motion is allowed), poster first. Put the poster in a `<link rel=preload as=image fetchpriority=high>`.
 - **Watch demo**: `<button class="aicc-btn aicc-btn--secondary aicc-btn--lg" data-aicc-demo-trigger data-locale data-strings='{modal strings JSON}' data-demo-video data-demo-poster data-demo-captions>`. No video configured => the labelled placeholder (`[data-demo-placeholder]`), never footage.
 - **FBT demo**: `<div data-aicc-fbt data-locale data-dir data-strings='{demo strings JSON}' aria-busy="true">` (reserve ~44rem/36rem min-height). It mounts lazily when near the viewport; `data-strings` is `strings.json[locale].demo`.
-  Two controls over the SAME sample bundle: **Without AICC | With AICC** (what a shopper sees) and **What the shopper sees | What you see** (the merchant side: for each listed product
-  "Bought together N times" or "Same category — no purchase history yet", a rule select per product with the truthful semantics of `rules-core.js`, and the dashboard tiles that record the
-  add-to-cart). Everything is labelled "Sample data: not from a real store". There are no Strong/Medium/Light tiers: they are not in the product.
+  Two controls over the SAME sample bundle: **Plain related products | With AICC** (a segmented pill; opens on "With AICC", the result first; the plain state draws WooCommerce's own related-products block: a heading and product tiles, no ticks, total or button)
+  and **What shoppers see | What you see** (underlined text tabs; the merchant side: for each listed product "Bought together N times" or a no-count note, a rule select per product with the real ranking policy of `rules-core.js`, the list the shopper sees RIGHT NOW,
+  the dashboard tiles that record the add-to-cart, one observation and one Ask Reco line, both computed from the rules so neither promotes an excluded product). A live result line under the toggles states in one sentence what the current state shows.
+  Everything is labelled "Sample data: not from a real store". There are no Strong/Medium/Light tiers: they are not in the product.
 - **Rules demo** ("Control, not a black box"): `<div class="aicc-rules aicc-rules--placeholder" data-aicc-rules data-locale data-dir data-strings='{rules strings JSON}' aria-busy="true">` (the placeholder class reserves the height).
   A product select, four toggle buttons (Pin, Prefer, Deprioritize, Exclude; `aria-pressed`), Reset, and one polite live region. Semantics from `rules-core.js`, mirrored from the product: Exclude is a hard filter and always wins;
   out-of-stock and deleted products stay out even when pinned; Pin forces the first place (several pins: most recent first); Prefer and Deprioritize nudge exactly one place and never past a product of another group.
@@ -66,13 +67,16 @@ MANIFEST.json     SHA-256 and size of every file; the contract both surfaces ver
 - **Loop strip**: `renderLoopHTML(strings.loop, { links })` returns `<nav class="aicc-loop" data-aicc-loop aria-label>` with an ordered list of seven steps (`.aicc-loop__step > a > .aicc-loop__n + .aicc-loop__t`); a link may be `{ href, tab }` (the click also selects that tab of a tabbed workspace).
   `initBrand` adds a quiet sequential highlight when the strip scrolls into view (skipped under reduced motion). Words: `strings.json[locale].loop`.
 - **Tabs** (a tabbed workspace, ARIA tabs pattern): `<div class="aicc-tabs" data-aicc-tabs data-selected="<tab id>">` containing `<div class="aicc-tabs__list" role="tablist" aria-label hidden>` with `button.aicc-tabs__tab[role=tab][id][aria-controls][aria-selected][tabindex]`
-  and one `section.aicc-tabs__panel[role=tabpanel][id][aria-labelledby]` per tab, each starting with `<h3 class="aicc-tabs__ph">`. Without JavaScript the list stays hidden and every panel shows under its heading; with it the list appears and one panel shows
+  and a `div.aicc-tabs__stack` holding one `section.aicc-tabs__panel[role=tabpanel][id][aria-labelledby][tabindex=0]` per tab, each starting with `<h3 class="aicc-tabs__ph">`. On wide screens the panels share one grid cell (the workspace keeps the height of its tallest panel, inactive panels are
+  `visibility:hidden` and `inert`, via `data-inactive`); on narrow screens inactive panels get the `hidden` attribute. (Do not rely on `hidden` on wide screens: Tailwind's preflight `[hidden]{display:none!important}` lives in a lower layer and beats any unlayered rule.) Without JavaScript the list stays hidden and every panel shows under its heading; with it the list appears and one panel shows
   (arrow keys follow the reading direction, Home/End, roving tabindex, cross-fade that is instant under reduced motion). Lazy modules inside hidden panels (the rules demo) mount when their tab opens.
 - **Merchant Insights cards**: `renderInsightsHTML(strings.dash, { locale })`: the four kinds the product can show (Hot Product Detected, Strong Bundle Opportunity, High Interest Low Conversion, Top Recommendation) as sample cards with the 10-order gate.
 - **FAQ search** (`faq-search.js`, strings `strings.json[locale].faqSearch`): `<div data-aicc-faq-search data-locale data-dir data-strings='...' data-target="#faq-browse" data-hide="#faq-top">` next to a container of `<details id="qNN">` items
   (optionally in `[data-faq-group]` topic wrappers). It injects a labelled `input[type=search]` in a `form[role=search]`, a polite result-count region and an empty state with a Clear button. Client-side only: nothing is sent or stored;
-  the query lives in the input and in `?q=` (`history.replaceState`); matching is case- and diacritic-insensitive over question and answer text (all words must match); `#qNN` links clear a filter that would hide them. Without JavaScript the page is the plain full list.
-- **Translation fallback in every module**: when `strings._fallback === true` the container gets `lang="en" dir="ltr"` so English text is never presented as the page language.
+  the query lives in the input and in `?q=` (`history.replaceState`); matching is case- and diacritic-insensitive over question and answer text (all words must match); `#qNN` links clear a filter that would hide them. Without JavaScript the page is the plain full list. Details: a query shorter than 2 characters does not filter; the result count is visible under the field (and announced once, after a 450 ms pause in typing); `data-hide` takes several selectors (the duplicate "most asked" block and the topic chips are hidden while filtering);
+  topic wrappers with no match are hidden; the empty state has its own single Clear button; `?q=` scrolls the field into view.
+- **Hero pause control**: `renderRecoHeroHTML({ labels, assets, motion: { pause, play } })` adds a 44px `button[data-aicc-pause][aria-pressed]` (WCAG 2.2.2) that pauses the looping video and the floating chips (`data-paused` on `.aicc-reco-hero`); hidden when motion is already off. The chips are `aria-hidden` (they repeat page copy).
+- **Translation fallback in every module**: when `strings._fallback === true` the container gets `lang="en" dir="ltr"` so English text is never presented as the page language; when the strings are translated on a non-English page the container gets its own `lang`/`dir` (so a block inside a still-English wrapper resets the language, WCAG 3.1.2).
 - Body must use `-webkit-font-smoothing: antialiased` (the kit sets it on `html`) and the Geist font stack, or glyphs differ from the live site.
 
 ## Updating the kit
@@ -100,6 +104,11 @@ MANIFEST.json     SHA-256 and size of every file; the contract both surfaces ver
 6. **`translate` not `transform`** for the hover lift (Tailwind 4 uses the `translate` property, so computed `transform` stays `none`; the kit matches).
 7. **Nav link targets are 44px tall** (live: 20px text only); the text, size, weight and colour are the live values. Chips and the eyebrow pill keep the live 12px text.
 8. **Chips pixel check** compares paint with the label hidden because glyph baselines round differently by sub-pixel between the two pages; the chip's font, colour and size are asserted equal separately.
+
+9. **Secondary (glass) button boundary**: a 1px slate-500 border (`contract-baseline.json` `secondaryButton`, 4.76:1) instead of the live translucent white one, so the button has a visible boundary (WCAG 1.4.11). Nothing else about it changes.
+10. **Reco hero on phones**: the square frame is shortened to 16:10 below 40rem (the live site leaves a ~400px near-empty band around the 16:9 video); desktop geometry is the live one. A Pause/Play control is added (see the markup contract).
+11. **Language button**: no `aria-haspopup` (the popup is a disclosure of links, not a menu); `aria-expanded` and `aria-controls` stay.
+12. **Placement**: the loop strip band may sit between the hero and the demo, so the demo starts within 1300px of the page top (was 1100px).
 
 ## Licences
 

@@ -5,11 +5,12 @@
 // the Merchant Insights card and a Recommendation Preview row ("Bought together N times").
 // Two ways to use it: renderDashPreviewHTML(strings, opts) returns the markup (the site renders it on the server), and
 // mountDashPreview(el, opts) fills a [data-aicc-dash] element (the Control Plane theme). Strings: strings.json[locale].dash.
-//   opts: { locale, variant: "compact" | "full" (full numbers the blocks 1-4), widget: boolean (show the shopper widget panel), callouts: false to omit the numbered legend }
+//   opts: { locale, dir, variant: "compact" | "full" (full numbers the blocks 1-4), widget: boolean (show the shopper widget panel), callouts: false to omit the numbered legend }
 import { icon } from "./icons.js";
-import { esc } from "./motion.js";
+import { esc, langAttrs } from "./motion.js";
 
-const SAMPLE = { views: 1240, clicks: 86, adds: 31, orders: 9, revenue: 412 };
+// Store-level sample numbers for the dashboard overview. They differ from the single-bundle tiles in the demo on purpose (one sample dashboard, shown once).
+const SAMPLE = { views: 3860, clicks: 241, adds: 97, orders: 24, revenue: 1312 };
 
 export function renderDashPreviewHTML(s, o = {}) {
   const locale = s._fallback ? "en" : o.locale || "en";
@@ -26,7 +27,7 @@ export function renderDashPreviewHTML(s, o = {}) {
       `<div class="aicc-dash__wfoot"><span>${esc(s.widgetTotal)} <bdi>$98</bdi></span><span class="aicc-dash__wbtn">${esc(s.widgetAdd)}</span></div></div></section>`
     : "";
   return (
-    `<div class="aicc-dash" data-variant="${variant}" data-widget="${!!o.widget}"${s._fallback ? ' lang="en" dir="ltr"' : ""}>` +
+    `<div class="aicc-dash" data-variant="${variant}" data-widget="${!!o.widget}"${langAttrs(s, o)}>` +
     `<p class="aicc-dash__label">${icon("info", 16)}<span>${esc(s.label)}</span></p>` +
     `<div class="aicc-dash__panels">${widget}` +
     `<section class="aicc-dash__admin"><p class="aicc-dash__ptitle">${esc(s.youTitle)}</p><div class="aicc-dash__wp">` +
@@ -38,9 +39,10 @@ export function renderDashPreviewHTML(s, o = {}) {
     `<p class="aicc-dash__imetric">${esc(s.insightMetric)}: <strong><bdi>${n.format(48)}</bdi></strong></p><p class="aicc-dash__gate">${esc(s.insightGate)}</p></article>` +
     `<article class="aicc-dash__card">${mark(4)}<p class="aicc-dash__ctitle">${icon("package", 16)}${esc(s.previewHeading)}</p>` +
     `<p class="aicc-dash__pfor">${esc(s.previewFor)} <strong>${esc(s.products.kit)}</strong></p>` +
-    `<ul class="aicc-dash__prows"><li><span>${esc(s.products.filters)}</span><em>${esc(s.previewLearned.replace("{n}", n.format(48)))}</em></li>` +
-    `<li><span>${esc(s.products.grinder)}</span><em>${esc(s.previewLearned.replace("{n}", n.format(31)))}</em></li>` +
-    `<li><span>${esc(s.products.mug)}</span><em data-fallback="true">${esc(s.previewFallback)}</em></li></ul></article></div>` +
+    // As in the plugin: every product shows its price; only learned partners add "Bought together N times". A fallback product shows the price alone.
+    `<ul class="aicc-dash__prows"><li><span>${esc(s.products.filters)}</span><em><bdi>$14.00</bdi> · ${esc(s.previewLearned.replace("{n}", n.format(48)))}</em></li>` +
+    `<li><span>${esc(s.products.grinder)}</span><em><bdi>$46.00</bdi> · ${esc(s.previewLearned.replace("{n}", n.format(31)))}</em></li>` +
+    `<li><span>${esc(s.products.mug)}</span><em data-fallback="true"><bdi>$16.00</bdi></em></li></ul></article></div>` +
     `</div></section></div>` +
     (variant === "full" && o.callouts !== false ? `<ol class="aicc-dash__callouts"><li><span aria-hidden="true">1</span>${esc(s.callouts.a)}</li><li><span aria-hidden="true">2</span>${esc(s.callouts.b)}</li><li><span aria-hidden="true">3</span>${esc(s.callouts.c)}</li><li><span aria-hidden="true">4</span>${esc(s.callouts.d)}</li></ol>` : "") +
     `</div>`
@@ -57,8 +59,9 @@ export function renderInsightsHTML(s, o = {}) {
   const locale = s._fallback ? "en" : o.locale || "en";
   const n = new Intl.NumberFormat(locale);
   return (
-    `<div class="aicc-insights"${s._fallback ? ' lang="en" dir="ltr"' : ""}>` +
+    `<div class="aicc-insights"${langAttrs(s, o)}>` +
     `<p class="aicc-dash__label">${icon("info", 16)}<span>${esc(s.label)}</span></p>` +
+    `<p class="aicc-insights__banner">${icon("sparkles", 14)}<span>${esc(s.insightsBanner)}</span></p>` +
     `<ul class="aicc-insights__list">` +
     ["hot", "bundle", "interest", "winner"].map((k) => {
       const c = s.insightKinds[k];

@@ -22,7 +22,12 @@ export { motionAllowed, isCoarsePointer, onMotionChange } from "./motion.js";
  * ctx: { assetsBase: "/brand-kit", strings?: brand/i18n/strings.json }. Containers may carry their own strings as JSON in data-strings
  * (the site does); otherwise they come from ctx.strings[locale] (the theme can pass strings.json).
  */
+let anchorAt = 0;
 export function initBrand(ctx = {}, root = document) {
+  if (!document.documentElement.dataset.aiccAnchors) {
+    document.documentElement.dataset.aiccAnchors = "1";
+    document.addEventListener("click", (e) => { if (e.target.closest?.('a[href^="#"], a[href*="/#"]')) anchorAt = Date.now(); }, true);
+  }
   root.querySelectorAll("[data-aicc-header]").forEach(initSiteHeader);
   root.querySelectorAll("[data-aicc-lang]").forEach(initLangMenu);
   root.querySelectorAll("[data-aicc-reco-hero]").forEach(initRecoHero);
@@ -53,10 +58,19 @@ export function initBrand(ctx = {}, root = document) {
       const locale = el.dataset.locale || "en";
       const strings = el.dataset.strings ? JSON.parse(el.dataset.strings) : ctx.strings?.[locale]?.[key] || ctx.strings?.en?.[key];
       mod(el, { strings, locale, dir: el.dataset.dir, assetsBase: ctx.assetsBase || "", assets: { reco: `${ctx.assetsBase || ""}/reco-thinking-480.webp` } });
+      // A module above an in-page link target changes the page height after the jump: land on the target again (only right after a click on such a link).
+      if (Date.now() - anchorAt < 2500 && location.hash.length > 1) {
+        const t = document.getElementById(decodeURIComponent(location.hash.slice(1)));
+        if (t) t.scrollIntoView({ block: "start", behavior: "auto" });
+      }
     };
     if ("IntersectionObserver" in window) {
       const io = new IntersectionObserver((entries) => entries.forEach((en) => { if (en.isIntersecting) { io.unobserve(en.target); mount(en.target); } }), { rootMargin: "600px 0px" });
       els.forEach((el) => io.observe(el));
+      // Whatever is still unmounted a moment after load is mounted while the browser is idle, so the page has its final height before anyone taps a jump link.
+      const idle = () => els.forEach((el) => { io.unobserve(el); mount(el); });
+      const later = () => (window.requestIdleCallback ? window.requestIdleCallback(idle, { timeout: 4000 }) : setTimeout(idle, 2500));
+      if (document.readyState === "complete") setTimeout(later, 1200); else window.addEventListener("load", () => setTimeout(later, 1200), { once: true });
     } else els.forEach(mount);
   };
   lazy("[data-aicc-fbt]", "demo", async () => (await import("./fbt-demo.js")).mountFbt);

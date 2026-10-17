@@ -20,7 +20,7 @@ export function renderLangMenuHTML({ id, current, items, short, buttonLabel, cur
     return `<li><a class="aicc-lang__item" href="${esc(it.href)}" lang="${esc(it.htmlLang || it.locale)}" hreflang="${esc(it.htmlLang || it.locale)}" data-lang="${esc(it.locale)}"${cur ? ' aria-current="true"' : ""}><span>${esc(it.label)}</span>${cur ? icon("check", 16) + (currentWord ? `<span class="aicc-sr-only">(${esc(currentWord)})</span>` : "") : ""}</a></li>`;
   }).join("");
   return `<div class="aicc-lang${block ? " aicc-lang--block" : ""}" data-aicc-lang${persist ? " data-persist" : ""}>` +
-    `<button type="button" class="aicc-lang__btn" aria-haspopup="true" aria-expanded="false" aria-controls="${esc(id)}" aria-label="${esc(buttonLabel)}">${icon("globe", 18)}<span>${esc(short)}</span><span class="aicc-lang__chev">${icon("chevron-down", 14)}</span></button>` +
+    `<button type="button" class="aicc-lang__btn" aria-expanded="false" aria-controls="${esc(id)}" aria-label="${esc(buttonLabel)}">${icon("globe", 18)}<span>${esc(short)}</span><span class="aicc-lang__chev">${icon("chevron-down", 14)}</span></button>` +
     `<ul id="${esc(id)}" class="aicc-lang__menu" hidden>${lis}</ul></div>`;
 }
 

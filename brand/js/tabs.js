@@ -20,16 +20,35 @@ export function initTabs(root) {
   const panelOf = (t) => document.getElementById(t.getAttribute("aria-controls"));
   const rtl = () => getComputedStyle(root).direction === "rtl";
 
+  // Wide screens: every panel keeps its place in one grid cell (the workspace keeps the height of its tallest panel, so nothing below jumps);
+  // the inactive ones are invisible and inert. Narrow screens: inactive panels are simply hidden. (The `hidden` attribute is not used on wide screens:
+  // Tailwind's preflight declares [hidden] { display: none !important } in a lower cascade layer, which beats any unlayered !important.)
+  const wide = matchMedia("(min-width: 48rem)");
+  let current = null;
+  function paint() {
+    for (const t of tabs) {
+      const on = t === current;
+      const p = panelOf(t);
+      if (!p) continue;
+      p.hidden = !on && !wide.matches;
+      p.dataset.inactive = on ? "false" : "true";
+      p.inert = !on;
+    }
+    root.dataset.stacked = String(wide.matches);
+  }
+  wide.addEventListener("change", paint);
+
   function select(tab, { focus = false, animate = true } = {}) {
+    current = tab;
     for (const t of tabs) {
       const on = t === tab;
       t.setAttribute("aria-selected", String(on));
       t.tabIndex = on ? 0 : -1;
       const p = panelOf(t);
       if (!p) continue;
-      p.hidden = !on;
       if (on && animate) { p.classList.remove("is-entering"); void p.offsetWidth; p.classList.add("is-entering"); }
     }
+    paint();
     if (focus) tab.focus();
     root.dispatchEvent(new CustomEvent("aicc-tabs:change", { detail: tab.id, bubbles: true }));
   }
