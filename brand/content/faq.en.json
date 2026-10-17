@@ -62,7 +62,7 @@
     "q06": {
       "layer": "product", "topic": "setup",
       "q": "Do I need a developer?",
-      "a": "No code and no setup wizard. AICC places the widget at standard WooCommerce locations, and if it can't find a safe place on an unusual theme it hides rather than guess. A developer can help in that case."
+      "a": "No code to write. You connect from your WordPress admin and a setup checklist in the dashboard guides you. AICC places the widget at standard WooCommerce locations, and if it can't find a safe place on an unusual theme it hides rather than guess. A developer can help in that case."
     },
     "q02": {
       "layer": "product", "topic": "recs",
