@@ -1,7 +1,7 @@
 import { ArrowRight, Minus, X } from "lucide-react";
 import type { Locale } from "@/i18n/config";
 import type { Dictionary } from "@/i18n";
-import { fbProps } from "@/i18n";
+import { fbProps, txProps } from "@/i18n";
 import type { RichCtx } from "@/lib/rich";
 import { localePath } from "@/lib/routes";
 import { Container, Section, SectionHeading } from "@/components/ui/Primitives";
@@ -20,10 +20,12 @@ export function ProductPage({ locale, t }: { locale: Locale; t: Dictionary }) {
   const p = t.product;
   const ctx: RichCtx = { locale, t };
   const fb = (path: string) => fbProps(locale, path);
+  const tx = (path: string) => { const { lang, dir } = txProps(locale, path); return { lang, dir }; };
   const toc = [
     ["demo", p.toc.shopper],
     ["how-decided", p.toc.learn],
     ["sparse", p.toc.sparse],
+    ["compare", p.toc.compare],
     ["dashboard", p.toc.dash],
     ["control", p.toc.control],
     ["ask", p.toc.ask],
@@ -31,7 +33,6 @@ export function ProductPage({ locale, t }: { locale: Locale; t: Dictionary }) {
     ["safety", p.toc.safety],
     ["history", p.toc.history],
     ["stores", p.toc.stores],
-    ["compare", p.toc.compare],
     ["limits", p.toc.limits],
   ] as const;
   const cmpKeys = ["chosen", "see", "control", "explain", "guide", "history", "fail"] as const;
@@ -45,21 +46,23 @@ export function ProductPage({ locale, t }: { locale: Locale; t: Dictionary }) {
       <JsonLd data={faqLd(locale, t, "product")} />
 
       {/* 1. Hero */}
-      <div {...fb("product.hero")}>
-        <PageHead locale={locale} t={t} pageName={t.common.pageNames.product} title={p.hero.title} lead={p.hero.lead}>
+      <div>
+        <PageHead locale={locale} t={t} pageName={t.common.pageNames.product} title={<span {...fb("product.hero")}>{p.hero.title}</span>} lead={<span {...fb("product.hero")}>{p.hero.lead}</span>}>
           <div className="aicc-hero-actions">
-            <Button href={GET_STARTED_URL} variant="primary" size="lg" icon={<ArrowRight size={16} className="aicc-flip" aria-hidden="true" />}>{t.common.getStarted}</Button>
+            <Button href={GET_STARTED_URL} variant="primary" size="lg" {...tx("common.getStarted")} icon={<ArrowRight size={16} className="aicc-flip" aria-hidden="true" />}>{t.common.getStarted}</Button>
             <WatchDemo locale={locale} t={t} />
           </div>
-          <nav aria-label={t.common.toc} {...fb("product.toc")}>
-            <ul className="aicc-chips">
-              {toc.map(([id, label]) => (
-                <li key={id}><a href={`#${id}`}>{label}</a></li>
-              ))}
-            </ul>
-          </nav>
         </PageHead>
       </div>
+
+      {/* In-page navigation: one compact bar that stays under the header while you read (horizontal scroll on phones) */}
+      <nav className="aicc-subnav" aria-label={t.common.toc} {...fb("product.toc")}>
+        <ul>
+          {toc.map(([id, label]) => (
+            <li key={id}><a href={`#${id}`}>{label}</a></li>
+          ))}
+        </ul>
+      </nav>
 
       {/* 1b. The merchandising loop as one strip (each step links to its section on this page) */}
       <div className="aicc-loopband">
@@ -102,7 +105,7 @@ export function ProductPage({ locale, t }: { locale: Locale; t: Dictionary }) {
               <p>{p.sparse.p1}</p>
               <p>{p.sparse.p2}</p>
             </div>
-            <div className="aicc-note aicc-note--warm">
+            <div className="aicc-note">
               <strong>{p.sparse.limitTitle}</strong>
               {p.sparse.limit}
             </div>
@@ -111,7 +114,6 @@ export function ProductPage({ locale, t }: { locale: Locale; t: Dictionary }) {
             {[
               ["learned", p.sparse.slots.learned.replace("{n}", "48")],
               ["learned", p.sparse.slots.learned.replace("{n}", "31")],
-              ["category", p.sparse.slots.category],
               ["category", p.sparse.slots.category],
               ["newest", p.sparse.slots.newest],
             ].map(([kind, label], i) => (
@@ -125,8 +127,36 @@ export function ProductPage({ locale, t }: { locale: Locale; t: Dictionary }) {
         </Container>
       </Section>
 
+      {/* 4b. A fair comparison (moved up: it answers "why AICC" early) */}
+      <Section id="compare" tone="sunken" labelledBy="compare-title" fb={fb("product.compare")}>
+        <Container>
+          <SectionHeading id="compare-title" title={p.compare.title} lead={p.compare.lead} />
+          <div className="aicc-table-wrap">
+            <table className="aicc-table">
+              <caption className="aicc-sr-only">{p.compare.caption}</caption>
+              <thead>
+                <tr>
+                  <th scope="col"><span className="aicc-sr-only">{p.compare.colTopic}</span></th>
+                  <th scope="col">{p.compare.colWoo}</th>
+                  <th scope="col" data-col="aicc"><bdi>{p.compare.colAicc}</bdi></th>
+                </tr>
+              </thead>
+              <tbody>
+                {cmpKeys.map((k) => (
+                  <tr key={k}>
+                    <th scope="row">{p.compare.rows[k].topic}</th>
+                    <td data-label={p.compare.colWoo}>{p.compare.rows[k].woo}</td>
+                    <td data-col="aicc" data-label={p.compare.colAicc}>{p.compare.rows[k].aicc}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Container>
+      </Section>
+
       {/* 5. Dashboard */}
-      <Section id="dashboard" tone="sunken" labelledBy="dash-title" fb={fb("product.dash")}>
+      <Section id="dashboard" tone="surface" labelledBy="dash-title" fb={fb("product.dash")}>
         <Container>
           <SectionHeading id="dash-title" title={p.dash.title} lead={p.dash.lead} />
           <DashPreview locale={locale} t={t} variant="full" callouts={false} />
@@ -146,7 +176,7 @@ export function ProductPage({ locale, t }: { locale: Locale; t: Dictionary }) {
       </Section>
 
       {/* 6. Controls */}
-      <Section id="control" tone="surface" labelledBy="control-title" fb={fb("product.control")}>
+      <Section id="control" tone="sunken" labelledBy="control-title" fb={fb("product.control")}>
         <Container>
           <SectionHeading id="control-title" title={p.control.title} lead={p.control.lead} />
           <RulesDemo locale={locale} t={t} />
@@ -174,7 +204,7 @@ export function ProductPage({ locale, t }: { locale: Locale; t: Dictionary }) {
       </Section>
 
       {/* 7. Ask Reco */}
-      <Section id="ask" tone="sunken" labelledBy="ask-title" fb={fb("product.ask")}>
+      <Section id="ask" tone="surface" labelledBy="ask-title" fb={fb("product.ask")}>
         <Container>
           <SectionHeading id="ask-title" title={p.ask.title} lead={p.ask.lead} />
           <div className="aicc-twocol">
@@ -191,10 +221,10 @@ export function ProductPage({ locale, t }: { locale: Locale; t: Dictionary }) {
       </Section>
 
       {/* 8. Measurement and attribution */}
-      <Section id="measure" tone="surface" labelledBy="measure-title" fb={fb("product.measure")}>
+      <Section id="measure" tone="sunken" labelledBy="measure-title" fb={fb("product.measure")}>
         <Container>
           <SectionHeading id="measure-title" title={p.measure.title} lead={p.measure.lead} />
-          <Flow locale={locale} t={t} kind="measure" flow={{ title: p.measure.flow.title, steps: p.measure.flow.steps }} />
+          <Flow locale={locale} t={t} kind="measure" unit="product.measure" flow={{ title: p.measure.flow.title, steps: p.measure.flow.steps }} />
           <div className="aicc-twocol aicc-twocol--even" style={{ marginBlockStart: "2rem" }}>
             <div className="aicc-stackgap">
               <p className="aicc-note aicc-note--warm">{p.measure.association}</p>
@@ -209,7 +239,7 @@ export function ProductPage({ locale, t }: { locale: Locale; t: Dictionary }) {
       </Section>
 
       {/* 9. Safety / fail-soft */}
-      <Section id="safety" tone="sunken" labelledBy="safety-title" fb={fb("product.safety")}>
+      <Section id="safety" tone="surface" labelledBy="safety-title" fb={fb("product.safety")}>
         <Container>
           <SectionHeading id="safety-title" title={p.safety.title} lead={p.safety.lead} />
           <div className="aicc-flowgrid">
@@ -231,8 +261,24 @@ export function ProductPage({ locale, t }: { locale: Locale; t: Dictionary }) {
         </Container>
       </Section>
 
+      {/* 9b. A CTA right after the biggest risk-reducer */}
+      <Section tone="inverse" labelledBy="safety-cta" fb={fb("product.safetyCta")}>
+        <Container>
+          <div className="aicc-final">
+            <div className="aicc-stack aicc-stack--lg">
+              <h2 id="safety-cta" className="aicc-h2">{p.safetyCta.title}</h2>
+              <p className="aicc-lead">{p.safetyCta.body}</p>
+              <div className="aicc-hero-actions">
+                <Button href={GET_STARTED_URL} variant="primary" size="lg" {...tx("common.getStarted")} icon={<ArrowRight size={16} className="aicc-flip" aria-hidden="true" />}>{t.common.getStarted}</Button>
+                <Button href={localePath(locale, "pricing")} variant="ghost" size="lg" {...tx("common.seePricing")}>{t.common.seePricing}</Button>
+              </div>
+            </div>
+          </div>
+        </Container>
+      </Section>
+
       {/* 10. Historical learning */}
-      <Section id="history" tone="surface" labelledBy="history-title" fb={fb("product.history")}>
+      <Section id="history" tone="sunken" labelledBy="history-title" fb={fb("product.history")}>
         <Container>
           <SectionHeading id="history-title" title={p.history.title} lead={p.history.lead} />
           <div className="aicc-twocol aicc-twocol--even">
@@ -242,50 +288,21 @@ export function ProductPage({ locale, t }: { locale: Locale; t: Dictionary }) {
               <p>{p.history.p3}</p>
               <p><LocaleLink locale={locale} route="data-and-trust" hash="dataTrust-retention" className="aicc-link">{p.history.link}</LocaleLink></p>
             </div>
-            <Flow locale={locale} t={t} kind="history" flow={{ title: p.history.flowTitle, steps: p.history.flow }} />
+            <Flow locale={locale} t={t} kind="history" unit="product.history" flow={{ title: p.history.flowTitle, steps: p.history.flow }} />
           </div>
         </Container>
       </Section>
 
-      {/* 11. More than one store */}
-      <Section id="stores" tone="sunken" labelledBy="stores-title" fb={fb("product.stores")}>
+      {/* 11. More than one store: a short summary (the full explanation lives on Pricing) */}
+      <Section id="stores" tone="surface" labelledBy="stores-title" fb={fb("product.stores")}>
         <Container>
           <SectionHeading id="stores-title" title={p.stores.title} lead={p.stores.lead} />
           <div className="aicc-twocol aicc-twocol--even">
             <SlotRows rows={PLANS.map((pl) => ({ name: t.pricing.plans[pl.id].name, n: pl.stores, label: slotFor(pl.stores) }))} />
             <div className="aicc-prose">
               <p>{p.stores.p1}</p>
-              <p>{p.stores.p2}</p>
               <p><LocaleLink locale={locale} route="pricing" className="aicc-link">{p.stores.link}</LocaleLink></p>
             </div>
-          </div>
-        </Container>
-      </Section>
-
-      {/* 12. A fair comparison */}
-      <Section id="compare" tone="surface" labelledBy="compare-title" fb={fb("product.compare")}>
-        <Container>
-          <SectionHeading id="compare-title" title={p.compare.title} lead={p.compare.lead} />
-          <div className="aicc-table-wrap">
-            <table className="aicc-table">
-              <caption className="aicc-sr-only">{p.compare.caption}</caption>
-              <thead>
-                <tr>
-                  <td aria-hidden="true" style={{ background: "var(--aicc-surface-sunken)" }} />
-                  <th scope="col">{p.compare.colWoo}</th>
-                  <th scope="col" data-col="aicc"><bdi>{p.compare.colAicc}</bdi></th>
-                </tr>
-              </thead>
-              <tbody>
-                {cmpKeys.map((k) => (
-                  <tr key={k}>
-                    <th scope="row">{p.compare.rows[k].topic}</th>
-                    <td data-label={p.compare.colWoo}>{p.compare.rows[k].woo}</td>
-                    <td data-col="aicc" data-label={p.compare.colAicc}>{p.compare.rows[k].aicc}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
           </div>
         </Container>
       </Section>
@@ -340,8 +357,8 @@ export function ProductPage({ locale, t }: { locale: Locale; t: Dictionary }) {
               <h2 id="product-final" className="aicc-h2">{p.cta.title}</h2>
               <p className="aicc-lead">{p.cta.body}</p>
               <div className="aicc-hero-actions">
-                <Button href={GET_STARTED_URL} variant="primary" size="lg" icon={<ArrowRight size={16} className="aicc-flip" aria-hidden="true" />}>{t.common.getStarted}</Button>
-                <Button href={localePath(locale, "pricing")} variant="ghost" size="lg">{t.common.seePricing}</Button>
+                <Button href={GET_STARTED_URL} variant="primary" size="lg" {...tx("common.getStarted")} icon={<ArrowRight size={16} className="aicc-flip" aria-hidden="true" />}>{t.common.getStarted}</Button>
+                <Button href={localePath(locale, "pricing")} variant="ghost" size="lg" {...tx("common.seePricing")}>{t.common.seePricing}</Button>
               </div>
             </div>
           </div>

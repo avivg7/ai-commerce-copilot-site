@@ -12,6 +12,9 @@ interface CommonProps {
   children: ReactNode;
   /** Trailing icon; it nudges 2px on hover (legacy behaviour). */
   icon?: ReactNode;
+  /** Language and direction of the label (a translated label inside an English fallback block must say so). */
+  lang?: string;
+  dir?: "ltr" | "rtl";
 }
 
 type LinkProps = CommonProps & { href: string; onClick?: () => void };
@@ -53,20 +56,20 @@ export function Button(props: LinkProps | ButtonProps) {
     const { href, onClick } = props;
     if (/^(https?:|mailto:)/.test(href)) {
       return (
-        <a href={href} className={classes(props)} onClick={onClick}>
+        <a href={href} className={classes(props)} onClick={onClick} lang={props.lang} dir={props.dir}>
           {inner}
         </a>
       );
     }
     return (
-      <Link href={href} className={classes(props)} onClick={onClick}>
+      <Link href={href} className={classes(props)} onClick={onClick} lang={props.lang} dir={props.dir}>
         {inner}
       </Link>
     );
   }
   const { type = "button", disabled, onClick } = props;
   return (
-    <button type={type} className={classes(props)} disabled={disabled} onClick={onClick} aria-label={props["aria-label"]}>
+    <button type={type} className={classes(props)} disabled={disabled} onClick={onClick} aria-label={props["aria-label"]} lang={props.lang} dir={props.dir}>
       {inner}
     </button>
   );

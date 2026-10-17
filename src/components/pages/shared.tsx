@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import type { Locale } from "@/i18n/config";
+import { LOCALE_META, type Locale } from "@/i18n/config";
 import type { Dictionary } from "@/i18n";
 import { Rich, type RichCtx } from "@/lib/rich";
 import { Accordion } from "@/components/ui/Accordion";
@@ -68,6 +68,8 @@ export function Faq({ locale, t, page, ids, idPrefix = "" }: { locale: Locale; t
     return {
       id: `${idPrefix}${id}`,
       fallback: it.fallback,
+      lang: locale === "en" ? undefined : LOCALE_META[locale].htmlLang,
+      dir: locale === "en" ? undefined : LOCALE_META[locale].dir,
       tag: t.common.fallbackTag,
       aliases: idPrefix ? undefined : aliases[id],
       question: <Rich text={it.q} ctx={ctx} />,

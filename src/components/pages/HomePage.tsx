@@ -1,7 +1,7 @@
 import { ArrowRight, Check, Coffee } from "lucide-react";
 import type { Locale } from "@/i18n/config";
 import type { Dictionary } from "@/i18n";
-import { fbProps } from "@/i18n";
+import { fbProps, txProps } from "@/i18n";
 import { Rich, type RichCtx } from "@/lib/rich";
 import { PLANS } from "@/data/plans";
 import { GET_STARTED_URL } from "@/lib/site";
@@ -24,6 +24,7 @@ export function HomePage({ locale, t }: { locale: Locale; t: Dictionary }) {
   const ctx: RichCtx = { locale, t };
   const R = (text: string) => <Rich text={text} ctx={ctx} />;
   const fb = (path: string) => fbProps(locale, path);
+  const tx = (path: string) => { const { lang, dir } = txProps(locale, path); return { lang, dir }; };
   const arrow = <ArrowRight size={18} className="aicc-flip" aria-hidden="true" />;
   const w = h.workspace;
 
@@ -43,24 +44,24 @@ export function HomePage({ locale, t }: { locale: Locale; t: Dictionary }) {
             </h1>
             <p className="aicc-hero-lead aicc-fade-up" style={{ ["--i" as string]: 2 }}>{h.hero.lead}</p>
             <div className="aicc-hero-actions aicc-fade-up" style={{ ["--i" as string]: 3 }}>
-              <Button href={GET_STARTED_URL} variant="primary" size="lg" icon={<ArrowRight size={16} className="aicc-flip" aria-hidden="true" />}>
+              <Button href={GET_STARTED_URL} variant="primary" size="lg" {...tx("common.getStarted")} icon={<ArrowRight size={16} className="aicc-flip" aria-hidden="true" />}>
                 {t.common.getStarted}
               </Button>
               <WatchDemo locale={locale} t={t} />
             </div>
-            <ul className="aicc-hero__facts aicc-hero__facts--values aicc-fade-up" style={{ ["--i" as string]: 4 }}>
-              <li><Check size={18} aria-hidden="true" /><span>{h.hero.facts.learned}</span></li>
-              <li><Check size={18} aria-hidden="true" /><span>{h.hero.facts.control}</span></li>
-              <li><Check size={18} aria-hidden="true" /><span>{h.hero.facts.checkout}</span></li>
-            </ul>
-            <ul className="aicc-hero__confidence aicc-fade-up" style={{ ["--i" as string]: 5 }}>
+            <ul className="aicc-hero__confidence aicc-fade-up" style={{ ["--i" as string]: 4 }}>
               <li>{R(h.hero.confidence.price)}</li>
               <li>{h.hero.confidence.guarantee}</li>
               <li>{h.hero.confidence.renewal}</li>
             </ul>
+            <ul className="aicc-hero__facts aicc-hero__facts--values aicc-fade-up" style={{ ["--i" as string]: 5 }}>
+              <li><Check size={18} aria-hidden="true" /><span>{h.hero.facts.learned}</span></li>
+              <li><Check size={18} aria-hidden="true" /><span>{h.hero.facts.control}</span></li>
+              <li><Check size={18} aria-hidden="true" /><span>{h.hero.facts.checkout}</span></li>
+            </ul>
           </div>
           <div className="aicc-hero__visual">
-            <RecoHero labels={[t.brand.chips.orders, t.brand.chips.clicks, t.brand.chips.recs, t.brand.chips.insights, t.brand.chips.bundles]} />
+            <div {...tx("brand.chips")}><RecoHero labels={[t.brand.chips.orders, t.brand.chips.clicks, t.brand.chips.recs, t.brand.chips.insights, t.brand.chips.bundles]} motion={t.brand.motion} /></div>
           </div>
         </div>
       </section>
@@ -81,24 +82,27 @@ export function HomePage({ locale, t }: { locale: Locale; t: Dictionary }) {
               "#how-it-works",
             ]}
           />
+          <p className="aicc-loopband__note" {...fb("home.hero")}>{h.hero.timeline}</p>
         </Container>
       </div>
 
-      {/* 2. The difference, shown: the signature demo (shopper view and merchant view) directly after the hero */}
-      <FbtSection locale={locale} t={t} />
+      {/* 2. The difference, shown: the signature demo, with the one argument for it (category versus basket) directly beneath it */}
+      <FbtSection
+        locale={locale}
+        t={t}
+        after={
+          <div id="why" {...fb("home.why")} style={{ marginBlockStart: "3rem" }}>
+            <h3 className="aicc-h3">{h.why.title}</h3>
+            <p className="aicc-lead" style={{ marginBlock: "0.5rem 1.5rem", maxInlineSize: "52rem" }}>{h.why.lead}</p>
+            <Strip ctx={ctx} items={[h.why.points.intent, h.why.points.evidence, h.why.points.fallback]} />
+            <p style={{ marginBlockStart: "1.5rem" }}>
+              <LocaleLink locale={locale} route="product" hash="how-decided" className="aicc-link">{h.why.link}</LocaleLink>
+            </p>
+          </div>
+        }
+      />
 
-      {/* 3. Why normal related products aren't enough */}
-      <Section id="why" tone="surface" labelledBy="why-title" fb={fb("home.why")}>
-        <Container>
-          <SectionHeading id="why-title" title={h.why.title} lead={h.why.lead} />
-          <Strip ctx={ctx} items={[h.why.points.intent, h.why.points.evidence, h.why.points.fallback]} />
-          <p style={{ marginBlockStart: "1.5rem" }}>
-            <LocaleLink locale={locale} route="product" hash="how-decided" className="aicc-link">{h.why.link}</LocaleLink>
-          </p>
-        </Container>
-      </Section>
-
-      {/* 4. One premium workspace: understand, control, find opportunities, ask Reco (replaces the standalone dashboard, Control and Meet Reco sections) */}
+      {/* 3. One premium workspace: understand, control, find opportunities, ask Reco (replaces the standalone dashboard, Control and Meet Reco sections) */}
       <Section id="workspace" tone="sunken" labelledBy="workspace-title" fb={fb("home.workspace")} className="aicc-workspace">
         <Container>
           <SectionHeading id="workspace-title" title={w.title} lead={w.lead} />
@@ -163,7 +167,7 @@ export function HomePage({ locale, t }: { locale: Locale; t: Dictionary }) {
         </Container>
       </Section>
 
-      {/* 5. How it works */}
+      {/* 4. How it works */}
       <Section id="how-it-works" tone="surface" labelledBy="how-title" fb={fb("home.how")}>
         <Container>
           <SectionHeading id="how-title" title={h.how.title} lead={h.how.lead} />
@@ -171,7 +175,7 @@ export function HomePage({ locale, t }: { locale: Locale; t: Dictionary }) {
         </Container>
       </Section>
 
-      {/* 6. Store safety */}
+      {/* 5. Store safety */}
       <Section tone="sunken" labelledBy="safety-title" fb={fb("home.safety")}>
         <Container>
           <SectionHeading id="safety-title" title={h.safety.title} lead={h.safety.lead} />
@@ -195,7 +199,7 @@ export function HomePage({ locale, t }: { locale: Locale; t: Dictionary }) {
         </Container>
       </Section>
 
-      {/* 7. Pricing, value first */}
+      {/* 6. Pricing, value first */}
       <Section tone="surface" labelledBy="pricing-title" fb={fb("home.pricing")}>
         <Container>
           <SectionHeading id="pricing-title" title={h.pricing.title} lead={h.pricing.lead} />
@@ -223,7 +227,7 @@ export function HomePage({ locale, t }: { locale: Locale; t: Dictionary }) {
         </Container>
       </Section>
 
-      {/* 8. FAQ */}
+      {/* 7. FAQ */}
       <Section tone="sunken" labelledBy="questions-title" fb={fb("home.questions")}>
         <Container narrow>
           <SectionHeading id="questions-title" title={h.questions.title} lead={h.questions.lead} />
@@ -234,7 +238,7 @@ export function HomePage({ locale, t }: { locale: Locale; t: Dictionary }) {
         </Container>
       </Section>
 
-      {/* 9. Final CTA (no mascot here) */}
+      {/* 8. Final CTA (no mascot here) */}
       <Section tone="inverse" labelledBy="final-title" fb={fb("home.final")}>
         <Container>
           <div className="aicc-final">
@@ -243,11 +247,11 @@ export function HomePage({ locale, t }: { locale: Locale; t: Dictionary }) {
               <p className="aicc-lead">{h.final.body}</p>
               <p className="aicc-lead aicc-lead--sub">{R(h.final.guarantee)}</p>
               <div className="aicc-hero-actions">
-                <Button href={GET_STARTED_URL} variant="primary" size="lg">
+                <Button href={GET_STARTED_URL} variant="primary" size="lg" {...tx("common.getStarted")}>
                   {t.common.getStarted}
                   {arrow}
                 </Button>
-                <Button href={localePath(locale, "pricing")} variant="ghost" size="lg">
+                <Button href={localePath(locale, "pricing")} variant="ghost" size="lg" {...tx("common.seePricing")}>
                   {t.common.seePricing}
                 </Button>
               </div>

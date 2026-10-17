@@ -9,6 +9,7 @@ export interface PlanFinderStrings {
   label: string;
   hint: string;
   error: string;
+  many: string;
   empty: string;
   suggestion: string;
   results: { solo: string; studio: string; agency: string };
@@ -17,17 +18,21 @@ export interface PlanFinderStrings {
 }
 
 /** Tiny helper: how many stores -> which plan. Validates on blur/submit, error tied to the field with aria-describedby. */
-export function PlanFinder({ s }: { s: PlanFinderStrings }) {
+export function PlanFinder({ s, lang, dir }: { s: PlanFinderStrings; lang?: string; dir?: "ltr" | "rtl" }) {
   const [raw, setRaw] = useState("");
   const [touched, setTouched] = useState(false);
   const n = /^\d+$/.test(raw.trim()) ? Number(raw.trim()) : NaN;
   const valid = Number.isInteger(n) && n >= 1 && n <= 10;
-  const error = touched && raw.trim() !== "" && !valid ? s.error : touched && raw.trim() === "" ? s.error : undefined;
+  // Invalid input is reported as soon as it is typed (not only after the field loses focus); more than 10 stores gets its own path to support.
+  const tooMany = /^\d+$/.test(raw.trim()) && n > 10;
+  const error = raw.trim() !== "" && !valid ? (tooMany ? s.many : s.error) : touched && raw.trim() === "" ? s.error : undefined; // "touched" now means "submitted": tabbing through the empty field is not an error
   const plan = valid ? PLANS.find((p) => n <= p.stores)! : null;
 
   return (
     <form
       className="aicc-card"
+      lang={lang}
+      dir={dir}
       onSubmit={(e) => {
         e.preventDefault();
         setTouched(true);
@@ -44,7 +49,6 @@ export function PlanFinder({ s }: { s: PlanFinderStrings }) {
               autoComplete="off"
               value={raw}
               onChange={(e) => setRaw(e.target.value)}
-              onBlur={() => setTouched(true)}
             />
           )}
         </FormField>

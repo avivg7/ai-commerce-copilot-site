@@ -5,6 +5,8 @@ import { Button } from "./Button";
 import { cn } from "@/lib/cn";
 import { currencySuffix, formatPrice } from "@/data/plans";
 import { planUrl, type PlanId } from "@/lib/site";
+import { txProps } from "@/i18n";
+import type { Locale } from "@/i18n/config";
 
 export interface PricingCardProps {
   id: PlanId;
@@ -15,6 +17,8 @@ export interface PricingCardProps {
   perYear: string;
   featuredLabel?: string;
   features: string[];
+  /** Per-feature i18n paths (so each feature carries its own language), same order as `features`. */
+  featurePaths?: string[];
   cta: string;
   compact?: boolean;
   locale?: string;
@@ -28,32 +32,36 @@ export interface PricingCardProps {
  */
 export function PricingCard(p: PricingCardProps) {
   const H = `h${p.headingLevel ?? 3}` as "h2" | "h3";
+  // Each string says which language it is in: the card often sits inside a block that is still English fallback while these strings are translated.
+  const loc = (p.locale ?? "en") as Locale;
+  const A = (path: string) => { const { lang, dir } = txProps(loc, path); return { lang, dir }; };
+  const storesPath = p.id === "solo" ? "common.plan.oneStore" : "common.plan.upToStores";
   return (
     <article className={cn("aicc-plan", p.featuredLabel && "aicc-plan--featured", p.compact && "aicc-plan--compact")} aria-labelledby={`plan-${p.id}`}>
       <div>
-        <div className="aicc-plan__badgerow">{p.featuredLabel ? <Badge tone="brand">{p.featuredLabel}</Badge> : null}</div>
+        <div className="aicc-plan__badgerow">{p.featuredLabel ? <span {...A("common.plan.recommended")}><Badge tone="brand">{p.featuredLabel}</Badge></span> : null}</div>
         <H id={`plan-${p.id}`} className="aicc-plan__name">
           <bdi>{p.name}</bdi>
         </H>
-        <p className="aicc-muted aicc-small" style={{ marginBlockStart: 4 }}>{p.fit}</p>
+        <p className="aicc-muted aicc-small aicc-plan__fit" style={{ marginBlockStart: 4 }} {...A("pricing.plans")}>{p.fit}</p>
       </div>
       <p className="aicc-plan__price">
         <span className="aicc-plan__amount"><bdi>{formatPrice(p.price, p.locale)}</bdi></span>
-        <span className="aicc-plan__per">{p.perYear}{currencySuffix(p.locale ?? "en")}</span>
+        <span className="aicc-plan__per" {...A("common.plan.perYear")}>{p.perYear}{currencySuffix(p.locale ?? "en")}</span>
       </p>
-      <p className="aicc-plan__stores">{p.storesLabel}</p>
+      <p className="aicc-plan__stores" {...A(storesPath)}>{p.storesLabel}</p>
       {!p.compact ? (
         <ul className="aicc-plan__list">
-          {p.features.map((f) => (
+          {p.features.map((f, i) => (
             <li key={f}>
               <Check size={18} aria-hidden="true" />
-              <span>{f}</span>
+              <span {...(p.featurePaths?.[i] ? A(p.featurePaths[i]) : {})}>{f}</span>
             </li>
           ))}
         </ul>
       ) : null}
       {p.extra}
-      <Button href={planUrl(p.id)} variant={p.featuredLabel ? "primary" : "outline"} block size="lg">
+      <Button href={planUrl(p.id)} variant={p.featuredLabel ? "primary" : "outline"} block size="lg" {...A("common.plan.choose")}>
         {p.cta}
       </Button>
     </article>

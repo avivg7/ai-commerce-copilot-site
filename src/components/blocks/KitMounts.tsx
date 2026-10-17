@@ -28,29 +28,29 @@ export function RulesDemo({ locale, t }: { locale: Locale; t: Dictionary }) {
 
 /** Dashboard replica with the real labels; sample data, server-rendered from the kit markup. */
 export function DashPreview({ locale, t, variant = "compact", widget = false, callouts = true }: { locale: Locale; t: Dictionary; variant?: "compact" | "full"; widget?: boolean; callouts?: boolean }) {
-  const html = renderDashPreviewHTML(kitStrings(locale, t, "dash"), { locale, variant, widget, callouts });
+  const html = renderDashPreviewHTML(kitStrings(locale, t, "dash"), { locale, dir: LOCALE_META[locale].dir, variant, widget, callouts });
   return <div data-aicc-dash data-aicc-ssr dangerouslySetInnerHTML={{ __html: html }} />;
 }
 
 /** Ask Reco panel mockup (sample questions); the two question buttons are wired by initBrand. */
 export function RecoAskPanel({ locale, t }: { locale: Locale; t: Dictionary }) {
-  const html = renderRecoAskHTML(kitStrings(locale, t, "ask"), { assetsBase: kitAsset("").replace(/\/$/, "") });
+  const html = renderRecoAskHTML(kitStrings(locale, t, "ask"), { assetsBase: kitAsset("").replace(/\/$/, ""), locale, dir: LOCALE_META[locale].dir });
   return <div dangerouslySetInnerHTML={{ __html: html }} />;
 }
 
 /** Safety flow diagram: kit markup (.aicc-flow) rendered from the shared words (flows.*) or from custom steps. */
-export function Flow({ locale, t, kind, flow }: { locale: Locale; t: Dictionary; kind: "order" | "down" | "inactive" | "measure" | "history"; flow?: { title: string; steps: string[]; note?: string } }) {
+export function Flow({ locale, t, kind, flow, unit }: { locale: Locale; t: Dictionary; kind: "order" | "down" | "inactive" | "measure" | "history"; flow?: { title: string; steps: string[]; note?: string }; unit?: string }) {
   const data = flow ?? (t.flows as unknown as Record<string, { title: string; steps: string[]; note?: string }>)[kind];
-  const fallback = flow ? false : isFallback(locale, "flows");
-  return <div dangerouslySetInnerHTML={{ __html: renderFlowHTML(data, kind, { fallback }) }} />;
+  const fallback = isFallback(locale, flow ? (unit ?? "flows") : "flows"); // custom steps say which dictionary unit they come from
+  return <div dangerouslySetInnerHTML={{ __html: renderFlowHTML(data, kind, { fallback, locale, dir: LOCALE_META[locale].dir }) }} />;
 }
 
 /** The four kinds of Merchant Insights as sample cards (kit renderer; "Find opportunities" tab). */
 export function InsightsPreview({ locale, t }: { locale: Locale; t: Dictionary }) {
-  return <div dangerouslySetInnerHTML={{ __html: renderInsightsHTML(kitStrings(locale, t, "dash"), { locale }) }} />;
+  return <div dangerouslySetInnerHTML={{ __html: renderInsightsHTML(kitStrings(locale, t, "dash"), { locale, dir: LOCALE_META[locale].dir }) }} />;
 }
 
 /** The merchandising loop as one strip (kit markup .aicc-loop). `links` are the in-page targets of the seven steps. */
 export function Loop({ locale, t, links }: { locale: Locale; t: Dictionary; links: (string | { href: string; tab?: string })[] }) {
-  return <div dangerouslySetInnerHTML={{ __html: renderLoopHTML(kitStrings(locale, t, "loop"), { links }) }} />;
+  return <div dangerouslySetInnerHTML={{ __html: renderLoopHTML(kitStrings(locale, t, "loop"), { links, locale, dir: LOCALE_META[locale].dir }) }} />;
 }

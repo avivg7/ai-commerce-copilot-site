@@ -39,7 +39,7 @@ export function LanguageSuggestion({ locale, route, strings }: { locale: Locale;
         >
           {s.accept}
         </a>
-        <button type="button" className="aicc-btn aicc-btn--ghost" onClick={() => dismissLang(target)}>
+        <button type="button" className="aicc-btn aicc-btn--ghost" onClick={() => { dismissLang(target); /* focus must not fall to <body>: land on the skip link, the first tab stop of the page */ requestAnimationFrame(() => document.querySelector<HTMLElement>(".aicc-skip")?.focus()); }}>
           {s.dismiss}
         </button>
       </div>

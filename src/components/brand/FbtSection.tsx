@@ -9,6 +9,11 @@ import { Container, Section, SectionHeading } from "@/components/ui/Primitives";
  * "Frequently-bought-together, actually learned." The heading and lead are page content (their own fallback state); the interactive demo is rendered
  * by the kit (brand/js/fbt-demo.js) into the container below when it nears the viewport. The container carries its strings, so the kit needs no global state.
  */
+/** Keeps a hyphenated compound ("Frequently-bought-together") on one line instead of breaking after a hyphen. */
+function noHyphenBreak(text: string) {
+  return text.split(/(\S*-\S*)/).map((part, i) => (part.includes("-") ? <span key={i} className="aicc-nowrap">{part}</span> : part));
+}
+
 export function FbtSection({
   locale, t, tone = "sunken", title, lead, titleKey = "home.demo", children, after,
 }: { locale: Locale; t: Dictionary; tone?: "sunken" | "surface"; title?: string; lead?: string; titleKey?: string; children?: React.ReactNode; after?: React.ReactNode }) {
@@ -17,7 +22,7 @@ export function FbtSection({
     <Section id="demo" tone={tone} labelledBy="demo-title" className="aicc-fbt-section">
       <Container>
         <div {...fbProps(locale, titleKey)}>
-          <SectionHeading id="demo-title" title={title ?? t.home.demo.title} lead={lead ?? t.home.demo.lead} />
+          <SectionHeading id="demo-title" title={noHyphenBreak(title ?? t.home.demo.title)} lead={lead ?? t.home.demo.lead} />
         </div>
         {children}
         <div

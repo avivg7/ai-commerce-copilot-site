@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { Check, X } from "lucide-react";
 import { Rich, type RichCtx } from "@/lib/rich";
 import type { Locale } from "@/i18n/config";
-import { fbProps } from "@/i18n";
+import { txProps } from "@/i18n";
 
 /** Three (or more) points side by side, divided by hairlines under one gradient rule. */
 export function Strip({ items, ctx }: { items: { title: string; body: string }[]; ctx: RichCtx }) {
@@ -79,9 +79,9 @@ export function SlotRows({ rows }: { rows: { name: string; n: number; label: str
   );
 }
 
-/** Marks one string as English fallback text when its dictionary unit has not been translated yet. */
+/** Marks one string with its own language and direction: English fallback text as lang="en" dir="ltr", translated text as the page language (so it also resets an enclosing fallback block). */
 export function Fb({ locale, k, children }: { locale: Locale; k: string; children: ReactNode }) {
-  const a = fbProps(locale, k);
+  const a = txProps(locale, k);
   return a.lang ? <span {...a}>{children}</span> : <>{children}</>;
 }
 
@@ -99,12 +99,14 @@ export function Tabs({ id, label, tabs }: { id: string; label: string; tabs: { k
           </button>
         ))}
       </div>
+      <div className="aicc-tabs__stack">
       {tabs.map((t) => (
-        <section key={t.key} className="aicc-tabs__panel" id={`${id}-p-${t.key}`} role="tabpanel" aria-labelledby={`${id}-t-${t.key}`}>
+        <section key={t.key} className="aicc-tabs__panel" id={`${id}-p-${t.key}`} role="tabpanel" aria-labelledby={`${id}-t-${t.key}`} tabIndex={0}>
           <h3 className="aicc-tabs__ph">{t.title}</h3>
           {t.children}
         </section>
       ))}
+      </div>
     </div>
   );
 }

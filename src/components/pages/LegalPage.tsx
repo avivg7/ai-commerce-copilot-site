@@ -7,7 +7,6 @@ import { ACCESSIBILITY_REVIEWED_ON, DRAFT_UPDATED_ON, LEGAL_DRAFT_NOTICE } from 
 import { formatDate } from "@/lib/format";
 import type { RouteId } from "@/lib/routes";
 import { Container, Section, Banner } from "@/components/ui/Primitives";
-import { DraftNotice } from "@/components/ui/DraftNotice";
 import { JsonLd, PageHead } from "./shared";
 import { breadcrumbLd } from "@/lib/jsonld";
 import { Pair } from "@/components/blocks/Blocks";
@@ -44,6 +43,7 @@ export function LegalPage({ locale, t, doc }: { locale: Locale; t: Dictionary; d
   const intro = d.intro.replace("{date}", date);
   // dataTrust is a summary of the privacy policy; it carries the draft notices on its flagged blocks, not a page banner.
   const showStatus = doc !== "dataTrust" && doc !== "accessibility";
+  const showBanner = doc !== "accessibility";
   const fb = (path: string) => fbProps(locale, path);
   const short = doc === "dataTrust" ? t.legal.dataTrust.short : null;
 
@@ -58,9 +58,10 @@ export function LegalPage({ locale, t, doc }: { locale: Locale; t: Dictionary; d
       </PageHead>
       <Section tone="surface">
         <Container>
-          {LEGAL_DRAFT_NOTICE && (showStatus || translated) ? (
+          {LEGAL_DRAFT_NOTICE && (showBanner || translated) ? (
             <div style={{ display: "grid", gap: "0.75rem", marginBlockEnd: "2rem", maxInlineSize: "var(--aicc-measure)" }}>
-              {showStatus ? <Banner tone="warning" role="note"><strong>{t.common.draft.badge}</strong>{t.common.draft.text}</Banner> : null}
+              {/* One draft notice per page (not one per section): the legalReview flags stay in src/data/legal.ts and in launch:check. */}
+              {showBanner ? <div data-legal-draft="true"><Banner tone="warning" role="note"><strong>{t.common.draft.badge}</strong>{t.common.draft.text}</Banner></div> : null}
               {translated ? <Banner tone="warning" role="note">{t.common.draft.translation}</Banner> : null}
             </div>
           ) : null}
@@ -100,7 +101,6 @@ export function LegalPage({ locale, t, doc }: { locale: Locale; t: Dictionary; d
                             ) : (
                               <p><Rich text={v as string} ctx={ctx} /></p>
                             )}
-                            {b.legalReview ? <DraftNotice label={t.common.draft.badge} /> : null}
                           </div>
                         );
                       })}

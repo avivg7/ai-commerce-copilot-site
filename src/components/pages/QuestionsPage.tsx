@@ -23,7 +23,8 @@ export function QuestionsPage({ locale, t }: { locale: Locale; t: Dictionary }) 
   const topics = FAQ_TOPICS.map((topic) => ({ topic, ids: FAQ.filter((f) => f.topic === topic.id).map((f) => f.id) })).filter((x) => x.ids.length);
   const tag = (id: string) => {
     const x = faqTitle(locale, "topics", id);
-    return x.fallback ? { lang: "en", dir: "ltr" as const, "data-needs-translation": `topics.${id}` } : {};
+    if (x.fallback) return { lang: "en", dir: "ltr" as const, "data-needs-translation": `topics.${id}` };
+    return locale === "en" ? {} : { lang: LOCALE_META[locale].htmlLang, dir: LOCALE_META[locale].dir };
   };
   const searchFallback = isFallback(locale, "faqSearch");
   return (
@@ -38,16 +39,7 @@ export function QuestionsPage({ locale, t }: { locale: Locale; t: Dictionary }) 
         lead={<span {...fb("questionsPage.hero")}><Rich text={q.hero.lead} ctx={ctx} /></span>}
       />
 
-      <Section id="most-asked" tone="surface" labelledBy="top-title" fb={fb("questionsPage.top")}>
-        <Container narrow>
-          <div data-faq-top id="faq-top">
-            <SectionHeading id="top-title" title={q.top.title} lead={q.top.lead} />
-            <Faq locale={locale} t={t} page="questions" ids={FAQ_MOST_ASKED} idPrefix="top-" />
-          </div>
-        </Container>
-      </Section>
-
-      <Section id="search" tone="sunken" labelledBy="search-title" fb={fb("questionsPage.search")}>
+      <Section id="search" tone="surface" labelledBy="search-title" fb={fb("questionsPage.search")}>
         <Container narrow>
           <h2 id="search-title" className="aicc-sr-only">{q.search.title}</h2>
           <div
@@ -56,23 +48,34 @@ export function QuestionsPage({ locale, t }: { locale: Locale; t: Dictionary }) 
             data-locale={locale}
             data-dir={searchFallback ? "ltr" : LOCALE_META[locale].dir}
             data-target="#faq-browse"
-            data-hide="#faq-top"
+            data-hide="#faq-top, #faq-browse-head"
             data-strings={JSON.stringify(kitStrings(locale, t, "faqSearch"))}
             aria-busy="true"
           />
         </Container>
       </Section>
 
+      <Section id="most-asked" tone="sunken" labelledBy="top-title" fb={fb("questionsPage.top")}>
+        <Container narrow>
+          <div data-faq-top id="faq-top">
+            <SectionHeading id="top-title" title={q.top.title} lead={q.top.lead} />
+            <Faq locale={locale} t={t} page="questions" ids={FAQ_MOST_ASKED} idPrefix="top-" />
+          </div>
+        </Container>
+      </Section>
+
       <Section id="browse" tone="surface" labelledBy="browse-title" fb={fb("questionsPage.browse")}>
         <Container narrow>
-          <SectionHeading id="browse-title" title={q.browse.title} />
-          <nav aria-label={q.nav.label} className="aicc-qnav" {...fb("questionsPage.nav")}>
-            <ul className="aicc-chips">
-              {topics.map(({ topic }) => (
-                <li key={topic.id}><a href={`#topic-${topic.id}`} {...tag(topic.id)}>{faqTitle(locale, "topics", topic.id).title}</a></li>
-              ))}
-            </ul>
-          </nav>
+          <div id="faq-browse-head">
+            <SectionHeading id="browse-title" title={q.browse.title} />
+            <nav aria-label={q.nav.label} className="aicc-qnav" {...fb("questionsPage.nav")}>
+              <ul className="aicc-chips">
+                {topics.map(({ topic }) => (
+                  <li key={topic.id}><a href={`#topic-${topic.id}`} {...tag(topic.id)}>{faqTitle(locale, "topics", topic.id).title}</a></li>
+                ))}
+              </ul>
+            </nav>
+          </div>
           <div id="faq-browse" data-faq-list>
             {topics.map(({ topic, ids }) => (
               <div key={topic.id} className="aicc-qtopic" data-faq-group>

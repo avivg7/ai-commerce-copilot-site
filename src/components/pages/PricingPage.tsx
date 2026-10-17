@@ -1,7 +1,7 @@
 import { ArrowRight, Check } from "lucide-react";
 import type { Locale } from "@/i18n/config";
 import type { Dictionary } from "@/i18n";
-import { fbProps } from "@/i18n";
+import { fbProps, txProps } from "@/i18n";
 import { Rich, type RichCtx } from "@/lib/rich";
 import { PLANS } from "@/data/plans";
 import { GET_STARTED_URL } from "@/lib/site";
@@ -19,8 +19,10 @@ export function PricingPage({ locale, t }: { locale: Locale; t: Dictionary }) {
   const ctx: RichCtx = { locale, t };
   const R = (x: string) => <Rich text={x} ctx={ctx} />;
   const fb = (path: string) => fbProps(locale, path);
+  const tx = (path: string) => { const { lang, dir } = txProps(locale, path); return { lang, dir }; };
   const storesLabel = (n: number) => (n === 1 ? t.common.plan.oneStore : t.common.plan.upToStores.replace("{n}", String(n)));
   const shared = [t.common.plan.term, t.common.plan.guarantee];
+  const sharedPaths = ["common.plan.term", "common.plan.guarantee"];
   const names = { solo: p.plans.solo.name, studio: p.plans.studio.name, agency: p.plans.agency.name };
 
   return (
@@ -30,8 +32,8 @@ export function PricingPage({ locale, t }: { locale: Locale; t: Dictionary }) {
       <JsonLd data={faqLd(locale, t, "pricing")} />
 
       {/* 1. Hero */}
-      <div {...fb("pricing.hero")}>
-        <PageHead locale={locale} t={t} pageName={t.common.pageNames.pricing} title={p.hero.title} lead={p.hero.lead} />
+      <div>
+        <PageHead locale={locale} t={t} pageName={t.common.pageNames.pricing} title={<span {...fb("pricing.hero")}>{p.hero.title}</span>} lead={<span {...fb("pricing.hero")}>{R(p.hero.lead)}</span>} />
       </div>
 
       {/* 2. What every plan includes, before any price */}
@@ -64,13 +66,14 @@ export function PricingPage({ locale, t }: { locale: Locale; t: Dictionary }) {
                 perYear={t.common.plan.perYear}
                 featuredLabel={pl.featured ? t.common.plan.recommended : undefined}
                 features={shared}
+                featurePaths={sharedPaths}
                 cta={t.common.plan.choose.replace("{plan}", p.plans[pl.id].name)}
                 headingLevel={3}
               />
             ))}
           </div>
           <p className="aicc-countline" style={{ marginBlockStart: "1.5rem" }}>{p.plansSection.note} {t.common.plan.renewal}</p>
-          <p className="aicc-countline" style={{ marginBlockStart: "0.5rem" }}>
+          <p className="aicc-countline" style={{ marginBlockStart: "0.5rem" }} {...tx("pricing.teaser")}>
             {p.teaser.text}{" "}
             <LocaleLink locale={locale} route="product" hash="demo" className="aicc-link">{p.teaser.link}</LocaleLink>
           </p>
@@ -91,10 +94,12 @@ export function PricingPage({ locale, t }: { locale: Locale; t: Dictionary }) {
           </div>
           <p className="aicc-prose" style={{ marginBlock: "1.5rem" }}>{R(p.which.outro)}</p>
           <PlanFinder
+            {...tx("pricing.finder")}
             s={{
               label: p.finder.label,
               hint: p.finder.hint,
               error: p.finder.error,
+              many: p.finder.many,
               empty: p.finder.empty,
               suggestion: p.finder.suggestion,
               results: { solo: p.finder.resultSolo, studio: p.finder.resultStudio, agency: p.finder.resultAgency },
@@ -157,7 +162,7 @@ export function PricingPage({ locale, t }: { locale: Locale; t: Dictionary }) {
               <h2 id="pricing-final" className="aicc-h2">{p.final.title}</h2>
               <p className="aicc-lead">{p.final.body}</p>
               <div className="aicc-hero-actions">
-                <Button href={GET_STARTED_URL} variant="primary" size="lg" icon={<ArrowRight size={16} className="aicc-flip" aria-hidden="true" />}>
+                <Button href={GET_STARTED_URL} variant="primary" size="lg" {...tx("common.getStarted")} icon={<ArrowRight size={16} className="aicc-flip" aria-hidden="true" />}>
                   {t.common.getStarted}
                 </Button>
               </div>
