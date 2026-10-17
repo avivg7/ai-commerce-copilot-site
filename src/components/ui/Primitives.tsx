@@ -2,6 +2,8 @@ import type { ReactNode, ElementType } from "react";
 import { Info, TriangleAlert } from "lucide-react";
 import { cn } from "@/lib/cn";
 
+export type FbAttrs = { lang?: string; dir?: "ltr"; "data-needs-translation"?: string };
+
 export function Container({
   children,
   narrow,
@@ -23,6 +25,7 @@ export function Section({
   labelledBy,
   className,
   tight,
+  fb,
 }: {
   children: ReactNode;
   tone?: "surface" | "sunken" | "inverse";
@@ -30,9 +33,12 @@ export function Section({
   labelledBy?: string;
   className?: string;
   tight?: boolean;
+  /** lang/dir attributes from fbProps(): English fallback text on a page of another language. */
+  fb?: FbAttrs;
 }) {
   return (
     <section
+      {...fb}
       id={id}
       aria-labelledby={labelledBy}
       className={cn(

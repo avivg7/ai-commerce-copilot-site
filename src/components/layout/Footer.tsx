@@ -7,6 +7,7 @@ import { LocaleLink } from "@/components/ui/LocaleLink";
 import { LangMenu } from "@/components/brand/LangMenu";
 import { A11yTrigger } from "./A11yControl";
 import { COMPANY } from "@/lib/site";
+import { fbProps } from "@/i18n";
 
 export function Footer({ locale, route, t }: { locale: Locale; route: RouteId; t: Dictionary }) {
   const c = t.common;
@@ -29,7 +30,7 @@ export function Footer({ locale, route, t }: { locale: Locale; route: RouteId; t
         <div className="aicc-footer__grid">
           <div style={{ display: "grid", gap: "1rem", alignContent: "start" }}>
             <Logo href={localePath(locale, "home")} full={t.meta.siteName} onDark />
-            <p style={{ maxInlineSize: "28ch" }}>{c.footer.tagline}</p>
+            <p style={{ maxInlineSize: "28ch" }} {...fbProps(locale, "common.footer.tagline")}>{c.footer.tagline}</p>
           </div>
           <nav aria-labelledby="footer-product">
             <h2 id="footer-product">{c.footer.productHeading}</h2>

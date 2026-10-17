@@ -8,12 +8,16 @@
     "start": "next start",
     "lint": "eslint",
     "i18n:check": "node scripts/i18n-check.mjs",
+    "i18n:strict": "node scripts/i18n-check.mjs --strict",
     "tokens:check": "node scripts/tokens-check.mjs",
     "pricing:check": "node scripts/pricing-check.mjs",
     "copy:check": "node scripts/copy-check.mjs",
+    "content:check": "node scripts/content-check.mjs",
     "contrast:check": "node scripts/contrast-check.mjs",
     "serve:out": "node scripts/serve-out.mjs",
     "audit": "node scripts/audit.mjs",
+    "axe:check": "node scripts/axe-pages.mjs",
+    "fallback:check": "node scripts/fallback-check.mjs",
     "perf:check": "node scripts/perf-check.mjs",
     "test:interaction": "node scripts/interaction-test.mjs",
     "og:build": "node scripts/build-og.mjs",
@@ -34,7 +38,8 @@
     "test:visual-contract": "node scripts/visual-contract.mjs",
     "test:visual-contract:site": "node scripts/visual-contract.mjs --surfaces=site",
     "shots:brand": "node scripts/shots-brand.mjs",
-    "shots:aa": "node scripts/shots-aa.mjs"
+    "shots:aa": "node scripts/shots-aa.mjs",
+    "shots:content": "node scripts/shots-content.mjs"
   },
   "dependencies": {
     "clsx": "^2.1.1",

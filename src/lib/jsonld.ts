@@ -4,7 +4,7 @@ import { PLANS, CURRENCY } from "@/data/plans";
 import { SITE_URL, absoluteUrl } from "@/lib/site";
 import type { RouteId } from "@/lib/routes";
 import { formatPlain, type RichCtx } from "@/lib/rich";
-import { FAQ_SELECTION, faqById, type FaqPageKey } from "@/data/faq";
+import { faqById, faqSelection, faqText, type FaqPageKey } from "@/data/faq";
 import { LEGAL_REVIEW_APPROVED } from "@/lib/site";
 
 /** Truthful structured data only: no aggregateRating, no reviews, no invented address, phone or sameAs. */
@@ -63,12 +63,12 @@ export function faqLd(locale: Locale, t: Dictionary, page: FaqPageKey) {
     "@context": "https://schema.org",
     "@type": "FAQPage",
     // Q&As that touch rights, retention, refunds or privacy stay out of structured data until a person with legal authority approves them.
-    mainEntity: (FAQ_SELECTION[page] as readonly string[]).filter((id) => LEGAL_REVIEW_APPROVED || !faqById(id).legalReview).map((id) => {
-      const it = t.faq.items[id as keyof typeof t.faq.items];
+    mainEntity: faqSelection(page).filter((id) => LEGAL_REVIEW_APPROVED || !faqById(id).legalReview).map((id) => {
+      const it = faqText(locale, id);
       return {
         "@type": "Question",
         name: formatPlain(it.q, ctx),
-        acceptedAnswer: { "@type": "Answer", text: formatPlain(it.a, ctx) },
+        acceptedAnswer: { "@type": "Answer", text: formatPlain(it.a.replace(/\n\n/g, " "), ctx) },
       };
     }),
   };
