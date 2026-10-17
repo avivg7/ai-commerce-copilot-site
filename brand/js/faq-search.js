@@ -9,14 +9,20 @@
 //   data-hide     (optional) selector(s), comma-separated, of blocks that only make sense without a filter (e.g. "Most asked before buying", the topic
 //                 chips); hidden while a filter is active.
 // The module injects: a labelled <input type="search"> inside <form role="search">, a polite live region with the result count,
-// and an empty state with a Clear button. It matches the question AND the answer, case- and diacritic-insensitively (Hebrew niqqud included),
+// and an empty state with a Clear button. It matches the question AND the answer, case- and diacritic-insensitively (Hebrew niqqud included; apostrophe and quote variants are equal; when nothing matches exactly, words of 5+ letters are retried by their stem),
 // every word of the query has to appear (AND); a query shorter than 2 characters does not filter. The result count is VISIBLE under the field and is also the
 // polite live region. ?q=term is read on load (and scrolled into view) and kept in sync with history.replaceState.
 // A #qNN link to a question the filter is hiding clears the filter first, so the anchor always works.
 // Strings: strings.json[locale].faqSearch. strings._fallback === true means English text on another language's page (lang="en" dir="ltr").
 import { esc, setLang } from "./motion.js";
 
-const norm = (s) => String(s).normalize("NFD").replace(/\p{M}+/gu, "").toLowerCase().replace(/\s+/g, " ").trim();
+// Normalisation: case, diacritics (Hebrew niqqud, Spanish accents, Russian ё/е), and the apostrophe / quotation-mark variants a keyboard produces
+// ("'" vs the Hebrew geresh ׳, the typographic ’ ‘; '"' vs gershayim ״, “ ” „), so "וידג'ט" finds "וידג׳ט".
+const norm = (s) => String(s).normalize("NFD").replace(/\p{M}+/gu, "").toLowerCase()
+  .replace(/[\u2018\u2019\u02bc\u05f3`´]/g, "'").replace(/[\u201c\u201d\u201e\u05f4«»]/g, '"').replace(/\s+/g, " ").trim();
+// Fallback when nothing matches exactly: a word of 5+ letters is cut to its stem (all but the last 3 letters, at least 4 kept) so
+// "лицензия" finds "лицензионный" and "продлить" finds "продление" (Russian, Spanish, Hebrew inflection) without full stemming.
+const stem = (w) => (w.length >= 5 ? w.slice(0, Math.max(4, w.length - 3)) : w);
 let uid = 0;
 
 export function initFaqSearch(root, opts = {}) {
@@ -65,11 +71,9 @@ export function initFaqSearch(root, opts = {}) {
     // At least two characters before the list is filtered (one letter matches almost everything and only makes the page jump).
     const words = q.length < 2 ? [] : norm(q).split(" ").filter(Boolean);
     let shown = 0;
-    for (const it of items) {
-      const hit = !words.length || words.every((w) => it.text.includes(w));
-      it.box.hidden = !hit;
-      if (hit) shown++;
-    }
+    const run = (ws) => { shown = 0; for (const it of items) { const hit = !ws.length || ws.every((w) => it.text.includes(w)); it.box.hidden = !hit; if (hit) shown++; } };
+    run(words);
+    if (words.length && shown === 0 && words.some((w) => stem(w) !== w)) run(words.map(stem));
     for (const g of groups) g.hidden = !!words.length && !items.some((it) => g.contains(it.d) && !it.box.hidden);
     for (const b of hideBlocks) b.hidden = !!words.length;
     target.hidden = !!words.length && shown === 0;

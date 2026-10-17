@@ -2,7 +2,7 @@
 // Keyboard: Enter/Space/ArrowDown open and focus the current item; Up/Down/Home/End move (no wrap); Esc closes and returns focus;
 // focus leaving or a click outside closes. The menu aligns to the logical end edge (RTL-safe). Inside the mobile menu use
 // class aicc-lang--block (full-width disclosure). Persistence: with data-persist on the root, choosing a language stores it in the
-// first-party cookie + localStorage "aicc_lang" (the Control Plane keeps its own URL-prefix logic and leaves data-persist off).
+// first-party cookie + localStorage "aicc_lang" (the Control Plane keeps its own URL-prefix logic and leaves data-persist off). With data-persist the links also carry the current ?query and #anchor.
 import { icon } from "./icons.js";
 import { esc } from "./motion.js";
 import { storeLang } from "./lang-store.js";
@@ -65,6 +65,17 @@ export function initLangMenu(root) {
     if (isOpen() && !root.contains(e.target)) close(false);
   });
   if (root.hasAttribute("data-persist")) {
+    // The site's switcher keeps the query (?q= of the FAQ search) and the #anchor when it changes language: the links are refreshed whenever the menu
+    // opens and when the hash changes (ids such as #q41 or #compare are the same in every language). Without JavaScript they stay plain page links.
+    const keep = () => items().forEach((a) => {
+      a.dataset.baseHref = a.dataset.baseHref || a.getAttribute("href").replace(/[?#].*$/, "");
+      a.setAttribute("href", a.dataset.baseHref + location.search + location.hash);
+    });
+    keep();
+    window.addEventListener("hashchange", keep);
+    btn.addEventListener("click", keep);
+    btn.addEventListener("keydown", keep);
+    menu.addEventListener("focusin", keep);
     menu.addEventListener("click", (e) => {
       const a = e.target.closest("a[data-lang]");
       if (a) storeLang(a.dataset.lang);

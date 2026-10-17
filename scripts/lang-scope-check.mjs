@@ -42,7 +42,7 @@ for (const locale of ["he", "es", "ru"]) for (const route of PAGES) {
           if (lang0.startsWith("en")) {
             labels += hits.length;
             // under lang=en: the node must BE the label(s) and nothing translated
-            const rest = text.replace(LABEL, "").replace(/[\s\d.,:;·|/()+\-–—%]+/g, "");
+            const rest = text.replace(LABEL, "").replace(/[\s\d.,:;!?»”·|/()+\-–—%]+/g, "");
             if (rest) out.push(`label wrapper holds translated text "${text.slice(0, 50)}" ${name}`);
             if (!dirOk) out.push(`English label without dir=ltr "${text.slice(0, 40)}" ${name}`);
           } else out.push(`English admin label "${hits[0]}" not marked lang=en in "${text.slice(0, 50)}" ${name}`);

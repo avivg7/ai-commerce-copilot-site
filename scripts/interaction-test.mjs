@@ -876,6 +876,126 @@ for (const [route, contrast] of [["", false], ["", true], ["pricing", false], ["
   check("product: a call to action follows the safety section", await p.evaluate(() => { const s = document.getElementById("safety"); return !!s?.nextElementSibling?.querySelector("a[href*='my-account'], a.aicc-btn--primary"); }));
   await ctx.close();
 }
+// 26. i18n/RTL review fixes
+// F2: in Hebrew a Latin run never swallows the sentence-final period ("AA." rendered ". AA"), and "WCAG 2.2" is ONE isolate
+{
+  const [ctx, p] = await fresh();
+  await p.goto(urlFor("he", "accessibility"));
+  const r = await p.evaluate(() => {
+    const bdis = [...document.querySelectorAll("main bdi")];
+    const trailing = bdis.filter((b) => /[.,:;!?]$/.test(b.textContent.trim())).map((b) => b.textContent);
+    const wcag = bdis.filter((b) => /^WCAG 2\.2$/.test(b.textContent.trim())).length;
+    const aa = bdis.find((b) => b.textContent.trim() === "AA");
+    const afterAA = aa ? (aa.nextSibling?.textContent || "").slice(0, 1) : "(no AA isolate)";
+    return { trailing, wcag, afterAA };
+  });
+  check(`rtl: no Latin isolate ends in punctuation on /he/accessibility/ (${JSON.stringify(r.trailing)}); "WCAG 2.2" is one isolate (${r.wcag}); the period follows the closing isolate of "AA" (next char "${r.afterAA}")`, r.trailing.length === 0 && r.wcag >= 1 && r.afterAA === ".", JSON.stringify(r));
+  for (const route of ["privacy", "data-and-trust", "pricing"]) {
+    await p.goto(urlFor("he", route));
+    const tr = await p.$$eval("main bdi", (bs) => bs.map((b) => b.textContent.trim()).filter((t) => /[.,:;!?]$/.test(t)));
+    check(`rtl: no Latin isolate ends in punctuation on /he/${route}/ (${tr.length})`, tr.length === 0, JSON.stringify(tr));
+  }
+  await ctx.close();
+}
+// F13: switching language keeps the FAQ search query and the #anchor
+{
+  const [ctx, p] = await fresh();
+  await p.goto(urlFor("es", "questions") + "?q=pago");
+  await p.waitForSelector("[data-aicc-lang][data-aicc-ready]");
+  await p.click(".aicc-site-header__actions .aicc-lang__btn");
+  const hrefs = await p.$$eval(".aicc-site-header__actions .aicc-lang__menu a", (as) => as.map((a) => a.getAttribute("href")));
+  check(`language switch keeps the FAQ search query (${hrefs.join(" , ")})`, hrefs.length === 4 && hrefs.every((h) => h.endsWith("/questions/?q=pago")), JSON.stringify(hrefs));
+  await p.keyboard.press("Escape");
+  await p.fill("[data-aicc-faq-search] input", "plan");
+  await p.click(".aicc-site-header__actions .aicc-lang__btn");
+  const h1 = await p.$$eval(".aicc-site-header__actions .aicc-lang__menu a", (as) => as.map((a) => a.getAttribute("href")));
+  check(`language switch follows the query as it is typed (${h1[0]})`, h1.every((h) => h.endsWith("/questions/?q=plan")), JSON.stringify(h1));
+  await p.goto(urlFor("es", "questions") + "#q41");
+  await p.waitForSelector("[data-aicc-lang][data-aicc-ready]");
+  await p.click(".aicc-site-header__actions .aicc-lang__btn");
+  const h0 = await p.$$eval(".aicc-site-header__actions .aicc-lang__menu a", (as) => as.map((a) => a.getAttribute("href")));
+  check(`language switch keeps the #anchor of a question (${h0[1]})`, h0.every((h) => h.endsWith("/questions/#q41")), JSON.stringify(h0));
+  await p.goto(urlFor("ru", "product") + "#compare");
+  await p.waitForSelector("[data-aicc-lang][data-aicc-ready]");
+  await p.click(".aicc-site-header__actions .aicc-lang__btn");
+  const h2 = await p.$$eval(".aicc-site-header__actions .aicc-lang__menu a", (as) => as.map((a) => a.getAttribute("href")));
+  check(`language switch keeps #compare on the Product page (${h2.join(" , ")})`, h2.every((h) => h.endsWith("/product/#compare")), JSON.stringify(h2));
+  await ctx.close();
+}
+// F14: FAQ search: apostrophe variants, stems, accents
+{
+  const [ctx, p] = await fresh();
+  const count = async (loc, q) => { await p.goto(urlFor(loc, "questions") + "?q=" + encodeURIComponent(q)); await p.waitForSelector("[data-aicc-faq-search] input"); await p.waitForTimeout(250); return p.$$eval("#faq-browse details[id^='q']:not([hidden]), details[id^='q']", (ds) => ds.filter((d) => !d.closest("[hidden]")).length); };
+  const he1 = await count("he", "וידג׳ט"); const he2 = await count("he", "וידג'ט");
+  check(`faq search[he]: an ASCII apostrophe finds what the geresh finds ("וידג'ט" ${he2} vs "וידג׳ט" ${he1})`, he1 > 0 && he2 === he1, `${he1} ${he2}`);
+  const ru1 = await count("ru", "лицензия");
+  check(`faq search[ru]: "лицензия" finds "лицензионный" through the stem fallback (${ru1} questions)`, ru1 > 0, String(ru1));
+  const ru2 = await count("ru", "продлить");
+  check(`faq search[ru]: "продлить" finds "продление" (${ru2} questions)`, ru2 > 0, String(ru2));
+  const es1 = await count("es", "politica"); const es2 = await count("es", "política");
+  check(`faq search[es]: accent-insensitive ("politica" ${es1} = "política" ${es2})`, es1 > 0 && es1 === es2, `${es1} ${es2}`);
+  const en0 = await count("en", "zzzzqqqq");
+  check("faq search: a query that matches nothing, even by stem, still shows the empty state", en0 === 0, String(en0));
+  await ctx.close();
+}
+// F7: reflow at 320px + Larger text: no horizontal overflow on any page in any language; hidden table headers never break a word
+{
+  const PAGES = ["", "product", "pricing", "questions", "data-and-trust", "privacy", "terms", "refund-policy", "accessibility"];
+  const bad = [];
+  for (const loc of ["en", "he", "es", "ru"]) for (const route of PAGES) {
+    const [ctx, p] = await fresh({ viewport: { width: 320, height: 800 }, reducedMotion: "reduce" });
+    await p.addInitScript(() => { try { localStorage.setItem("aicc_lang_dismissed", "1"); } catch {} });
+    await p.goto(urlFor(loc, route));
+    await p.evaluate(() => { document.documentElement.setAttribute("data-aicc-text", "large"); document.querySelectorAll("details").forEach((d) => (d.open = true)); });
+    await p.waitForTimeout(250);
+    const sw = await p.evaluate(() => document.documentElement.scrollWidth - innerWidth);
+    if (sw > 0) bad.push(`${loc}/${route || "home"} +${sw}px`);
+    await ctx.close();
+  }
+  check(`reflow: no horizontal overflow at 320px with Larger text on ${PAGES.length} pages x 4 languages${bad.length ? " (" + bad.join(", ") + ")" : ""}`, bad.length === 0, bad.join(", "));
+  const [ctx, p] = await fresh({ viewport: { width: 390, height: 800 } });
+  await p.goto(urlFor("en", "product"));
+  const th = await p.$$eval("#compare thead th", (ts) => ts.map((t) => getComputedStyle(t).whiteSpace));
+  check(`table: the visually hidden header cells on phones do not wrap, so no word breaks mid-way (${th.join(",")})`, th.length === 3 && th.every((w) => w === "nowrap"), th.join());
+  await ctx.close();
+}
+// F15: an English admin label never leaves the punctuation that follows it alone at the start of a new line (es, ru; measured line by line at 390 and 320)
+{
+  const bad = [];
+  let seen = 0;
+  for (const loc of ["es", "ru"]) for (const w of [390, 320]) for (const route of ["", "product"]) {
+    const [ctx, p] = await fresh({ viewport: { width: w, height: 800 } });
+    await p.addInitScript(() => { try { localStorage.setItem("aicc_lang_dismissed", "1"); } catch {} });
+    await p.goto(urlFor(loc, route));
+    await p.evaluate(async () => { document.querySelectorAll("details").forEach((d) => (d.open = true)); document.querySelector("#demo")?.scrollIntoView(); await new Promise((r) => setTimeout(r, 800)); document.querySelector(".aicc-fbt__view:not([aria-pressed=true])")?.click(); for (const t of document.querySelectorAll('[role="tab"]')) { t.click(); await new Promise((r) => setTimeout(r, 200)); } });
+    await p.waitForTimeout(600);
+    const r = await p.evaluate(() => {
+      const bad = []; let seen = 0;
+      for (const l of document.querySelectorAll(".aicc-admin-label")) {
+        if (!l.getClientRects().length) continue;
+        const n = l.nextSibling;
+        if (!(n && n.nodeType === 3 && /^[,.;:!?)»”]/.test(n.textContent))) continue;
+        seen++;
+        const rg = document.createRange(); rg.setStart(n, 0); rg.setEnd(n, 1);
+        const pr = rg.getClientRects()[0]; const lr = [...l.getClientRects()].pop();
+        if (pr && lr && pr.top > lr.bottom - 3) bad.push(l.textContent + "|" + n.textContent.slice(0, 8));
+      }
+      return { bad, seen };
+    });
+    seen += r.seen;
+    if (r.bad.length) bad.push(`${loc}@${w}/${route || "home"}: ${r.bad.slice(0, 3).join("; ")}`);
+    await ctx.close();
+  }
+  check(`labels: no punctuation is orphaned at the start of a line after an English label in es/ru (${seen} label+punctuation pairs measured)${bad.length ? " " + bad.join(" / ") : ""}`, bad.length === 0, bad.join(" / "));
+}
+// F18: Russian prices in one sentence say "(USD)" once
+{
+  const [ctx, p] = await fresh();
+  const counts = [];
+  for (const route of ["", "pricing"]) { await p.goto(urlFor("ru", route)); counts.push(await p.evaluate(() => (document.querySelector('meta[name="description"]')?.content.match(/\(USD\)/g) || []).length)); }
+  check(`ru meta descriptions state "(USD)" at most once (${counts.join(", ")})`, counts.every((c) => c <= 1), counts.join());
+  await ctx.close();
+}
 await browser.close();
 const failed = results.filter((r) => !r.ok);
 console.log(`\ninteraction tests: ${results.length - failed.length}/${results.length} passed`);

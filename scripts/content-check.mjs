@@ -48,9 +48,10 @@ const banned = facts.bannedClaims.map((s) => new RegExp(s, "i"));
 // (privacy, terms, refund policy, data and trust, accessibility), where a disclaimer is genuinely required: facts.json "apologeticAllowOnPages".
 const APOLOGETIC = banned.filter((re) => /promise|not a guarantee|we'd rather/.test(re.source));
 const LEGAL_KEY = /^legal\./;
-// Extra UK stems found by review. The privacy, terms and refund texts are mirrors of the Control Plane (not edited here): their spelling is a Control Plane task.
-const EXTRA_UK = ["finalis"];
-const MIRROR_KEY = /^legal\.(privacy|terms|refund)\./;
+// Extra UK stems found by review (cancelled/cancelling, honoured, finalised). They apply to EVERY string, the legal pages and the accessibility statement included.
+// The only allowed form is WooCommerce's own order status "Cancelled" (capitalised, as the admin shows it).
+const EXTRA_UK = ["finalis", "honour", "cancell"];
+const ukHit = (w, text) => new RegExp(`\\b${w}`, "i").test(w === "cancell" ? text.replace(/\bCancelled\b/g, " ") : text);
 const bannedFor = (where) => (LEGAL_KEY.test(where) || /^out\/(privacy|terms|refund-policy|data-and-trust|accessibility)\//.test(where) ? banned.filter((re) => !APOLOGETIC.includes(re)) : banned);
 const SHEET_RULES = [
   [/widget views?/i, "say 'recommendation views'"],
@@ -81,7 +82,7 @@ const scan = (where, text, sample = false) => {
     // The upgrade sentence is allowed to NEGATE the claim ("not an in-place upgrade").
     if (re.test(text) && !(/in-place upgrade/.test(re.source) && /not an? in-place upgrade|no in-place upgrade|isn't an in-place upgrade/i.test(text))) fail(where, `${why}: "${snippet(text, re)}"`);
   }
-  for (const w of [...facts.ukSpellings, ...(MIRROR_KEY.test(where) ? [] : EXTRA_UK)]) { const re = new RegExp(`\\b${w}`, "i"); if (re.test(text)) fail(where, `UK spelling "${w}" (the site is US English): "${snippet(text, re)}"`); }
+  for (const w of [...facts.ukSpellings, ...EXTRA_UK]) { if (ukHit(w, text)) fail(where, `UK spelling "${w}" (the site is US English): "${snippet(text, new RegExp(`\\b${w}`, "i"))}"`); }
   // 5. license-key contradiction
   if (/never paste|will never/i.test(text) && !/^legal\./.test(where)) fail(where, `license-key contradiction wording ("never paste" / "will never"): "${snippet(text, /never paste|will never/i)}"`);
   // 6. count as a selling point
@@ -208,7 +209,7 @@ if (RENDERED && fs.existsSync(outDir)) {
     // Rendered text includes the sample illustrations (labelled): figures are checked on the dictionary side, claims here.
     for (const re of bannedFor(`out/${rel}`)) if (re.test(text) && !negated(text, re)) fail(`out/${rel}`, `banned claim /${re.source}/: "${snippet(text, re)}"`);
     for (const [re, why] of SHEET_RULES) if (re.test(text) && !/in-place/.test(re.source) && !(/jargon/.test(why) && /^(privacy|terms|refund-policy|data-and-trust|accessibility)\//.test(rel))) fail(`out/${rel}`, `${why}: "${snippet(text, re)}"`);
-    for (const w of facts.ukSpellings) { const re = new RegExp(`\\b${w}`, "i"); if (re.test(text)) fail(`out/${rel}`, `UK spelling "${w}"`); }
+    for (const w of [...facts.ukSpellings, ...EXTRA_UK]) { if (ukHit(w, text)) fail(`out/${rel}`, `UK spelling "${w}"`); }
     if (/\ball \d+\b/i.test(text)) fail(`out/${rel}`, "count as a selling point");
     // One H1, sequential headings.
     const hs = [...html.matchAll(/<h([1-6])[\s>]/g)].map((m) => +m[1]);

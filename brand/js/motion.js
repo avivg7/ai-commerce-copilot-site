@@ -46,7 +46,7 @@ export function setLang(el, s, locale, dir) {
 const escRe = (t) => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 // One alternation, longest label first. "{n}" in a label (Bought together {n} times) matches the number that replaced it.
 const ALT = [...REPLICA_LABELS].sort((a, b) => b.length - a.length).map((l) => escRe(l).replace("\\{n\\}", "[\\d.,\\u00a0\\u202f ]+?")).join("|");
-const LABEL_RE = new RegExp(`(?<![\\p{L}])(${ALT})(?![\\p{L}])`, "gu");
+const LABEL_RE = new RegExp(`(?<![\\p{L}])(${ALT})[,.;:!?)»”]?(?![\\p{L}])`, "gu"); // one punctuation mark right after a label stays with it (no orphaned "," on a new line)
 const LABEL_EXACT = new RegExp(`^(?:${ALT})$`, "u");
 
 /**

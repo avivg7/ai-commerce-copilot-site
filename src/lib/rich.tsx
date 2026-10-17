@@ -21,11 +21,11 @@ export interface RichCtx {
 
 type Resolved = { text: string; pending?: "line" | "detail"; href?: string };
 
-function resolveToken(name: string, ctx: RichCtx): Resolved | null {
+function resolveToken(name: string, ctx: RichCtx, currencyNote = true): Resolved | null {
   const { locale } = ctx;
   if (ctx.vars && name in ctx.vars) return { text: ctx.vars[name] };
   const priceMatch = /^price(Solo|Studio|Agency)$/.exec(name);
-  if (priceMatch) return { text: formatPrice(planById(priceMatch[1].toLowerCase() as "solo").price, locale) + currencySuffix(locale) };
+  if (priceMatch) return { text: formatPrice(planById(priceMatch[1].toLowerCase() as "solo").price, locale) + (currencyNote ? currencySuffix(locale) : "") };
   const storesMatch = /^stores(Solo|Studio|Agency)$/.exec(name);
   if (storesMatch) return { text: String(planById(storesMatch[1].toLowerCase() as "solo").stores) };
   if (name === "year") return { text: formatYear(locale) };
@@ -44,7 +44,10 @@ function resolveToken(name: string, ctx: RichCtx): Resolved | null {
   return null;
 }
 
-const LATIN_RUN = /(\$?[A-Za-z][A-Za-z0-9_.&’'-]*(?: [A-Za-z][A-Za-z0-9_.&’'-]*)*|\$\d[\d,.]*)/g;
+// A Latin run (AICC, Plans, WCAG 2.2, copilt.org, HTTPS) is isolated so it never scrambles RTL text. Rules: a dot belongs to the run only between alphanumerics
+// (versions 2.2, domains copilt.org); a sentence-final period, comma or colon stays OUTSIDE the isolate, otherwise the period lands on the wrong side in Hebrew
+// ("AA." reading ". AA"); a number right after a Latin word joins it (WCAG 2.2, PHP 7.4) so "2.2 WCAG" cannot happen.
+const LATIN_RUN = /(\$?[A-Za-z][A-Za-z0-9_&’'-]*(?:\.[A-Za-z0-9_&’'-]+)*(?: [A-Za-z0-9][A-Za-z0-9_&’'-]*(?:\.[A-Za-z0-9_&’'-]+)*)*|\$\d[\d,]*(?:\.\d+)?)/g;
 
 function isolate(text: string, rtl: boolean, keyBase: string, locale: Locale = "en"): ReactNode {
   // Real plugin-admin labels (Recommendation Preview, Pin, Bought together {n} times ...) stay English in the admin of every language but Hebrew:
@@ -73,6 +76,8 @@ const TOKEN_RE = /(\*\*[^*]+\*\*|\[[^\]]+\]\((?:route:[a-z-]+|https?:\/\/[^)]+)\
 export function Rich({ text, ctx }: { text: string; ctx: RichCtx }): ReactNode {
   const rtl = LOCALE_META[ctx.locale].dir === "rtl";
   const pieces = text.split(TOKEN_RE);
+  // Several prices in one sentence say "(USD)" once, after the last one (ru: "Solo $99, Studio $199, Agency $499 (USD)").
+  const lastPrice = pieces.reduce((acc, p, i) => (/^\{price(Solo|Studio|Agency)\}$/.test(p) ? i : acc), -1);
   return (
     <>
       {pieces.map((piece, i) => {
@@ -102,7 +107,7 @@ export function Rich({ text, ctx }: { text: string; ctx: RichCtx }): ReactNode {
         }
         const tok = /^\{([A-Za-z0-9]+)\}$/.exec(piece);
         if (tok) {
-          const r = resolveToken(tok[1], ctx);
+          const r = resolveToken(tok[1], ctx, i === lastPrice);
           if (!r) return piece;
           if (r.pending) {
             return (
@@ -128,13 +133,13 @@ export function Rich({ text, ctx }: { text: string; ctx: RichCtx }): ReactNode {
 
 /** Plain-string version for <title>, meta descriptions, aria-labels and JSON-LD. */
 export function formatPlain(text: string, ctx: RichCtx): string {
-  return text
+  const flat = text
     .replace(/\*\*([^*]+)\*\*/g, "$1")
-    .replace(/\[([^\]]+)\]\((?:route:[a-z-]+|https?:\/\/[^)]+)\)/g, "$1")
-    .replace(/\{([A-Za-z0-9]+)\}/g, (m, name: string) => {
-      const r = resolveToken(name, ctx);
-      if (!r) return m;
-      return r.pending ? ctx.t.pending[r.pending] : r.text;
-    });
+    .replace(/\[([^\]]+)\]\((?:route:[a-z-]+|https?:\/\/[^)]+)\)/g, "$1");
+  const lastPriceAt = Math.max(-1, ...[...flat.matchAll(/\{price(?:Solo|Studio|Agency)\}/g)].map((x) => x.index ?? -1));
+  return flat.replace(/\{([A-Za-z0-9]+)\}/g, (m, name: string, offset: number) => {
+    const r = resolveToken(name, ctx, offset === lastPriceAt);
+    if (!r) return m;
+    return r.pending ? ctx.t.pending[r.pending] : r.text;
+  });
 }
-
