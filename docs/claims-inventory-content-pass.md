@@ -146,10 +146,15 @@ The ranking they show is the backend's own, ported line by line into `brand/js/r
 
 All numbers in the translated copy equal English (1/3/10 stores, 365 days, the 14-day window, 24 months, 24 hours, 10 orders, the dashboard period); `copy:check` bans a thirty-day guarantee or trial claim in every language (the dashboard period is allowed) and `content:check` compares the rendered figures with `facts.json`. All three locales are `machine-draft; native review pending`; the translated legal pages carry the "machine draft, legal review pending" notice. Translated text states nothing the English does not.
 
-## Legal mirrors that still need the same changes (not edited here)
+## Legal text on the site now mirrors the Control Plane's Stage 2 wording (counsel review needed)
 
-* **Hebrew term**: the site says "דשבורד" (the plugin admin's term); the Control Plane's Hebrew privacy, terms and refund mirrors say "לוח הבקרה" and need the same replacement.
+The site's privacy, terms and refund pages are plain-language summaries, but they now state the same facts as the Control Plane's legal sources
+(`docs/unified-experience/legal-changes-stage2.md` in the Control Plane repo, which owns the documents). Changed on the site, in all four languages:
 
-* `/refund-policy/`: the restructure from owner addendum J (sales summary; the "Duplicate purchases" exception contradicts the sales copy); "Your data after a refund" needs the "target" and "today" statements as two labelled sentences.
-* `/privacy/`: "Data from stores you connect" (c) says past orders are imported when you connect: it must say the import is optional (an explicit choice); the catalog list should match Data and trust (SKUs, product links, ids); the retention section needs the same two labelled statements.
-* `/terms/`: "Limits on our liability are being finalised with legal review" uses the UK spelling (US: finalized).
+* **Refund policy**: a purchase made twice by mistake is its own section and no longer an exception (so it no longer contradicts the sales copy); the response-time sentence is "a service target, not a contractual deadline" (was "an expectation, not a guarantee"); "Plans and renewal" (no in-place upgrade; AICC never renews a plan automatically and keeps no authorization to charge again); "Your data after a refund" splits the retention target (up to 12 months) from what happens today (nothing is deleted automatically).
+* **Privacy policy**: catalog data lists SKUs and the product page link; past-order import is optional and starts only when the merchant chooses (orders before connecting are not sent unless imported; orders after connecting are sent as created or updated); retention is split into target and today; the returning-store paragraph says the catch-up of the gap needs the merchant's import choice.
+* **Terms**: "Placing an order never waits on AICC" (availability); "no in-place upgrade" (plans); US spelling "finalized".
+
+These mirror the Control Plane's wording and **need counsel review** (and, for he/es/ru, a native-speaking legal reviewer) exactly like the Control Plane versions. The site's Hebrew refund text says "ערבות להחזר כספי" and the Control Plane mirror's "אין שדרוג במקום" calque was replaced on the site by "אי אפשר לשדרג תוכנית קיימת"; the Control Plane's he/es/ru mirrors should take the same two corrections ("no in-place upgrade", es "no se descuenta del precio" instead of "no abona", ru "Повысить действующий план нельзя").
+
+Still different from the Control Plane by design: the site's accessibility statement is shorter and about this website only. `docs/unified-experience/accessibility-statement-diff.md` in the Control Plane repo lists the line-by-line differences; neither text is canonical until the owner decides (the Control Plane owns the document per `docs/AUTHORITY.md`).

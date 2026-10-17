@@ -73,6 +73,16 @@ The AICC admin is translated to Hebrew and English only. The replicas on the sit
 * Hebrew dashboard term: the plugin admin says **דשבורד**, so the site uses "דשבורד / הדשבורד" everywhere (including its Hebrew legal strings). The Control Plane's legal mirrors still say "לוח הבקרה" and need the same change.
 * Russian "{n} раз": the counts in the kit and on the Product page are fixed samples (48, 31, 12). "раз" is right for the plural categories one and many and wrong only for few (2-4, 22-24 ...), so `i18n:check` fails if a sample count ever falls in "few"; add real `Intl.PluralRules("ru")` forms when counts become dynamic (the cart label already has them).
 
+### Behaviour added by the i18n/RTL review
+
+* **Latin runs in Hebrew** (`src/lib/rich.tsx`, `LATIN_RUN`): a Latin word, version (WCAG 2.2) or domain is one `<bdi>`; the sentence-final period or comma stays outside it, otherwise it renders on the wrong side ("AA." reading ". AA"). `test:interaction` measures the DOM on he pages.
+* **Language switch** keeps `?q=` and `#anchor` (`brand/js/lang-menu.js`, links refreshed whenever the menu opens or the hash changes; only with `data-persist`, i.e. the site).
+* **FAQ search** (`brand/js/faq-search.js`): apostrophe and quote variants are equal (geresh ׳ = '), and when nothing matches exactly each word of 5+ letters is retried by its stem ("лицензия" finds "лицензионный").
+* **Admin labels** keep one trailing punctuation mark inside their `lang="en"` leaf, so a comma or colon is never orphaned at the start of a line.
+* **Reflow**: at 320px with Larger text no page overflows in any language (`test:interaction` checks 9 pages x 4 languages); long Russian headings hyphenate only words of 10+ letters.
+* **Russian prices** state "(USD)" once per sentence, after the last price.
+* **Hebrew "guarantee"**: wherever English says money-back guarantee the Hebrew says "ערבות להחזר כספי". The pin rule says "קרוב לראש" (near the top), as in English.
+
 ### For native reviewers (collected from the three translation passes)
 
 **Hebrew**: "דשבורד" (prose; plugin term) vs the legal mirrors' "לוח הבקרה"; the plugin's labels (הכנסה משויכת, הזמנות משויכות, צפיות בהמלצות, הקלקות המלצה, שיעור הקלקות המלצה, הוספות חבילה לעגלה, תובנות סוחר, תצוגה מקדימה של המלצות, נעץ / העדף / הורד בעדיפות / החרג as masculine imperatives); "Ask Reco" kept in Latin with "שאלו את Reco" only as the replica panel title; unconfirmed terms: מרחב עבודה למרצ׳נדייזינג, מוצרים נלווים (learned partners), מוצרי השלמה (fallback products), מקום {n}, מקומות לחנויות, מכירות צולבות / משודרגות, מודל גנרטיבי, הנתון (signal), פרט גישה (credential), ערכת נושא, אזור הניהול, מתכנת; the tab "מה כדאי לקדם" for "Find opportunities" (a banned-phrase rule for the Hebrew word for a paid plan also matches inside the Hebrew word for "opportunities"); "אנג׳" for the EN tag; prices as "Solo ב־$99".
