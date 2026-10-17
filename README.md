@@ -46,6 +46,8 @@ npm run serve:out -- --port 3011   # serve out/ locally (add --prefix /ai-commer
 | `npm run i18n:check` | every translated unit in he/es/ru is valid (placeholders, markup, terminology, register) and every untranslated unit is an explicit `lang="en"` fallback; reports how much falls back. `npm run i18n:strict` fails until nothing does |
 | `npm run content:check` | the content pack (`brand/content`): banned claims, UK spellings, fact consistency with `facts.json`, FAQ integrity, no apologetic phrasing outside legal pages, rendered English pages; `-- --cp <theme dir>` verifies Control Plane byte parity |
 | `npm run fallback:check` | on every he/es/ru page, English text is only ever shown inside an element marked `lang="en"` (needs `serve:out`) |
+| `npm run lang:check` | on every he/es/ru page, translated text never sits under `lang="en"` and Hebrew never under `dir="ltr"` (WCAG 3.1.2; needs `serve:out`) |
+| `npm run test:rules` | the demos' rule engine (`brand/js/rules-core.js`) ranks exactly like the backend policy in all 32,500 rule combinations (an independent literal port of `recommendation_policy.py`) |
 | `npm run axe:check` | axe-core on Home, Product, Pricing, Questions and Data & Trust at 1280/768/390/360/320 in default, Enhanced contrast and reduced-motion modes (needs `serve:out`) |
 | `npm run shots:content` | the content-pass screenshots at 1280 and 390 (needs `serve:out`) |
 | `npm run copy:check` | banned phrases (fabricated results, free-tier and urgency claims, unshipped features) in every locale source, plus `docs/` and this file |

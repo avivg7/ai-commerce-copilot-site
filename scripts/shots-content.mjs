@@ -38,10 +38,12 @@ for (const [w, h] of [[1280, 900], [390, 844]]) {
   await reveal(["#demo", "#workspace"]);
   await shot("home-full");
   const demo = await section("#demo"); await p.waitForSelector(".aicc-fbt input[type=checkbox]");
-  await shot("demo-1-without", demo);
-  await p.locator(".aicc-fbt button[data-mode=with]").click(); await p.locator(".aicc-fbt input[type=checkbox]").nth(1).check(); await wait(p, 400); await shot("demo-2-with", demo);
-  await p.locator(".aicc-fbt button[data-view=merchant]").click(); await wait(p, 400); await shot("demo-3-merchant", demo);
-  await p.locator(".aicc-fbt select[data-rule=grinder]").selectOption("pin"); await wait(p, 300); await shot("demo-4-merchant-pinned", demo);
+  await shot("demo-1-with-aicc", demo);
+  await p.locator(".aicc-fbt input[type=checkbox]").nth(1).check(); await wait(p, 300); await shot("demo-2-with-aicc-ticked", demo);
+  await p.locator(".aicc-fbt button[data-mode=without]").click(); await wait(p, 400); await shot("demo-3-plain-related-products", demo);
+  await p.locator(".aicc-fbt button[data-mode=with]").click();
+  await p.locator(".aicc-fbt button[data-view=merchant]").click(); await wait(p, 400); await shot("demo-4-merchant", demo);
+  await p.locator(".aicc-fbt select[data-rule=grinder]").selectOption("pin"); await p.locator(".aicc-fbt select[data-rule=filters]").selectOption("exclude"); await wait(p, 300); await shot("demo-5-merchant-rules", demo);
   const ws = await section("#workspace");
   await shot("workspace-1-understand", ws);
   await p.locator("#ws-t-control").click(); await wait(p, 700);
@@ -58,8 +60,8 @@ for (const [w, h] of [[1280, 900], [390, 844]]) {
     await reveal(["#demo", "[data-aicc-rules]", ".aicc-ask"]);
     await shot(`${name}-full`);
   }
-  await p.goto(urlFor("en", "questions") + "?q=refund", { waitUntil: "load" }); await wait(p, 800);
-  await shot("questions-filtered", await section("#search"));
+  await p.goto(urlFor("en", "questions") + "?q=refund", { waitUntil: "load" }); await wait(p, 900);
+  await hideChrome(); await p.screenshot({ path: path.join(OUT, `${w}-questions-filtered.png`) }); console.log("wrote", `${w}-questions-filtered.png`);
   await ctx.close();
 }
 await b.close();

@@ -160,7 +160,7 @@ async function shotDiff(pageA, selA, pageB, selB, name, surface, patchA = null) 
     const handle = await page.$(sel);
     if (!handle) return null;
     // the live element with ONLY its gradient replaced by the accessible baseline: everything else is compared with the live site
-    if (patch) await handle.evaluate((el, g) => { el.style.backgroundImage = g; }, patch);
+    if (patch) await handle.evaluate((el, g) => { if (typeof g === "string") el.style.backgroundImage = g; else { if (g.bg) el.style.backgroundImage = g.bg; if (g.border) el.style.borderColor = g.border; } }, patch);
     await page.addStyleTag({ content: "*,*::before,*::after{animation:none!important;transition:none!important}" });
     await handle.scrollIntoViewIfNeeded();
     // same label text on both, no animation, nothing else visible: only the styling of the element is compared
@@ -305,7 +305,8 @@ async function surfaceChecks(surface, url) {
   compareRole(surface, "primaryMd", legacy, mine, PROPS.btn, "primary button md", ["background-image"]);
   const want = await page.evaluate(({ btn, text }) => { const c = (g) => { const d = document.createElement("div"); d.style.backgroundImage = g; document.body.append(d); const v = getComputedStyle(d).backgroundImage; d.remove(); return v; }; return { btn: c(btn), text: c(text) }; }, { btn: BASE.primaryButton.gradient, text: BASE.headlineGradient.gradient });
   for (const [role, label] of [["primaryLg", "primary button lg"], ["primaryMd", "primary button md"]]) if (mine[role]?.present) rec(surface, `${label}: gradient equals the accessible baseline (brand/contract-baseline.json)`, normCompound(mine[role].style["background-image"]) === normCompound(want.btn), `baseline "${normCompound(want.btn)}" vs here "${normCompound(mine[role].style["background-image"])}"`);
-  compareRole(surface, "secondaryLg", legacy, mine, PROPS.glass, "secondary (glass) button lg");
+  compareRole(surface, "secondaryLg", legacy, mine, PROPS.glass, "secondary (glass) button lg", ["border-top-color"]);
+  if (mine.secondaryLg?.present) rec(surface, "secondary button: border colour equals the accessible baseline (visible boundary, WCAG 1.4.11)", colorEq(mine.secondaryLg.style["border-top-color"], `rgb(${[1, 3, 5].map((i) => parseInt(BASE.secondaryButton.borderColor.slice(i, i + 2), 16)).join(", ")})`), `${mine.secondaryLg.style["border-top-color"]} vs ${BASE.secondaryButton.borderColor}`);
   // hover
   if (mine.primaryLg?.present) {
     const h = await hover(page, (() => document.querySelector("main .aicc-btn--primary.aicc-btn--lg")));
@@ -370,7 +371,7 @@ async function surfaceChecks(surface, url) {
   if (mine.primaryLg?.present) {
     for (const [sa, sb, name] of [["#top a", "main .aicc-btn--primary.aicc-btn--lg", "primary button"], ["#top video ~ div:nth-of-type(5) .glass", ".aicc-reco-hero__chip[data-pos=\"5\"] .aicc-reco-hero__chip-inner", "glass chip (Bundles, clear of the video)"], ["#top a:nth-of-type(2)", "main .aicc-btn--secondary.aicc-btn--lg", "secondary (glass) button"]]) {
       const lp = await mk(LEGACY), np = await mk(url);
-      await shotDiff(lp, sa === "#top a" ? "#top a:first-of-type" : sa, np, sb, name + (name === "primary button" ? " (live geometry/shadow/type + accessible baseline gradient)" : ""), surface, name === "primary button" ? BASE.primaryButton.gradient : null).catch((e) => rec(surface, `pixels: ${name}`, false, String(e).split("\n")[0]));
+      await shotDiff(lp, sa === "#top a" ? "#top a:first-of-type" : sa, np, sb, name + (name === "primary button" ? " (live geometry/shadow/type + accessible baseline gradient)" : ""), surface, name === "primary button" ? BASE.primaryButton.gradient : name === "secondary (glass) button" ? { border: BASE.secondaryButton.borderColor } : null).catch((e) => rec(surface, `pixels: ${name}`, false, String(e).split("\n")[0]));
       await lp.context().close(); await np.context().close();
     }
   }
@@ -379,7 +380,7 @@ async function surfaceChecks(surface, url) {
     rec(surface, "language control: height >= 44 and one compact button", mine.lang.rect.h >= 43.5 && mine.lang.rect.w < 140, `${Math.round(mine.lang.rect.w)}x${Math.round(mine.lang.rect.h)}`);
     rec(surface, "language control: 14px/500 muted", mine.lang.style["font-size"] === "14px" && mine.lang.style["font-weight"] === "500" && colorEq(mine.lang.style.color, "rgb(71, 85, 105)"), JSON.stringify(mine.lang.style));
     const a = mine.lang.aria;
-    rec(surface, "language control: aria-haspopup/expanded/controls/label", a.haspopup === "true" && a.expanded === "false" && !!a.controls && /:/.test(a.label || ""), JSON.stringify(a));
+    rec(surface, "language control: aria-expanded/controls/label (disclosure pattern: no aria-haspopup, the popup is a list of links, not a menu)", a.haspopup === null && a.expanded === "false" && !!a.controls && /:/.test(a.label || ""), JSON.stringify(a));
     await page.click(".aicc-lang__btn");
     const items = await page.$$eval(".aicc-site-header .aicc-lang__menu:not([hidden]) a, .aicc-lang:first-of-type .aicc-lang__menu:not([hidden]) a", (as) => as.map((x) => [x.lang, x.getAttribute("hreflang"), x.getAttribute("aria-current")]));
     rec(surface, "language menu: 4 links with lang/hreflang, one aria-current", items.length === 4 && items.every((i) => i[0] && i[1]) && items.filter((i) => i[2] === "true").length === 1, JSON.stringify(items));
