@@ -28,12 +28,12 @@ const RULES = [
   // Spanish
   [/\bgratis\b|prueba gratuita|gratuito/i, "es: free"], [/sin tarjeta de cr[eé]dito/i, "es: no credit card"], [/tendencia/i, "es: trends"],
   [/suscripci[oó]n/i, "es: subscription"], [/renovaci[oó]n autom[aá]tica/i, "es: auto-renew"], [/cancela cuando quieras/i, "es: cancel anytime"],
-  [/30 d[ií]as/i, "es: 30-day"], [/m[aá]s popular/i, "es: most popular"], [/resultados reales/i, "es: real results"], [/[uú]nete\b|[uú]nase/i, "es: join"],
+  [/30[ \u00a0]d[ií]as de (prueba|garant[ií]a|reembolso|devoluci[oó]n)|garant[ií]a de 30[ \u00a0]d[ií]as|(prueba|reembolso|devoluci[oó]n)[^.]{0,24}30[ \u00a0]d[ií]as|30[- ]d[ií]as? de dinero/i, "es: 30-day refund/trial claim (the guarantee is 14 days; \"últimos 30 días\" for the dashboard period is fine)"], [/m[aá]s popular/i, "es: most popular"], [/resultados reales/i, "es: real results"], [/[uú]nete\b|[uú]nase/i, "es: join"],
   [/conf[ií]an en nosotros/i, "es: trusted by"],
   // Russian
   [/бесплатн/i, "ru: free"], [/без банковской карты|без кредитной карты/i, "ru: no credit card"], [/тренд/i, "ru: trends"], [/подписк/i, "ru: subscription"],
   [/автопродлен|автоматическое продление|автоматически продлева/i, "ru: auto-renew"], [/отмен\w* в любой момент/i, "ru: cancel anytime"],
-  [/30 дней/i, "ru: 30-day"], [/самый популярный|самый востребованный/i, "ru: most popular"], [/реальные результаты/i, "ru: real results"],
+  [/30[ \u00a0]дней (на возврат|гарантии|пробн)|30[- ]дневн|(гарантия|возврат|пробн)[^.]{0,24}30[ \u00a0]дней/i, "ru: 30-day refund/trial claim (the guarantee is 14 days; \"последние 30 дней\" for the dashboard period is fine)"], [/самый популярный|самый востребованный/i, "ru: most popular"], [/реальные результаты/i, "ru: real results"],
   [/присоединяйтесь/i, "ru: join"], [/нам доверяют/i, "ru: trusted by"],
 ];
 
@@ -51,6 +51,14 @@ function stripComments(src) {
   return src.replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, " ")).replace(/(^|[^:"'`\\])\/\/[^\n]*/g, (m, a) => a);
 }
 
+// Self-test of the narrowed 30-day rules: the refund / trial claim is banned, the dashboard period is not (in every spelling, plain or no-break space).
+{
+  const bad = ["30 días de garantía", "garantía de 30 días", "prueba de 30\u00a0días", "30 дней на возврат", "гарантия 30 дней", "30-дневная гарантия"];
+  const ok = ["los últimos 30 días", "en los últimos 30\u00a0días", "за последние 30 дней", "Last 30 days"];
+  const rule = (t) => RULES.some(([re]) => re.test(t));
+  const missed = bad.filter((t) => !rule(t)), wrong = ok.filter((t) => rule(t));
+  if (missed.length || wrong.length) { console.error(`FAIL: self-test of the 30-day rules: missed [${missed}] flagged [${wrong}]`); process.exit(1); }
+}
 const hits = [];
 let scanned = 0;
 for (const f of [...files(path.join(ROOT, "src")), ...files(path.join(ROOT, "docs")), path.join(ROOT, "README.md")]) {

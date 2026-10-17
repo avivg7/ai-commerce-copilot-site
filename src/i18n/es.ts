@@ -12,7 +12,7 @@ import type { DeepPartial } from "./merge";
  *    Strong Bundle Opportunity and the other insight titles, "Bought together {n} times", the rule names Pin / Prefer / Deprioritize / Exclude,
  *    "Go to Order History". The text around them is Spanish and carries a short Spanish gloss where it helps ("Pin (fijar)").
  *  - The storefront widget strings are the plugin's own Spanish strings (class-aicc-widget.php get_widget_strings()), verbatim.
- *  - "30 días" is written with a no-break space (30 días) so a number never separates from its unit.
+ *  - A number keeps its unit on one line (no-break space in "30 días"). Ordinary typography only: copy:check bans the 30-day REFUND / TRIAL claim (the guarantee is 14 days), not the dashboard period "últimos 30 días".
  */
 export const es: DeepPartial<Dictionary> = {
   meta: {
@@ -330,7 +330,7 @@ export const es: DeepPartial<Dictionary> = {
       travel: "Taza de viaje",
     },
     evidence: { learned: "Comprados juntos {n} veces", fallback: "De la misma categoría", outOfStock: "Agotado" },
-    tags: { pin: "Pinned", prefer: "Preferred", deprioritize: "Deprioritized", exclude: "Excluded" },
+    tags: { pin: "Fijado", prefer: "Preferido", deprioritize: "Con menos prioridad", exclude: "Excluido" },
     place: "Puesto {n}",
     hiddenHeading: "No se muestra a los compradores",
     hiddenNone: "No se oculta nada.",

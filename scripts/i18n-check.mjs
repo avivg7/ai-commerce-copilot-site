@@ -5,7 +5,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { loadDictionaries, loadPartials, loadFallbacks, loadTs, ROOT } from "./lib/load.mjs";
-import { REPLICA_LABELS } from "./lib/replica-labels.mjs";
+import { REPLICA_LABELS, HE_ADMIN_LABELS } from "./lib/replica-labels.mjs";
 
 const STRICT = process.argv.includes("--strict");
 
@@ -201,6 +201,18 @@ for (const l of LOCALES) {
   for (const [n, cat] of Object.entries(want)) if (rules.select(+n) !== cat) err("ru", "plural", `Intl.PluralRules(ru).select(${n}) = ${rules.select(+n)}, expected ${cat}`);
   }
 }
+// Russian "{n} раз" (Покупали вместе {n} раз; куплено {n} раз): "раз" is right for the plural categories one (1, 21, 31 ...) and many (5-20, 25-30 ...) but wrong for few (2-4, 22-24 ...: "раза").
+// The counts shown are fixed samples in the kit (rules-demo, fbt-demo, dash-preview) and on the Product page. Rather than ship plural logic the samples do not need, this proves
+// no sample count is a "few" number; changing a sample to 2-4 / 22-24 fails here until the ru strings get real plural forms (Intl.PluralRules("ru"), as the cart label has).
+{
+  const rd = (f) => fs.readFileSync(path.join(ROOT, f), "utf8");
+  const samples = new Set();
+  for (const [f, re] of [["brand/js/fbt-demo.js", /count:\s*(\d+)/g], ["brand/js/rules-demo.js", /count:\s*(\d+)/g], ["brand/js/dash-preview.js", /\.format\((\d+)\)/g], ["src/components/pages/ProductPage.tsx", /replace\("\{n\}",\s*"(\d+)"\)/g]])
+    for (const m of rd(f).matchAll(re)) if (+m[1] > 0) samples.add(+m[1]);
+  const rules = new Intl.PluralRules("ru");
+  if (samples.size < 3) err("ru", "plural.samples", `found only ${samples.size} sample counts: the extraction patterns are stale`);
+  for (const n of samples) if (rules.select(n) === "few") err("ru", "plural.samples", `sample count ${n} is a "few" number: "{n} раз" would need "раза"; add plural forms`);
+}
 // Pending lines exist and are the single muted line (no brackets / pills).
 for (const l of LOCALES) {
   const p = dicts[l].pending;
@@ -244,6 +256,21 @@ for (const l of LOCALES) {
       if (t.fallback !== !(f.id in tr.items)) err(l, `faq.${f.id}`, "fallback flag disagrees with the pack");
     }
   }
+}
+
+// Hebrew: the plugin admin IS translated, so the he replicas must use the plugin's own Hebrew labels (brand/content/replica-labels.json "he", from the plugin .po),
+// never the English label, and a label must not be reworded. For every English kit string that is exactly a real admin label, the he string at the same key must equal the .po label.
+{
+  const walk = (en, he, p) => {
+    for (const [k, v] of Object.entries(en || {})) {
+      const q = p ? p + "." + k : k;
+      if (typeof v === "string") {
+        const want = HE_ADMIN_LABELS[v];
+        if (want && typeof he?.[k] === "string" && he[k] !== want) err("he", q, `plugin Hebrew admin label is "${want}", found "${he[k]}"`);
+      } else if (v && typeof v === "object") walk(v, he?.[k], q);
+    }
+  };
+  for (const root of ["dash", "rules", "demo"]) walk(dicts.en[root], dicts.he[root], root);
 }
 
 const nKeys = enKeys.filter((k) => !k.endsWith("#len")).length;
