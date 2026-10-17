@@ -134,7 +134,8 @@ async function probe(page, kind) {
     out.videoInfo = video ? { paused: video.paused, loop: video.loop, muted: video.muted, preload: video.preload, poster: video.poster, src: video.currentSrc || video.src, hasAutoplayAttr: video.hasAttribute("autoplay") } : null;
     const hero = get(S.hero);
     out.layout = hero ? { heroRect: rect(hero), videoInHero: !!(video && hero.contains(video)), next: hero.nextElementSibling ? { id: hero.nextElementSibling.id, cls: hero.nextElementSibling.className.toString().slice(0, 60), top: rect(hero.nextElementSibling).y } : null } : null;
-    out.fbt = (() => { const f = document.querySelector("[data-aicc-fbt], .aicc-fbt"); return f ? { top: rect(f).y, heroNext: !!(hero && hero.nextElementSibling && hero.nextElementSibling.contains(f)) } : null; })();
+    // Content pass (owner addendum B): the merchandising loop strip (.aicc-loopband) is a thin band between the hero and the demo. It is the ONLY thing allowed there.
+    out.fbt = (() => { const f = document.querySelector("[data-aicc-fbt], .aicc-fbt"); if (!f) return null; let n = hero && hero.nextElementSibling; const band = !!(n && n.classList.contains("aicc-loopband")); if (band) n = n.nextElementSibling; const sec = f.closest("section") || f; return { top: rect(sec).y, band, heroNext: !!(n && n.contains(f)) }; })();
     out.lang = (() => { const b = document.querySelector(".aicc-lang__btn"); return b ? { rect: rect(b), style: cs(b, ["font-size", "font-weight", "color", "background-color"]), aria: { haspopup: b.getAttribute("aria-haspopup"), expanded: b.getAttribute("aria-expanded"), controls: b.getAttribute("aria-controls"), label: b.getAttribute("aria-label") } } : null; })();
     return out;
   }, { kind, PROPS, SEL });
@@ -362,8 +363,8 @@ async function surfaceChecks(surface, url) {
     rec(surface, "placement: no blank gap between hero and next section (<= 8px)", gap !== null && gap >= -1 && gap <= 8, `${gap}`);
   } else rec(surface, "placement: hero section found", false, "no .aicc-hero");
   if (mine.fbt) {
-    rec(surface, "placement: FBT section is the section directly after the hero", mine.fbt.heroNext, "");
-    rec(surface, "placement: FBT section starts within 1100px of the page top", L && L.next && L.next.top <= 1100, `${L?.next ? Math.round(L.next.top) : "?"}`);
+    rec(surface, "placement: FBT section is the section directly after the hero (the loop strip band may sit between them)", mine.fbt.heroNext, mine.fbt.band ? "with loop strip band" : "");
+    rec(surface, "placement: FBT section starts within 1300px of the page top (1100px before the loop strip band)", mine.fbt.top <= 1300, `${Math.round(mine.fbt.top)}`);
   } else rec(surface, "FBT section present", false, "no [data-aicc-fbt]");
   // element screenshot comparison (fresh pages: the capture helper hides everything but the element under test)
   if (mine.primaryLg?.present) {
