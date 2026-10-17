@@ -1,7 +1,7 @@
 import { Fragment, type ReactNode } from "react";
 import Link from "next/link";
 import { LOCALE_META, type Locale } from "@/i18n/config";
-import type { Dictionary } from "@/i18n";
+import { txProps, type Dictionary } from "@/i18n";
 import { currencySuffix, formatPrice, planById } from "@/data/plans";
 import { COMPANY, type CompanyKey } from "@/lib/site";
 import { localePath, isRouteId } from "@/lib/routes";
@@ -92,7 +92,7 @@ export function Rich({ text, ctx }: { text: string; ctx: RichCtx }): ReactNode {
           if (!r) return piece;
           if (r.pending) {
             return (
-              <span key={key} className="aicc-pending" data-pending="true">
+              <span key={key} className="aicc-pending" data-pending="true" {...(({ lang, dir }) => ({ lang, dir }))(txProps(ctx.locale, `pending.${r.pending}`))}>
                 {ctx.t.pending[r.pending]}
               </span>
             );
