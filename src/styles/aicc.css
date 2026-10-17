@@ -1156,3 +1156,6 @@ p > .aicc-link:only-child { display: inline-block; min-block-size: 1.5rem; paddi
 .aicc-plan__fit { min-block-size: 3.2em; }
 @media (max-width: 40rem) { .aicc-plan__fit { min-block-size: 0; } }
 .aicc-hero__confidence { font-size: 0.8125rem; }
+
+/* Russian: headings are written to wrap on word boundaries; automatic hyphenation would split short everyday words ("ви-джет") in narrow columns. */
+@media (max-width: 30rem) { :root:lang(ru) :is(h1, h2, h3, h4) { hyphens: manual; } }

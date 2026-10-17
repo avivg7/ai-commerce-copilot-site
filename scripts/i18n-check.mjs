@@ -5,6 +5,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { loadDictionaries, loadPartials, loadFallbacks, loadTs, ROOT } from "./lib/load.mjs";
+import { REPLICA_LABELS } from "./lib/replica-labels.mjs";
 
 const STRICT = process.argv.includes("--strict");
 
@@ -48,7 +49,9 @@ const linksOf = (s) => (s.match(/\]\((route:[a-z-]+|https?:\/\/[^)]+)\)/g) || []
 const boldOf = (s) => (s.match(/\*\*/g) || []).length;
 
 function strippedOfBrands(s) {
-  let t = s.replace(/\{[A-Za-z0-9_]+\}/g, " ").replace(/\]\((route:[a-z-]+|https?:\/\/[^)]+)\)/g, " ");
+  let t = s;
+  for (const b of REPLICA_LABELS) t = t.split(b).join(" "); // real admin labels (English on purpose), before tokens and brands
+  t = t.replace(/\{[A-Za-z0-9_]+\}/g, " ").replace(/\]\((route:[a-z-]+|https?:\/\/[^)]+)\)/g, " ");
   for (const b of BRAND) t = t.split(b).join(" ");
   t = t.replace(/[0-9$€%.,:;!?()\-–—/&"'“”’*\[\]+©·#_=]/g, " ");
   return t.trim();
@@ -130,7 +133,7 @@ const TERMS = [
 ];
 for (const t of TERMS) {
   for (const l of ["he", "es", "ru"]) {
-    const v = flatP[l][t.key];
+    const v = flatP[l][t.key]?.replace(/\u00a0/g, " "); // non-breaking spaces are typography, not wording
     if (v === undefined) continue;
     const want = t[l];
     const ok = t.exact ? v === want : t.ci ? v.toLowerCase().includes(want.toLowerCase()) : v.includes(want);
