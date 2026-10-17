@@ -2,8 +2,9 @@
 // A text node is "English" when it has two or more consecutive Latin words (he, ru) or English stop words (es) and is not a brand name;
 // such text is only allowed inside an element marked lang="en" (the explicit fallback, see src/i18n/merge.ts). Needs the export served at AICC_BASE_URL.
 import { launch, urlFor, ROUTES } from "./lib/browser.mjs";
+import { REPLICA_LABELS } from "./lib/replica-labels.mjs";
 
-const BRAND = ["AI Commerce Copilot", "AICC", "Ask Reco", "Reco", "WooCommerce", "WordPress", "WP Consent API", "Solo", "Studio", "Agency", "Storefront", "Plans & Stores", "WCAG", "HTTPS", "HTTP", "CSV", "USD", "HPOS", "PHP", "JavaScript", "EN", "HE", "ES", "RU", "aicc_lang", "aicc_lang_dismissed", "aci_vid", "aci_sid", "http", "https"];
+const BRAND = [...REPLICA_LABELS, "AI Commerce Copilot", "AICC", "Ask Reco", "Reco", "WooCommerce", "WordPress", "WP Consent API", "Solo", "Studio", "Agency", "Storefront", "Plans & Stores", "WCAG", "HTTPS", "HTTP", "CSV", "USD", "HPOS", "PHP", "JavaScript", "EN", "HE", "ES", "RU", "aicc_lang", "aicc_lang_dismissed", "aci_vid", "aci_sid", "http", "https"];
 const browser = await launch();
 const problems = [];
 let nodes = 0, pages = 0;

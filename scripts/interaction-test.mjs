@@ -2,6 +2,9 @@
 // FAQ accordion and the demo, plus reduced-motion behaviour and the language-persistence rules. Needs the export served.
 import fs from "node:fs";
 import { launch, urlFor, BASE } from "./lib/browser.mjs";
+import { loadFallbacks } from "./lib/load.mjs";
+
+const FALLBACK_UNITS = await loadFallbacks(); // which kit sets of each locale are still English (a translated set carries the page language instead)
 
 const PACK = JSON.parse(fs.readFileSync(new URL("../brand/content/faq.en.json", import.meta.url), "utf8"));
 const ACTIVE = Object.keys(PACK.items);
@@ -158,7 +161,9 @@ for (const loc of ["he", "es", "ru"]) {
   await p.evaluate(() => document.querySelector("#demo").scrollIntoView()); await p.waitForTimeout(700);
   await p.click("#ws-t-control"); await p.waitForTimeout(700); await p.click("#ws-t-ask"); await p.waitForTimeout(300);
   const kit = await p.evaluate(async () => { for (const sel of ["#demo", "[data-aicc-rules]", "[data-aicc-dash], .aicc-dash", ".aicc-ask"]) { document.querySelector(sel)?.scrollIntoView(); await new Promise((r) => setTimeout(r, 300)); } return { demo: document.querySelector(".aicc-fbt")?.getAttribute("lang") + "/" + document.querySelector(".aicc-fbt")?.getAttribute("dir"), rules: document.querySelector("[data-aicc-rules]")?.getAttribute("lang") + "/" + document.querySelector("[data-aicc-rules]")?.getAttribute("dir"), dash: document.querySelector(".aicc-dash")?.getAttribute("lang"), ask: document.querySelector(".aicc-ask")?.getAttribute("lang"), flow: document.querySelector(".aicc-flow")?.getAttribute("lang") }; });
-  check(`fallback[${loc}]: kit demo, rules, dashboard preview, Ask Reco and flow diagrams are marked lang=en (${JSON.stringify(kit)})`, kit.demo === "en/ltr" && kit.rules === "en/ltr" && kit.dash === "en" && kit.ask === "en" && kit.flow === "en", JSON.stringify(kit));
+  const dirOf = loc === "he" ? "rtl" : "ltr";
+  const want = (unit, withDir) => (FALLBACK_UNITS[loc].includes(unit) ? (withDir ? "en/ltr" : "en") : (withDir ? `${loc}/${dirOf}` : loc)); // English fallback -> lang=en dir=ltr; translated -> the page language
+  check(`fallback[${loc}]: kit demo, rules, dashboard preview, Ask Reco and flow diagrams carry the right language (${JSON.stringify(kit)})`, kit.demo === want("demo", true) && kit.rules === want("rules", true) && kit.dash === want("dash", false) && kit.ask === want("ask", false) && kit.flow === want("flows", false), JSON.stringify(kit));
   await ctx.close();
 }
 
