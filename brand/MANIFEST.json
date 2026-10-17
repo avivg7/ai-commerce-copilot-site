@@ -87,24 +87,24 @@
       "bytes": 25079
     },
     "content/faq.es.json": {
-      "sha256": "51055f96832a82b1767c64f3e781983677d6ec3b58070d8e9827163e8f817d56",
-      "bytes": 2377
+      "sha256": "39fe4f9d501c530daeb2e278fa4106bf1c39ab4ebdd5fa9b9ff2aa76f3115678",
+      "bytes": 24597
     },
     "content/faq.he.json": {
-      "sha256": "c97308b956dbe2936281f4ae3e20efb94413fd0a0d17706c0679f06f5738fbdd",
-      "bytes": 2758
+      "sha256": "af36c3a433da84877c640584afc60c6f5c2ef03da27df1d9e41d2d01972872f7",
+      "bytes": 29822
     },
     "content/faq.ru.json": {
-      "sha256": "17e977c9cd2b825da361c917a8ee942a708cfde6787d11cc3db93f817e4e9633",
-      "bytes": 3307
+      "sha256": "5cc408c44a68bd8859fd50299900d037c700120025228bd18412063331ac810d",
+      "bytes": 39520
     },
     "contract-baseline.json": {
       "sha256": "ffcbeb777c9e9d6c28c5c73e9d8f66590382068b8768001eb828d0b2b5349d27",
       "bytes": 1339
     },
     "i18n/strings.json": {
-      "sha256": "c8700ec949a39272e5a4132131323c6f2ac48845a05d35988f90aeb56be4d7e4",
-      "bytes": 69226
+      "sha256": "0a927d9ac7c151c650b1649cad8e4c91f83343e51bd7e311ce072379aad6ca58",
+      "bytes": 84075
     },
     "js/dash-preview.js": {
       "sha256": "5451459a1a798b1cd5bfb14349deb299b9ed84ea29f8405fdeb1bb02639b2b92",
