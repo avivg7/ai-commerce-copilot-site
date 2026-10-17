@@ -1,0 +1,318 @@
+{
+  "schema": 2,
+  "locale": "en",
+  "status": "canonical",
+  "notes": "Canonical English FAQ (v2, includes owner addendum). One source for the marketing site and the Control Plane. Answer shape: direct answer, then 1-3 useful sentences, then a deeper link where the detail lives (Data and trust, Refund policy, Product). Copy formula: benefit, then mechanism, then proof/control, then limitation. Inline links use [label](route:<route>), route one of product, pricing, questions, data-and-trust, privacy, terms, refund-policy, accessibility. Paragraphs separated by a blank line. US English.",
+  "layers": [
+    { "id": "sales", "title": "Before you decide" },
+    { "id": "product", "title": "How AICC behaves" },
+    { "id": "account", "title": "Plans, billing, data and policy" }
+  ],
+  "topics": [
+    { "id": "why", "title": "Why AICC" },
+    { "id": "recs", "title": "Recommendations" },
+    { "id": "merchant", "title": "Merchant controls and measurement" },
+    { "id": "setup", "title": "Setup and compatibility" },
+    { "id": "plans", "title": "Plans and stores" },
+    { "id": "billing", "title": "Billing, renewal and refunds" },
+    { "id": "safety", "title": "Reliability" },
+    { "id": "data", "title": "Data and privacy" }
+  ],
+  "mostAskedBeforeBuying": ["q41", "q57", "q58", "q44", "q45", "q46", "q05", "q53", "q56"],
+  "selection": {
+    "home": ["q41", "q01", "q57", "q58", "q46", "q05", "q56"],
+    "product": ["q41", "q02", "q44", "q45", "q47", "q49", "q31", "q05", "q39", "q33"],
+    "pricing": ["q09", "q10", "q55", "q13", "q12", "q18", "q19", "q20", "q26", "q22"],
+    "questions": "all"
+  },
+  "retired": {
+    "q07": { "mergedInto": "q51", "reason": "Setup timing is answered once, in q51." }
+  },
+  "items": {
+    "q01": {
+      "layer": "sales", "topic": "why",
+      "q": "What exactly does AICC do?",
+      "a": "AICC turns your WooCommerce orders into a merchandising workspace. It learns which products your customers actually buy together, shows those bundles to shoppers on product and cart pages, and gives you the dashboard, rules and guide to see and steer the result.\n\nFor shoppers, that is a Frequently Bought Together widget. For you, it is a dashboard in WordPress with recommendation activity and associated orders, plain-English observations from your own data, rules to pin, exclude, prefer or deprioritize products, and Ask Reco, the guide in your admin. Where a product has little purchase history, AICC fills the gaps with same-category and newest in-stock products. [See how it works](route:product)."
+    },
+    "q41": {
+      "layer": "sales", "topic": "why",
+      "q": "What makes AICC different from WooCommerce Related Products?",
+      "a": "WooCommerce's related products tell you which products belong together by category or tag. AICC adds the signal you would otherwise have to guess: which products your customers actually buy together.\n\nIt counts the products that appear in the same completed and processing orders and lists the most frequent partners first. Around that it adds a dashboard, rules you control, plain-English observations and Ask Reco. When a product has little history, AICC falls back to its category and your newest in-stock products, so the widget always has something sensible to show."
+    },
+    "q57": {
+      "layer": "sales", "topic": "why",
+      "q": "Why use AICC instead of creating product bundles by hand?",
+      "a": "Because AICC finds the pairs for you. It learns relationships from your real orders, keeps learning as new orders arrive, and spares you from curating every product pair yourself. You still keep the last word: pin, exclude, prefer or deprioritize anything.\n\nHand-built bundles remain a good choice for combinations you want to design on purpose."
+    },
+    "q58": {
+      "layer": "sales", "topic": "why",
+      "q": "Who is AICC a good fit for?",
+      "a": "WooCommerce merchants whose products complement one another, who want recommendations informed by real purchase behavior, who would rather not manage every pairing by hand, and who want visibility and control instead of a black box.\n\nNot every store will benefit equally. AICC matters less if few of your products are ever bought together, and it does not personalize recommendations for each shopper."
+    },
+    "q42": {
+      "layer": "sales", "topic": "why",
+      "q": "Is AICC an AI recommendation engine?",
+      "a": "AICC's recommendations come from what customers in your store actually buy together, counted and ranked by fixed rules rather than a generative model. You can see, influence and override the result, and the same store data gives the same result.\n\nThat is what makes every recommendation explainable. Ask Reco, the guide in your admin, also follows fixed rules and your own dashboard data; it is not a chatbot."
+    },
+    "q03": {
+      "layer": "product", "topic": "why",
+      "q": "Does AICC replace WooCommerce?",
+      "a": "No. It is a WooCommerce plugin. Your products, cart, checkout and orders stay in WooCommerce."
+    },
+    "q06": {
+      "layer": "product", "topic": "setup",
+      "q": "Do I need a developer?",
+      "a": "No code and no setup wizard. AICC places the widget at standard WooCommerce locations, and if it can't find a safe place on an unusual theme it hides rather than guess. A developer can help in that case."
+    },
+    "q02": {
+      "layer": "product", "topic": "recs",
+      "q": "How does AICC decide what to recommend?",
+      "a": "It starts from your orders. AICC lists the products that appear in the same completed or processing orders as the product being viewed, most frequent first. If spots are left, it adds in-stock products from the same category, then your newest in-stock products. Your rules (pin, exclude, prefer, deprioritize) are applied last.\n\nThere is no generative AI and no per-shopper profile in this decision, so each recommendation can be explained."
+    },
+    "q43": {
+      "layer": "sales", "topic": "recs",
+      "q": "What does AICC learn from my store?",
+      "a": "Which of your products are bought together. AICC reads your catalog and the products in your completed and processing orders, then counts how often each pair appears in the same order. If you choose to import your order history, it can learn from up to 24 months of past orders from the start.\n\nIt does not build a profile of each shopper. [Data and trust](route:data-and-trust) lists exactly what is used."
+    },
+    "q44": {
+      "layer": "sales", "topic": "recs",
+      "q": "What happens when a product has little or no order history?",
+      "a": "AICC still has something sensible to show. The spots that purchase history can't fill are filled with in-stock products from the same category, then your newest in-stock products, and real co-purchases take over as orders come in.\n\nToday the widget heading is the same for every item, so a fallback product can appear under “Frequently Bought Together”. In the Recommendation Preview in your dashboard, learned partners show how many times they were bought together; fallback products don't."
+    },
+    "q48": {
+      "layer": "sales", "topic": "recs",
+      "q": "Does AICC personalize recommendations for each shopper?",
+      "a": "No. Recommendations follow the product being viewed, not the person viewing it, so two shoppers on the same product page see the same bundle. That keeps the logic easy to explain and means AICC needs no profile of each shopper."
+    },
+    "q45": {
+      "layer": "sales", "topic": "merchant",
+      "q": "Can I control which products are recommended?",
+      "a": "Yes. AICC does the counting and you keep the say. Pin a product to keep it near the top, exclude it so it never appears, prefer it to nudge it up one place, or deprioritize it to nudge it down one place.\n\nA rule can apply to one product pair or to a product on every product's list, and it can have an expiry date. Exclude always wins, and out-of-stock or deleted products stay out even if pinned."
+    },
+    "q46": {
+      "layer": "sales", "topic": "merchant",
+      "q": "What will I actually see in the AICC dashboard?",
+      "a": "A dashboard in your WordPress admin that shows what your recommendations are doing: setup readiness, recommendation views, clicks and click rate, bundle add-to-carts, and the orders and revenue associated with the widget over the last 30 days.\n\nWith at least 10 orders in the period you also get plain-English observations from your own data, such as top sellers and strong bundles. A preview shows what the widget recommends for any product, and product performance exports to CSV."
+    },
+    "q47": {
+      "layer": "sales", "topic": "merchant",
+      "q": "What can Ask Reco actually do?",
+      "a": "Ask Reco is the guide inside your WordPress admin. It answers common questions about your setup, performance and next steps from your own dashboard data, with links to the right screens, in English or Hebrew.\n\nIt follows fixed rules rather than a generative model, so it sticks to what your data shows. It never changes your settings, and shoppers never see it."
+    },
+    "q49": {
+      "layer": "sales", "topic": "merchant",
+      "q": "How does AICC measure recommendation performance?",
+      "a": "AICC records views of recommended products, clicks and bundle add-to-carts from the widget. An order is associated with the widget when a shopper added a bundle from it and bought one of those products within 24 hours; the full order total is counted.\n\nThat is association, not proof the widget caused the sale. It needs your cookie consent tool to allow statistics. [How measurement works](route:product)."
+    },
+    "q50": {
+      "layer": "sales", "topic": "merchant",
+      "q": "Does AICC claim it generated my revenue?",
+      "a": "No. AICC shows the orders and revenue associated with the widget. It does not run a control group or estimate what you would have sold anyway, so it reports association and leaves the conclusion to you."
+    },
+    "q51": {
+      "layer": "sales", "topic": "setup",
+      "q": "How soon can I start seeing recommendations?",
+      "a": "AICC prepares your store in the background after you connect: it syncs your catalog and checks that the widget is ready. Timing varies with catalog size and your site's scheduled tasks.\n\nOnce the catalog is synced the widget can show same-category and newest-product recommendations. Recommendations learned from your orders grow as orders are processed, and faster if you import your order history."
+    },
+    "q31": {
+      "layer": "product", "topic": "setup",
+      "q": "Do I have to import my order history?",
+      "a": "No, it's optional. After your store is connected, AICC offers to import up to 24 months of past orders so it can learn your existing product relationships from the start. If you skip it, AICC begins with same-category and newest-product recommendations and learns from new orders.\n\nNothing from your past orders is sent until you choose to import."
+    },
+    "q32": {
+      "layer": "product", "topic": "setup",
+      "q": "What if I skip the import and change my mind later?",
+      "a": "Start it any time from the AICC dashboard. It imports the orders from the last 24 months, including those placed since you skipped, can be cancelled, and doesn't duplicate orders that were already imported."
+    },
+    "q52": {
+      "layer": "product", "topic": "setup",
+      "q": "Will importing old orders change my WooCommerce orders?",
+      "a": "No. The import reads your past orders and sends order facts to AICC; it doesn't edit them in WooCommerce. Going forward, AICC adds a few private fields to new orders (visitor and session IDs, only with cookie consent)."
+    },
+    "q39": {
+      "layer": "product", "topic": "setup",
+      "q": "What happens if I change my theme?",
+      "a": "AICC finds its place using standard WooCommerce hooks, not theme edits, so it usually keeps working after a theme change. On a theme where it can't find a safe place, it hides instead of guessing. We tested with Storefront and a block theme."
+    },
+    "q38": {
+      "layer": "product", "topic": "setup",
+      "q": "Does AICC work on mobile?",
+      "a": "Yes. The widget adapts to the width of the space it sits in, on phones as well as desktop. This website and your account area are designed for phones first."
+    },
+    "q37": {
+      "layer": "product", "topic": "setup",
+      "q": "Which languages are supported?",
+      "a": "This website and the account area: English, Hebrew, Spanish and Russian. The AICC admin in WordPress: English and Hebrew. The storefront widget: English and Hebrew in full, plus core labels in Spanish, Russian, French, German and Arabic."
+    },
+    "q08": {
+      "layer": "account", "topic": "plans",
+      "q": "Do I need to paste a license key?",
+      "a": "Normally, no. You sign in to your AICC account and connect each store from its own AICC screen in WordPress. A one-time recovery key exists in your account for rare advanced cases."
+    },
+    "q09": {
+      "layer": "account", "topic": "plans",
+      "q": "What's the difference between Solo, Studio and Agency?",
+      "a": "Only how many stores you can connect: 1, 3 or 10. Everything else is identical."
+    },
+    "q10": {
+      "layer": "account", "topic": "plans",
+      "q": "Do the plans have different features?",
+      "a": "No. Every plan has every feature: the widget, the dashboard and insights, rules, Ask Reco and the optional order-history import. Only the number of stores differs."
+    },
+    "q55": {
+      "layer": "account", "topic": "plans",
+      "q": "What counts as a store?",
+      "a": "Each website address you connect uses one store slot. Staging and production are separate stores, and so are the www and non-www versions of an address, and http and https. Disconnecting a store frees its slot immediately."
+    },
+    "q11": {
+      "layer": "account", "topic": "plans",
+      "q": "How do I connect a second or third store?",
+      "a": "Open AICC in the other store's WordPress admin, sign in to the same AICC account and choose the plan. It uses a free slot on your plan."
+    },
+    "q12": {
+      "layer": "account", "topic": "plans",
+      "q": "What happens when all my store slots are used?",
+      "a": "Disconnect a store you no longer need, or buy a larger plan. A larger plan is a separate purchase with its own 365-day term and store slots; it does not credit or replace your current plan. More than 10 stores? Contact support."
+    },
+    "q13": {
+      "layer": "account", "topic": "plans",
+      "q": "Do I have to pay again to move a store to another free slot?",
+      "a": "No. Disconnect the old store and connect the new one. Disconnecting frees the slot immediately, with no transfer fee and no limit on moves."
+    },
+    "q14": {
+      "layer": "account", "topic": "plans",
+      "q": "Can I reconnect a store later?",
+      "a": "Yes, as long as your plan is active and has a free slot. You don't buy again, and normally you don't need a key."
+    },
+    "q15": {
+      "layer": "account", "topic": "plans", "legalReview": true,
+      "q": "What happens to the disconnected store?",
+      "a": "AICC stops there: no widget on the storefront and no store data sent (the technical registration check still runs). WooCommerce works as normal. The store's AICC history may be kept for up to 12 months, but today nothing is deleted automatically, so it may be kept longer until it is deleted on request; reconnecting can pick up where it left off. [Exact retention](route:data-and-trust)."
+    },
+    "q22": {
+      "layer": "account", "topic": "plans",
+      "q": "If I leave and come back later, do I start from zero?",
+      "a": "Not necessarily. If your plan expired, renew it and your stores return without reconnecting. If it was refunded, buy a new plan and connect the same store: AICC can recognize it if the store still has its AICC connection, and your earlier history may be available again. A refunded plan is never revived.\n\nWhen you return, AICC catches up on products and orders from the gap using your real WooCommerce history, and never invents activity for the time it wasn't running. If you chose not to import your order history, AICC won't import it without asking; you can opt in later."
+    },
+    "q24": {
+      "layer": "account", "topic": "plans",
+      "q": "What happens to products and orders created while AICC was inactive?",
+      "a": "When you return, AICC brings its copy of your catalog up to date (including products you deleted). If you had chosen to import your order history, it also imports the orders from the gap; if you hadn't, the import stays your choice."
+    },
+    "q25": {
+      "layer": "account", "topic": "plans",
+      "q": "Do you fabricate recommendation history for the inactive period?",
+      "a": "Never. Past orders are imported as orders. No impressions, clicks or attributed revenue are created for a time when AICC wasn't running."
+    },
+    "q53": {
+      "layer": "sales", "topic": "billing",
+      "q": "Can I try AICC without committing to automatic renewal?",
+      "a": "Yes. A plan is a fixed 365 days, renewal is manual, and AICC never charges you automatically. Your initial plan purchase also includes a 14-day money-back guarantee. See the [refund policy](route:refund-policy) for full terms."
+    },
+    "q56": {
+      "layer": "sales", "topic": "billing", "legalReview": true,
+      "q": "What if I try AICC and it isn't right for my store?",
+      "a": "Your initial plan purchase includes a 14-day money-back guarantee. The 14 days start when payment is received and your plan is issued. See the [refund policy](route:refund-policy) for full terms.\n\nAfter a full refund the plan is revoked and AICC stops on your stores; WooCommerce carries on as before, and there is nothing else to cancel."
+    },
+    "q17": {
+      "layer": "account", "topic": "billing",
+      "q": "What happens if my plan expires?",
+      "a": "After 365 days the plan ends and AICC pauses on your stores; WooCommerce is unaffected. Renew the same plan and your stores return without reconnecting."
+    },
+    "q18": {
+      "layer": "account", "topic": "billing",
+      "q": "Does my plan renew automatically?",
+      "a": "No. You stay in control: a plan is a fixed 365 days, and AICC never renews it for you. You renew by hand from Plans & Stores when you choose to."
+    },
+    "q19": {
+      "layer": "account", "topic": "billing",
+      "q": "Will AICC store permission to charge me again?",
+      "a": "No. AICC keeps no authorization to charge you again, so nothing can be charged later without you. Each renewal is a purchase you start yourself."
+    },
+    "q20": {
+      "layer": "account", "topic": "billing",
+      "q": "How do I renew?",
+      "a": "From Plans & Stores in your account. Renewing early keeps your unused time: a renewal adds 365 days to the later of today and your current end date."
+    },
+    "q26": {
+      "layer": "account", "topic": "billing", "legalReview": true,
+      "q": "What is the 14-day refund policy?",
+      "a": "Your initial plan purchase includes a 14-day money-back guarantee. The 14 days start when payment is received and your plan is issued. A refund goes to the original payment method where the processor allows it. See the [refund policy](route:refund-policy) for full terms."
+    },
+    "q27": {
+      "layer": "account", "topic": "billing",
+      "q": "When do the 14 days start?",
+      "a": "When payment is received and your plan is issued."
+    },
+    "q28": {
+      "layer": "account", "topic": "billing",
+      "q": "Does the 14-day guarantee apply to renewals?",
+      "a": "The guarantee covers the initial purchase. Later manual renewals aren't automatically covered."
+    },
+    "q54": {
+      "layer": "account", "topic": "billing", "legalReview": true,
+      "q": "What happens after the first 14 days?",
+      "a": "Your plan simply runs for the rest of its 365 days. Nothing renews or charges automatically, so you decide whether to renew as the end approaches. The guarantee does not affect any rights you have by law."
+    },
+    "q29": {
+      "layer": "account", "topic": "billing",
+      "q": "What happens after a full refund?",
+      "a": "The plan is revoked and AICC stops on your stores. The refund goes to the original payment method where the payment processor allows it. Your WooCommerce store is unaffected."
+    },
+    "q30": {
+      "layer": "account", "topic": "billing",
+      "q": "Does a refund affect my WooCommerce store?",
+      "a": "No. Products, orders, customers and checkout remain as they were."
+    },
+    "q04": {
+      "layer": "product", "topic": "safety",
+      "q": "What happens if AICC is unavailable?",
+      "a": "The widget hides itself and WooCommerce's own related products and cross-sells reappear, so the page still works and your store keeps selling. This applies with the default setting, which replaces WooCommerce's related products with AICC's widget."
+    },
+    "q05": {
+      "layer": "product", "topic": "safety",
+      "q": "Can AICC slow down or break my checkout?",
+      "a": "AICC is built so your checkout never depends on it. Placing an order never waits on AICC: order details are queued and sent in the background.\n\nIf AICC or its servers are slow or down, the widget hides and WooCommerce keeps selling. [How AICC stays out of the way](route:product)."
+    },
+    "q16": {
+      "layer": "product", "topic": "safety",
+      "q": "What happens to the recommendation widget when my plan isn't active?",
+      "a": "AICC shows no widget, loads no script and sets no new cookies on the storefront, and WooCommerce's native recommendations show instead. Cookies already in browsers stay there, and nothing reads them."
+    },
+    "q40": {
+      "layer": "product", "topic": "safety",
+      "q": "Can I remove AICC cleanly?",
+      "a": "Yes. AICC doesn't edit WooCommerce's products, prices or templates; by default it only hides WooCommerce's related-products block while its widget shows. Disconnect the store in Plans & Stores first to free its slot, then deactivate AICC and the native recommendations return.\n\nAICC leaves its settings, and the private visitor and session fields it added to orders, in your database. [Data and trust](route:data-and-trust) covers what stays with AICC."
+    },
+    "q33": {
+      "layer": "account", "topic": "data", "legalReview": true,
+      "q": "What data does AICC use?",
+      "a": "AICC uses the catalog and order facts it needs to understand product relationships. It never receives payment details or raw shopper contact details (email, name, phone, address). Visitor-level measurement is consent-gated: it needs your cookie consent tool to allow statistics.\n\n[See exactly what AICC uses](route:data-and-trust). The legal detail is in the [privacy policy](route:privacy)."
+    },
+    "q34": {
+      "layer": "account", "topic": "data",
+      "q": "Is data from my different stores pooled or used across stores?",
+      "a": "No. Each store's data is kept separate. AICC doesn't pool it, and one store's data isn't used to make recommendations for another."
+    },
+    "q35": {
+      "layer": "account", "topic": "data",
+      "q": "Can one store, or its credential, access another store's data?",
+      "a": "No. Each store has its own credential, and everything AICC stores is scoped to the one store it belongs to. A credential only works for its own store."
+    },
+    "q36": {
+      "layer": "account", "topic": "data", "legalReview": true,
+      "q": "How can I request deletion or export of my data?",
+      "a": "Write to the support address from your account email; these requests are handled by hand. Deletion removes events, impressions, clicks and conversions and anonymizes orders. Some records follow their own retention or must be kept, and exports are prepared by hand. [Data and trust](route:data-and-trust) has the details."
+    },
+    "q21": {
+      "layer": "account", "topic": "data", "legalReview": true,
+      "q": "What happens to my data if my plan expires?",
+      "a": "AICC can preserve your store history when access pauses, so you can continue instead of starting from zero. Operational data may be kept for up to 12 months after access ends, but today nothing is deleted automatically, so data may be kept longer until it is deleted on request. Account and purchase records follow separate rules. [Exact retention](route:data-and-trust)."
+    },
+    "q23": {
+      "layer": "account", "topic": "data", "legalReview": true,
+      "q": "Is my previous store history retained?",
+      "a": "Possibly. Operational data may be kept for up to 12 months after access ends, but today nothing is deleted automatically, so data may be kept longer until it is deleted on request. [Exact retention](route:data-and-trust)."
+    }
+  }
+}

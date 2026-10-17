@@ -113,14 +113,13 @@ export const TRANSLATION_REVIEW: Record<Locale, "source-draft-pending-legal-revi
  * authority approves them together with the legal pages before launch.
  */
 export const LEGAL_REVIEW_KEYS = [
-  "home.hero.facts.guarantee",
-  "home.control.items.dormant.body",
-  "home.control.items.remove.body",
-  "product.returning.p1",
-  "product.measure.p2",
-  "product.data.p1",
-  "pricing.terms.items.guarantee",
-  "pricing.terms.items.billing",
-  "pricing.refunds.p1",
+  "home.final.guarantee",
+  "home.hero.confidence.guarantee",
+  "pricing.terms.try.body",
+  "pricing.terms.renewal.body",
+  "pricing.terms.back.body",
+  "product.history.p3",
+  "product.measure.consent",
   "common.plan.guarantee",
+  "common.plan.renewal",
 ] as const;

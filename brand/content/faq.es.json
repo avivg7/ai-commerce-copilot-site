@@ -1,0 +1,48 @@
+{
+  "schema": 2,
+  "locale": "es",
+  "reviewStatus": "draft-translation-pending-native-review",
+  "notes": "Only questions whose English text is unchanged since they were translated (schema 2 of the English FAQ rewrote most answers). Every other id, and every layer/topic title, falls back to English (shown lang=en dir=ltr) until Stage 2. Same shape for every locale: items.<id> = { q, a }; optional titles.layers / titles.topics / titles.ui.",
+  "titles": {
+    "layers": {},
+    "topics": {}
+  },
+  "items": {
+    "q03": {
+      "q": "¿AICC sustituye a WooCommerce?",
+      "a": "No. Es un plugin de WooCommerce. Sus productos, carrito, proceso de pago y pedidos siguen en WooCommerce."
+    },
+    "q37": {
+      "q": "¿Qué idiomas se admiten?",
+      "a": "Este sitio web y el área de cuenta: inglés, hebreo, español y ruso. La administración de AICC en WordPress: inglés y hebreo. El widget de la tienda online: inglés y hebreo completos, además de las etiquetas principales en español, ruso, francés, alemán y árabe."
+    },
+    "q16": {
+      "q": "¿Qué pasa con el widget de recomendaciones cuando mi plan no está activo?",
+      "a": "AICC no muestra ningún widget, no carga ningún script y no establece cookies nuevas en la tienda online, y en su lugar se muestran las recomendaciones nativas de WooCommerce. Las cookies que ya están en los navegadores se quedan allí, y nada las lee."
+    },
+    "q09": {
+      "q": "¿Cuál es la diferencia entre Solo, Studio y Agency?",
+      "a": "Solo varía cuántas tiendas puede conectar: 1, 3 o 10. Todo lo demás es idéntico."
+    },
+    "q11": {
+      "q": "¿Cómo conecto una segunda o tercera tienda?",
+      "a": "Abra AICC en la administración de WordPress de la otra tienda, inicie sesión en la misma cuenta de AICC y elija el plan. Usa un cupo libre de su plan."
+    },
+    "q27": {
+      "q": "¿Cuándo empiezan los 14 días?",
+      "a": "Cuando se recibe el pago y se emite su plan."
+    },
+    "q28": {
+      "q": "¿La garantía de 14 días se aplica a las renovaciones?",
+      "a": "La garantía cubre la compra inicial. Las renovaciones manuales posteriores no están cubiertas automáticamente."
+    },
+    "q30": {
+      "q": "¿Un reembolso afecta a mi tienda WooCommerce?",
+      "a": "No. Los productos, pedidos, clientes y el proceso de pago siguen como estaban."
+    },
+    "q25": {
+      "q": "¿Se inventa historial de recomendaciones para el periodo inactivo?",
+      "a": "Nunca. Los pedidos anteriores se importan como pedidos. No se crean impresiones, clics ni ingresos atribuidos para un periodo en que AICC no estaba funcionando."
+    }
+  }
+}

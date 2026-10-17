@@ -1,0 +1,151 @@
+{
+  "schema": 1,
+  "notes": "Canonical product facts shared by the marketing site and the Control Plane. Any copy that states one of these must match. Tests compare rendered copy and PHP/TS data against this file. Changing a value here needs owner approval.",
+  "currency": "USD",
+  "plans": [
+    {
+      "id": "solo",
+      "name": "Solo",
+      "price": 99,
+      "stores": 1
+    },
+    {
+      "id": "studio",
+      "name": "Studio",
+      "price": 199,
+      "stores": 3,
+      "featured": true
+    },
+    {
+      "id": "agency",
+      "name": "Agency",
+      "price": 499,
+      "stores": 10
+    }
+  ],
+  "sameFeaturesOnEveryPlan": true,
+  "termDays": 365,
+  "renewal": "manual",
+  "recurringBilling": false,
+  "moneyBackDays": 14,
+  "moneyBackAppliesTo": "initial purchase",
+  "moneyBackStartsAt": "payment received and plan issued",
+  "refundEffect": "full refund revokes the plan; a revoked plan is never revived",
+  "largerPlan": "separate purchase, no credit, not an in-place upgrade",
+  "importMonths": 24,
+  "attributionWindowHours": 24,
+  "attributionCredit": "full order total",
+  "insightsMinOrders": 10,
+  "dashboardPeriodDays": 30,
+  "retentionMonthsPolicy": 12,
+  "retentionAutoDeleteToday": false,
+  "widgetMaxItems": 5,
+  "widgetSurfaces": [
+    "product page",
+    "cart page"
+  ],
+  "expiringSoonDays": 30,
+  "languages": {
+    "website": [
+      "en",
+      "he",
+      "es",
+      "ru"
+    ],
+    "pluginAdmin": [
+      "en",
+      "he"
+    ],
+    "askReco": [
+      "en",
+      "he"
+    ],
+    "widgetFull": [
+      "en",
+      "he"
+    ],
+    "widgetCore": [
+      "es",
+      "ru",
+      "fr",
+      "de",
+      "ar"
+    ]
+  },
+  "ranking": [
+    "co-purchase from completed and processing orders",
+    "same category (in stock)",
+    "newest in stock",
+    "merchant rules applied afterwards"
+  ],
+  "rules": [
+    "pin",
+    "exclude",
+    "prefer",
+    "deprioritize"
+  ],
+  "ruleSemantics": {
+    "pin": "keeps the product near the top",
+    "exclude": "never shown; always wins",
+    "prefer": "nudges up one place",
+    "deprioritize": "nudges down one place"
+  },
+  "noGenerativeAi": true,
+  "noPersonalization": true,
+  "askRecoCanChangeSettings": false,
+  "askRecoShopperFacing": false,
+  "failSoft": "widget hides; WooCommerce related products and cross-sells reappear (default setting, JavaScript needed)",
+  "checkoutDependsOnAicc": false,
+  "bannedClaims": [
+    "increases? (your )?(conversion|revenue|sales|aov)",
+    "boosts? (your )?(conversion|revenue|sales|aov)",
+    "revenue (generated|created|driven) by aicc",
+    "aicc generated",
+    "\\bsupercharge",
+    "revolutioni[sz]e",
+    "game-?changing",
+    "ai-powered",
+    "personali[sz]ed recommendations for each",
+    "you will never paste",
+    "no network call",
+    "limited[- ]time",
+    "most popular",
+    "guaranteed (results|uplift|roi)",
+    "import(s)? (starts|runs|begins) automatically",
+    "starts automatically after connect",
+    "we don't promise",
+    "can't promise",
+    "cannot promise",
+    "not a guarantee",
+    "we'd rather",
+    "no subscription",
+    "all 40",
+    "see all 40",
+    "40 questions"
+  ],
+  "ukSpellings": [
+    "licence",
+    "authoris",
+    "deprioritis",
+    "personalis",
+    "organis",
+    "recognis",
+    "anonymis",
+    "customis",
+    "behaviour",
+    "favour",
+    "colour",
+    "centre",
+    "catalogue"
+  ],
+  "historicalImport": "optional; explicit merchant opt-in; nothing sent before opt-in; start later from the dashboard",
+  "historicalImportOptIn": true,
+  "apologeticAllowOnPages": [
+    "privacy",
+    "terms",
+    "refund-policy",
+    "data-and-trust",
+    "accessibility",
+    "dpa"
+  ]
+}

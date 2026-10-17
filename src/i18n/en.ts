@@ -1,6 +1,7 @@
 /**
- * English source dictionary. The shape of this object is the contract for he.ts, es.ts and ru.ts
- * (they are typed `Dictionary`, so a missing key is a compile error; `npm run i18n:check` adds value checks).
+ * English source dictionary. The shape of this object is the contract for he.ts, es.ts and ru.ts. Those are PARTIAL dictionaries:
+ * a unit they do not translate falls back to this English text (shown lang="en" dir="ltr"), see src/i18n/merge.ts.
+ * FAQ text is NOT here: it lives in the shared content pack brand/content/faq.<locale>.json (see src/data/faq.ts).
  *
  * Mini-markup inside strings:
  *   **bold**                 -> <strong>
@@ -9,8 +10,9 @@
  *   {priceSolo}              -> values from plans.ts / owner config (see src/lib/rich.tsx for the full list)
  *   {companyDetails} {supportEmail} {governingLaw} {paymentProcessor} {hostingRegion}   ({legalName} and {address} feed {companyDetails})
  *                            -> owner-supplied values; until set they render ONE plain muted line (pending.line / pending.detail)
- * Terminology follows content-source.md section 8 (Control Plane repo, docs/unified-experience/).
+ * Terminology follows content-source.md section 8 (Control Plane repo, docs/unified-experience/). US English.
  * Never translate: AICC, Reco, WooCommerce, WordPress, Solo, Studio, Agency, prices.
+ * Every claim here is listed in docs/claims-inventory-content-pass.md with its evidence.
  */
 export const en = {
   meta: {
@@ -18,19 +20,19 @@ export const en = {
     ogImageAlt: "AICC: Frequently Bought Together, learned from your own store's orders. With Reco, the AICC guide.",
     pages: {
       home: {
-        title: "AICC: Frequently Bought Together, learned from your own orders",
+        title: "AICC: Frequently Bought Together, learned from your orders",
         description:
-          "AICC adds a Frequently Bought Together widget to your WooCommerce product and cart pages, learned from your store's own orders. Plans from {priceSolo} a year.",
+          "AICC learns which products your customers buy together, shows them on product and cart pages, and gives you a dashboard and controls. From {priceSolo} a year.",
       },
       product: {
-        title: "How AICC works for WooCommerce stores",
+        title: "How AICC works: Frequently Bought Together for WooCommerce",
         description:
-          "What shoppers see, what you control, how AICC decides what to recommend, what data it uses, and what it does not do yet.",
+          "See what shoppers see, how AICC decides what to recommend, what you can measure and control, and how it keeps your WooCommerce checkout safe.",
       },
       pricing: {
-        title: "Pricing: Solo, Studio and Agency plans",
+        title: "Pricing: Solo, Studio and Agency plans for AICC",
         description:
-          "Solo {priceSolo}, Studio {priceStudio} and Agency {priceAgency} per year. Same features on every plan; only the number of stores differs. Manual renewal and a 14-day money-back guarantee.",
+          "Every plan has the full AICC product. Solo {priceSolo}, Studio {priceStudio}, Agency {priceAgency} per year, priced by store count. Manual renewal, 14-day money-back guarantee.",
       },
       dataTrust: {
         title: "Data and trust: what AICC reads and what it does not",
@@ -56,9 +58,9 @@ export const en = {
           "How we aim for WCAG 2.2 level AA on this website, what we have done, known limitations and how to report a barrier.",
       },
       questions: {
-        title: "Questions we get, honestly answered",
+        title: "Questions about AICC, answered plainly",
         description:
-          "All 40 questions about what AICC does, plans and stores, renewal, refunds, data and what happens when access pauses.",
+          "Straight answers about what AICC does, how recommendations work, plans and stores, renewal and refunds, data and what happens when access pauses.",
       },
       notFound: {
         title: "Page not found",
@@ -97,7 +99,7 @@ export const en = {
     getStarted: "Get started",
     seeHow: "See how it works",
     seePricing: "See pricing",
-    seeAllQuestions: "See all 40 questions",
+    seeAllQuestions: "Browse all questions",
     readHistory: "Read how your history can be kept",
     learnMoreProduct: "How AICC works",
     home: "AICC home",
@@ -129,7 +131,7 @@ export const en = {
       storage: "Settings are stored in this browser (local storage).",
     },
     footer: {
-      tagline: "A Frequently Bought Together widget for WooCommerce, learned from your own orders.",
+      tagline: "Frequently Bought Together for WooCommerce, learned from your own orders, with the dashboard and controls to match.",
       productHeading: "AICC",
       trustHeading: "Trust and legal",
       languageHeading: "Language",
@@ -151,8 +153,8 @@ export const en = {
       recommended: "Recommended for 2 to 3 stores",
       sameFeatures: "Every feature, on every plan",
       countHelper: "Count the stores you want to connect: 1 is Solo, 2 to 3 is Studio, 4 to 10 is Agency.",
-      term: "365 days from purchase",
-      renewal: "Manual renewal: nothing is charged automatically",
+      term: "Fixed 365-day plan. Renewal is manual.",
+      renewal: "You stay in control: AICC never renews your plan automatically.",
       guarantee: "14-day money-back guarantee on your first purchase",
       usd: "All prices are in US dollars (USD).",
     },
@@ -161,6 +163,7 @@ export const en = {
     draftUpdated: "Draft last updated",
     version: "Status",
     versionDraft: "Draft",
+    fallbackTag: "EN",
   },
 
   // Brand kit strings (also exported to brand/i18n/strings.json by `npm run brand:strings`).
@@ -191,18 +194,15 @@ export const en = {
   },
 
   // Strings mirror the real storefront widget (get_widget_strings() in the ai-commerce-copilot plugin repo) where one exists.
+  // Kit module: brand/js/fbt-demo.js. Everything here is SAMPLE content: invented products and counts.
   demo: {
-    label: "Illustrative demo: not store data",
+    label: "Sample data: not from a real store",
     heading: "Try the widget",
     groupLabel: "Products in this bundle",
     intro:
-      "Tick the products and watch the bundle total change. The products, prices and link strengths below are invented, so no store data or results are shown here.",
-    nudge: "Start with \"Without AICC\", then switch to \"With AICC\".",
+      "Tick the products and watch the bundle total change. The products, prices and counts are invented sample data.",
+    nudge: "Start with \"Without AICC\", then switch to \"With AICC\". Then look at what you would see.",
     summary: "Selected: {count}. Bundle total: {total}.",
-    dashboard: {
-      heading: "What you would see in your AICC dashboard (illustration)",
-      explain: "Strong link means the two products were in the same orders most often. This is sample data, not a result.",
-    },
     widget: {
       title: "Frequently Bought Together",
       subtitle: "Customers often purchase these products together.",
@@ -215,7 +215,7 @@ export const en = {
       addFew: "Add {count} products to cart",
     },
     mode: {
-      legend: "What the shopper sees",
+      legend: "Compare",
       without: "Without AICC",
       with: "With AICC",
       captionWithout: "Reco: same category, not from orders.",
@@ -223,6 +223,12 @@ export const en = {
       withoutCaption:
         "WooCommerce's own related products come from the same category or tags. They are not based on what shoppers buy together.",
       withCaption: "AICC lists the products that appear in the same orders as the product being viewed.",
+    },
+    view: {
+      legend: "View",
+      shopper: "What the shopper sees",
+      merchant: "What you see",
+      cue: "Switch to “What you see” for the same bundle from your side.",
     },
     products: {
       kit: "Pour-over coffee set",
@@ -234,34 +240,212 @@ export const en = {
       scale: "Travel mug",
     },
     anchorTag: "Viewing this product",
-    strength: {
-      label: "Link to the product being viewed",
-      strong: "Strong link",
-      medium: "Medium link",
-      light: "Light link",
-      none: "Same category only",
+    merchant: {
+      heading: "Why each product is in the list",
+      intro: "The same sample bundle, as you would see it in your WordPress admin. In your store the counts come from your own orders.",
+      sameBundle: "Same bundle as in the shopper view",
+      forProduct: "Recommendations for",
+      insightHeading: "An observation about this bundle",
+      insightTitle: "Strong Bundle Opportunity",
+      insightBody: "Pour-over coffee set and Paper filters, 100 pack are often bought together.",
+      insightMetric: "Times bought together",
+      askHeading: "Ask Reco about this bundle",
+      askLabel: "Reco's answer",
+      askQuestion: "Which bundle is strongest?",
+      askAnswer: "The pour-over set with paper filters: they were bought together 48 times, more than any other pair here. Open Recommendation Preview to see every partner.",
+      colProduct: "Product",
+      colWhy: "Why it is here",
+      colRule: "Your rule",
+      position: "Place {n}",
+      boughtTogether: "Bought together {n} times",
+      fallback: "Same category — no purchase history yet",
+      ruleLabel: "Rule for {product}",
+      rules: { none: "No rule", pin: "Pin", prefer: "Prefer", deprioritize: "Deprioritize", exclude: "Exclude" },
+      excluded: "Excluded: never shown to shoppers.",
+      ruleNote: "Rules are applied after the counting. Exclude always wins; prefer and deprioritize nudge one place.",
+      tilesHeading: "What your dashboard records",
+      tiles: { views: "Recommendation Views", clicks: "Recommendation Clicks", adds: "Bundle Add-To-Carts" },
+      tileNote: "Sample numbers. Add the bundle to the cart in the shopper view and Bundle Add-To-Carts goes up by one.",
+      tileAdded: "+1 from the add-to-cart you just made",
+      announceRule: "{product}: {rule}. The shopper list is now: {list}.",
+      announceNone: "{product}: no rule. The shopper list is now: {list}.",
+      listEmpty: "nothing",
     },
     why: {
       heading: "Why these",
-      none: "Tick a product to see why AICC pairs it with the pour-over set.",
+      none: "Tick a product to see why AICC lists it for the pour-over set.",
       filters:
-        "In this sample store's orders, paper filters appear with the pour-over set more than anything else. They are used up with every brew, so shoppers come back for them.",
+        "In this sample store's orders, paper filters appear with the pour-over set more often than anything else, and they are used up with every brew.",
       grinder:
-        "A hand grinder is a medium link here: shoppers setting up a pour-over routine often add one, but not every time.",
+        "A hand grinder was bought together fewer times than the filters: shoppers setting up a pour-over routine often add one, but not every time.",
       kettle:
-        "A kettle is a light link. It shows up in some orders with the pour-over set, so AICC lists it after the stronger partners.",
+        "A kettle was bought together less often still, so AICC lists it after the products above.",
+      mug:
+        "There is no purchase history for this pair yet, so this spot is filled from the same category. As orders come in, real co-purchases take over.",
       without:
         "Without AICC, these are just products from the same category. Nothing about them comes from what your shoppers buy together.",
+      merchant:
+        "This is the evidence behind the list: how many times each product was bought together with the pour-over set, and which spots are same-category fallbacks.",
     },
     reco: {
-      intro: "Reco: tick a product and I'll tell you how strongly it is tied to the pour-over set.",
-      strong: "Reco: paper filters are used up with every brew, so they come first.",
-      medium: "Reco: a grinder is a medium link. Plenty of orders include both, but not most.",
-      light: "Reco: a kettle is a light link. AICC would list it after stronger partners.",
+      intro: "Reco: tick a product and I'll tell you why it is in the list.",
+      filters: "Reco: paper filters were bought together with the pour-over set most often, so they come first.",
+      grinder: "Reco: a grinder was bought together fewer times than the filters, so it comes next.",
+      kettle: "Reco: a kettle was bought together less often, so it is listed after the others.",
+      mug: "Reco: no purchase history for this pair yet, so this is a same-category fallback.",
       without: "Reco: these come from the category, not from orders.",
+      merchant: "Reco: this is what your dashboard would show. Change a rule and watch the shopper list follow.",
     },
     keyboardHint: "Use Tab and Space to tick products. Arrow keys move between them.",
     sample: "Sample",
+  },
+
+  // Kit module: brand/js/rules-demo.js ("Control, not a black box").
+  rules: {
+    label: "Sample data: not from a real store",
+    heading: "What the widget would show",
+    productLabel: "Product to apply a rule to",
+    actionLabel: "Rule",
+    actions: { pin: "Pin", prefer: "Prefer", deprioritize: "Deprioritize", exclude: "Exclude" },
+    help: {
+      none: "Choose a product and a rule. Choosing the same rule again removes it.",
+      pin: "Keep this product near the top.",
+      exclude: "Never show this product.",
+      prefer: "Give this product a little extra priority.",
+      deprioritize: "Lower this product's priority without removing it.",
+    },
+    effect: {
+      none: "No rule on this product.",
+      pin: "Pinned: it moves to the first place.",
+      exclude: "Excluded: it is removed from the list. Exclude always wins.",
+      prefer: "Preferred: it moves up one place.",
+      deprioritize: "Deprioritized: it moves down one place.",
+      stays: "Prefer and deprioritize only nudge one place, and never past a product from another group.",
+      outOfStock: "Out-of-stock products stay out, even when pinned.",
+    },
+    products: {
+      filters: "Paper filters, 100 pack",
+      grinder: "Hand grinder",
+      kettle: "Gooseneck kettle",
+      mug: "Ceramic mug",
+      towel: "Linen tea towel",
+      travel: "Travel mug",
+    },
+    evidence: { learned: "Bought together {n} times", fallback: "Same category — no purchase history yet", outOfStock: "Out of stock" },
+    tags: { pin: "Pinned", prefer: "Preferred", deprioritize: "Deprioritized", exclude: "Excluded" },
+    place: "Place {n}",
+    hiddenHeading: "Not shown to shoppers",
+    hiddenNone: "Nothing is hidden.",
+    reset: "Reset",
+    activeHeading: "Rules in place",
+    activeNone: "No rules yet.",
+    announceList: "Widget list: {list}.",
+    announceHidden: "Not shown: {list}.",
+    announceReset: "All rules removed. The list is back to AICC's own order.",
+    smallprint: "Illustration with sample products.",
+  },
+
+  // Kit module: brand/js/dash-preview.js. A styled replica of the real dashboard blocks, with the real labels.
+  dash: {
+    label: "Sample data: not from a real store",
+    shopperTitle: "Shopper sees",
+    youTitle: "You see",
+    widgetTitle: "Frequently Bought Together",
+    widgetSubtitle: "Customers often purchase these products together.",
+    widgetAdd: "Add 3 products to cart",
+    widgetTotal: "Bundle total",
+    products: { kit: "Pour-over coffee set", filters: "Paper filters, 100 pack", grinder: "Hand grinder", mug: "Ceramic mug" },
+    page: "AI Copilot",
+    period: "Last 30 days",
+    tiles: {
+      views: "Recommendation Views",
+      clicks: "Recommendation Clicks",
+      rate: "Recommendation Click Rate",
+      adds: "Bundle Add-To-Carts",
+      orders: "Associated Orders",
+      revenue: "Associated Revenue",
+    },
+    associationNote: "Orders and revenue are associated with the widget, not proof it caused them.",
+    insightsHeading: "Merchant Insights",
+    insightTitle: "Strong Bundle Opportunity",
+    insightBody: "Pour-over coffee set and Paper filters, 100 pack are often bought together.",
+    insightMetric: "Times bought together",
+    insightGate: "Observations appear once you have at least 10 orders in the period.",
+    insightsLead: "Plain-English observations from fixed rules, not written by an AI. These four are the kinds AICC can show.",
+    insightKinds: {
+      hot: { title: "Hot Product Detected", body: "Paper filters, 100 pack is one of your top sellers this period.", metric: "Share of purchases", value: "24%" },
+      bundle: { title: "Strong Bundle Opportunity", body: "Pour-over coffee set and Paper filters, 100 pack are often bought together.", metric: "Times bought together", value: "48" },
+      interest: { title: "High Interest, Low Conversion", body: "Gooseneck kettle is added to carts often but bought less.", metric: "Added to cart", value: "22" },
+      winner: { title: "Top Recommendation", body: "Hand grinder gets the most clicks among the products AICC recommends.", metric: "Recommendation Clicks", value: "41" },
+    },
+    previewHeading: "Recommendation Preview",
+    previewFor: "Recommendations for",
+    previewLearned: "Bought together {n} times",
+    previewFallback: "Same category — no purchase history yet",
+    callouts: {
+      a: "Recommendation activity for the last 30 days.",
+      b: "Orders and revenue associated with the widget within 24 hours of a bundle add.",
+      c: "Plain-English observations from fixed rules, not an AI.",
+      d: "Preview what the widget recommends for any product.",
+    },
+  },
+
+  // Kit module: brand/js/reco-ask.js. A mockup of the Ask Reco panel in the WordPress admin, with sample questions.
+  ask: {
+    label: "Sample data: not from a real store",
+    title: "Ask Reco",
+    placeholder: "Ask about your store",
+    suggestionsLabel: "Sample questions",
+    answerLabel: "Reco's answer",
+    footnote: "Answers come from your own dashboard data. Reco gives information and links; it never changes your settings.",
+    qa: {
+      next: {
+        q: "What should I do next?",
+        a: "Your store is connected and your widget is verified. Next best step: import your order history so recommendations can learn from real purchases.",
+        link: "Import Order History",
+      },
+      perf: {
+        q: "How are my recommendations performing?",
+        a: "In the last 30 days your recommendations were viewed 1,240 times and clicked 86 times. Shoppers added the bundle to the cart 31 times.",
+        link: "Open the performance section",
+      },
+    },
+  },
+
+  // Kit markup: .aicc-loop. The merchandising loop as one strip; the same words go to brand/i18n/strings.json for the Control Plane.
+  loop: {
+    label: "How AICC works, step by step",
+    title: "From your store's data to recommendations you control",
+    steps: ["Your store data", "Understand relationships", "Recommend to shoppers", "Measure what happens", "Get insight", "Control the result", "Keep learning"],
+  },
+
+  // Kit module: brand/js/faq-search.js (client-side filter for the Questions page; nothing is sent or stored).
+  faqSearch: {
+    label: "Search the questions",
+    placeholder: "Try “refund”, “checkout” or “stores”",
+    hint: "Searches the questions and answers on this page. Your search stays in your browser.",
+    clear: "Clear",
+    results: { one: "1 question matches “{q}”.", other: "{n} questions match “{q}”." },
+    empty: "No question matches “{q}”. Try fewer words, or browse by topic.",
+  },
+
+  // Kit markup: .aicc-flow (brand/aicc-brand.css). The same words are exported to brand/i18n/strings.json for the Control Plane.
+  flows: {
+    order: {
+      title: "When an order is placed",
+      steps: ["Order placed", "Details queued in your store", "Sent to AICC in the background"],
+      note: "Placing an order never waits on AICC.",
+    },
+    down: {
+      title: "If AICC or its servers are slow or down",
+      steps: ["AICC unavailable", "The widget hides", "WooCommerce's related products return"],
+      note: "With the default setting, when the page's JavaScript runs.",
+    },
+    inactive: {
+      title: "If your plan isn't active",
+      steps: ["Plan not active", "No widget, no script, no new cookies", "WooCommerce works as usual"],
+      note: "Nothing of AICC appears on your storefront.",
+    },
   },
 
   home: {
@@ -270,135 +454,175 @@ export const en = {
       titleLead: "Show shoppers what your own customers",
       titleAccent: "buy together.",
       lead:
-        "AICC adds a Frequently Bought Together widget to your WooCommerce product and cart pages. It learns from your store's own orders, so what shoppers see comes from your catalog and your customers, not from a generic list. Where a product has little history, AICC fills the gaps from the same category and your newest products, and says so.",
+        "AICC learns which products your customers really buy together from your WooCommerce orders and shows them on your product and cart pages. In your WordPress admin you get a dashboard, controls and a guide to see and steer what it does. It stays out of your checkout's way.",
+      // Fact hierarchy (owner addendum C, variant A): three value facts first, the purchase-confidence line smaller and muted.
       facts: {
+        learned: "Learned from your own orders",
+        control: "You control what gets recommended",
+        checkout: "Your checkout stays independent of AICC",
+      },
+      confidence: {
         price: "Plans from {priceSolo} a year",
         guarantee: "14-day money-back guarantee on your first purchase",
-        noCharge: "Nothing is ever charged automatically",
+        renewal: "No automatic renewal",
       },
-      cardLabel: "Illustrative widget",
-      cardTitle: "Frequently Bought Together",
     },
     demo: {
       title: "Frequently-bought-together, actually learned.",
-      lead: "Most \"related products\" are the same category with a different label. AICC looks at what customers put in the same order, then fills any gaps in a way it tells you about.",
+      lead:
+        "WooCommerce can tell which products share a category. AICC adds the signal merchants usually have to guess at: which products customers actually buy together, with sensible fallbacks where history is thin.",
+    },
+    why: {
+      title: "Related products start from labels. AICC starts from purchases.",
+      lead:
+        "WooCommerce's related products are a sensible default: they match products by category and tags. They can't tell you what people actually buy together.",
+      points: {
+        intent: {
+          title: "Same category isn't the same intent.",
+          body: "A grinder and a bag of coffee beans can sit in different categories and still go into the same basket. Category matching can't see that. Your orders can.",
+        },
+        evidence: {
+          title: "Your orders are the evidence.",
+          body: "AICC counts which products appear together in your completed and processing orders, and lists the most frequent partners first.",
+        },
+        fallback: {
+          title: "Thin history gets a safe fallback.",
+          body: "When a product has few co-purchases, the remaining spots come from the same category, then your newest in-stock products. Nothing is invented, and your dashboard preview shows which partners were really bought together.",
+        },
+      },
+      link: "See how a recommendation is decided",
+    },
+    // One premium workspace replaces the standalone dashboard, Control and Meet Reco sections of the first deck (owner addendum F).
+    workspace: {
+      title: "More than a widget. A\u00a0merchandising workspace.",
+      lead: "The widget is what shoppers see. Around it, AICC gives you a place in your WordPress admin to understand what is happening, steer it and decide what to do next.",
+      connector: "The same bundle your shoppers see",
+      connectorLink: "Back to the demo",
+      tabsLabel: "What the AICC workspace gives you",
+      understand: {
+        tab: "Understand",
+        title: "See what your recommendations are doing.",
+        lead: "Recommendation views, clicks and bundle add-to-carts from the last 30 days, and the orders and revenue associated with the widget. Preview what the widget recommends for any product, with how many times each partner was bought together.",
+        note: "Orders and revenue are shown as association, not proof of cause.",
+      },
+      control: {
+        tab: "Control",
+        title: "Keep the final say.",
+        lead: "Pin, prefer, deprioritize or exclude any product and watch the list respond. Exclude always wins.",
+        note: "Rules can target one product pair or a product everywhere, and can expire. Out-of-stock and deleted products stay out even when pinned.",
+        link: "How rules work in detail",
+      },
+      insights: {
+        tab: "Find opportunities",
+        title: "Spot what is worth acting on.",
+        lead: "Plain-English observations from your own data: top sellers, strong bundles, products added to cart often but bought less, and which recommended products get the clicks.",
+        note: "They come from fixed rules, not from a generative model.",
+      },
+      ask: {
+        tab: "Ask Reco",
+        title: "Ask Reco, your guide inside AICC.",
+        lead: "Reco lives in your WordPress admin and answers common questions about your setup, performance and next steps from your own dashboard data, in English or Hebrew.",
+        note: "Reco follows fixed rules rather than generative AI, so it won't improvise. It gives information and links, never changes your settings, and shoppers never see it.",
+        link: "What Ask Reco can and can't do",
+      },
     },
     how: {
-      title: "How it works",
-      lead: "Three steps. You do the first one; AICC does the rest in the background.",
+      title: "Connect, learn, recommend.",
+      lead: "You do the first step. AICC does the rest in the background.",
       steps: {
         connect: {
           title: "Connect",
-          body: "Sign in to your AICC account and connect the store from its own AICC screen in WordPress. Normally there is no licence key to paste, and no code to write.",
+          body: "Sign in to your AICC account and connect your store from the AICC screen in WordPress. Normally there is no license key to paste and no code to write.",
         },
         learn: {
           title: "Learn",
-          body: "AICC prepares your store in the background: it syncs your catalog, imports up to the last 24 months of past orders and checks that the widget is ready. This starts when you open the AICC dashboard in WordPress or when WordPress's scheduled tasks run, so we don't promise a number of minutes.",
+          body: "AICC syncs your catalog in the background. To give it a head start, you can also import up to 24 months of past orders; this is optional. Timing varies with catalog size and your site's scheduled tasks.",
         },
         recommend: {
           title: "Recommend",
-          body: "On product and cart pages the widget shows what your customers bought together. New orders keep teaching AICC, and your own rules adjust the result.",
+          body: "On product and cart pages, the widget shows what your customers bought together. New orders keep teaching AICC, and your rules adjust the result.",
         },
       },
     },
-    control: {
-      title: "You decide, and WooCommerce keeps working.",
-      lead: "AICC is a WooCommerce plugin. It doesn't replace WooCommerce: your products, cart, checkout and orders stay where they are.",
-      items: {
-        rules: {
-          title: "Rules you control",
-          body: "Pin a product, prefer it, deprioritise it or exclude it. Rules apply after the algorithm and exclude always wins. Products that are out of stock or deleted stay out whatever the rule says.",
-        },
-        dashboard: {
-          title: "A dashboard that stays honest",
-          body: "Readiness, widget views and clicks, and the orders associated with the widget. Plain-English observations from your own data appear once you have at least 10 purchases in the period shown.",
-        },
-        checkout: {
-          title: "Not on your checkout path",
-          body: "Checkout doesn't wait for AICC: AICC makes no network call to its servers while a customer checks out. Order details are queued and sent in the background.",
-        },
-        failSoft: {
-          title: "If AICC is unavailable",
-          body: "The widget hides itself and WooCommerce's own related products and cross-sells come back. Built to fail soft and tested, but not a guarantee against every host failure.",
-        },
-        dormant: {
-          title: "If your plan isn't active",
-          body: "Nothing of AICC appears on your storefront: no widget, no script and no new cookies. Cookies already in browsers stay there, and nothing reads them.",
-        },
-        remove: {
-          title: "Light touch on WooCommerce",
-          body: "AICC doesn't edit WooCommerce's products, prices or templates. It adds a few private fields to orders (visitor and session IDs, only with cookie consent) and by default hides WooCommerce's related-products block while its widget shows. Deactivate it and the native recommendations return.",
-        },
-      },
-      caveat: "We tested with Storefront and a block theme and can't promise every theme or host.",
-      history: "Your history can be kept when access pauses.",
-    },
-    reco: {
-      title: "Meet Reco, the guide inside AICC.",
-      lead: "Reco shows up where it helps: explaining how recommendations work, answering questions in your admin, and keeping you company while your store is prepared.",
+    safety: {
+      title: "A recommendation tool should never become a checkout dependency.",
+      lead: "AICC is built so that if anything goes wrong, WooCommerce keeps selling.",
       points: {
-        one: "Ask Reco answers in English and Hebrew.",
-        two: "Works from your own dashboard data. It is not a general chatbot.",
-        three: "Gives information and links. It never changes your settings.",
-        four: "Merchant-only: shoppers never see it.",
+        a: "Placing an order never waits on AICC. Order details are queued and sent in the background.",
+        b: "If AICC or its servers are slow or down, the widget hides.",
+        c: "WooCommerce's own related products and cross-sells come back.",
+        d: "If your plan isn't active, nothing of AICC appears on your storefront: no widget, no script, no new cookies.",
       },
+      supporting:
+        "AICC doesn't edit your products, prices or templates. Deactivate it and the native recommendations return. Tested with Storefront and a block theme.",
+      link: "How your data is handled",
+      more: "Safety in detail",
     },
     pricing: {
-      title: "Simple yearly plans.",
-      lead: "Prices are per plan, per year, in US dollars. Every plan has every feature; only the number of stores differs. Renewal is manual and nothing is charged automatically.",
+      title: "One full product. Priced by how many stores.",
+      lead:
+        "Every plan includes the widget, the dashboard and insights, your rules, Ask Reco and an optional import of past orders. You only choose how many stores to connect. You stay in control: AICC never renews your plan automatically.",
       link: "Compare plans and read the details",
     },
     questions: {
-      title: "Questions we get, honestly answered.",
-      lead: "A short selection. The full list has all 40.",
+      title: "Questions merchants ask before they buy.",
+      lead: "Short answers first. The full list covers plans, data and what happens when you come back.",
     },
     final: {
       title: "Ready when your store is.",
-      body: "Create your account, choose a plan and connect your first store. The 14-day money-back guarantee covers your initial purchase.",
+      body: "Create your account, choose a plan and connect your first store.",
+      guarantee: "Your initial plan purchase includes a 14-day money-back guarantee. The 14 days start when payment is received and your plan is issued. See the [Refund Policy](route:refund-policy) for full terms.",
     },
   },
 
   product: {
     hero: {
-      title: "How AICC works, in more detail.",
-      lead: "What shoppers see, what you control, how a recommendation is decided and where the limits are. Written for a store owner, not an engineer.",
+      title: "Recommendations your store can explain.",
+      lead:
+        "AICC learns from your own orders, shows shoppers what is actually bought together, and gives you the dashboard, rules and guide to understand every recommendation. Written for a store owner, not an engineer.",
     },
     toc: {
-      shopper: "What shoppers see",
-      merchant: "What you see and control",
-      decide: "How a recommendation is decided",
-      data: "What data AICC uses",
-      measure: "Measuring the widget",
-      import: "Importing your history",
-      multi: "More than one store",
-      safe: "When something goes wrong",
-      returning: "Coming back later",
-      languages: "Languages",
-      notYet: "What AICC doesn't do yet",
+      shopper: "Shopper experience",
+      learn: "How it learns",
+      sparse: "Thin history",
+      dash: "Your dashboard",
+      control: "Your controls",
+      ask: "Ask Reco",
+      measure: "Measurement",
+      safety: "Safety",
+      history: "Past orders",
+      stores: "More stores",
+      compare: "Compared",
+      limits: "Current scope",
     },
     shopper: {
       title: "What shoppers see",
-      p1: "A Frequently Bought Together widget on your product pages and on the cart page. On a product page, the product being viewed starts ticked and shoppers can tick the others and add the bundle to the cart in one step. On the cart page, the first item in the cart is the starting point and products already in the cart are left out.",
-      p2: "The widget adapts to the width of the space it sits in, on phones as well as desktop. It follows your theme's direction, so right-to-left stores render right-to-left.",
-      p3: "It appears on product pages and the cart page only. There is no home page, category or checkout widget.",
+      lead: "A Frequently Bought Together widget on your product pages and on the cart page.",
+      page: {
+        title: "On a product page",
+        body: "The product being viewed starts ticked. Shoppers tick the others and add the bundle to the cart in one step.",
+      },
+      cart: {
+        title: "On the cart page",
+        body: "The first item in the cart is the starting point. Shoppers add the bundle the same way.",
+      },
+      fit: {
+        title: "On any screen",
+        body: "The widget adapts to the width of the space it sits in, from phone to desktop, and follows your theme's direction, so right-to-left stores render right-to-left. It shows up to five products.",
+      },
+      only: "It appears on product pages and the cart page only. There is no home page, category or checkout widget. On an unusual theme where AICC can't find a safe place, it hides rather than guess.",
     },
-    merchant: {
-      title: "What you see and control",
-      p1: "In your WordPress admin there is a dashboard with technical readiness, widget views, clicks and bundle adds, and the orders and revenue associated with the widget. Insights are plain-English, rule-based observations from your own data (top products, strong bundles, high-interest low-purchase products, widget performance), shown once there are at least 10 purchases in the period shown. They are deterministic. They are not written by an AI.",
-      p2: "You can pin, prefer, deprioritise or exclude a product, for one pair or everywhere. Rules apply after the algorithm; exclude always wins; out-of-stock and deleted products stay out whatever the rule.",
-      p3: "Ask Reco answers common questions about setup, performance and next steps from your dashboard data. It works for merchants in the admin, can't change settings, and is not shown to shoppers.",
-    },
-    decide: {
-      title: "How a recommendation is decided",
-      lead: "In this order, with your rules applied last:",
+    learn: {
+      title: "Learned from your orders",
+      lead: "A short, fixed list, worked through in this order, with your rules applied last.",
       steps: {
         learned: {
           title: "Learned from your orders",
-          body: "AICC looks at your completed and processing orders. When customers buy product A, which other products are in the same order? Those counts, highest first, are the recommendations. It is plain counting on AICC's backend: no generative AI, no per-shopper profile.",
+          body: "AICC looks at your completed and processing orders. When customers buy product A, which other products are in the same order? Those counts, highest first, are the recommendations.",
         },
         category: {
           title: "Same category",
-          body: "If a product has too little purchase history to fill the widget, the remaining spots are filled with other products from the same category.",
+          body: "If a product has too little purchase history to fill the widget, the remaining spots are filled with in-stock products from the same category.",
         },
         newest: {
           title: "Newest in stock",
@@ -406,64 +630,186 @@ export const en = {
         },
         rules: {
           title: "Your rules",
-          body: "Pin, prefer, deprioritise and exclude are applied last. Out-of-stock and deleted products are filtered out.",
+          body: "Pin, exclude, prefer and deprioritize are applied afterwards. Out-of-stock and deleted products stay out.",
         },
       },
-      honest:
-        "One thing to know: today the widget heading is the same for all of these. So a product with little history can show same-category or newest products under \"Frequently Bought Together\". We tell you this rather than imply every item is a proven co-purchase.",
+      plain:
+        "Every recommendation can be explained, because it comes from counting your own orders rather than from a generative model or a profile of the shopper. The same data gives the same result.",
     },
-    data: {
-      title: "What data AICC uses",
-      p1: "Your catalog (names, prices, categories, images, stock status) and order facts (products and product names, quantities, totals, currency, billing country, visitor and session IDs where they exist, and a pseudonymous hashed email identifier). It never receives the raw email, name, phone or address, or any payment details. With cookie consent for statistics it also receives shopping activity, as described on the [data and trust page](route:data-and-trust).",
-      p2: "Each store's data is kept separate from every other store's. The data and trust page lists what is sent and what is not.",
+    sparse: {
+      title: "What happens when there isn't much history.",
+      lead: "AICC still has something sensible to show.",
+      p1: "The spots that purchase history can't fill are filled with in-stock products from the same category, then your newest in-stock products. As orders come in, real co-purchases take over from the fallbacks.",
+      p2: "You can import up to 24 months of past orders (optional), so AICC rarely starts from nothing.",
+      limitTitle: "One thing to know",
+      limit:
+        "Today the widget heading is the same for every item, so a fallback product can appear under “Frequently Bought Together”. In the Recommendation Preview in your dashboard, learned partners show how many times they were bought together and fallback products don't, so you can always tell them apart.",
+      slots: {
+        caption: "Illustration with sample numbers: a product with two learned partners.",
+        learned: "Bought together {n} times",
+        category: "Same category",
+        newest: "Newest in stock",
+        slot: "Spot {n}",
+      },
+    },
+    dash: {
+      title: "A dashboard that stays honest.",
+      lead: "In your WordPress admin, with the labels you will see there. The sample below is invented.",
+      readiness: "Readiness is setup readiness: connection, tracking, products and widget. It is not a sales measure.",
+      items: {
+        a: { title: "Recommendation activity", body: "Recommendation views, clicks and click rate, and bundle add-to-carts, for the last 30 days." },
+        b: { title: "Associated orders and revenue", body: "Orders where a shopper added a bundle from the widget and bought one of those products within 24 hours. Association, not proof of cause." },
+        c: { title: "Merchant Insights", body: "Plain-English observations from fixed rules, not written by an AI: top sellers, strong bundles, products added to cart often but bought less, and which recommended products get the clicks." },
+        d: { title: "Recommendation Preview", body: "Pick any product and see what the widget would recommend. Learned partners show how many times they were bought together." },
+      },
+      gate: "Observations appear once you have at least 10 orders in the period.",
+      export: "You can export product performance as a CSV for 7, 30 or 90 days. Everything comes from your store's data; AICC doesn't project results.",
+    },
+    control: {
+      title: "How you control it.",
+      lead: "Add a rule for a product and watch the list respond. AICC does the heavy lifting; you decide where it should not.",
+      tableCaption: "What each rule does",
+      colRule: "Rule",
+      colDoes: "What it does",
+      rows: {
+        pin: "Keeps the product near the top. If you pin several, the one set most recently comes first.",
+        exclude: "Never shown. Always wins over every other rule.",
+        prefer: "Nudges the product up one place.",
+        deprioritize: "Nudges the product down one place, without removing it.",
+      },
+      scopeTitle: "Where a rule applies",
+      scope:
+        "A rule can target one product pair (when shoppers view product A, product B gets the action) or one product everywhere (it gets the action on every product's list). Rules can have an optional expiry date and an internal note. There are no rules by category.",
+      guardTitle: "What a rule can't override",
+      guard:
+        "Out-of-stock and deleted products stay out, even when pinned. Prefer and deprioritize never move a product past one from another group (learned partners, same-category products, newest products). Only pin forces a position.",
+    },
+    ask: {
+      title: "What Ask Reco adds.",
+      lead: "Reco lives in your WordPress admin and helps you make sense of your store's data. Ask it a common question and it answers from your own dashboard data, with links to the right screens.",
+      canTitle: "What it can do",
+      can: {
+        a: "Tell you whether your store is ready, and what to fix first.",
+        b: "Explain why recommendations aren't showing.",
+        c: "Help you read views, clicks, bundle add-to-carts and associated orders.",
+        d: "Point out bundle opportunities and catalog health.",
+        e: "Suggest a next step and link you to the right screen.",
+      },
+      cannotTitle: "What it can't do",
+      cannot: {
+        a: "Answer open-ended questions or write copy: it is built from fixed rules, not a generative model.",
+        b: "Change your settings. It only gives information and links.",
+        c: "Appear to shoppers. It is for merchants in the admin.",
+        d: "Work in other languages yet: it answers in English and Hebrew.",
+      },
+      note: "Your questions are answered inside your store.",
     },
     measure: {
-      title: "Measuring the widget",
-      p1: "The dashboard shows widget impressions, clicks and bundle adds, plus orders and revenue associated with the widget. An order is counted only when a shopper added a bundle from the widget and bought one of those products within 24 hours. The full order total is counted.",
-      p2: "That is association, not causation: it does not say the widget caused the sale. It needs your store's cookie consent to allow statistics, through a consent plugin compatible with the WP Consent API. With none installed there are no cookies, and no orders can be associated with the widget. Order facts themselves are still sent to AICC, because they are how recommendations are learned.",
+      title: "How performance is measured.",
+      lead: "AICC records views of the recommended products, clicks, and bundle add-to-carts from the widget.",
+      flow: {
+        title: "When an order counts as associated",
+        steps: ["Shopper adds a bundle from the widget", "Buys one of those products within 24 hours", "Order shown as associated, at its full order total"],
+      },
+      association:
+        "That is association, not proof that the widget caused the sale. AICC doesn't run a control group or estimate what you would have sold anyway, so it can't tell you how much extra revenue the widget produced, and we don't claim it does.",
+      consent:
+        "It also needs your store's cookie consent tool to allow statistics, through a consent plugin compatible with the WP Consent API. With none installed there are no cookies and no orders can be associated, though order facts are still sent because they are how recommendations are learned.",
+      notTitle: "What we don't measure",
+      not: {
+        a: "Uplift compared with a control group.",
+        b: "View-through, or clicks that never became a bundle add-to-cart.",
+        c: "Orders from visitors who haven't consented to statistics.",
+        d: "Orders from before you connected.",
+        e: "Journeys that continue on another device.",
+      },
     },
-    import: {
-      title: "Importing your history",
-      p1: "After you connect, AICC imports up to the last 24 months of your past orders in the background, so recommendations can learn from day one. Past orders are imported as orders. They are never shown as recommendation history, and no impressions, clicks or attributed revenue are created for a time when AICC wasn't connected.",
-      p2: "It is not instant: it starts when you open the AICC dashboard in WordPress or when WordPress's scheduled tasks run, and the timing depends on your store's size. You can cancel an import from the AICC dashboard; a cancelled import is started again when a returning store is caught up. The widget doesn't need the import to appear; without it AICC starts from category and newest-product fallbacks and learns from new orders.",
+    safety: {
+      title: "Built to fail soft.",
+      lead: "AICC is built so that if anything goes wrong, WooCommerce keeps selling.",
+      conditions:
+        "This applies with the default setting, where AICC's widget replaces WooCommerce's related products, and when the page's JavaScript runs.",
+      limit:
+        "Failures that stop PHP itself, such as a server running out of memory, are outside what any plugin can intercept. Tested with Storefront, a block theme and common plugins.",
+      requirements:
+        "Declared minimums: WordPress 6.0, WooCommerce 7.0 and PHP 7.4. Compatible with WooCommerce's high-performance order storage (HPOS).",
+      light:
+        "AICC doesn't edit your products, prices or templates. Deactivate it and the native recommendations return. Disconnect the store first to free its slot.",
+      link: "What data is sent, and what is not",
     },
-    multi: {
-      title: "More than one store",
-      p1: "Solo connects 1 store, Studio up to 3, Agency up to 10. Staging and production are separate stores, and so are www and non-www or http and https spellings of the same address. Disconnecting a store frees its slot immediately.",
-      p2: "See [pricing](route:pricing) for how slots work, and for what happens if you need a larger plan.",
+    history: {
+      title: "Your past orders can give AICC a head start.",
+      lead: "After your store is connected, AICC offers to import up to 24 months of your past orders, so recommendations can learn from your existing history. It is optional: you choose.",
+      p1: "Skip it and AICC starts with same-category and newest-product recommendations, and learns from new orders. Nothing from past orders is sent until you choose.",
+      p2: "You can start the import later from the dashboard. It reads your orders and sends order facts to AICC without changing them in WooCommerce, orders already imported aren't duplicated, and you can cancel an import from the dashboard. Timing varies with catalog size and your site's scheduled tasks.",
+      p3: "Coming back after a pause? AICC can preserve your store history when access pauses, so returning merchants can continue instead of starting from zero. If you imported your history, AICC catches up from your real WooCommerce history; a store that chose Not now is never imported without asking. It never invents impressions, clicks or revenue for the time it wasn't running.",
+      link: "Exact retention, today and as our target",
+      flowTitle: "If you choose to import",
+      flow: ["Past orders from the last 24 months, if you choose", "Imported in the background", "Learned relationships"],
     },
-    safe: {
-      title: "When something goes wrong",
-      p1: "Checkout doesn't wait for AICC: AICC makes no network call to its servers while a customer checks out. Order details are queued and sent in the background. If AICC or its backend is slow or unavailable, the widget hides and WooCommerce's own related products and cross-sells return. This is built to fail soft and tested; it is not a guarantee against every possible host failure, such as a server running out of memory.",
-      p2: "On an unusual theme where AICC can't find a safe place for the widget, it hides rather than guess. A developer can help in that case. AICC doesn't edit WooCommerce's products, prices or templates; deactivate it and the native recommendations return.",
+    stores: {
+      title: "More than one store.",
+      lead: "Every plan has every feature. The only difference is how many stores you connect.",
+      solo: "Solo",
+      studio: "Studio",
+      agency: "Agency",
+      slots: "{n} store slots",
+      slotsOne: "1 store slot",
+      p1: "Each website address you connect uses one slot. Staging and production are separate stores, and so are the www and non-www versions of an address, and http and https. Disconnecting a store frees its slot immediately.",
+      p2: "To move your plan from one store to another, disconnect the old store and connect the new one. There is no transfer fee. If all slots are used, a larger plan is a separate purchase with its own 365-day term; it doesn't credit or replace your current plan.",
+      link: "Plans and prices",
     },
-    returning: {
-      title: "Coming back later",
-      p1: "Renew the same plan and your stores return without reconnecting. If a plan was refunded, buy a new plan and connect the same store: AICC can recognise it if the store still has its AICC connection, and your history may be available again, because operational data may be kept for up to 12 months. Today nothing is deleted automatically, so data may be kept longer until it is deleted on request. A reinstall that lost the connection starts as a new store. A refunded plan is never revived.",
+    compare: {
+      title: "Why AICC and not another related-products plugin?",
+      lead: "Related products are a good default and they are always there. AICC adds what they don't try to do.",
+      caption: "WooCommerce related products compared with AICC",
+      colTopic: "",
+      colWoo: "WooCommerce related products",
+      colAicc: "AICC",
+      rows: {
+        chosen: { topic: "How products are chosen", woo: "Category and tags by default, or hand-picked per product", aicc: "What customers in your store bought together; category and newest as fallbacks" },
+        see: { topic: "What you can see", woo: "The block itself", aicc: "A dashboard: views, clicks, bundle add-to-carts, associated orders, observations" },
+        control: { topic: "Control", woo: "Choose related products by hand per product", aicc: "Rules: pin, exclude, prefer, deprioritize, pair-specific or everywhere" },
+        explain: { topic: "Explainability", woo: "Not applicable", aicc: "Counting you can inspect in the Recommendation Preview" },
+        guide: { topic: "Guidance", woo: "None", aicc: "Ask Reco in your admin" },
+        history: { topic: "History", woo: "Not used", aicc: "Optional import of up to 24 months of past orders" },
+        fail: { topic: "If something fails", woo: "Native block", aicc: "Widget hides; native block returns" },
+      },
+    },
+    limits: {
+      title: "What AICC focuses on today.",
+      lead: "Clear boundaries, so you know what to expect.",
+      items: {
+        a: "Recommendations follow the product, not the shopper: there is no per-shopper personalization.",
+        b: "AICC recommends products bought together. It isn't an upsell engine.",
+        c: "The widget appears on product pages and the cart page, not on the home page, category pages or checkout.",
+        d: "Ask Reco is for merchants and is built from fixed rules. It answers in English and Hebrew.",
+        e: "The widget heading is the same for fallback products as for learned ones.",
+        f: "The bundle button can't add products that need an option choice, such as size or color (variable products); shoppers choose those on the product page.",
+        g: "The plugin admin is in English and Hebrew.",
+      },
     },
     languages: {
-      title: "Languages",
-      p1: "This website and your account area: English, Hebrew (right-to-left), Spanish and Russian. The AICC admin in WordPress: English and Hebrew. The storefront widget: English and Hebrew in full, plus the core labels (heading, buttons, messages) in Spanish, Russian, French, German and Arabic.",
-    },
-    notYet: {
-      title: "What AICC doesn't do yet",
-      items: {
-        a: "Personalised recommendations for each shopper. Recommendations are based on the product, not the person.",
-        b: "Upselling. AICC recommends products bought together; it doesn't suggest pricier alternatives.",
-        c: "A widget on the home page, category pages or checkout.",
-        d: "A shopper-facing assistant. Ask Reco is for merchants only.",
-        e: "A different widget heading for same-category and newest-product fallbacks.",
-        f: "A setting to turn off the automatic import before it starts.",
+      title: "Languages.",
+      lead: "What is available in which language.",
+      caption: "Languages by part of AICC",
+      colPart: "Part of AICC",
+      colLangs: "Languages",
+      rows: {
+        site: { part: "This website and your account area", langs: "English, Hebrew (right-to-left), Spanish and Russian" },
+        admin: { part: "The AICC admin in WordPress", langs: "English and Hebrew" },
+        reco: { part: "Ask Reco", langs: "English and Hebrew" },
+        widget: { part: "The storefront widget", langs: "English and Hebrew in full, plus core labels in Spanish, Russian, French, German and Arabic" },
       },
-      outro: "We'd rather list these than let you find out later.",
     },
-    demoHeading: "See it working",
+    questions: { title: "Questions about how it works." },
+    cta: { title: "Ready to see it on your store?", body: "Create your account, choose a plan and connect your first store." },
   },
 
   pricing: {
     hero: {
-      title: "Three plans. One difference.",
-      lead: "Every plan has every feature. The only difference is how many stores you can connect.",
+      title: "One full product. Pick how many stores.",
+      lead: "Every plan includes everything AICC does. The only difference is how many stores you can connect.",
     },
     plans: {
       solo: { name: "Solo", fit: "One store." },
@@ -471,21 +817,30 @@ export const en = {
       agency: { name: "Agency", fit: "A portfolio of client stores." },
     },
     included: {
-      title: "What every plan includes",
+      title: "Every plan includes the full AICC product.",
+      lead: "Before you look at prices, this is what you are buying.",
       items: {
-        a: "The Frequently Bought Together widget on product and cart pages",
-        b: "Dashboard, rule-based insights and the CSV export of product performance",
-        c: "Pin, prefer, deprioritise and exclude rules",
-        d: "Ask Reco in your WordPress admin",
-        e: "Import of up to 24 months of past orders",
-        f: "English, Hebrew, Spanish and Russian website and account area",
+        a: "Recommendations learned from your own orders",
+        b: "A Frequently Bought Together bundle on product and cart pages",
+        c: "A dashboard for views, clicks, bundle add-to-carts and associated orders",
+        d: "Rules to pin, exclude, prefer or deprioritize products",
+        e: "Plain-English observations from your store's data",
+        f: "Ask Reco, your guide in WordPress",
+        g: "Optional import of up to 24 months of past orders to learn from day one",
+        h: "Website and account area in English, Hebrew, Spanish and Russian",
+        i: "A fail-soft design that keeps checkout independent of AICC",
       },
+      outro: "Plans differ only by store capacity.",
+    },
+    plansSection: {
+      title: "Three plans, priced by store capacity.",
+      note: "All prices are in US dollars (USD). You confirm your plan in your AICC account.",
     },
     slots: {
       title: "How store slots work",
       p1: "Each plan has a number of store slots: 1, 3 or 10. Connecting a store uses a slot; disconnecting it frees the slot at once.",
       p2: "Staging and production count as separate stores. So do the www and bare-domain spellings of an address, and http and https.",
-      p3: "To move your plan from one store to another: disconnect the old store, connect the new one. There is no transfer allowance and no extra fee.",
+      p3: "To move your plan from one store to another: disconnect the old store, connect the new one. There is no transfer fee and no limit on moves.",
       p4: "If all slots are used, disconnect a store you no longer need or buy a larger plan. There is no in-place upgrade: a larger plan is a separate purchase with its own 365-day term and store slots, and it does not credit or replace your current plan.",
     },
     which: {
@@ -510,17 +865,20 @@ export const en = {
     },
     terms: {
       title: "Term, renewal and refunds",
-      items: {
-        term: "A plan lasts 365 days from purchase.",
-        renewal: "Renewal is manual. You buy it from Plans & Stores in your account, and it adds 365 days to the later of today and your current end date, so renewing early keeps your unused time.",
-        billing: "There is no recurring billing, and no authorisation to charge you again is stored. Nothing is ever charged automatically.",
-        guarantee: "A 14-day money-back guarantee covers your initial purchase. The 14 days start when payment is received and the plan is issued. It doesn't automatically cover later renewals. The refund policy lists the exceptions (abuse, duplicate purchases, chargebacks, payment-processor and tax limits).",
-        account: "You need an AICC account to buy. Normally there is no licence key to paste: you connect each store from its own AICC screen.",
+      try: {
+        title: "Try it",
+        body: "Your initial plan purchase includes a 14-day money-back guarantee. The 14 days start when payment is received and your plan is issued. See the [Refund Policy](route:refund-policy) for full terms.",
       },
-      policy: "Read the refund policy",
-    },
-    refunds: {
-      p1: "After a full refund the plan is revoked and AICC stops on your stores. WooCommerce is unaffected.",
+      renewal: {
+        title: "Renewal",
+        body: "You stay in control: AICC never renews your plan automatically. A plan is a fixed 365 days from purchase. To renew, you buy it from Plans & Stores in your account, and it adds 365 days to the later of today and your current end date, so renewing early keeps your unused time. AICC keeps no payment authorization for future charges.",
+      },
+      back: {
+        title: "Coming back",
+        body: "AICC can preserve your store history when access pauses, so returning merchants can continue instead of starting from zero. If your plan expired, renew the same plan and your stores return without reconnecting. If it was refunded, the old plan stays revoked: buy a new plan and connect the same store. AICC can recognize it if the store kept its connection.",
+        link: "Exact retention, today and as our target",
+      },
+      account: "You need an AICC account to buy. Normally there is no license key to paste: you connect each store from its own AICC screen.",
     },
     questions: {
       title: "Questions about plans and refunds",
@@ -533,189 +891,30 @@ export const en = {
       text: "Curious how the widget decides? Try it with sample products.",
       link: "Open the interactive demo",
     },
+    final: {
+      title: "Start with one store.",
+      body: "Create your account, choose a plan and connect your first store.",
+    },
   },
-
-
 
   questionsPage: {
     hero: {
-      title: "Questions we get, honestly answered.",
-      lead: "All 40, grouped by topic. If something isn't here, ask support. Support address: {supportEmail}",
+      title: "Questions, answered plainly.",
+      lead: "Straight answers, grouped by what you are trying to decide. If something isn't here, ask support. Support address: {supportEmail}",
     },
-    topics: {
-      basics: "What AICC does",
-      plans: "Plans and stores",
-      billing: "Renewal and billing",
-      refunds: "Refunds",
-      pause: "When access pauses, and coming back",
-      data: "Data and privacy",
-      reliability: "Reliability and safety",
-      languages: "Languages, mobile and compatibility",
+    top: {
+      title: "Most asked before buying",
+      lead: "The questions merchants read first. Short answers, with a link to the detail.",
     },
-  },
-
-  faq: {
-    items: {
-      q01: {
-        q: "What exactly does AICC do?",
-        a: "It adds a Frequently Bought Together recommendation widget to your product and cart pages, learned from your own store's orders, and gives you a dashboard, rule-based insights, product controls and an assistant (Ask Reco) in your WordPress admin. It does not replace WooCommerce.",
-      },
-      q02: {
-        q: "How does AICC decide what to recommend?",
-        a: "It looks at the orders in your store and counts which products are bought together. Where a product has little history, it fills the remaining spots with products from the same category, then your newest in-stock products. Your own rules (pin, prefer, deprioritise, exclude) are applied afterwards. There is no generative AI in this decision.",
-      },
-      q03: {
-        q: "Does AICC replace WooCommerce?",
-        a: "No. It is a WooCommerce plugin. Your products, cart, checkout and orders stay in WooCommerce.",
-      },
-      q04: {
-        q: "What happens if AICC is unavailable?",
-        a: "The widget hides itself and WooCommerce's own related products return. Your store keeps selling.",
-      },
-      q05: {
-        q: "Will my checkout ever depend on AICC?",
-        a: "No. Checkout doesn't wait for AICC: AICC makes no network call to its servers while a customer checks out. Order details are queued and sent in the background. Built to fail soft and tested; not a guarantee against every host failure.",
-      },
-      q06: {
-        q: "Do I need a developer?",
-        a: "No code and no setup wizard. AICC places the widget at standard WooCommerce locations. If it can't find a safe place on an unusual theme, it hides rather than guess; a developer can help in that case.",
-      },
-      q07: {
-        q: "How long does setup take?",
-        a: "You connect the store, and AICC prepares it in the background: catalog, past orders and a readiness check. This starts when you open the AICC dashboard in WordPress or when WordPress's scheduled tasks run, and how long it takes depends on the size of your catalog, so we don't promise a number.",
-      },
-      q08: {
-        q: "Do I need to paste a licence key?",
-        a: "Normally no. You sign in to your AICC account and connect each store from its own AICC screen.",
-      },
-      q09: {
-        q: "What's the difference between Solo, Studio and Agency?",
-        a: "Only how many stores you can connect: 1, 3 or 10. Everything else is identical.",
-      },
-      q10: {
-        q: "Do the plans have different features?",
-        a: "No. Every plan has every feature.",
-      },
-      q11: {
-        q: "How do I connect a second or third store?",
-        a: "Open AICC in the other store's WordPress admin, sign in to the same AICC account and choose the plan. It uses a free slot on your plan.",
-      },
-      q12: {
-        q: "What happens when all my store slots are used?",
-        a: "You can disconnect a store you no longer need, or buy a larger plan. A larger plan is a separate purchase with its own 365-day term and store slots; it does not credit or replace your current plan. Plans & Stores shows what's available.",
-      },
-      q13: {
-        q: "Can I disconnect one store and connect another?",
-        a: "Yes. Disconnecting frees the slot immediately.",
-      },
-      q14: {
-        q: "Can I reconnect a store later?",
-        a: "Yes, as long as your plan is active and has a free slot. You don't buy again and you don't need a key.",
-      },
-      q15: {
-        q: "What happens to the disconnected store?",
-        a: "AICC stops there: no widget on the storefront and no store data sent (a technical registration check still runs). WooCommerce works as normal. The store's AICC history may be kept for up to 12 months, but today nothing is deleted automatically, so data may be kept longer until it is deleted on request. Reconnecting can pick up where it left off.",
-      },
-      q16: {
-        q: "What happens to the recommendation widget when my plan isn't active?",
-        a: "AICC shows no widget, loads no script and sets no new cookies on the storefront, and WooCommerce's native recommendations show instead. Cookies already in browsers stay there, and nothing reads them.",
-      },
-      q17: {
-        q: "What happens if my licence expires?",
-        a: "After 365 days the plan ends. AICC stops on your stores until you renew; WooCommerce is unaffected.",
-      },
-      q18: {
-        q: "Is renewal automatic?",
-        a: "No. You renew by hand when you choose to.",
-      },
-      q19: {
-        q: "Will you charge me automatically?",
-        a: "No. There is no recurring billing and no stored payment authorisation.",
-      },
-      q20: {
-        q: "How do I renew?",
-        a: "From Plans & Stores in your account. Renewing early keeps your unused time.",
-      },
-      q21: {
-        q: "What happens to my data if my plan expires?",
-        a: "Operational data may be kept for up to 12 months after access ends, but today nothing is deleted automatically, so data may be kept longer until it is deleted on request. Account and purchase records follow separate rules.",
-      },
-      q22: {
-        q: "What happens if I come back later?",
-        a: "Renew the same plan and your stores return without reconnecting. If your plan was refunded, buy a new plan and connect the same store: AICC can recognise it if the store still has its AICC connection, and your history may be available again. A reinstall that lost the connection starts as a new store. A refunded plan is never revived.",
-      },
-      q23: {
-        q: "Is my previous store history retained?",
-        a: "Possibly. Operational data may be kept for up to 12 months after access ends, but today nothing is deleted automatically, so data may be kept longer until it is deleted on request.",
-      },
-      q24: {
-        q: "What happens to products and orders created while AICC was inactive?",
-        a: "When you return, AICC brings its copy of your catalog up to date (including products you deleted) and imports the orders from the gap through the same history import used at first connection.",
-      },
-      q25: {
-        q: "Do you fabricate recommendation history for the inactive period?",
-        a: "Never. Past orders are imported as orders. No impressions, clicks or attributed revenue are created for a time when AICC wasn't running.",
-      },
-      q26: {
-        q: "What is the 14-day refund policy?",
-        a: "A 14-day money-back guarantee on the initial purchase of a plan. The full [refund policy](route:refund-policy) lists the exceptions (abuse, duplicate purchases, chargebacks, payment-processor and tax limits). A refund goes to the original payment method where the processor allows it.",
-      },
-      q27: {
-        q: "When do the 14 days start?",
-        a: "When payment is received and your plan is issued.",
-      },
-      q28: {
-        q: "Does the 14-day guarantee apply to renewals?",
-        a: "The guarantee covers the initial purchase. Later manual renewals aren't automatically covered.",
-      },
-      q29: {
-        q: "What happens after a full refund?",
-        a: "The plan is revoked and AICC stops on your stores. Your WooCommerce store is unaffected.",
-      },
-      q30: {
-        q: "Does a refund affect my WooCommerce store?",
-        a: "No. Products, orders, customers and checkout remain as they were.",
-      },
-      q31: {
-        q: "Is the historical-order import required?",
-        a: "It starts automatically after connecting, because it's how recommendations learn from day one, and covers up to the last 24 months. It isn't required for the widget to appear; without it AICC begins with category and newest-product fallbacks and learns from new orders.",
-      },
-      q32: {
-        q: "Can I choose not to import historical orders?",
-        a: "You can cancel an import from the AICC dashboard; a cancelled import is started again when a returning store is caught up. There is no setting to turn the automatic import off before it starts.",
-      },
-      q33: {
-        q: "What shopper and store data does AICC process?",
-        a: "Your catalog (names, prices, categories, images, stock status) and order facts (products and product names, quantities, totals, currency, billing country, visitor and session IDs where they exist, and a pseudonymous hashed email identifier; never the raw email, name, phone or address, and never payment details). If your store's cookie consent grants statistics through a WP Consent API-compatible consent plugin, AICC also receives shopping activity (product, category and search-page views including the words typed into on-site search, add-to-cart actions, the start of checkout, widget impressions, clicks and bundle adds, the WordPress user ID of signed-in shoppers, a coarse device and browser type and the referring page address) and sets two first-party cookies: a visitor ID (1 year) and a session ID (30 minutes). With no such consent plugin there are no cookies and no visitor tracking. Order facts are sent either way.",
-      },
-      q34: {
-        q: "Is data shared between my different stores?",
-        a: "No. Each store's data is kept separate.",
-      },
-      q35: {
-        q: "Can one store see another store's data?",
-        a: "No. Everything AICC stores is scoped to the one store it belongs to.",
-      },
-      q36: {
-        q: "How can I request deletion or export of my data?",
-        a: "Contact support from your account email. Support address: {supportEmail} We handle these requests by hand: deletion removes events, impressions, clicks and conversions and anonymises orders; the store record, configuration, catalog-derived data and licence and audit records follow their own retention, and WooCommerce may require some records to be kept. Exports are prepared manually, and we tell you if a record must be kept.",
-      },
-      q37: {
-        q: "Which languages are supported?",
-        a: "This website and the account area: English, Hebrew, Spanish and Russian. The AICC admin in WordPress: English and Hebrew. The storefront widget: English and Hebrew in full, plus core labels in Spanish, Russian, French, German and Arabic.",
-      },
-      q38: {
-        q: "Does AICC work on mobile?",
-        a: "The widget adapts to the width of the space it sits in, on phones as well as desktop. This website and your account area are designed for phones first.",
-      },
-      q39: {
-        q: "What happens if I change my theme?",
-        a: "AICC finds its place using standard WooCommerce hooks, not theme edits, so it usually keeps working after a theme change. On a theme it can't safely place in, it hides instead of guessing. We tested with Storefront and a block theme, and can't promise every theme.",
-      },
-      q40: {
-        q: "Can I remove AICC without harming WooCommerce?",
-        a: "Yes. AICC doesn't edit WooCommerce's products, prices or templates. It adds a few private fields to orders (visitor and session IDs, only with cookie consent) and by default hides WooCommerce's related-products block while its widget shows. Disconnect the store in Plans & Stores first to free its slot, then deactivate AICC and the native recommendations return.",
-      },
+    search: {
+      title: "Find an answer",
+    },
+    browse: {
+      title: "Browse questions by topic",
+    },
+    nav: {
+      label: "Jump to a topic",
+      backToTop: "Back to the topics",
     },
   },
 
@@ -782,16 +981,16 @@ export const en = {
         retention: {
           h: "How long data may be kept",
           a: "Operational data (catalog-derived state, imported order history, configuration, your rules and recommendation learning) may be kept for up to 12 months after AICC access ends, so a returning merchant can continue instead of starting over. Today nothing is deleted automatically, so data may be kept longer until it is deleted on request.",
-          b: "Account, purchase, licence, refund and audit records follow separate retention, for accounting, legal and security reasons. They are not part of the 12-month figure.",
-          c: "If you come back, AICC can recognise your store if it still has its AICC connection, and your history may be available again. A reinstall that lost the connection starts as a new store.",
+          b: "Account, purchase, license, refund and audit records follow separate retention, for accounting, legal and security reasons. They are not part of the 12-month figure.",
+          c: "If you come back, AICC can recognize your store if it still has its AICC connection, and your history may be available again. A reinstall that lost the connection starts as a new store.",
         },
         requests: {
           h: "Deletion and export requests",
-          a: "Contact support from your account email to ask for deletion or export of your data. These requests are handled by hand: there is no self-service button. Deletion removes events, impressions, clicks and conversions and anonymises orders. The store record, configuration, catalog-derived data and licence and audit records follow their own retention, and WooCommerce may require some records to be kept. Exports are prepared manually. We tell you which records are kept. Support address: {supportEmail}",
+          a: "Contact support from your account email to ask for deletion or export of your data. These requests are handled by hand: there is no self-service button. Deletion removes events, impressions, clicks and conversions and anonymizes orders. The store record, configuration, catalog-derived data and license and audit records follow their own retention, and WooCommerce may require some records to be kept. Exports are prepared manually. We tell you which records are kept. Support address: {supportEmail}",
         },
         security: {
           h: "Security",
-          a: "Connections between your store, AICC and the account site use HTTPS. Licence keys and store credentials are stored hashed. No security measure is perfect, and we don't promise AICC is invulnerable.",
+          a: "Connections between your store, AICC and the account site use HTTPS. License keys and store credentials are stored hashed. No security measure is perfect, and we don't promise AICC is invulnerable.",
         },
         transfers: {
           h: "Where data is processed",
@@ -840,7 +1039,7 @@ export const en = {
         fees: {
           h: "Fees and renewal",
           a: "Prices are in US dollars, per plan, per year. Payments are processed by a third-party payment processor. Payment processor: {paymentProcessor}",
-          b: "Renewal is manual. Nothing is charged automatically, and no authorisation to charge you again is stored. A renewal you buy adds 365 days to the later of today and your current end date.",
+          b: "Renewal is manual. Nothing is charged automatically, and no authorization to charge you again is stored. A renewal you buy adds 365 days to the later of today and your current end date.",
         },
         refunds: {
           h: "Refunds",
@@ -939,14 +1138,33 @@ export const en = {
     dataTrust: {
       title: "Data and trust",
       intro: "A plain-language summary. The [privacy policy](route:privacy) is the full text.",
+      short: {
+        h: "The short version",
+        needsTitle: "AICC needs",
+        needs: [
+          "Your product catalog",
+          "Order relationships: which products were in which orders, with totals, currency, billing country and a hashed email identifier",
+          "Optional shopper activity, only if your cookie consent tool allows statistics",
+        ],
+        neverTitle: "AICC does not receive",
+        never: [
+          "Raw email addresses",
+          "Names",
+          "Phone numbers",
+          "Street addresses",
+          "Payment details",
+          "Shopper IP addresses (processed on your site, not sent)",
+        ],
+        note: "We call these identifiers pseudonymous, not anonymous. The sections below say exactly what is sent, which cookies can be set and how long data may be kept.",
+      },
       s: {
         reads: {
           h: "What AICC reads from your store",
           a: "When you connect a store, AICC receives what it needs to learn which products are bought together:",
           b: [
-            "Catalog: names, prices, categories, images and stock status.",
+            "Catalog: names, prices, categories, images, SKUs, product links and stock status.",
             "Orders: products and product names, quantities, totals, currency, billing country, visitor and session IDs where they exist, and a pseudonymous (hashed) email identifier.",
-            "Past orders from up to the last 24 months, imported as orders.",
+            "Past orders from up to the last 24 months, only if you choose to import them.",
           ],
         },
         never: {
@@ -990,13 +1208,13 @@ export const en = {
         },
         retention: {
           h: "Your history can be kept when access pauses",
-          a: "Operational data (catalog-derived state, imported order history, your rules and what AICC learned) may be kept for up to 12 months after access ends, but today nothing is deleted automatically, so data may be kept longer until it is deleted on request.",
-          b: "Account, purchase, licence, refund and audit records follow separate retention.",
-          c: "When you return, AICC brings its copy of your catalog up to date and imports the orders from the gap. It never invents recommendation history for the time it wasn't running.",
+          a: "**Our retention target:** operational data (catalog-derived state, imported order history, your rules and what AICC learned) may be kept for up to 12 months after access ends, so a returning merchant can continue instead of starting from zero.",
+          b: "**What happens today:** nothing is deleted automatically, so data may be kept longer until it is deleted on request. Account, purchase, license, refund and audit records follow separate retention.",
+          c: "When you return, AICC brings its copy of your catalog up to date. If you chose to import your order history, it also catches up on the orders from the gap; if you didn't, it imports nothing without asking. It never invents recommendation history for the time it wasn't running.",
         },
         requests: {
           h: "Ask us to delete or export",
-          a: "Email support from your account email. These requests are handled by hand. Deletion removes events, impressions, clicks and conversions and anonymises orders; the store record, configuration, catalog-derived data and licence and audit records follow their own retention, and WooCommerce may require some records to be kept. Exports are prepared manually. Support address: {supportEmail}",
+          a: "Email support from your account email. These requests are handled by hand. Deletion removes events, impressions, clicks and conversions and anonymizes orders; the store record, configuration, catalog-derived data and license and audit records follow their own retention, and WooCommerce may require some records to be kept. Exports are prepared manually. Support address: {supportEmail}",
         },
         pending: {
           h: "What we haven't finalised",
@@ -1023,7 +1241,7 @@ export const en = {
             "Semantic landmarks, one main heading per page and a sequential heading order.",
             "A skip link. The main journeys can be used with a keyboard: automated tests cover the header, the menus, the accessibility dialog, the language switcher, the questions and the interactive demo, and hand testing of the full journeys continues.",
             "A visible focus ring on every control, with enough contrast on light and dark backgrounds.",
-            "Text and interface colours checked against WCAG contrast ratios by a script. Buttons and controls are at least 44 pixels high, and links inside text at least 24 pixels.",
+            "Text and interface colors checked against WCAG contrast ratios by a script. Buttons and controls are at least 44 pixels high, and links inside text at least 24 pixels.",
             "Reduced motion honoured from your system setting and from our own control, including smooth scrolling.",
             "Right-to-left layout for Hebrew, built with logical properties, with mixed-direction text such as prices and brand names kept in order.",
             "No audio, no autoplaying video and no third-party accessibility overlay. Your accessibility settings are stored only in your browser.",

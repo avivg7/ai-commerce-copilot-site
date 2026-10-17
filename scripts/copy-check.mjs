@@ -11,7 +11,7 @@ const RULES = [
   [/\btrend/i, "Trend (not a shipped feature)"], [/market pulse/i, "Market Pulse"], [/\bmomentum\b/i, "Momentum"],
   [/ai-written/i, "AI-written"], [/ai-generated/i, "AI-generated"], [/most popular/i, "Most Popular"], [/trusted by/i, "Trusted by"],
   [/(?<![.\w])join\b(?!\()/i, "Join (implies a customer base)"], [/subscription/i, "subscription"], [/auto-?renew/i, "auto-renew"],
-  [/cancel anytime/i, "cancel anytime"], [/30[- ]day/i, "30-day"], [/store health/i, "Store Health"],
+  [/cancel anytime/i, "cancel anytime"], [/30[- ]day (money|refund|guarantee|trial)|30-day/i, "30-day refund/trial claim (the guarantee is 14 days; \"last 30 days\" for the dashboard period is fine)"], [/store health/i, "Store Health"],
   [/\+\s?\d+(\.\d+)?\s?%/, "+N% result claim"],
   [/\d+(\.\d+)?\s?%\s*(more|higher|increase|growth|lift|uplift|revenue|sales|aov|conversion|ctr|roi)/i, "percent result claim"],
   [/(increase|boost|grow|lift|double)\w*\s+(your\s+)?(revenue|sales|aov|conversion)/i, "revenue-result promise"],

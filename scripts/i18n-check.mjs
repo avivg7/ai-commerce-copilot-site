@@ -1,18 +1,26 @@
 // npm run i18n:check
-// Every key in every locale, no untranslated English, placeholder/markup parity, terminology table, legal + FAQ structure.
+// Every translated key is valid; every untranslated unit is an explicit, counted English fallback (see src/i18n/merge.ts).
+//   npm run i18n:check             fails on structural problems and on bad translations; fallback units are reported, not failures
+//   npm run i18n:check -- --strict also fails while any unit or FAQ question still falls back to English (the Stage 2 completion gate)
 import fs from "node:fs";
 import path from "node:path";
-import { loadDictionaries, loadTs, ROOT } from "./lib/load.mjs";
+import { loadDictionaries, loadPartials, loadFallbacks, loadTs, ROOT } from "./lib/load.mjs";
+
+const STRICT = process.argv.includes("--strict");
 
 const LOCALES = ["en", "he", "es", "ru"];
 const BRAND = ["WP Consent API", "aicc_lang_dismissed", "AI Commerce Copilot", "Ask Reco", "AICC", "Reco", "WooCommerce", "WordPress", "Solo", "Studio", "Agency", "Storefront", "cookie", "cookies", "Cookie", "http", "https", "HTTP", "HTTPS", "CSV", "WCAG", "HTTPS", "USD", "Plans & Stores", "aicc_lang", "aci_vid", "aci_sid"];
 const allow = JSON.parse(fs.readFileSync(path.join(ROOT, "scripts/i18n-allowlist.json"), "utf8"));
 
-const dicts = await loadDictionaries();
+const dicts = await loadDictionaries();       // as rendered: English fills every untranslated unit
+const partials = await loadPartials();         // as authored: he/es/ru hold only translated units
+const fallbacks = await loadFallbacks();
 const { LEGAL_DOCS } = await loadTs("src/data/legal.ts");
-const { FAQ } = await loadTs("src/data/faq.ts");
+const faqMod = await loadTs("src/data/faq.ts");
+const { FAQ } = faqMod;
 
 const errors = [];
+const partialNotes = [];
 const warnings = [];
 const err = (loc, key, msg) => errors.push(`[${loc}] ${key}: ${msg}`);
 
@@ -31,7 +39,8 @@ function flatten(obj, prefix = "", out = {}) {
   return out;
 }
 
-const flat = Object.fromEntries(LOCALES.map((l) => [l, flatten(dicts[l])]));
+const flat = Object.fromEntries(LOCALES.map((l) => [l, flatten(dicts[l])]));       // rendered
+const flatP = Object.fromEntries(LOCALES.map((l) => [l, flatten(partials[l])]));   // authored (translated units only)
 const enKeys = Object.keys(flat.en);
 
 const tokensOf = (s) => (s.match(/\{[A-Za-z0-9_]+\}/g) || []).sort().join("|");
@@ -45,18 +54,45 @@ function strippedOfBrands(s) {
   return t.trim();
 }
 const hasLetters = (s) => /\p{L}/u.test(s);
+const { unitOf: unitOfKey } = await loadTs("src/i18n/merge.ts");
 
+// Structure: English is the contract. A locale may only contain keys English has; anything it lacks is a fallback unit.
 for (const l of LOCALES) {
-  const keys = Object.keys(flat[l]);
-  for (const k of enKeys) if (!(k in flat[l])) err(l, k, "missing key");
-  for (const k of keys) if (!(k in flat.en)) err(l, k, "extra key not in English");
+  for (const k of Object.keys(flatP[l])) if (!(k in flat.en)) err(l, k, "extra key not in English");
+  for (const k of enKeys) if (!(k in flat[l])) err(l, k, "missing key after fallback merge (merge bug)");
+}
+// Fallback mechanism: a unit is either wholly the locale's own text or wholly English; never a mix.
+{
+  const { unitOf } = await loadTs("src/i18n/merge.ts");
+  const { isFallback, fbProps } = await loadTs("src/i18n/index.ts");
+  for (const l of LOCALES.filter((x) => x !== "en")) {
+    const fbSet = new Set(fallbacks[l]);
+    const byUnit = new Map();
+    for (const k of enKeys) { if (k.endsWith("#len")) continue; const u = unitOf(k); (byUnit.get(u) ?? byUnit.set(u, []).get(u)).push(k); }
+    for (const [u, keys] of byUnit) {
+      const own = keys.filter((k) => k in flatP[l]);
+      const isFb = fbSet.has(u);
+      if (isFb) {
+        for (const k of keys) if (flat[l][k] !== flat.en[k]) err(l, k, "fallback unit must render the English text");
+        if (!isFallback(l, keys[0])) err(l, keys[0], "isFallback() disagrees with the fallback set");
+        const a = fbProps(l, keys[0]);
+        if (a.lang !== "en" || a.dir !== "ltr") err(l, keys[0], "fallback text must be marked lang=en dir=ltr");
+        if (own.length && own.length < keys.length) partialNotes.push(`[${l}] ${u}: ${own.length}/${keys.length} strings kept for Stage 2; the whole unit shows English until complete`);
+      } else {
+        for (const k of keys) if (flat[l][k] !== flatP[l][k]) err(l, k, "translated unit must render the locale text");
+        if (isFallback(l, keys[0]) || Object.keys(fbProps(l, keys[0])).length) err(l, keys[0], "a translated unit must not carry fallback markers");
+      }
+    }
+  }
+  for (const k of enKeys) if (isFallback("en", k)) err("en", k, "English can never be a fallback");
 }
 
 for (const l of LOCALES.filter((x) => x !== "en")) {
-  for (const k of enKeys) {
-    if (!(k in flat[l]) || k.endsWith("#len")) continue;
+  for (const k of Object.keys(flatP[l])) {
+    if (!(k in flat.en) || k.endsWith("#len")) continue;
+    if (fallbacks[l].includes(unitOfKey(k))) continue; // partial units are ignored by the merge; reported above
     const ev = flat.en[k];
-    const lv = flat[l][k];
+    const lv = flatP[l][k];
     if (typeof ev !== typeof lv) { err(l, k, "type differs from English"); continue; }
     if (typeof ev !== "string") continue;
     if (lv.trim() === "") { err(l, k, "empty value"); continue; }
@@ -94,7 +130,7 @@ const TERMS = [
 ];
 for (const t of TERMS) {
   for (const l of ["he", "es", "ru"]) {
-    const v = flat[l][t.key];
+    const v = flatP[l][t.key];
     if (v === undefined) continue;
     const want = t[l];
     const ok = t.exact ? v === want : t.ci ? v.toLowerCase().includes(want.toLowerCase()) : v.includes(want);
@@ -136,7 +172,7 @@ const FORBIDDEN = {
 };
 const TU_ALLOWED = new Set(["demo.widget.selectAtLeastOne"]);
 for (const [l, rules] of Object.entries(FORBIDDEN)) {
-  for (const [k, v] of Object.entries(flat[l])) {
+  for (const [k, v] of Object.entries(flatP[l])) {
     if (typeof v !== "string" || k.endsWith("#len")) continue;
     for (const [re, why] of rules) {
       if (l === "es" && TU_ALLOWED.has(k) && /usted register/.test(why)) continue;
@@ -153,12 +189,14 @@ for (const l of LOCALES) {
 // Plural forms (Russian): the add-to-cart label has three forms that must differ and agree with their numbers.
 {
   const w = dicts.ru.demo.widget;
+  if (!fallbacks.ru.includes("demo")) {
   if (!/товар(?![а-яё])/.test(w.addOne)) err("ru", "demo.widget.addOne", "should use 'товар'");
   if (!/товара(?![а-яё])/.test(w.addFew)) err("ru", "demo.widget.addFew", "2-4 take 'товара'");
   if (!/товаров(?![а-яё])/.test(w.addMany)) err("ru", "demo.widget.addMany", "5+ take 'товаров'");
   const rules = new Intl.PluralRules("ru");
   const want = { 1: "one", 2: "few", 3: "few", 4: "few", 5: "many", 11: "many", 21: "one", 22: "few" };
   for (const [n, cat] of Object.entries(want)) if (rules.select(+n) !== cat) err("ru", "plural", `Intl.PluralRules(ru).select(${n}) = ${rules.select(+n)}, expected ${cat}`);
+  }
 }
 // Pending lines exist and are the single muted line (no brackets / pills).
 for (const l of LOCALES) {
@@ -183,14 +221,39 @@ for (const l of LOCALES) {
     const declared = new Set(doc.sections.map((s) => s.id));
     for (const sid of Object.keys(d.s || {})) if (!declared.has(sid)) err(l, `legal.${docId}.s.${sid}`, "section not declared in src/data/legal.ts");
   }
-  for (const f of FAQ) {
-    const it = dicts[l].faq?.items?.[f.id];
-    if (!it || !it.q || !it.a) err(l, `faq.items.${f.id}`, "missing question or answer");
+}
+
+// FAQ pack (brand/content): the structure, per-page selections and retired map resolve; translations only ever supply q/a that exist in English.
+{
+  const en = JSON.parse(fs.readFileSync(path.join(ROOT, "brand/content/faq.en.json"), "utf8"));
+  for (const l of LOCALES.filter((x) => x !== "en")) {
+    const tr = JSON.parse(fs.readFileSync(path.join(ROOT, `brand/content/faq.${l}.json`), "utf8"));
+    for (const [id, it] of Object.entries(tr.items)) {
+      if (!en.items[id]) { err(l, `faq.${id}`, "translation for an id that is not an active English question"); continue; }
+      if (!it.q?.trim() || !it.a?.trim()) err(l, `faq.${id}`, "empty question or answer");
+      const tk = (x) => [...x.matchAll(/\]\((route:[a-z-]+)\)/g)].map((m) => m[1]).sort().join("|");
+      if (tk(it.a) !== tk(en.items[id].a)) err(l, `faq.${id}`, "link tokens differ from English");
+      if (Object.keys(it).some((x) => !["q", "a"].includes(x))) err(l, `faq.${id}`, "translations may hold only q and a");
+    }
+    for (const f of FAQ) {
+      const t = faqMod.faqText(l, f.id);
+      if (!t.q || !t.a) err(l, `faq.${f.id}`, "no renderable question");
+      if (t.fallback !== !(f.id in tr.items)) err(l, `faq.${f.id}`, "fallback flag disagrees with the pack");
+    }
   }
 }
 
 const nKeys = enKeys.filter((k) => !k.endsWith("#len")).length;
 console.log(`i18n:check  locales=${LOCALES.join(",")}  keys=${nKeys}  FAQ=${FAQ.length}`);
+if (partialNotes.length) console.log(`  ${partialNotes.length} fallback unit(s) still hold some earlier translated strings (kept as Stage 2 reference; never rendered). Use --verbose to list.`);
+if (process.argv.includes("--verbose")) partialNotes.forEach((n) => console.log("    " + n));
+const fbReport = {};
+for (const l of LOCALES.filter((x) => x !== "en")) {
+  const q = faqMod.faqFallbackIds(l);
+  fbReport[l] = { units: fallbacks[l].length, faq: q.length };
+  console.log(`  ${l}: ${fallbacks[l].length} dictionary unit(s) and ${q.length}/${FAQ.length} FAQ question(s) fall back to English (marked lang=en dir=ltr)`);
+}
+if (STRICT && Object.values(fbReport).some((r) => r.units || r.faq)) { for (const l of Object.keys(fbReport)) if (fbReport[l].units || fbReport[l].faq) err(l, "fallback", `--strict: ${fbReport[l].units} unit(s) and ${fbReport[l].faq} question(s) still untranslated`); }
 if (warnings.length) {
   console.log(`\n${warnings.length} warning(s) (Latin words in non-Latin locales; review, not failing):`);
   for (const w of warnings.slice(0, 40)) console.log("  " + w);
@@ -201,4 +264,4 @@ if (errors.length) {
   if (errors.length > 200) console.error(`  ... and ${errors.length - 200} more`);
   process.exit(1);
 }
-console.log("PASS: all locales have every key; no untranslated values; placeholders and markup match.");
+console.log("PASS: structure complete, translated units valid, every untranslated unit is an explicit lang=en fallback.");

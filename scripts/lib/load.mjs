@@ -10,11 +10,21 @@ export async function loadTs(rel) {
   return jiti.import(path.join(ROOT, rel));
 }
 
+/** The dictionaries as the site renders them: English, plus each locale's translated units merged over English (see src/i18n/merge.ts). */
 export async function loadDictionaries() {
+  const { getDictionary } = await loadTs("src/i18n/index.ts");
   const out = {};
-  for (const l of ["en", "he", "es", "ru"]) {
-    const mod = await loadTs(`src/i18n/${l}.ts`);
-    out[l] = mod[l];
-  }
+  for (const l of ["en", "he", "es", "ru"]) out[l] = getDictionary(l);
   return out;
+}
+
+/** The raw per-locale source objects (en = full, others = partial) and the fallback unit lists. */
+export async function loadPartials() {
+  const out = {};
+  for (const l of ["en", "he", "es", "ru"]) out[l] = (await loadTs(`src/i18n/${l}.ts`))[l];
+  return out;
+}
+export async function loadFallbacks() {
+  const { fallbackUnits } = await loadTs("src/i18n/index.ts");
+  return Object.fromEntries(["en", "he", "es", "ru"].map((l) => [l, fallbackUnits(l)]));
 }
