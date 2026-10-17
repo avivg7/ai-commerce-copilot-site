@@ -18,13 +18,18 @@ aicc-tokens.css   design tokens (colour, type, space, motion) + the button shado
 contract-baseline.json  the accessible values of the primary-button gradient, headline gradient and eyebrow colour (test baseline, see below);
 aicc-brand.css    vanilla CSS, logical properties only: .aicc-btn (+--primary --secondary --ghost --quiet --outline, --sm/--lg/--block), .aicc-glass,
                   .aicc-text-gradient, .aicc-eyebrow-pill, .aicc-hero-title/-lead/-note/-actions, .aicc-fade-up, .aicc-site-header*, .aicc-navlink, .aicc-iconbtn,
-                  .aicc-lang*, .aicc-reco-hero*, .aicc-modal*, .aicc-fbt*
+                  .aicc-lang*, .aicc-reco-hero*, .aicc-modal*, .aicc-fbt*, .aicc-rules*, .aicc-dash*, .aicc-ask*, .aicc-flow*
 js/               framework-free ES modules (no build step): index.js (initBrand), header-scroll.js, lang-menu.js, lang-store.js, reco-hero.js, video-modal.js,
-                  fbt-demo.js, motion.js, icons.js (generated from Lucide, ISC licence, by scripts/build-brand-icons.mjs)
+                  fbt-demo.js (shopper view + merchant view), rules-demo.js + rules-core.js (the four merchant rules), dash-preview.js (dashboard replica),
+                  reco-ask.js (Ask Reco panel mockup), flow.js (safety/measurement flow diagrams), loop.js (the merchandising loop strip), tabs.js (tabbed workspace),
+                  faq-search.js (client-side FAQ filter), motion.js,
+                  icons.js (generated from Lucide, ISC licence, by scripts/build-brand-icons.mjs)
+content/          the CANONICAL CONTENT PACK shared with the Control Plane: facts.json, faq.en.json, faq.<locale>.json. See content/README.md. Change facts and FAQ here first.
 assets/           reco-hero.mp4, reco-hero-poster.jpg, reco-hero.webp (restored byte-identical from git main: sha256 verified equal to the live URLs),
                   the logomark, favicon + icons, the Reco poses
 i18n/strings.json GENERATED from the typed dictionaries (src/i18n/*.ts) by `npm run brand:strings`: language names, header/button labels, chip labels,
-                  modal strings, the full demo strings, in en/he/es/ru
+                  modal strings and the kit string sets (demo, rules, dash, ask, flows), in en/he/es/ru. A set that is not translated yet is English with
+                  `"_fallback": true`; a module that sees it marks its container lang="en" dir="ltr". `needsTranslation` lists those sets per locale.
 MANIFEST.json     SHA-256 and size of every file; the contract both surfaces verify
 ```
 
@@ -37,12 +42,44 @@ MANIFEST.json     SHA-256 and size of every file; the contract both surfaces ver
 - **Reco hero**: `renderRecoHeroHTML({ labels: [5 strings], assets: { video, poster } })`. The video is `preload="metadata"`, has no `autoplay` attribute (played only while 25% in view and motion is allowed), poster first. Put the poster in a `<link rel=preload as=image fetchpriority=high>`.
 - **Watch demo**: `<button class="aicc-btn aicc-btn--secondary aicc-btn--lg" data-aicc-demo-trigger data-locale data-strings='{modal strings JSON}' data-demo-video data-demo-poster data-demo-captions>`. No video configured => the labelled placeholder (`[data-demo-placeholder]`), never footage.
 - **FBT demo**: `<div data-aicc-fbt data-locale data-dir data-strings='{demo strings JSON}' aria-busy="true">` (reserve ~44rem/36rem min-height). It mounts lazily when near the viewport; `data-strings` is `strings.json[locale].demo`.
+  Two controls over the SAME sample bundle: **Without AICC | With AICC** (what a shopper sees) and **What the shopper sees | What you see** (the merchant side: for each listed product
+  "Bought together N times" or "Same category — no purchase history yet", a rule select per product with the truthful semantics of `rules-core.js`, and the dashboard tiles that record the
+  add-to-cart). Everything is labelled "Sample data: not from a real store". There are no Strong/Medium/Light tiers: they are not in the product.
+- **Rules demo** ("Control, not a black box"): `<div class="aicc-rules aicc-rules--placeholder" data-aicc-rules data-locale data-dir data-strings='{rules strings JSON}' aria-busy="true">` (the placeholder class reserves the height).
+  A product select, four toggle buttons (Pin, Prefer, Deprioritize, Exclude; `aria-pressed`), Reset, and one polite live region. Semantics from `rules-core.js`, mirrored from the product: Exclude is a hard filter and always wins;
+  out-of-stock and deleted products stay out even when pinned; Pin forces the first place (several pins: most recent first); Prefer and Deprioritize nudge exactly one place and never past a product of another group.
+- **Dashboard preview**: `renderDashPreviewHTML(strings.dash, { locale, variant: "compact" | "full", widget: bool, callouts: bool })` returns server-renderable markup (the site) and `mountDashPreview` fills `[data-aicc-dash]` (the theme).
+  Real labels: Recommendation Views, Recommendation Clicks, Recommendation Click Rate, Bundle Add-To-Carts, Associated Orders, Associated Revenue, Merchant Insights, Recommendation Preview. Always labelled as sample data.
+- **Ask Reco panel**: `renderRecoAskHTML(strings.ask, { assetsBase })` (markup contains `data-aicc-ask data-aicc-ssr`; `initBrand` wires the two sample-question buttons). A picture of the panel with two sample questions; the input is decorative.
+- **Flow diagrams** (plain markup; no JavaScript, so the Control Plane can write it by hand or call `renderFlowHTML`):
+  ```html
+  <figure class="aicc-flow" data-kind="order|down|inactive|measure|history">
+    <figcaption class="aicc-flow__title">When an order is placed</figcaption>
+    <ol class="aicc-flow__steps">
+      <li class="aicc-flow__step" data-step="1"><span class="aicc-flow__icon">svg</span><span class="aicc-flow__text">Order placed</span></li>
+      <!-- three steps; the arrows between them are drawn by CSS and flip in RTL -->
+    </ol>
+    <p class="aicc-flow__note">Placing an order never waits on AICC.</p>
+  </figure>
+  ```
+  The words are in `strings.json[locale].flows` (`order`, `down`, `inactive`).
+- **Loop strip**: `renderLoopHTML(strings.loop, { links })` returns `<nav class="aicc-loop" data-aicc-loop aria-label>` with an ordered list of seven steps (`.aicc-loop__step > a > .aicc-loop__n + .aicc-loop__t`); a link may be `{ href, tab }` (the click also selects that tab of a tabbed workspace).
+  `initBrand` adds a quiet sequential highlight when the strip scrolls into view (skipped under reduced motion). Words: `strings.json[locale].loop`.
+- **Tabs** (a tabbed workspace, ARIA tabs pattern): `<div class="aicc-tabs" data-aicc-tabs data-selected="<tab id>">` containing `<div class="aicc-tabs__list" role="tablist" aria-label hidden>` with `button.aicc-tabs__tab[role=tab][id][aria-controls][aria-selected][tabindex]`
+  and one `section.aicc-tabs__panel[role=tabpanel][id][aria-labelledby]` per tab, each starting with `<h3 class="aicc-tabs__ph">`. Without JavaScript the list stays hidden and every panel shows under its heading; with it the list appears and one panel shows
+  (arrow keys follow the reading direction, Home/End, roving tabindex, cross-fade that is instant under reduced motion). Lazy modules inside hidden panels (the rules demo) mount when their tab opens.
+- **Merchant Insights cards**: `renderInsightsHTML(strings.dash, { locale })`: the four kinds the product can show (Hot Product Detected, Strong Bundle Opportunity, High Interest Low Conversion, Top Recommendation) as sample cards with the 10-order gate.
+- **FAQ search** (`faq-search.js`, strings `strings.json[locale].faqSearch`): `<div data-aicc-faq-search data-locale data-dir data-strings='...' data-target="#faq-browse" data-hide="#faq-top">` next to a container of `<details id="qNN">` items
+  (optionally in `[data-faq-group]` topic wrappers). It injects a labelled `input[type=search]` in a `form[role=search]`, a polite result-count region and an empty state with a Clear button. Client-side only: nothing is sent or stored;
+  the query lives in the input and in `?q=` (`history.replaceState`); matching is case- and diacritic-insensitive over question and answer text (all words must match); `#qNN` links clear a filter that would hide them. Without JavaScript the page is the plain full list.
+- **Translation fallback in every module**: when `strings._fallback === true` the container gets `lang="en" dir="ltr"` so English text is never presented as the page language.
 - Body must use `-webkit-font-smoothing: antialiased` (the kit sets it on `html`) and the Geist font stack, or glyphs differ from the live site.
 
 ## Updating the kit
 
-1. Edit files in `brand/` (words only in `src/i18n/*.ts`; then `npm run brand:strings`).
-2. `npm run brand:build` (regenerates strings.json and MANIFEST.json); `npm run brand:check` verifies both are current.
+1. Edit files in `brand/` (words only in `src/i18n/*.ts`, facts and FAQ only in `brand/content/`; then `npm run brand:strings`).
+2. `npm run brand:build` (regenerates strings.json and MANIFEST.json, which now also covers `content/`); `npm run brand:check` verifies both are current.
+   `npm run content:check` verifies the pack and the English copy against it; add `-- --cp "<theme dir>"` to compare the theme's `assets/brand/content/` byte for byte.
 3. `npm run test:visual-contract:site` (site vs live) and the usual checks.
 4. Deliver: `node scripts/sync-brand-kit.mjs --to "<...>/wp-content/themes/aicc-admin"` then `node scripts/sync-brand-kit.mjs --verify "<same dir>"`.
 

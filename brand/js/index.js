@@ -9,6 +9,13 @@ export { initSiteHeader, initLangMenu, initRecoHero };
 export { renderRecoHeroHTML } from "./reco-hero.js";
 export { renderLangMenuHTML } from "./lang-menu.js";
 export { storeLang, LANG_KEY } from "./lang-store.js";
+export { renderDashPreviewHTML, renderInsightsHTML } from "./dash-preview.js";
+export { renderRecoAskHTML } from "./reco-ask.js";
+export { renderFlowHTML } from "./flow.js";
+export { renderLoopHTML } from "./loop.js";
+export { initFaqSearch } from "./faq-search.js";
+export { initTabs } from "./tabs.js";
+export { applyRules, RULE_ACTIONS } from "./rules-core.js";
 export { motionAllowed, isCoarsePointer, onMotionChange } from "./motion.js";
 
 /**
@@ -33,19 +40,41 @@ export function initBrand(ctx = {}, root = document) {
     });
   });
 
-  const fbts = root.querySelectorAll("[data-aicc-fbt]");
-  if (fbts.length) {
+  // Interactive modules, mounted lazily when they near the viewport. Each container carries its own strings (data-strings JSON, the site)
+  // or takes them from ctx.strings[locale][key] (the theme passes brand/i18n/strings.json). strings._fallback === true means English text on a page
+  // of another language: the module marks its container lang="en" dir="ltr".
+  const lazy = (selector, key, load) => {
+    const els = root.querySelectorAll(selector);
+    if (!els.length) return;
     const mount = async (el) => {
       if (el.dataset.aiccLoading) return;
       el.dataset.aiccLoading = "1";
-      const { mountFbt } = await import("./fbt-demo.js");
+      const mod = await load();
       const locale = el.dataset.locale || "en";
-      const strings = el.dataset.strings ? JSON.parse(el.dataset.strings) : ctx.strings?.[locale]?.demo || ctx.strings?.en?.demo;
-      mountFbt(el, { strings, locale, dir: el.dataset.dir, assets: { reco: `${ctx.assetsBase || ""}/reco-thinking-480.webp` } });
+      const strings = el.dataset.strings ? JSON.parse(el.dataset.strings) : ctx.strings?.[locale]?.[key] || ctx.strings?.en?.[key];
+      mod(el, { strings, locale, dir: el.dataset.dir, assetsBase: ctx.assetsBase || "", assets: { reco: `${ctx.assetsBase || ""}/reco-thinking-480.webp` } });
     };
     if ("IntersectionObserver" in window) {
       const io = new IntersectionObserver((entries) => entries.forEach((en) => { if (en.isIntersecting) { io.unobserve(en.target); mount(en.target); } }), { rootMargin: "600px 0px" });
-      fbts.forEach((el) => io.observe(el));
-    } else fbts.forEach(mount);
-  }
+      els.forEach((el) => io.observe(el));
+    } else els.forEach(mount);
+  };
+  lazy("[data-aicc-fbt]", "demo", async () => (await import("./fbt-demo.js")).mountFbt);
+  lazy("[data-aicc-rules]", "rules", async () => (await import("./rules-demo.js")).mountRules);
+  lazy("[data-aicc-dash]:not([data-aicc-ssr])", "dash", async () => (await import("./dash-preview.js")).mountDashPreview);
+  lazy("[data-aicc-ask]:not([data-aicc-ssr])", "ask", async () => (await import("./reco-ask.js")).mountRecoAsk);
+  // FAQ search: wired at once (not on scroll) because ?q= and #qNN deep links must work on load. The module is small and loads on demand.
+  root.querySelectorAll("[data-aicc-faq-search]").forEach(async (el) => {
+    const locale = el.dataset.locale || "en";
+    const strings = el.dataset.strings ? JSON.parse(el.dataset.strings) : ctx.strings?.[locale]?.faqSearch || ctx.strings?.en?.faqSearch;
+    (await import("./faq-search.js")).initFaqSearch(el, { strings, locale });
+  });
+  // Tabbed workspaces ([data-aicc-tabs]) and the loop strip ([data-aicc-loop]) are server-rendered; these only add behavior.
+  const tabs = root.querySelectorAll("[data-aicc-tabs]");
+  if (tabs.length) import("./tabs.js").then((m) => tabs.forEach((el) => m.initTabs(el)));
+  const loops = root.querySelectorAll("[data-aicc-loop]");
+  if (loops.length) import("./loop.js").then((m) => loops.forEach((el) => m.initLoop(el)));
+  // Server-rendered Ask Reco panels only need their two sample-question buttons wired.
+  const ssrAsk = root.querySelectorAll("[data-aicc-ask][data-aicc-ssr]");
+  if (ssrAsk.length) import("./reco-ask.js").then((m) => ssrAsk.forEach(m.initRecoAsk));
 }
