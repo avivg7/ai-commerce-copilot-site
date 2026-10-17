@@ -737,6 +737,7 @@ main:focus {
   min-inline-size: var(--aicc-tap);
   align-items: center;
   min-block-size: var(--aicc-tap);
+  padding-block: var(--aicc-space-2); /* wrapped (longer es/ru) titles keep air between neighbours */
   padding-inline: var(--aicc-space-3);
   border-inline-start: 2px solid var(--aicc-border);
   color: var(--aicc-text-muted);
