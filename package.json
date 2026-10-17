@@ -33,7 +33,8 @@
     "predev": "node scripts/publish-brand-assets.mjs",
     "test:visual-contract": "node scripts/visual-contract.mjs",
     "test:visual-contract:site": "node scripts/visual-contract.mjs --surfaces=site",
-    "shots:brand": "node scripts/shots-brand.mjs"
+    "shots:brand": "node scripts/shots-brand.mjs",
+    "shots:aa": "node scripts/shots-aa.mjs"
   },
   "dependencies": {
     "clsx": "^2.1.1",

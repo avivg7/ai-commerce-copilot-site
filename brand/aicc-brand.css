@@ -1,13 +1,14 @@
 /*
  * AICC BRAND KIT: component styles shared by the marketing site and the Control Plane theme.
  * Vanilla CSS (no Tailwind), tokens from aicc-tokens.css, logical properties only (Hebrew mirrors for free).
- * The LEGACY LOOK values (button gradient/shadow/hover, glass, header, eyebrow pill, hero) are copied from the live site
- * (https://www.copilt.org/), measured in computed styles, and guarded by `npm run test:visual-contract`.
- * Documented deviations (brand/README.md): 2px accessible blue focus ring; truthful chip labels; Enhanced contrast swaps in
- * AA-safe variants (tokens do the swapping, nothing here needs to know).
+ * Geometry, shadow, glass, header and hero values are copied from the live site (https://www.copilt.org/), measured in
+ * computed styles, and guarded by `npm run test:visual-contract`. The three colour treatments that carry text (primary
+ * button gradient, headline gradient, eyebrow text) are the WCAG AA values recorded in brand/contract-baseline.json.
+ * Documented deviations (brand/README.md): AA colour treatments; 2px accessible blue focus ring; truthful chip labels.
+ * Enhanced contrast is a stronger optional mode (tokens do the swapping, nothing here needs to know).
  */
 
-/* Legacy text rendering (the live site sets Tailwind `antialiased` on <html>); without it macOS draws heavier glyphs. */
+/* Text rendering (the live site sets Tailwind `antialiased` on <html>); without it macOS draws heavier glyphs. */
 html { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
 
 /* ── Focus (accessible 2px ring, >= 3:1; the legacy cyan ring is NOT used) ───────────────────────── */
@@ -87,6 +88,8 @@ html { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
 }
 
 /* ── Text gradient, eyebrow pill, hero title, entrance ───────────────────────────────────────── */
+/* Display text only (>= 24px, or >= 18.66px bold): the gradient's worst stop is 3.71:1 on the hero, enough for AA large text.
+   Smaller text must use --aicc-primary-strong; scripts/contrast-check.mjs and the interaction tests enforce this. */
 .aicc-text-gradient {
   background-image: var(--aicc-gradient-text);
   -webkit-background-clip: text;
@@ -102,7 +105,7 @@ html { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
   padding: 0.375rem 1rem;
   border-radius: 9999px;
   background: var(--aicc-eyebrow-bg);
-  color: var(--aicc-primary);
+  color: var(--aicc-eyebrow-fg);
   font-size: 0.75rem;
   font-weight: 600;
   line-height: 1rem;
@@ -667,4 +670,4 @@ html.aicc-scroll-lock { overflow: hidden; scrollbar-gutter: stable; }
   background-image: linear-gradient(to right bottom, color-mix(in oklab, #2563eb 28%, transparent), color-mix(in oklab, #22d3ee 16%, transparent), transparent);
 }
 .aicc-fbt__widget { background: rgb(255 255 255 / 0.82); -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px); border: 1px solid var(--aicc-glass-border); }
-:root[data-aicc-contrast="high"] .aicc-eyebrow-pill { color: var(--aicc-primary-strong); background: var(--aicc-info-bg); }
+:root[data-aicc-contrast="high"] .aicc-eyebrow-pill { background: var(--aicc-info-bg); }

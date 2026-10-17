@@ -288,6 +288,46 @@ for (const loc of ["en", "es", "ru", "he"]) {
   check("404: unknown URL returns 404 with the branded page, in Hebrew under /he/, with a translated title", r.status() === 404 && (await p.evaluate(() => document.documentElement.lang === "he" && document.documentElement.dir === "rtl" && !!document.querySelector("h1") && !/not found/i.test(document.title) && document.title.length > 2)), await p.title());
   await ctx.close();
 }
+// 7. Default look meets AA on its own; Enhanced contrast is a stronger optional mode
+{
+  const wcag = `(() => { const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }; const L = (c) => 0.2126 * f(c[0]) + 0.7152 * f(c[1]) + 0.0722 * f(c[2]); return (a, b) => { const [x, y] = [L(a), L(b)].sort((p, q) => q - p); return (x + 0.05) / (y + 0.05); }; })()`;
+  // 7a. `.aicc-text-gradient` only ever paints display-size text (>= 24px, or >= 18.66px bold): all locales, phone to desktop, Larger text
+  for (const loc of ["en", "he", "es", "ru"]) for (const route of ["", "product", "pricing"]) {
+    const sizes = [];
+    for (const [w, large] of [[320, true], [360, false], [390, false], [768, false], [1280, false]]) {
+      const [ctx, p] = await fresh({ viewport: { width: w, height: 900 } });
+      if (large) await ctx.addInitScript(() => localStorage.setItem("aicc_a11y", JSON.stringify({ text: "large" })));
+      await p.goto(urlFor(loc, route)); await p.waitForTimeout(250);
+      sizes.push(...(await p.$$eval(".aicc-text-gradient", (els) => els.map((e) => { const c = getComputedStyle(e); return { px: parseFloat(c.fontSize), wt: Number(c.fontWeight) || 400 }; }))));
+      await ctx.close();
+    }
+    check(`headline gradient[${loc}/${route || "home"}]: every .aicc-text-gradient is display text (${sizes.length} instances, smallest ${sizes.length ? Math.min(...sizes.map((x) => x.px)) : "-"}px)`, sizes.every((x) => x.px >= 24 || (x.px >= 18.66 && x.wt >= 700)), JSON.stringify(sizes));
+  }
+  // 7b. default vs Enhanced: the stronger mode must exceed the default on all three treatments, and the default must already pass
+  const read = (p) => p.evaluate((wcagSrc) => {
+    const ratio = eval(wcagSrc);
+    const rgbs = (img) => [...img.matchAll(/rgba?\(([^)]+)\)/g)].map((m) => m[1].split(/[,\s/]+/).filter(Boolean).slice(0, 3).map(Number));
+    const btn = getComputedStyle(document.querySelector("main .aicc-btn--primary.aicc-btn--lg"));
+    const stops = rgbs(btn.backgroundImage); const endRatio = ratio(stops[stops.length - 1], [255, 255, 255]);
+    const hl = document.querySelector(".aicc-text-gradient"); const hs = getComputedStyle(hl);
+    const hlSolid = hs.backgroundImage === "none" || !/gradient/.test(hs.backgroundImage) || new Set(rgbs(hs.backgroundImage).map(String)).size === 1;
+    const eb = document.querySelector(".aicc-eyebrow-pill"); const es = getComputedStyle(eb);
+    const fg = es.color.match(/[\d.]+/g).slice(0, 3).map(Number);
+    return { endRatio, hlSolid, hlColor: hs.webkitTextFillColor, eyebrowFg: fg, eyebrowBg: es.backgroundColor, attr: document.documentElement.getAttribute("data-aicc-contrast") };
+  }, wcag);
+  const [c1, p1] = await fresh({ viewport: { width: 1280, height: 900 } });
+  await p1.goto(urlFor("en", "")); await p1.waitForTimeout(400);
+  const def = await read(p1); await c1.close();
+  const [c2, p2] = await fresh({ viewport: { width: 1280, height: 900 } });
+  await p2.addInitScript(() => localStorage.setItem("aicc_a11y", JSON.stringify({ contrast: "high" })));
+  await p2.goto(urlFor("en", "")); await p2.waitForTimeout(400);
+  const hi = await read(p2); await c2.close();
+  check(`default look: primary button gradient end is AA with white text (${def.endRatio.toFixed(2)}:1, no data-aicc-contrast attribute)`, def.endRatio >= 4.5 && !def.attr, JSON.stringify(def));
+  check(`Enhanced contrast: button gradient end is darker than the default (${hi.endRatio.toFixed(2)}:1 vs ${def.endRatio.toFixed(2)}:1)`, hi.attr === "high" && hi.endRatio > def.endRatio + 0.3, JSON.stringify(hi));
+  check("Enhanced contrast: headline becomes solid dark text (no gradient); the default keeps the gradient", hi.hlSolid && !def.hlSolid, `${def.hlSolid} / ${hi.hlSolid}`);
+  const lumOf = (c) => { const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }; return 0.2126 * f(c[0]) + 0.7152 * f(c[1]) + 0.0722 * f(c[2]); };
+  check("Enhanced contrast: eyebrow text is darker than the default", lumOf(hi.eyebrowFg) < lumOf(def.eyebrowFg), `${def.eyebrowFg} -> ${hi.eyebrowFg}`);
+}
 await browser.close();
 const failed = results.filter((r) => !r.ok);
 console.log(`\ninteraction tests: ${results.length - failed.length}/${results.length} passed`);

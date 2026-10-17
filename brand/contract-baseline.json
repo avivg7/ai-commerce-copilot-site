@@ -1,0 +1,23 @@
+{
+  "kit": "aicc-brand-kit",
+  "note": "The accessible (WCAG 2.2 AA) values of the three colour treatments that carry text. From the owner's DEFAULT WCAG AA correction these, not the live copilt.org values, are the visual source of truth for them; every other visual property is still compared with the live site. Read by scripts/visual-contract.mjs and scripts/contrast-check.mjs. Change it only together with brand/aicc-tokens.css.",
+  "primaryButton": {
+    "gradient": "linear-gradient(to right in oklab, #2563eb 0%, #05865f 100%)",
+    "hoverGradient": "linear-gradient(to right in oklab, #2563eb 0%, #05865f 100%)",
+    "minWhiteContrast": 4.5,
+    "appliesTo": "primary button, md and lg"
+  },
+  "headlineGradient": {
+    "gradient": "linear-gradient(100deg, #2563eb, #05865f 55%, #0b86a6)",
+    "minContrast": 3,
+    "minFontPx": 24,
+    "boldMinFontPx": 18.66,
+    "appliesTo": ".aicc-text-gradient (display text only)"
+  },
+  "eyebrow": {
+    "color": "#1f55d6",
+    "background": "rgb(30 58 138 / 0.08)",
+    "minContrast": 4.5,
+    "appliesTo": ".aicc-eyebrow-pill"
+  }
+}

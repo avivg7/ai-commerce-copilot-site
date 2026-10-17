@@ -1036,7 +1036,6 @@ export const en = {
             "Hebrew, Spanish and Russian texts have not yet been reviewed by native speakers, including for accessibility.",
             "Automated and manual checks cannot confirm everything, such as whether alternative text is the best description or whether the reading order feels natural with every screen reader. We have not tested with a screen reader or with every combination of browser and assistive technology.",
             "The Reco illustrations contain short words inside the pictures. They are decorative and the same information is in the page text.",
-            "The colours of the main buttons, of the emphasised words in the headline and of the small label above it follow the brand's original design. In places they are below the AA contrast minimum (white text on the green end of the button gradient is 2.5:1). The Enhanced contrast setting in the accessibility menu replaces them with colours that meet AA.",
           ],
         },
         report: {

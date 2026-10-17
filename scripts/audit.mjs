@@ -15,7 +15,6 @@ const AXE_WIDTHS = [360, 1280];
 
 const browser = await launch();
 const summary = [];
-const known = [];
 let totalViolations = 0;
 let overflowFails = 0;
 let structFails = 0;
@@ -46,11 +45,6 @@ for (const locale of LOCALES.filter((l) => !ONLY.length || ONLY.includes(l))) {
       if (AXE_WIDTHS.includes(width)) {
         await page.evaluate(axeSource);
         const res = await page.evaluate((tags) => window.axe.run(document, { runOnly: { type: "tag", values: tags }, resultTypes: ["violations"] }), TAGS);
-        // OWNER-MANDATED legacy look: the eyebrow pill is #2563eb on a 8% navy tint (4.32:1). Reported as "known", never silently dropped;
-        // Enhanced contrast (checked below) restores >= 4.5:1.
-        const isKnown = (v) => v.id === "color-contrast" && v.nodes.every((n) => /aicc-eyebrow-pill/.test(n.target.join(" ")));
-        known.push(...res.violations.filter(isKnown).map((v) => `${locale}/${route || "home"} @${width}: ${v.id} on .aicc-eyebrow-pill`));
-        res.violations = res.violations.filter((v) => !isKnown(v));
         violations = res.violations.map((v) => ({ id: v.id, impact: v.impact, help: v.help, nodes: v.nodes.slice(0, 4).map((n) => n.target.join(" ") + " :: " + (n.failureSummary || "").split("\n").slice(1, 3).join(" | ")) }));
         totalViolations += violations.length;
       }
@@ -93,7 +87,7 @@ for (const locale of LOCALES.filter((l) => !ONLY.length || ONLY.includes(l))) {
     }
   }
 }
-// Enhanced contrast (data-aicc-contrast="high") must clear EVERYTHING, including the legacy treatments above.
+// Enhanced contrast (data-aicc-contrast="high") is the stronger optional mode: it must also be clean. The DEFAULT look above is already held to the same rules.
 let enhancedViolations = 0;
 if (!ONLY.length || true) {
   for (const locale of LOCALES.filter((l) => !ONLY.length || ONLY.includes(l))) {
@@ -121,7 +115,6 @@ const pages = summary.length;
 console.log(`audit  ${LOCALES.length} locales x ${ROUTES.length} pages x ${WIDTHS.length} widths = ${pages} page loads`);
 console.log(`axe violations (rule tags ${TAGS.join(", ")}): ${totalViolations}`);
 console.log(`horizontal overflow failures: ${overflowFails}   pages with structural findings: ${structFails}`);
-console.log(`known owner-mandated findings (reported, not failures): ${known.length}${known.length ? "  e.g. " + known[0] : ""}`);
 console.log(`Enhanced contrast mode (home, product, pricing x 4 languages @1280): ${enhancedViolations} axe violations`);
 for (const s of summary) {
   const bits = [];

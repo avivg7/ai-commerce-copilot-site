@@ -45,7 +45,7 @@ npm run serve:out -- --port 3011   # serve out/ locally (add --prefix /ai-commer
 | `npm run pricing:check` | prices and limits equal 99/1, 199/3, 499/10 and the Control Plane bootstrap file; no hard-coded prices in copy |
 | `npm run i18n:check` | every key in en/he/es/ru, no untranslated values, placeholder/markup parity, terminology table, legal + FAQ structure |
 | `npm run copy:check` | banned phrases (fabricated results, free-tier and urgency claims, unshipped features) in every locale source, plus `docs/` and this file |
-| `npm run contrast:check` | WCAG contrast of every token pair the components use |
+| `npm run contrast:check` | WCAG contrast of every token pair the components use, including the sampled primary-button, headline and eyebrow treatments, and the guard that `.aicc-text-gradient` stays on display text (all real pass/fail, no exceptions list) |
 | `npm run perf:check` | gzip first-load JS per route against the budgets (needs a build) |
 | `npm run audit` | axe-core + structure + overflow on every page, locale and width (needs `serve:out`) |
 | `npm run test:interaction` | keyboard walks, reduced motion, language persistence (needs `serve:out`) |

@@ -6,8 +6,9 @@
  *   - commerce/account: Control Plane WordPress theme (aicc-admin/assets/css/aicc-tokens.css, delivered byte-identical by
  *     `node scripts/sync-brand-kit.mjs --to <theme dir>`; `npm run tokens:check` in the site repo and
  *     tests/run_design_token_parity_tests.php + tests/run_brand_kit_parity_tests.php in the Control Plane repo fail if they differ)
- * Values below that carry the LEGACY LOOK (the live copilt.org buttons, glass, header) are measured from the live site, not
- * invented; see brand/README.md ("Visual contract").
+ * Button geometry, shadow, glass and header values are measured from the live copilt.org, not invented; the three colour
+ * treatments that carry text (primary button gradient, headline gradient, eyebrow text) are the accessible values recorded in
+ * brand/contract-baseline.json. See brand/README.md ("Visual contract").
  *
  * Derived from the established brand (blue → emerald → cyan, Geist, Reco). Values that changed are
  * changed for ONE reason, documented in docs/unified-experience/design-system.md: WCAG 2.2 AA contrast.
@@ -75,21 +76,23 @@
 	--aicc-info: var(--aicc-blue-700);
 	--aicc-info-bg: var(--aicc-blue-50);
 
-	/* Brand gradients. The DECORATIVE gradient keeps the original three stops (logomark, hero glow, Reco
-	   halos). The ACTION gradient (any surface that carries text) ends on emerald-700 because white on
-	   the original #10b981 is only 2.54:1; this one is >= 5.17:1 along its whole length. */
+	/* Brand gradients. The DECORATIVE gradient keeps the original three stops (logomark, hero glow, Reco halos); it never
+	   carries text. Every gradient that DOES carry text meets WCAG 2.2 AA along its whole length (measured in oklab / sRGB). */
 	--aicc-gradient-decor: linear-gradient(100deg, #2563eb, #10b981 55%, #22d3ee);
 	--aicc-gradient-logomark: linear-gradient(135deg, #2563eb, #10b981);
-	/* BUTTON gradient: the live site's exact value (Tailwind 4 interpolates in oklab). White text on its #10b981 end is
-	   2.54:1: an owner-mandated look. Enhanced contrast (data-aicc-contrast="high") swaps in the AA variant below. */
-	--aicc-gradient-action: linear-gradient(to right in oklab, #2563eb 0%, #10b981 100%);
-	--aicc-gradient-action-hover: linear-gradient(to right in oklab, #2563eb 0%, #10b981 100%); /* the live hover keeps the gradient */
-	/* AA-safe variant (>= 5.17:1 white along its whole length): used by small text-bearing surfaces (badges, step numbers,
-	   pressed toggles) and by buttons in Enhanced contrast. */
+	/* PRIMARY BUTTON gradient (md + lg), white text: #2563eb -> #05865f, interpolated in oklab like Tailwind 4.
+	   Minimum white contrast along the whole gradient = 4.58:1 (its end; the start is 5.17:1). */
+	--aicc-gradient-action: linear-gradient(to right in oklab, #2563eb 0%, #05865f 100%);
+	--aicc-gradient-action-hover: linear-gradient(to right in oklab, #2563eb 0%, #05865f 100%);
+	/* Darker variant (>= 5.17:1 white along its whole length): small text-bearing surfaces (badges, step numbers, pressed
+	   toggles) and the primary button in Enhanced contrast, which is a stronger mode than the default. */
 	--aicc-gradient-action-aa: linear-gradient(to right in oklab, #2563eb 0%, #047857 100%);
-	/* Headline emphasis (clipped to text): the live .text-gradient. Below 4.5:1 at its cyan end; Enhanced contrast uses solid text. */
-	--aicc-gradient-text: linear-gradient(100deg, #2563eb, #10b981 55%, #22d3ee);
+	/* Headline emphasis (clipped to text). ONLY for large display text (>= 24px, or >= 18.66px bold): worst stop 4.03:1 on
+	   #f8fafc and 3.71:1 on the tinted hero (#eaf1fb), AA large text needs 3:1. Smaller text must use --aicc-primary-strong. */
+	--aicc-gradient-text: linear-gradient(100deg, #2563eb, #05865f 55%, #0b86a6);
 	--aicc-text-gradient-solid: #1e3a8a;
+	/* Eyebrow pill text: #1f55d6 on the 8% navy tint = 5.26:1 on #f8fafc, 4.86:1 on the tinted hero. */
+	--aicc-eyebrow-fg: #1f55d6;
 
 	/* Focus: 2px ring + 2px offset. 5.2:1 against white, 12.9:1 on navy (>= 3:1 required by WCAG 2.2 AA). */
 	--aicc-focus: #2563eb;
@@ -175,7 +178,8 @@
 }
 
 /* ── User preference modes (set by the subtle accessibility control; see accessibility.md) ───────── */
-/* Enhanced contrast (the first-party accessibility control) swaps every owner-mandated low-contrast treatment for an AA-safe one. */
+/* Enhanced contrast (the first-party accessibility control) is a STRONGER mode than the default, which already meets AA:
+   darker button end, solid dark headline, darker pill text, darker muted text, stronger borders. */
 :root[data-aicc-contrast="high"] {
 	--aicc-gradient-action: var(--aicc-gradient-action-aa);
 	--aicc-gradient-action-hover: var(--aicc-gradient-action-aa);
@@ -185,6 +189,7 @@
 	--aicc-border: #64748b;
 	--aicc-border-strong: #475569;
 	--aicc-link: #1e3a8a;
+	--aicc-eyebrow-fg: var(--aicc-primary-strong);
 }
 :root[data-aicc-text="large"] {
 	font-size: 118.75%; /* 19px root: every rem-based size scales together */

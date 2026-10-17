@@ -7,6 +7,12 @@
 // that the component is VISIBLE and sits where it belongs (e.g. the Reco video inside the hero, the FBT section directly after the
 // hero, no unexpected blank space), and that behaviour works (hover lift, scrolled header, modal, FBT demo, language menu).
 // Per-surface report; exit code 1 on any mismatch of a selected surface:  --surfaces=site | site,cp | cp   (default: site,cp)
+// EXCEPTION (owner's DEFAULT WCAG AA correction): three colour treatments are NOT compared with the live site because the live values fail
+// WCAG AA: the primary-button gradient (and its hover), the H1 gradient and the eyebrow text colour. Their expected values are the accessible
+// ones in brand/contract-baseline.json (the new source of truth), and their RENDERED contrast is measured from real pixels
+// (button >= 4.5 white along its whole length, headline >= 3 at its worst stop against the real backdrop, eyebrow >= 4.5 on the composited pill).
+// Everything else (radius, padding, type, shadow, transition, hover transform, header, chip, video, language control, modal, FBT) is still
+// compared with the live site. The primary-button pixel comparison uses the live button with ONLY its gradient replaced by the baseline.
 // Tolerances: colour channels +-2 (alpha +-0.01), lengths +-0.6px, letter-spacing +-0.2px, element screenshots <= 0.5% differing pixels.
 import crypto from "node:crypto";
 import fs from "node:fs";
@@ -20,6 +26,7 @@ const LEGACY = (process.env.AICC_LEGACY_URL || "https://www.copilt.org/").replac
 const SITE = (process.env.AICC_BASE_URL || "http://localhost:3011").replace(/\/$/, "") + "/";
 const CP = (process.env.AICC_CP_URL || "http://127.0.0.1:8982").replace(/\/$/, "") + (process.env.AICC_CP_PATH || "/");
 const SURFACES = arg("surfaces", "site,cp").split(",");
+const BASE = JSON.parse(fs.readFileSync(path.join(ROOT, "brand/contract-baseline.json"), "utf8"));
 
 /* ── colour + length normalisation ─────────────────────────────────────────────────────────── */
 function oklabToSrgb(L, a, b) {
@@ -136,21 +143,23 @@ async function probe(page, kind) {
 /* ── result bookkeeping ────────────────────────────────────────────────────────────────────── */
 const results = {}; // surface -> [{ name, ok, detail }]
 const rec = (surface, name, ok, detail = "") => { (results[surface] ||= []).push({ name, ok: !!ok, detail }); };
-function compareRole(surface, role, legacy, mine, props, label = role) {
+function compareRole(surface, role, legacy, mine, props, label = role, skip = []) {
   const L = legacy[role], M = mine[role];
   if (!M?.present) { rec(surface, `${label}: present`, false, "component not found on this surface"); return; }
   rec(surface, `${label}: visible`, M.visible, "not visible");
   if (!L?.present) return;
-  for (const p of props) {
+  for (const p of props.filter((x) => !skip.includes(x))) {
     const a = L.style[p], b = M.style[p];
     rec(surface, `${label}: ${p}`, eq(p, a, b), `legacy "${String(a).slice(0, 90)}" vs here "${String(b).slice(0, 90)}"`);
   }
 }
 
-async function shotDiff(pageA, selA, pageB, selB, name, surface) {
-  const prep = async (page, sel) => {
+async function shotDiff(pageA, selA, pageB, selB, name, surface, patchA = null) {
+  const prep = async (page, sel, patch = null) => {
     const handle = await page.$(sel);
     if (!handle) return null;
+    // the live element with ONLY its gradient replaced by the accessible baseline: everything else is compared with the live site
+    if (patch) await handle.evaluate((el, g) => { el.style.backgroundImage = g; }, patch);
     await page.addStyleTag({ content: "*,*::before,*::after{animation:none!important;transition:none!important}" });
     await handle.scrollIntoViewIfNeeded();
     // same label text on both, no animation, nothing else visible: only the styling of the element is compared
@@ -175,7 +184,7 @@ async function shotDiff(pageA, selA, pageB, selB, name, surface) {
     await page.waitForTimeout(200);
     return handle.screenshot({ animations: "disabled" });
   };
-  const a = await prep(pageA, selA), b = await prep(pageB, selB);
+  const a = await prep(pageA, selA, patchA), b = await prep(pageB, selB);
   if (!a || !b) { rec(surface, `pixels: ${name}`, false, "element missing"); return; }
   if (process.env.AICC_VC_DUMP) { fs.mkdirSync(process.env.AICC_VC_DUMP, { recursive: true }); fs.writeFileSync(path.join(process.env.AICC_VC_DUMP, `${surface}-${name.replace(/\W+/g, "-")}-legacy.png`), a); fs.writeFileSync(path.join(process.env.AICC_VC_DUMP, `${surface}-${name.replace(/\W+/g, "-")}-here.png`), b); }
   const A = await sharp(a).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
@@ -195,6 +204,61 @@ async function shotDiff(pageA, selA, pageB, selB, name, surface) {
   }
   const pct = (100 * diff) / (w * h);
   rec(surface, `pixels: ${name} (${pct.toFixed(2)}% differ, limit 0.5%)`, pct <= 0.5, `${diff} of ${w * h} pixels`);
+}
+
+/* ── rendered contrast: measured from the pixels the browser actually paints ────────────────────────── */
+const relLum = ([r, g, b]) => { const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }; return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b); };
+const ratioRGB = (a, b) => { const [x, y] = [relLum(a), relLum(b)].sort((p, q) => q - p); return (x + 0.05) / (y + 0.05); };
+async function pixelsOf(page, sel, { hide = "content" } = {}) {
+  // `scroll-behavior: smooth` is on <html>: scroll instantly, let layout settle, THEN read the rect
+  const pre = await page.evaluate(({ sel, hide }) => { const el = document.querySelector(sel); if (!el) return null; el.scrollIntoView({ block: "center", behavior: "instant" }); const cs = getComputedStyle(el); const o = { color: cs.color, fontSize: parseFloat(cs.fontSize), fontWeight: Number(cs.fontWeight) || 400, image: cs.backgroundImage }; el.setAttribute("data-vc-hide", hide); return o; }, { sel, hide });
+  if (!pre) return null;
+  await page.waitForTimeout(350);
+  const info = { ...pre, ...(await page.evaluate((sel) => { const r = document.querySelector(sel).getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height }; }, sel)) };
+  if (!(info.w > 0 && info.h > 0)) { await page.evaluate((sel) => document.querySelector(sel)?.removeAttribute("data-vc-hide"), sel); return null; }
+  const clip = { x: Math.max(0, Math.floor(info.x)), y: Math.max(0, Math.floor(info.y)), width: Math.ceil(info.w), height: Math.ceil(info.h) };
+  const buf = await page.screenshot({ clip, animations: "disabled" });
+  const img = await sharp(buf).removeAlpha().raw().toBuffer({ resolveWithObject: true });
+  await page.evaluate((sel) => document.querySelector(sel)?.removeAttribute("data-vc-hide"), sel);
+  return { info, data: img.data, w: img.info.width, h: img.info.height };
+}
+function gradientColors(image, n = 240) {
+  const m = [...image.matchAll(/rgba?\(([^)]+)\)(?:\s+([\d.]+)%)?/g)].map((x) => ({ c: x[1].split(/[,\s/]+/).filter(Boolean).slice(0, 3).map(Number), t: x[2] !== undefined ? Number(x[2]) / 100 : null }));
+  m.forEach((x, i) => { if (x.t === null) x.t = i / (m.length - 1); });
+  return Array.from({ length: n }, (_, k) => { const t = k / (n - 1); let i = 0; while (i < m.length - 2 && t > m[i + 1].t) i++; const u = (t - m[i].t) / (m[i + 1].t - m[i].t || 1); return m[i].c.map((v, j) => v + (m[i + 1].c[j] - v) * u); });
+}
+async function renderedContrast(surface, page, tag) {
+  await page.addStyleTag({ content: "*,*::before,*::after{animation:none!important;transition:none!important}[data-vc-hide]{color:transparent!important;-webkit-text-fill-color:transparent!important}[data-vc-hide=content] *{visibility:hidden!important}[data-vc-hide=self]{visibility:hidden!important}" });
+  await page.mouse.move(2, 2);
+  // primary buttons: the horizontal mid-line of the button covers the whole gradient, start to end, with the label hidden
+  for (const [label, sel, hover] of [["primary button lg", "main .aicc-btn--primary.aicc-btn--lg", false], ["primary button md (header)", ".aicc-site-header .aicc-btn--primary", false], ["primary button lg, hovered", "main .aicc-btn--primary.aicc-btn--lg", true]]) {
+    if (hover) { const b = await page.$(sel); if (!b) continue; await b.scrollIntoViewIfNeeded(); const bb = await b.boundingBox(); await page.mouse.move(bb.x + bb.width / 2, bb.y + bb.height / 2); await page.waitForTimeout(450); }
+    const px = await pixelsOf(page, sel);
+    if (hover) await page.mouse.move(2, 2);
+    if (!px) { if (!/header/.test(label)) rec(surface, `rendered contrast (${tag}): ${label}`, false, "element not found"); continue; }
+    let min = Infinity, at = 0;
+    for (const row of [Math.floor(px.h / 2) - 1, Math.floor(px.h / 2), Math.floor(px.h / 2) + 1]) for (let x = 1; x < px.w - 1; x++) { const i = (row * px.w + x) * 3; const r = ratioRGB([px.data[i], px.data[i + 1], px.data[i + 2]], [255, 255, 255]); if (r < min) { min = r; at = x; } }
+    rec(surface, `rendered contrast (${tag}): ${label}: white text >= ${BASE.primaryButton.minWhiteContrast}:1 along the whole gradient (min ${min.toFixed(2)}:1 at x=${at}/${px.w})`, min >= BASE.primaryButton.minWhiteContrast, `${min.toFixed(2)}`);
+  }
+  // headline gradient: worst gradient stop against the darkest real backdrop pixel under the text box (conservative)
+  const hs = ".aicc-hero-title .aicc-text-gradient";
+  const hpx = await pixelsOf(page, hs, { hide: "self" });
+  if (hpx) {
+    const lums = []; for (let i = 0; i < hpx.data.length; i += 3) lums.push([relLum([hpx.data[i], hpx.data[i + 1], hpx.data[i + 2]]), i]);
+    lums.sort((a, b) => a[0] - b[0]); const dark = lums[Math.floor(lums.length * 0.01)][1]; const backdrop = [hpx.data[dark], hpx.data[dark + 1], hpx.data[dark + 2]];
+    const cols = gradientColors(hpx.info.image); let min = Infinity; for (const c of cols) min = Math.min(min, ratioRGB(c, backdrop));
+    rec(surface, `rendered contrast (${tag}): H1 gradient text: worst stop >= ${BASE.headlineGradient.minContrast}:1 vs the real backdrop rgb(${backdrop.join(",")}) (min ${min.toFixed(2)}:1)`, min >= BASE.headlineGradient.minContrast, `${min.toFixed(2)}`);
+    const big = hpx.info.fontSize >= BASE.headlineGradient.minFontPx || (hpx.info.fontSize >= BASE.headlineGradient.boldMinFontPx && hpx.info.fontWeight >= 700);
+    rec(surface, `rendered contrast (${tag}): H1 gradient text is large text (${hpx.info.fontSize}px / ${hpx.info.fontWeight})`, big, `${hpx.info.fontSize}px`);
+  } else rec(surface, `rendered contrast (${tag}): H1 gradient text present`, false, "not found");
+  // eyebrow: label colour against the composited pill (pill measured with its content hidden)
+  const epx = await pixelsOf(page, ".aicc-eyebrow-pill");
+  if (epx) {
+    const fg = (epx.info.color.match(/[\d.]+/g) || []).slice(0, 3).map(Number);
+    let min = Infinity; const row = Math.floor(epx.h / 2);
+    for (let x = Math.ceil(epx.h / 2); x < epx.w - epx.h / 2; x++) { const i = (row * epx.w + x) * 3; min = Math.min(min, ratioRGB(fg, [epx.data[i], epx.data[i + 1], epx.data[i + 2]])); }
+    rec(surface, `rendered contrast (${tag}): eyebrow pill text ${epx.info.color} >= ${BASE.eyebrow.minContrast}:1 on the composited pill (min ${min.toFixed(2)}:1)`, min >= BASE.eyebrow.minContrast, `${min.toFixed(2)}`);
+  } else rec(surface, `rendered contrast (${tag}): eyebrow pill present`, false, "not found");
 }
 
 /* ── main ──────────────────────────────────────────────────────────────────────────────────── */
@@ -236,15 +300,17 @@ async function surfaceChecks(surface, url) {
   const mine = await probe(page, "kit");
 
   // buttons
-  compareRole(surface, "primaryLg", legacy, mine, PROPS.btn, "primary button lg");
-  compareRole(surface, "primaryMd", legacy, mine, PROPS.btn, "primary button md");
+  compareRole(surface, "primaryLg", legacy, mine, PROPS.btn, "primary button lg", ["background-image"]);
+  compareRole(surface, "primaryMd", legacy, mine, PROPS.btn, "primary button md", ["background-image"]);
+  const want = await page.evaluate(({ btn, text }) => { const c = (g) => { const d = document.createElement("div"); d.style.backgroundImage = g; document.body.append(d); const v = getComputedStyle(d).backgroundImage; d.remove(); return v; }; return { btn: c(btn), text: c(text) }; }, { btn: BASE.primaryButton.gradient, text: BASE.headlineGradient.gradient });
+  for (const [role, label] of [["primaryLg", "primary button lg"], ["primaryMd", "primary button md"]]) if (mine[role]?.present) rec(surface, `${label}: gradient equals the accessible baseline (brand/contract-baseline.json)`, normCompound(mine[role].style["background-image"]) === normCompound(want.btn), `baseline "${normCompound(want.btn)}" vs here "${normCompound(mine[role].style["background-image"])}"`);
   compareRole(surface, "secondaryLg", legacy, mine, PROPS.glass, "secondary (glass) button lg");
   // hover
   if (mine.primaryLg?.present) {
     const h = await hover(page, (() => document.querySelector("main .aicc-btn--primary.aicc-btn--lg")));
     rec(surface, "primary hover: lift -2px (transform/translate)", h.transform === legacyHoverPrimary.transform, `legacy ${legacyHoverPrimary.transform} vs ${h.transform}`);
     rec(surface, "primary hover: box-shadow", normCompound(h.shadow) === normCompound(legacyHoverPrimary.shadow), `legacy ${legacyHoverPrimary.shadow} vs ${h.shadow}`);
-    rec(surface, "primary hover: gradient unchanged", normCompound(h.image) === normCompound(legacyHoverPrimary.image));
+    rec(surface, "primary hover: gradient equals the accessible baseline (unchanged by hover)", normCompound(h.image) === normCompound(want.btn), `${normCompound(h.image)}`);
   }
   if (mine.secondaryLg?.present) {
     const h = await hover(page, (() => document.querySelector("main .aicc-btn--secondary.aicc-btn--lg")));
@@ -262,9 +328,12 @@ async function surfaceChecks(surface, url) {
     await page.evaluate(() => scrollTo(0, 0)); await page.waitForTimeout(500);
   }
   // hero typography
-  compareRole(surface, "eyebrow", legacy, mine, PROPS.eyebrow, "eyebrow pill");
+  compareRole(surface, "eyebrow", legacy, mine, PROPS.eyebrow, "eyebrow pill", ["color"]);
+  if (mine.eyebrow?.present) rec(surface, "eyebrow pill: text colour equals the accessible baseline", colorEq(mine.eyebrow.style.color, BASE.eyebrow.color.startsWith("#") ? `rgb(${[1, 3, 5].map((i) => parseInt(BASE.eyebrow.color.slice(i, i + 2), 16)).join(", ")})` : BASE.eyebrow.color), `${mine.eyebrow.style.color} vs ${BASE.eyebrow.color}`);
   compareRole(surface, "h1", legacy, mine, PROPS.h1.filter((p) => p !== "text-wrap-style"), "H1");
-  compareRole(surface, "gradient", legacy, mine, ["background-image", "-webkit-text-fill-color"], "H1 gradient text");
+  compareRole(surface, "gradient", legacy, mine, ["-webkit-text-fill-color"], "H1 gradient text");
+  if (mine.gradient?.present) rec(surface, "H1 gradient text: gradient equals the accessible baseline", mine.gradient.style["background-image"] && normCompound(mine.gradient.style["background-image"]) === normCompound(want.text), `baseline "${normCompound(want.text)}" vs here "${normCompound(mine.gradient.style["background-image"])}"`);
+  await renderedContrast(surface, page, "desktop 1440");
   compareRole(surface, "lead", legacy, mine, ["font-size", "line-height", "color", "max-width"], "lead paragraph");
   // reco hero
   compareRole(surface, "video", legacy, mine, ["mask-image", "filter", "object-fit"], "Reco video");
@@ -300,7 +369,7 @@ async function surfaceChecks(surface, url) {
   if (mine.primaryLg?.present) {
     for (const [sa, sb, name] of [["#top a", "main .aicc-btn--primary.aicc-btn--lg", "primary button"], ["#top video ~ div:nth-of-type(5) .glass", ".aicc-reco-hero__chip[data-pos=\"5\"] .aicc-reco-hero__chip-inner", "glass chip (Bundles, clear of the video)"], ["#top a:nth-of-type(2)", "main .aicc-btn--secondary.aicc-btn--lg", "secondary (glass) button"]]) {
       const lp = await mk(LEGACY), np = await mk(url);
-      await shotDiff(lp, sa === "#top a" ? "#top a:first-of-type" : sa, np, sb, name, surface).catch((e) => rec(surface, `pixels: ${name}`, false, String(e).split("\n")[0]));
+      await shotDiff(lp, sa === "#top a" ? "#top a:first-of-type" : sa, np, sb, name + (name === "primary button" ? " (live geometry/shadow/type + accessible baseline gradient)" : ""), surface, name === "primary button" ? BASE.primaryButton.gradient : null).catch((e) => rec(surface, `pixels: ${name}`, false, String(e).split("\n")[0]));
       await lp.context().close(); await np.context().close();
     }
   }
@@ -353,6 +422,10 @@ async function surfaceChecks(surface, url) {
     }
   } else rec(surface, "FBT section present", false, "no [data-aicc-fbt]");
   await page.context().close();
+  // the same rendered-contrast measurements on phones
+  for (const w of [360, 390]) {
+    try { const mp = await mk(url, w, 800); await renderedContrast(surface, mp, `mobile ${w}`); await mp.context().close(); } catch (e) { rec(surface, `rendered contrast (mobile ${w})`, false, String(e.message).split("\n")[0]); }
+  }
 }
 
 for (const s of SURFACES) {

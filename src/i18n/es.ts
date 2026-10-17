@@ -1028,7 +1028,6 @@ export const es: Dictionary = {
             "Los textos en hebreo, español y ruso aún no han sido revisados por hablantes nativos, tampoco en cuanto a accesibilidad.",
             "Las comprobaciones automáticas y manuales no pueden confirmarlo todo, por ejemplo si el texto alternativo es la mejor descripción o si el orden de lectura resulta natural con cada lector de pantalla. No hemos probado con un lector de pantalla ni con todas las combinaciones de navegador y tecnología de asistencia.",
             "Las ilustraciones de Reco contienen palabras cortas dentro de las imágenes. Son decorativas y la misma información está en el texto de la página.",
-            "Los colores de los botones principales, de las palabras destacadas del titular y de la pequeña etiqueta que lo precede siguen el diseño original de la marca. En algunos puntos quedan por debajo del mínimo de contraste AA (el texto blanco sobre el extremo verde del degradado del botón es 2,5:1). El ajuste «Contraste mejorado» del menú de accesibilidad los sustituye por colores que cumplen AA.",
           ],
         },
         report: {
