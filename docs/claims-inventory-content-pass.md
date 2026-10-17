@@ -142,7 +142,13 @@ The ranking they show is the backend's own, ported line by line into `brand/js/r
 10. The variable-product row was incomplete; the copy now says the bundle button adds simple products and skips the others.
 11. Several rows cited the capability sheet's `cd3b41b` line; they now cite the code at the heads above.
 
+## Translations (he, es, ru): what the claims inventory covers
+
+All numbers in the translated copy equal English (1/3/10 stores, 365 days, the 14-day window, 24 months, 24 hours, 10 orders, the dashboard period); `copy:check` bans a thirty-day guarantee or trial claim in every language (the dashboard period is allowed) and `content:check` compares the rendered figures with `facts.json`. All three locales are `machine-draft; native review pending`; the translated legal pages carry the "machine draft, legal review pending" notice. Translated text states nothing the English does not.
+
 ## Legal mirrors that still need the same changes (not edited here)
+
+* **Hebrew term**: the site says "דשבורד" (the plugin admin's term); the Control Plane's Hebrew privacy, terms and refund mirrors say "לוח הבקרה" and need the same replacement.
 
 * `/refund-policy/`: the restructure from owner addendum J (sales summary; the "Duplicate purchases" exception contradicts the sales copy); "Your data after a refund" needs the "target" and "today" statements as two labelled sentences.
 * `/privacy/`: "Data from stores you connect" (c) says past orders are imported when you connect: it must say the import is optional (an explicit choice); the catalog list should match Data and trust (SKUs, product links, ids); the retention section needs the same two labelled statements.

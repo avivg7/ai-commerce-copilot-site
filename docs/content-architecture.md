@@ -42,15 +42,44 @@ Ids (`q01` ... `q56`) are permanent public anchors. A removed question moves to 
 
 ## Translation: the explicit fallback
 
-The English pass changed meaning in many places, so the existing Hebrew, Spanish and Russian text cannot be trusted unit by unit. The mechanism (`src/i18n/merge.ts`, `src/data/faq.ts`):
+The English pass changed meaning in many places, so translations were rebuilt unit by unit. The mechanism (`src/i18n/merge.ts`, `src/data/faq.ts`) stays in place even though nothing falls back today, because the next English change will make some unit stale again:
 
 1. `en.ts` is the contract. `he.ts`, `es.ts` and `ru.ts` are *partial*: they keep only strings whose English meaning is unchanged.
 2. At load, every missing string is taken from English **per unit** (a page section, one legal section, one kit string set), never string by string, so a block never mixes two languages.
 3. The renderer marks fallback blocks `lang="en" dir="ltr"` (`fbProps()`), the kit modules do the same when their strings carry `_fallback: true`, and fallback FAQ questions
-   also show a small `EN` tag. The page's own `<html lang>` and `dir` stay the page language.
-4. `npm run i18n:check` validates every translated unit and asserts the mechanism (fallback units render English and are marked, translated units are not).
-   It prints how much falls back. `npm run i18n:strict` fails while any unit or question falls back: that is the Stage 2 completion gate.
+   also show a small `EN` tag. The page's own `<html lang>` and `dir` stay the page language. A translated string rendered inside a fallback block carries its own `lang`/`dir` (`txProps()`).
+4. `npm run i18n:check` validates every translated unit and prints how much falls back per locale. `npm run i18n:strict` fails while any unit or question falls back (the completion gate; it passes now).
 5. Translating a unit means adding it to the locale file (a complete unit) or the FAQ translation file; the fallback disappears by itself.
+6. **The mechanism is tested without a real fallback**: `test:interaction` swaps English `_fallback` strings into the served he/es pages (demo, rules demo), renders the server-side kit renderers with `_fallback: true`, and unit-tests `mergeOverEnglish`; `fallback:check` injects English into a translated page (flagged bare, not flagged with `lang="en"`).
+
+### Locale status (all four locales are complete)
+
+| Locale | Dictionary units falling back | FAQ questions falling back | Page titles in English | reviewStatus (`faq.<l>.json`) | Native review |
+|---|---|---|---|---|---|
+| en | n/a (canonical) | n/a | n/a | canonical | n/a |
+| he | 0 of 64 | 0 of 57 | none | machine-draft; native review pending | pending |
+| es | 0 of 64 | 0 of 57 | none | machine-draft; native review pending | pending |
+| ru | 0 of 64 | 0 of 57 | none | machine-draft; native review pending | pending |
+
+The privacy, terms and refund mirrors are not site-translated text of our own: they follow the Control Plane documents, and every legal page shows the "machine draft, legal review pending" notice.
+
+### Real plugin-admin labels (WCAG 3.1.2)
+
+The AICC admin is translated to Hebrew and English only. The replicas on the site (dashboard preview, Merchant Insights, rules demo, merchant view, Ask Reco panel) and the prose that names these labels use the real label text of the merchant's admin:
+
+* **he**: the plugin's own Hebrew labels (`brand/content/replica-labels.json`, key `he`, taken from `languages/ai-commerce-copilot-he_IL.po`). They are Hebrew and are never marked as English. `i18n:check` fails if a he kit string that equals an English label differs from the plugin's Hebrew label.
+* **es, ru**: the labels stay English (Recommendation Views, Merchant Insights, Recommendation Preview, Pin, Prefer, Deprioritize, Exclude, Bought together {n} times, ...). Each occurrence is a `lang="en" dir="ltr"` **leaf** (`<span class="aicc-admin-label">`, or `lang` on an `<option>`), so surrounding translated words never sit under `lang="en"`. `lang:check` fails when an es/ru text node holds a label that is not such a leaf, or when a `lang="en"` label wrapper holds translated words.
+* The label list lives in one file, `brand/content/replica-labels.json` (shared with the Control Plane); `npm run brand:build` generates `brand/js/replica-labels.js` from it. The kit renderers use `labeler(strings, { locale })` from `brand/js/motion.js`; the React site uses `Rich` / `Lb` / `Track` (`src/lib/rich.tsx`), which call the same `splitLabels()`. The English fallback never wraps (everything is already `lang="en"`).
+* Hebrew dashboard term: the plugin admin says **דשבורד**, so the site uses "דשבורד / הדשבורד" everywhere (including its Hebrew legal strings). The Control Plane's legal mirrors still say "לוח הבקרה" and need the same change.
+* Russian "{n} раз": the counts in the kit and on the Product page are fixed samples (48, 31, 12). "раз" is right for the plural categories one and many and wrong only for few (2-4, 22-24 ...), so `i18n:check` fails if a sample count ever falls in "few"; add real `Intl.PluralRules("ru")` forms when counts become dynamic (the cart label already has them).
+
+### For native reviewers (collected from the three translation passes)
+
+**Hebrew**: "דשבורד" (prose; plugin term) vs the legal mirrors' "לוח הבקרה"; the plugin's labels (הכנסה משויכת, הזמנות משויכות, צפיות בהמלצות, הקלקות המלצה, שיעור הקלקות המלצה, הוספות חבילה לעגלה, תובנות סוחר, תצוגה מקדימה של המלצות, נעץ / העדף / הורד בעדיפות / החרג as masculine imperatives); "Ask Reco" kept in Latin with "שאלו את Reco" only as the replica panel title; unconfirmed terms: מרחב עבודה למרצ׳נדייזינג, מוצרים נלווים (learned partners), מוצרי השלמה (fallback products), מקום {n}, מקומות לחנויות, מכירות צולבות / משודרגות, מודל גנרטיבי, הנתון (signal), פרט גישה (credential), ערכת נושא, אזור הניהול, מתכנת; the tab "מה כדאי לקדם" for "Find opportunities" (a banned-phrase rule for the Hebrew word for a paid plan also matches inside the Hebrew word for "opportunities"); "אנג׳" for the EN tag; prices as "Solo ב־$99".
+
+**Spanish**: formal usted; cupo (store slot), comerciante, panel, paquete (bundle), acompañante (learned partner), puesto (list position), "Planes y tiendas", ventas dirigidas / ventas cruzadas, "video"; "Sin AICC" for the plain related-products mode; "Renovación manual, sin cobros automáticos" (the copy rule bans the Spanish phrase for automatic renewal); "Inglés" for the EN tag; product names in «»; the sample Ask Reco conversation is translated although the real Reco answers in English and Hebrew only (a footnote says so); "Pin (fijar)" glosses; "Fijado / Preferido / Con menos prioridad / Excluido" for the rule tags.
+
+**Russian**: formal «вы», «ёлочки», no-break spaces after short words; место для магазина (never «слот»), владелец магазина, гид (Reco), тестовая копия (staging), план, набор (bundle), сопутствующий товар (partner), запасной вариант (fallback), связанные (associated), наблюдения (insights), админ-панель (non-breaking hyphen), панель (dashboard); doubtful: «Решаете вы:» for "You stay in control", допродажи / перекрёстные продажи, «Планы и магазины», "merchandising workspace" as «рабочее пространство для управления витриной»; the labels stay English with a Russian gloss on first mention (Закрепите (Pin), повысьте (Prefer) ...).
 
 ## How to add a question
 
