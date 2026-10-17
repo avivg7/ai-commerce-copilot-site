@@ -708,7 +708,7 @@ export const es: DeepPartial<Dictionary> = {
       },
     },
     safety: {
-      title: "Si AICC no estuviera disponible, su tienda sigue vendiendo.",
+      title: "Aunque AICC no esté disponible, su tienda sigue vendiendo.",
       lead: "Hacer un pedido nunca espera a AICC, y el widget se aparta si no se puede contactar con AICC.",
       conditions: "Esto se aplica con el ajuste por defecto, en el que el widget de AICC sustituye a los productos relacionados de WooCommerce, y cuando se ejecuta el JavaScript de la página.",
       limit: "Los fallos que detienen PHP en sí, como un servidor que se queda sin memoria, quedan fuera de lo que cualquier plugin puede interceptar. Probado con Storefront, un tema de bloques y plugins habituales.",
@@ -829,7 +829,7 @@ export const es: DeepPartial<Dictionary> = {
       p1: "Cada plan tiene un número de cupos de tienda: 1, 3 o 10. Conectar una tienda usa un cupo; desconectarla libera el cupo al instante.",
       p2: "La tienda de pruebas y la de producción cuentan como tiendas distintas. También las variantes con www y sin www de una dirección, y http y https.",
       p3: "Para pasar su plan de una tienda a otra: desconecte la tienda antigua y conecte la nueva. No hay comisión de traslado.",
-      p4: "Si todos los cupos están en uso, desconecte una tienda que ya no necesite o compre un plan mayor. No se puede ampliar un plan existente: un plan mayor es una compra aparte, con sus propios 365 días de duración y sus propios cupos de tienda, y no abona ni sustituye su plan actual.",
+      p4: "Si todos los cupos están en uso, desconecte una tienda que ya no necesite o compre un plan mayor. No se puede ampliar un plan existente: un plan mayor es una compra aparte, con sus propios 365 días de duración y sus propios cupos de tienda, y no se descuenta del precio ni sustituye su plan actual.",
     },
     which: {
       title: "¿Qué plan elegir?",
@@ -930,12 +930,12 @@ export const es: DeepPartial<Dictionary> = {
           h: "Datos de las tiendas que conecta",
           a: "Una vez conectada una tienda, AICC recibe lo siguiente para generar recomendaciones, medir el widget y mostrar su panel:",
           b: [
-            "Catálogo: nombres de producto, precios, categorías, imágenes y estado del stock.",
+            "Catálogo: nombres de producto, precios, SKU, categorías, estado del stock, un enlace a cada página de producto y un enlace a la imagen de cada producto (no el archivo de imagen en sí). Los datos de catálogo no incluyen información de clientes ni de pedidos.",
             "Pedidos: los productos (incluidos sus nombres) y cantidades, los totales, la moneda, el país de facturación, los ID de visitante y de sesión cuando existen y, en el caso de compradores con sesión iniciada, el ID de cliente de WooCommerce.",
             "Un identificador de correo seudonimizado (con hash), generado en su tienda a partir del ID de la tienda y del correo del comprador. AICC nunca recibe el correo en claro, el nombre, el número de teléfono ni la dirección.",
             "Nunca datos de pago de ningún tipo.",
           ],
-          c: "Al conectar se importan los pedidos anteriores de hasta los últimos 24 meses, solo como pedidos. Los datos de los pedidos se envían tanto si un comprador dio su consentimiento para las estadísticas como si no, porque así es como se aprenden las recomendaciones.",
+          c: "Los datos de los pedidos se envían desde su tienda en segundo plano a medida que los pedidos se crean o cambian. Se envían tanto si un comprador dio su consentimiento para las estadísticas como si no, porque así es como se aprenden las recomendaciones. Importar los pedidos anteriores es opcional y solo empieza cuando usted lo decide. Si decide importarlos, se envían los pedidos de hasta los últimos 24 meses, únicamente como datos del pedido. Los pedidos hechos antes de conectar no se envían a menos que decida importarlos; los pedidos hechos después de conectar se envían a medida que se crean o se actualizan.",
           d: [
             "Con consentimiento para las estadísticas, AICC también recibe: vistas de producto, de categoría y de páginas de búsqueda, incluidas las palabras escritas en el buscador del sitio; acciones de añadir al carrito; el inicio del proceso de pago; impresiones, clics y adiciones de paquetes del widget.",
             "Con ese consentimiento también recibe los ID de visitante y de sesión, el ID de usuario de WordPress de los compradores con sesión iniciada, un tipo aproximado de dispositivo y navegador, y la dirección de la página de origen.",
@@ -967,9 +967,10 @@ export const es: DeepPartial<Dictionary> = {
         },
         retention: {
           h: "Cuánto tiempo pueden conservarse los datos",
-          a: "Los datos operativos (el estado derivado del catálogo, el historial de pedidos importado, la configuración, sus reglas y el aprendizaje de recomendaciones) pueden conservarse hasta 12 meses después de que termine el acceso a AICC, para que un comerciante que vuelve pueda continuar su trabajo. Hoy no se elimina nada automáticamente, así que los datos pueden conservarse más tiempo hasta que se eliminen a petición.",
-          b: "Los registros de cuenta, compra, licencia, reembolso y auditoría siguen una conservación distinta, por motivos contables, legales y de seguridad. No forman parte de la cifra de 12 meses.",
-          c: "Si vuelve, AICC puede reconocer su tienda si todavía conserva su conexión con AICC, y su historial puede volver a estar disponible. Una reinstalación que perdió la conexión se trata como una tienda nueva.",
+          a: "Los datos operativos (estado derivado del catálogo, historial de pedidos importado, configuración, sus reglas y lo que han aprendido las recomendaciones) se rigen por dos afirmaciones. **Nuestro objetivo de conservación (hasta 12 meses).** Pueden conservarse hasta 12 meses después de que termine el acceso a AICC, para que un comerciante que regresa pueda continuar en lugar de empezar desde cero.",
+          b: "**Lo que ocurre hoy (no se elimina nada automáticamente).** Todavía no existe la eliminación automática, así que los datos operativos pueden conservarse más de 12 meses hasta que se eliminen a petición.",
+          c: "Los registros de cuenta, compra, licencia, reembolso y auditoría siguen una conservación distinta, por motivos contables, legales y de seguridad. No forman parte de la cifra de 12 meses.",
+          d: "Si vuelve, AICC puede reconocer su tienda si todavía conserva su conexión con AICC; una reinstalación que haya perdido la conexión comienza como una tienda nueva. Cuando se reconoce una tienda que regresa, su historial vuelve a estar disponible y AICC actualiza su copia del catálogo. Si usted decidió importar su historial de pedidos, también se pone al día con los pedidos del intervalo transcurrido; si no lo hizo, no importa nada sin preguntar.",
         },
         requests: {
           h: "Solicitudes de eliminación y exportación",
@@ -1020,7 +1021,7 @@ export const es: DeepPartial<Dictionary> = {
             "Plan Studio: hasta 3 tiendas, {priceStudio} al año.",
             "Plan Agency: hasta 10 tiendas, {priceAgency} al año.",
           ],
-          c: "Todos los planes tienen todas las funciones. La tienda de pruebas y la de producción cuentan como tiendas distintas. Puede desconectar una tienda para liberar su cupo y conectar otra. Un plan mayor es una compra aparte, con sus propios 365 días de duración y sus propios cupos de tienda; no abona ni sustituye su plan actual.",
+          c: "Todos los planes tienen todas las funciones. La tienda de pruebas y la de producción cuentan como tiendas distintas. Puede desconectar una tienda para liberar su cupo y conectar otra. No se puede ampliar un plan existente: un plan mayor es una compra aparte, con sus propios 365 días de duración y sus propios cupos de tienda; no se descuenta del precio ni sustituye su plan actual.",
         },
         fees: {
           h: "Precios y renovación",
@@ -1042,7 +1043,7 @@ export const es: DeepPartial<Dictionary> = {
         },
         availability: {
           h: "Disponibilidad",
-          a: "AICC está construido para fallar sin causar problemas, de modo que WooCommerce siga funcionando si AICC o su backend va lento o no está disponible. No prometemos que el servicio esté siempre disponible ni libre de errores.",
+          a: "Hacer un pedido nunca espera a AICC: los datos del pedido se ponen en cola y se envían a AICC en segundo plano. AICC está construido para fallar de forma controlada: si AICC o su backend van lentos o no están disponibles, los widgets de recomendaciones simplemente se ocultan y WooCommerce sigue funcionando. No prometemos que el servicio esté siempre disponible ni libre de errores.",
           b: "AICC puede no estar disponible por mantenimiento o por motivos ajenos a nuestro control.",
         },
         inactive: {
@@ -1086,16 +1087,19 @@ export const es: DeepPartial<Dictionary> = {
           h: "Renovaciones",
           a: "La garantía cubre la compra inicial. Las renovaciones manuales posteriores no están cubiertas automáticamente.",
         },
+        duplicate: {
+          h: "Una compra realizada dos veces por error",
+          a: "Una compra realizada dos veces por error puede reembolsarse previa solicitud. Por ejemplo, dos planes adquiridos para la misma tienda en la misma ventana de transacción: una vez identificado el duplicado, da derecho a un reembolso incluso pasados los 14 días. Esto es independiente de la garantía de 14 días y no es una excepción a ella.",
+        },
         how: {
           h: "Cómo solicitarlo",
           a: "Escriba a soporte desde el correo de su cuenta dentro de los 14 días e indique el pedido. Dirección de soporte: {supportEmail}",
-          b: "Gestionamos las solicitudes de reembolso personalmente y solemos responder en un día hábil; es una expectativa, no una garantía. Un reembolso aprobado se hace al método de pago original cuando el procesador de pagos lo permite.",
+          b: "Procuramos responder en un día hábil y resolver con prontitud las solicitudes sencillas después. Es un objetivo de servicio, no un plazo contractual. Un reembolso aprobado se hace al método de pago original cuando el procesador de pagos lo permite.",
         },
         exceptions: {
           h: "Excepciones",
           a: [
             "Abuso: ciclos repetidos de compra y reembolso que parecen buscar un uso sin pagar.",
-            "Compras duplicadas: una compra hecha dos veces por error puede reembolsarse si lo solicita.",
             "Contracargos: iniciar un contracargo con la tarjeta en lugar de contactar con nosotros puede suspender el plan mientras se resuelve.",
             "Límites del procesador de pagos y de los impuestos sobre el importe o el método de un reembolso.",
           ],
@@ -1107,11 +1111,15 @@ export const es: DeepPartial<Dictionary> = {
         },
         data: {
           h: "Sus datos después de un reembolso",
-          a: "Los datos operativos pueden conservarse hasta 12 meses, pero hoy no se elimina nada automáticamente, así que los datos pueden conservarse más tiempo hasta que se eliminen a petición; consulte la [política de privacidad](route:privacy). Los registros de cuenta y de compra siguen su propia conservación.",
+          a: "Los datos que AICC conserva sobre sus tiendas siguen la conservación descrita en la [política de privacidad](route:privacy).",
+          b: "**Nuestro objetivo de conservación (hasta 12 meses).** Los datos operativos pueden conservarse hasta 12 meses después de que termine el acceso.",
+          c: "**Lo que ocurre hoy (no se elimina nada automáticamente).** Todavía no existe la eliminación automática, así que los datos pueden conservarse más de 12 meses hasta que se eliminen a petición.",
+          d: "Los registros de cuenta y de compra siguen su propia conservación.",
         },
         nothingElse: {
-          h: "Nada más que cancelar",
-          a: "No hay facturación recurrente, así que no hay nada más que cancelar después de un reembolso.",
+          h: "Planes y renovación",
+          a: "No se puede ampliar un plan existente: un plan mayor es una compra aparte, con su propio plazo de 365 días y sus propios cupos de tienda; no se descuenta del precio ni sustituye su plan actual.",
+          b: "AICC nunca renueva un plan automáticamente y no conserva ninguna autorización para volver a cobrarle, así que no hay nada que cancelar.",
         },
         rights: {
           h: "Sus derechos",

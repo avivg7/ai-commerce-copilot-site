@@ -962,12 +962,12 @@ export const en = {
           h: "Data from stores you connect",
           a: "Once a store is connected, AICC receives the following to produce recommendations, measure the widget and show your dashboard:",
           b: [
-            "Catalog: product names, prices, categories, images and stock status.",
+            "Catalog: product names, prices, SKUs, categories, stock status, a link to each product page and a link to each product image (not the image file itself). Catalog data contains no customer or order information.",
             "Orders: the products (including product names) and quantities, totals, currency, the billing country, visitor and session IDs where they exist and, for signed-in shoppers, the WooCommerce customer ID.",
             "A pseudonymous (hashed) email identifier, made on your store from your store ID and the shopper's email. AICC never receives the raw email, name, phone number or address.",
             "Never payment details of any kind.",
           ],
-          c: "Past orders from up to the last 24 months are imported when you connect, as orders only. Order facts are sent whether or not a shopper consented to statistics, because they are how recommendations are learned.",
+          c: "Order facts are sent from your store in the background as orders are created or changed. They are sent whether or not a shopper consented to statistics, because they are how recommendations are learned. Importing past orders is optional and starts only when you choose it. If you choose to import, orders from up to the last 24 months are sent as order facts only. Orders placed before you connected are not sent unless you choose to import them; orders placed after connecting are sent as they are created or updated.",
           d: [
             "With consent for statistics, AICC also receives: product, category and search-page views, including the words typed into on-site search; add-to-cart actions; the start of checkout; widget impressions, clicks and bundle adds.",
             "With that consent it also receives visitor and session IDs, the WordPress user ID of signed-in shoppers, a coarse device and browser type and the referring page address.",
@@ -999,9 +999,10 @@ export const en = {
         },
         retention: {
           h: "How long data may be kept",
-          a: "Operational data (catalog-derived state, imported order history, configuration, your rules and recommendation learning) may be kept for up to 12 months after AICC access ends, so a returning merchant can continue instead of starting over. Today nothing is deleted automatically, so data may be kept longer until it is deleted on request.",
-          b: "Account, purchase, license, refund and audit records follow separate retention, for accounting, legal and security reasons. They are not part of the 12-month figure.",
-          c: "If you come back, AICC can recognize your store if it still has its AICC connection, and your history may be available again. A reinstall that lost the connection starts as a new store.",
+          a: "Operational data (catalog-derived state, imported order history, configuration, your rules and recommendation learning) is covered by two statements. **Our retention target (up to 12 months).** It may be kept for up to 12 months after AICC access ends, so a returning merchant can continue instead of starting from zero.",
+          b: "**What happens today (nothing is deleted automatically).** No automatic deletion exists yet, so operational data may be kept longer than 12 months until it is deleted on request.",
+          c: "Account, purchase, license, refund and audit records follow separate retention, for accounting, legal and security reasons. They are not part of the 12-month figure.",
+          d: "If you come back, AICC can recognize your store if it still has its AICC connection; a reinstall that lost the connection starts as a new store. When a returning store is recognized, its history is available again and AICC brings its copy of the catalog up to date. If you chose to import your order history, it also catches up on the orders from the gap; if you did not, it imports nothing without asking.",
         },
         requests: {
           h: "Deletion and export requests",
@@ -1053,7 +1054,7 @@ export const en = {
             "Studio: up to 3 stores, {priceStudio} per year.",
             "Agency: up to 10 stores, {priceAgency} per year.",
           ],
-          c: "Every plan has every feature. Staging and production count as separate stores. You can disconnect a store to free its slot and connect another. A larger plan is a separate purchase with its own 365-day term and store slots; it does not credit or replace your current plan.",
+          c: "Every plan has every feature. Staging and production count as separate stores. You can disconnect a store to free its slot and connect another. There is no in-place upgrade: a larger plan is a separate purchase with its own 365-day term and store slots; it does not credit or replace your current plan.",
         },
         fees: {
           h: "Fees and renewal",
@@ -1075,7 +1076,7 @@ export const en = {
         },
         availability: {
           h: "Availability",
-          a: "AICC is built to fail soft, so that WooCommerce keeps working if AICC or its backend is slow or unavailable. We don't promise the service will always be available or free of errors.",
+          a: "Placing an order never waits on AICC: order details are queued and sent to AICC in the background. AICC is built to fail soft: if AICC or its backend is slow or unavailable, the recommendation widgets simply hide and WooCommerce keeps working. We don't promise the service will always be available or free of errors.",
           b: "AICC may be unavailable for maintenance or for reasons outside our control.",
         },
         inactive: {
@@ -1089,7 +1090,7 @@ export const en = {
         },
         liability: {
           h: "Warranties and liability",
-          a: "AICC is provided as is, to the extent the law allows. Limits on our liability are being finalised with legal review.",
+          a: "AICC is provided as is, to the extent the law allows. Limits on our liability are being finalized with legal review.",
           b: "Nothing here limits rights you have under the law where you live that cannot be limited.",
         },
         law: {
@@ -1120,16 +1121,19 @@ export const en = {
           h: "Renewals",
           a: "The guarantee covers the initial purchase. Later manual renewals aren't automatically covered.",
         },
+        duplicate: {
+          h: "A purchase made twice by mistake",
+          a: "A purchase made twice by mistake can be refunded on request. For example, two plans bought for the same store in the same transaction window: once the duplicate is identified, it is eligible for a refund even after the 14 days. This is separate from the 14-day guarantee, and it is not an exception to it.",
+        },
         how: {
           h: "How to ask",
           a: "Email support from your account email within the 14 days and name the order. Support address: {supportEmail}",
-          b: "We handle refund requests personally and usually reply within one business day; that is an expectation, not a guarantee. An approved refund goes to the original payment method where the payment processor allows it.",
+          b: "We aim to reply within one business day and to resolve straightforward requests promptly after that. This is a service target, not a contractual deadline. An approved refund goes to the original payment method where the payment processor allows it.",
         },
         exceptions: {
           h: "Exceptions",
           a: [
             "Abuse: repeated purchase-and-refund cycles that look aimed at free use.",
-            "Duplicate purchases: a purchase made twice by mistake can be refunded on request.",
             "Chargebacks: starting a card chargeback instead of asking us can suspend the plan while it is resolved.",
             "Payment-processor and tax limits on the amount or method of a refund.",
           ],
@@ -1141,11 +1145,15 @@ export const en = {
         },
         data: {
           h: "Your data after a refund",
-          a: "Operational data may be kept for up to 12 months, but today nothing is deleted automatically, so data may be kept longer until it is deleted on request; see the [privacy policy](route:privacy). Account and purchase records follow their own retention.",
+          a: "Data AICC holds about your stores follows the retention described in the [privacy policy](route:privacy).",
+          b: "**Our retention target (up to 12 months).** Operational data may be kept for up to 12 months after access ends.",
+          c: "**What happens today (nothing is deleted automatically).** No automatic deletion exists yet, so data may be kept longer than 12 months until it is deleted on request.",
+          d: "Account and purchase records follow their own retention.",
         },
         nothingElse: {
-          h: "Nothing else to cancel",
-          a: "There is no recurring billing, so there is nothing further to cancel after a refund.",
+          h: "Plans and renewal",
+          a: "There is no in-place upgrade: a larger plan is a separate purchase with its own 365-day term and store slots; it does not credit or replace your current plan.",
+          b: "AICC never renews a plan automatically and keeps no authorization to charge you again, so there is nothing to cancel.",
         },
         rights: {
           h: "Your rights",
@@ -1261,7 +1269,7 @@ export const en = {
             "A skip link. The main journeys can be used with a keyboard: automated tests cover the header, the menus, the accessibility dialog, the language switcher, the questions and the interactive demo, and hand testing of the full journeys continues.",
             "A visible focus ring on every control, with enough contrast on light and dark backgrounds.",
             "Text and interface colors checked against WCAG contrast ratios by a script. Buttons and controls are at least 44 pixels high, and links inside text at least 24 pixels.",
-            "Reduced motion honoured from your system setting and from our own control, including smooth scrolling.",
+            "Reduced motion honored from your system setting and from our own control, including smooth scrolling.",
             "Right-to-left layout for Hebrew, built with logical properties, with mixed-direction text such as prices and brand names kept in order.",
             "No audio, no autoplaying video and no third-party accessibility overlay. Your accessibility settings are stored only in your browser.",
           ],

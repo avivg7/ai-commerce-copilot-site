@@ -122,7 +122,7 @@
     "q32": {
       "layer": "product", "topic": "setup",
       "q": "What if I skip the import and change my mind later?",
-      "a": "Start it any time from the AICC dashboard. It imports the orders from the last 24 months, including those placed since you skipped, can be cancelled, and doesn't duplicate orders that were already imported."
+      "a": "Start it any time from the AICC dashboard. It imports the orders from the last 24 months, including those placed since you skipped, can be canceled, and doesn't duplicate orders that were already imported."
     },
     "q52": {
       "layer": "product", "topic": "setup",
