@@ -1,32 +1,193 @@
 {
   "schema": 2,
   "locale": "es",
-  "reviewStatus": "draft-translation-pending-native-review",
-  "notes": "Only questions whose English text is unchanged since they were translated (schema 2 of the English FAQ rewrote most answers). Every other id, and every layer/topic title, falls back to English (shown lang=en dir=ltr) until Stage 2. Same shape for every locale: items.<id> = { q, a }; optional titles.layers / titles.topics / titles.ui.",
+  "reviewStatus": "machine-draft; native review pending",
+  "notes": "Spanish (neutral international, formal 'usted'). Machine draft awaiting native review. Same shape for every locale: items.<id> = { q, a }; optional titles.layers / titles.topics / titles.ui. Real plugin-admin labels (Pin, Prefer, Deprioritize, Exclude, Recommendation Preview) stay in English because the plugin admin is English and Hebrew only.",
   "titles": {
-    "layers": {},
-    "topics": {}
+    "layers": {
+      "sales": "Antes de decidir",
+      "product": "Cómo se comporta AICC",
+      "account": "Planes, facturación, datos y políticas"
+    },
+    "topics": {
+      "why": "Por qué AICC",
+      "recs": "Recomendaciones",
+      "merchant": "Controles para el comerciante y medición",
+      "setup": "Configuración y compatibilidad",
+      "plans": "Planes y tiendas",
+      "billing": "Facturación, renovación y reembolsos",
+      "safety": "Fiabilidad",
+      "data": "Datos y privacidad"
+    }
   },
   "items": {
+    "q01": {
+      "q": "¿Qué hace exactamente AICC?",
+      "a": "AICC convierte sus pedidos de WooCommerce en un espacio de trabajo de merchandising. Aprende qué productos compran juntos de verdad sus clientes, muestra esos paquetes a los compradores en las páginas de producto y de carrito, y le da el panel, las reglas y la guía para ver y orientar el resultado.\n\nPara los compradores, es un widget «Comprados juntos con frecuencia». Para usted, es un panel en WordPress con la actividad de las recomendaciones y los pedidos asociados, observaciones en lenguaje sencillo a partir de sus propios datos, reglas para fijar, excluir, preferir o restar prioridad a productos, y Ask Reco, la guía de su administración. Cuando un producto tiene poco historial de compras, AICC completa los huecos con productos de la misma categoría y con los más recientes que tienen stock. [Vea cómo funciona](route:product)."
+    },
+    "q41": {
+      "q": "¿En qué se diferencia AICC de los productos relacionados de WooCommerce?",
+      "a": "Los productos relacionados de WooCommerce le indican qué productos van juntos por categoría o etiqueta. AICC añade la señal que de otro modo tendría que adivinar: qué productos compran juntos de verdad sus clientes.\n\nCuenta los productos que aparecen en los mismos pedidos completados y en proceso, y lista primero los acompañantes más frecuentes. Además, aporta un panel, reglas que usted controla, observaciones en lenguaje sencillo y Ask Reco. Cuando un producto tiene poco historial, AICC recurre a su categoría y a sus productos con stock más recientes, de modo que el widget tenga algo que mostrar."
+    },
+    "q57": {
+      "q": "¿Por qué usar AICC en lugar de crear paquetes de productos a mano?",
+      "a": "Porque AICC encuentra los pares por usted. Aprende las relaciones a partir de sus pedidos reales, sigue aprendiendo a medida que llegan pedidos nuevos y le ahorra seleccionar usted mismo cada par de productos. Usted conserva la última palabra: puede fijar, excluir, preferir o restar prioridad a cualquier producto.\n\nLos paquetes hechos a mano siguen siendo una buena opción para las combinaciones que quiera diseñar a propósito."
+    },
+    "q58": {
+      "q": "¿Para quién es adecuado AICC?",
+      "a": "Para comerciantes de WooCommerce cuyos productos se complementan entre sí, que quieren recomendaciones basadas en el comportamiento de compra real, que prefieren no gestionar a mano cada emparejamiento y que quieren visibilidad y control en lugar de una caja negra.\n\nNo todas las tiendas se beneficiarán por igual. AICC importa menos si pocos de sus productos se compran juntos alguna vez, y no personaliza las recomendaciones para cada comprador."
+    },
+    "q42": {
+      "q": "¿Es AICC un motor de recomendaciones con IA?",
+      "a": "Las recomendaciones de AICC salen de lo que los clientes de su tienda compran juntos de verdad, contado y ordenado por reglas fijas y no por un modelo generativo. Puede ver, influir y anular el resultado, y los mismos datos de la tienda dan el mismo resultado.\n\nEso es lo que hace que cada recomendación se pueda explicar. Ask Reco, la guía de su administración, también sigue reglas fijas y los datos de su propio panel; no es un chatbot."
+    },
     "q03": {
       "q": "¿AICC sustituye a WooCommerce?",
       "a": "No. Es un plugin de WooCommerce. Sus productos, carrito, proceso de pago y pedidos siguen en WooCommerce."
+    },
+    "q06": {
+      "q": "¿Necesito un desarrollador?",
+      "a": "No hay que escribir código. Usted conecta desde su administración de WordPress y una lista de verificación de configuración en el panel le guía. AICC coloca el widget en ubicaciones estándar de WooCommerce y, si en un tema inusual no encuentra un lugar seguro, se oculta en lugar de adivinar. En ese caso, un desarrollador puede ayudar."
+    },
+    "q02": {
+      "q": "¿Cómo decide AICC qué recomendar?",
+      "a": "Parte de sus pedidos. AICC lista los productos que aparecen en los mismos pedidos completados o en proceso que el producto que se está viendo, de más a menos frecuentes. Si quedan puestos libres, añade productos con stock de la misma categoría y después sus productos con stock más recientes. Sus reglas (fijar, excluir, preferir, restar prioridad) se aplican al final.\n\nEn esta decisión no hay IA generativa ni un perfil de cada comprador, así que cada recomendación se puede explicar."
+    },
+    "q43": {
+      "q": "¿Qué aprende AICC de mi tienda?",
+      "a": "Cuáles de sus productos se compran juntos. AICC lee su catálogo y sus pedidos, y cuenta los pares de los pedidos completados y en proceso: con qué frecuencia aparece cada par de productos en el mismo pedido. Si decide importar su historial de pedidos, puede aprender desde el principio de hasta 24 meses de pedidos anteriores.\n\nNo construye un perfil de cada comprador. [Datos y confianza](route:data-and-trust) enumera exactamente qué se usa."
+    },
+    "q44": {
+      "q": "¿Qué ocurre cuando un producto tiene poco o ningún historial de pedidos?",
+      "a": "AICC completa los puestos que el historial de compras no puede llenar: primero con productos con stock de la misma categoría y después con sus productos con stock más recientes. Las compras conjuntas reales ocupan su lugar a medida que llegan pedidos.\n\nHoy el título del widget es el mismo para todos los elementos, así que un producto alternativo puede aparecer bajo «Comprados juntos con frecuencia». En Recommendation Preview, en su panel, los acompañantes aprendidos muestran cuántas veces se compraron juntos; los productos alternativos no."
+    },
+    "q48": {
+      "q": "¿Personaliza AICC las recomendaciones para cada comprador?",
+      "a": "No. Las recomendaciones siguen al producto que se está viendo, no a un perfil del comprador. Los productos que ya están en el carrito de un comprador se dejan fuera del widget.\n\nEso mantiene la lógica fácil de explicar y significa que AICC no necesita un perfil de cada comprador."
+    },
+    "q45": {
+      "q": "¿Puedo controlar qué productos se recomiendan?",
+      "a": "Sí. AICC hace el recuento y usted conserva la decisión. Con Pin (fijar) mantiene un producto cerca de la parte superior; con Exclude (excluir) no aparece nunca; con Prefer (preferir) lo sube un puesto; y con Deprioritize (restar prioridad) lo baja un puesto.\n\nUna regla puede aplicarse a un par de productos o a un producto en la lista de cualquier producto, y puede tener fecha de caducidad. Exclude siempre gana, y los productos agotados o eliminados siguen fuera aunque estén fijados."
+    },
+    "q46": {
+      "q": "¿Qué veré realmente en el panel de AICC?",
+      "a": "Un panel en su administración de WordPress que muestra lo que hacen sus recomendaciones: la preparación de la configuración, las vistas, los clics y la tasa de clics de las recomendaciones, los paquetes añadidos al carrito, y los pedidos y los ingresos asociados al widget en los últimos 30 días.\n\nCon al menos 10 pedidos en el periodo, obtiene además observaciones en lenguaje sencillo a partir de sus propios datos, como los productos más vendidos y los paquetes sólidos. Una vista previa muestra qué recomienda AICC para cualquier producto, y el rendimiento de los productos se puede exportar a CSV."
+    },
+    "q47": {
+      "q": "¿Qué puede hacer realmente Ask Reco?",
+      "a": "Ask Reco es la guía dentro de su administración de WordPress. Responde preguntas habituales sobre su configuración, su rendimiento y los siguientes pasos a partir de los datos de su propio panel, con enlaces a las pantallas adecuadas, en inglés o en hebreo.\n\nSigue reglas fijas y no un modelo generativo, así que se ciñe a lo que muestran sus datos. Nunca cambia sus ajustes, y los compradores nunca lo ven."
+    },
+    "q49": {
+      "q": "¿Cómo mide AICC el rendimiento de las recomendaciones?",
+      "a": "AICC registra las vistas de los productos recomendados, los clics y los paquetes añadidos al carrito desde el widget. Un pedido se asocia al widget cuando un comprador añadió un paquete desde él y compró uno de esos productos en las 24 horas siguientes; se cuenta el total completo del pedido.\n\nEso es asociación, no una prueba de que el widget causara la venta. Necesita que su herramienta de consentimiento de cookies permita las estadísticas. [Cómo funciona la medición](route:product)."
+    },
+    "q50": {
+      "q": "¿Generó AICC los ingresos que muestra el panel?",
+      "a": "Son ingresos asociados al widget: pedidos en los que un comprador añadió un paquete desde él y compró uno de esos productos en las 24 horas siguientes. AICC informa de la asociación y le deja la conclusión a usted."
+    },
+    "q51": {
+      "q": "¿Cuánto tardaré en ver recomendaciones?",
+      "a": "AICC prepara su tienda en segundo plano después de conectar: sincroniza su catálogo y comprueba que el widget esté listo. El tiempo varía según el tamaño del catálogo y las tareas programadas de su sitio.\n\nCuando su tienda está lista, el widget empieza con productos de la misma categoría y los más recientes, y pasa a pares realmente comprados juntos a medida que se cuentan los pedidos. Importe sus pedidos anteriores (opcional) para empezar con pares ya aprendidos."
+    },
+    "q31": {
+      "q": "¿Tengo que importar mi historial de pedidos?",
+      "a": "No, es opcional. Cuando su tienda está conectada, AICC le ofrece importar hasta 24 meses de pedidos anteriores para aprender desde el principio las relaciones que ya existen entre sus productos. Si lo omite, AICC empieza con recomendaciones de la misma categoría y de los productos más recientes, y aprende de los pedidos nuevos.\n\nAICC no importa sus pedidos anteriores hasta que usted lo decida. Los pedidos hechos antes de conectar no se envían a menos que los importe; los hechos después de conectar se envían al crearse o actualizarse."
+    },
+    "q32": {
+      "q": "¿Y si omito la importación y más tarde cambio de opinión?",
+      "a": "Inícielo cuando quiera desde el panel de AICC. Importa los pedidos de los últimos 24 meses, incluidos los hechos desde que lo omitió, se puede cancelar y no duplica los pedidos que ya se importaron."
+    },
+    "q52": {
+      "q": "¿Importar pedidos antiguos cambiará mis pedidos de WooCommerce?",
+      "a": "No. La importación lee sus pedidos anteriores y envía datos de los pedidos a AICC; no los edita en WooCommerce. A partir de ahora, AICC añade unos pocos campos privados a los pedidos nuevos (ID de visitante y de sesión, solo con consentimiento de cookies)."
+    },
+    "q39": {
+      "q": "¿Qué pasa si cambio de tema?",
+      "a": "AICC encuentra su lugar con los hooks estándar de WooCommerce, no con ediciones del tema, así que normalmente sigue funcionando tras un cambio de tema. En un tema donde no puede encontrar un lugar seguro, se oculta en lugar de adivinar. Lo probamos con Storefront y con un tema de bloques."
+    },
+    "q38": {
+      "q": "¿Funciona AICC en el móvil?",
+      "a": "Sí. El widget se adapta al ancho del espacio donde está, tanto en móviles como en pantallas de escritorio. Este sitio web y su área de cuenta están diseñados primero para móviles."
     },
     "q37": {
       "q": "¿Qué idiomas se admiten?",
       "a": "Este sitio web y el área de cuenta: inglés, hebreo, español y ruso. La administración de AICC en WordPress: inglés y hebreo. El widget de la tienda online: inglés y hebreo completos, además de las etiquetas principales en español, ruso, francés, alemán y árabe."
     },
-    "q16": {
-      "q": "¿Qué pasa con el widget de recomendaciones cuando mi plan no está activo?",
-      "a": "AICC no muestra ningún widget, no carga ningún script y no establece cookies nuevas en la tienda online, y en su lugar se muestran las recomendaciones nativas de WooCommerce. Las cookies que ya están en los navegadores se quedan allí, y nada las lee."
+    "q08": {
+      "q": "¿Tengo que pegar una clave de licencia?",
+      "a": "Normalmente, no. Usted inicia sesión en su cuenta de AICC y conecta cada tienda desde su propia pantalla de AICC en WordPress. En su cuenta hay una clave de recuperación de un solo uso para casos avanzados poco habituales."
     },
     "q09": {
       "q": "¿Cuál es la diferencia entre Solo, Studio y Agency?",
-      "a": "Solo varía cuántas tiendas puede conectar: 1, 3 o 10. Todo lo demás es idéntico."
+      "a": "Únicamente cuántas tiendas puede conectar: 1, 3 o 10. Todo lo demás es idéntico."
+    },
+    "q10": {
+      "q": "¿Los planes tienen funciones distintas?",
+      "a": "No. Todos los planes tienen todas las funciones: el widget, el panel y las observaciones, las reglas, Ask Reco y la importación opcional del historial de pedidos. Solo cambia el número de tiendas."
+    },
+    "q55": {
+      "q": "¿Qué cuenta como una tienda?",
+      "a": "Cada dirección de sitio web que conecta usa un cupo de tienda. La tienda de pruebas y la de producción son tiendas distintas, igual que las versiones con www y sin www de una dirección, y http y https. Desconectar una tienda libera su cupo al instante."
     },
     "q11": {
       "q": "¿Cómo conecto una segunda o tercera tienda?",
       "a": "Abra AICC en la administración de WordPress de la otra tienda, inicie sesión en la misma cuenta de AICC y elija el plan. Usa un cupo libre de su plan."
+    },
+    "q12": {
+      "q": "¿Qué pasa cuando todos mis cupos de tienda están en uso?",
+      "a": "Desconecte una tienda que ya no necesite o compre un plan mayor. Un plan mayor es una compra aparte, con sus propios 365 días de duración y sus propios cupos de tienda; no abona ni sustituye su plan actual. ¿Más de 10 tiendas? Contacte con soporte."
+    },
+    "q13": {
+      "q": "¿Tengo que pagar otra vez para mover una tienda a otro cupo libre?",
+      "a": "No. Desconecte la tienda antigua y conecte la nueva. Al desconectar se libera el cupo al instante, sin comisión de traslado."
+    },
+    "q14": {
+      "q": "¿Puedo volver a conectar una tienda más tarde?",
+      "a": "Sí, mientras su plan esté activo y tenga un cupo libre. No tiene que comprar de nuevo, y normalmente no necesita una clave."
+    },
+    "q15": {
+      "q": "¿Qué pasa con la tienda desconectada?",
+      "a": "AICC se detiene allí: no hay widget en la tienda online y no se envían datos de la tienda (la comprobación técnica de registro sigue ejecutándose). WooCommerce funciona con normalidad. El historial de AICC de la tienda puede conservarse hasta 12 meses, pero hoy no se elimina nada automáticamente, así que puede conservarse más tiempo hasta que se elimine a petición; al reconectar puede retomarse donde se dejó. [Conservación exacta](route:data-and-trust)."
+    },
+    "q22": {
+      "q": "Si me voy y vuelvo más tarde, ¿empiezo desde cero?",
+      "a": "No necesariamente. Si su plan venció, renuévelo y sus tiendas vuelven sin reconectar. Si se reembolsó, compre un plan nuevo y conecte la misma tienda: AICC puede reconocerla si la tienda aún conserva su conexión con AICC, y su historial anterior puede volver a estar disponible. Un plan reembolsado nunca se reactiva.\n\nCuando vuelve, AICC se pone al día con los productos y los pedidos del periodo de pausa usando su historial real de WooCommerce, y nunca inventa actividad del tiempo en que no estuvo funcionando. Si eligió no importar su historial de pedidos, AICC no lo importará sin preguntar; puede aceptar más adelante."
+    },
+    "q24": {
+      "q": "¿Qué pasa con los productos y pedidos creados mientras AICC estuvo inactivo?",
+      "a": "Cuando vuelve, AICC actualiza su copia del catálogo (incluidos los productos que eliminó). Si había elegido importar su historial de pedidos, también importa los pedidos del periodo de pausa; si no, la importación sigue siendo decisión suya."
+    },
+    "q25": {
+      "q": "¿Inventará AICC historial del tiempo en que estuvo inactivo?",
+      "a": "No. Los pedidos anteriores se importan como pedidos. No se crean impresiones, clics ni ingresos atribuidos para un tiempo en que AICC no estaba funcionando."
+    },
+    "q53": {
+      "q": "¿Puedo probar AICC sin comprometerme a renovar automáticamente?",
+      "a": "Sí. Un plan dura 365 días fijos, la renovación es manual y AICC nunca le cobra automáticamente. La compra inicial de su plan incluye además una garantía de devolución del dinero de 14 días. Consulte la [política de reembolso](route:refund-policy) para ver las condiciones completas."
+    },
+    "q56": {
+      "q": "¿Y si pruebo AICC y no encaja con mi tienda?",
+      "a": "La compra inicial de su plan incluye una garantía de devolución del dinero de 14 días. Los 14 días empiezan cuando se recibe el pago y se emite su plan. Consulte la [política de reembolso](route:refund-policy) para ver las condiciones completas.\n\nTras un reembolso completo, el plan se revoca y AICC se detiene en sus tiendas; WooCommerce sigue como antes, y no hay nada más que cancelar."
+    },
+    "q17": {
+      "q": "¿Qué pasa si mi plan vence?",
+      "a": "Pasados 365 días, el plan termina y AICC se pausa en sus tiendas; WooCommerce no se ve afectado. Renueve el mismo plan y sus tiendas vuelven sin reconectar."
+    },
+    "q18": {
+      "q": "¿Mi plan se renueva automáticamente?",
+      "a": "No. Usted mantiene el control: un plan dura 365 días fijos, y AICC nunca lo renueva por usted. Usted renueva a mano desde Planes y tiendas cuando lo decide."
+    },
+    "q19": {
+      "q": "¿Guardará AICC un permiso para volver a cobrarme?",
+      "a": "No. No se guarda ninguna autorización de cobro: AICC no conserva permiso para volver a cobrarle, así que no se puede cobrar nada más tarde sin usted. Cada renovación es una compra que usted inicia."
+    },
+    "q20": {
+      "q": "¿Cómo renuevo?",
+      "a": "Desde Planes y tiendas en su cuenta. Renovar antes conserva su tiempo sin usar: una renovación suma 365 días a la más tardía de estas dos fechas: hoy o su fecha de fin actual."
+    },
+    "q26": {
+      "q": "¿Qué es la política de reembolso de 14 días?",
+      "a": "La compra inicial de su plan incluye una garantía de devolución del dinero de 14 días. Los 14 días empiezan cuando se recibe el pago y se emite su plan. Un reembolso se hace al método de pago original cuando el procesador lo permite. Consulte la [política de reembolso](route:refund-policy) para ver las condiciones completas."
     },
     "q27": {
       "q": "¿Cuándo empiezan los 14 días?",
@@ -36,9 +197,57 @@
       "q": "¿La garantía de 14 días se aplica a las renovaciones?",
       "a": "La garantía cubre la compra inicial. Las renovaciones manuales posteriores no están cubiertas automáticamente."
     },
+    "q54": {
+      "q": "¿Qué pasa después de los primeros 14 días?",
+      "a": "Su plan sigue su curso durante el resto de sus 365 días. Nada se renueva ni se cobra automáticamente, así que usted decide si renueva al acercarse el final. La garantía no afecta a ningún derecho que tenga por ley."
+    },
+    "q29": {
+      "q": "¿Qué pasa después de un reembolso completo?",
+      "a": "El plan se revoca y AICC se detiene en sus tiendas. El reembolso se hace al método de pago original cuando el procesador de pagos lo permite. Su tienda WooCommerce no se ve afectada."
+    },
     "q30": {
       "q": "¿Un reembolso afecta a mi tienda WooCommerce?",
       "a": "No. Los productos, pedidos, clientes y el proceso de pago siguen como estaban."
+    },
+    "q04": {
+      "q": "¿Qué pasa si AICC no está disponible?",
+      "a": "El widget se oculta solo y reaparecen los productos relacionados y las ventas cruzadas propios de WooCommerce, así que la página sigue funcionando y su tienda sigue vendiendo. Esto se aplica con el ajuste por defecto, que sustituye los productos relacionados de WooCommerce por el widget de AICC."
+    },
+    "q05": {
+      "q": "¿Puede AICC ralentizar o romper mi proceso de pago?",
+      "a": "AICC está construido para que el proceso de pago no dependa de él. Hacer un pedido nunca espera a AICC: los datos del pedido se ponen en cola y se envían en segundo plano.\n\nSi AICC o sus servidores van lentos o no funcionan, el widget se oculta y WooCommerce sigue vendiendo. [Cómo AICC se mantiene al margen](route:product)."
+    },
+    "q16": {
+      "q": "¿Qué pasa con el widget de recomendaciones cuando mi plan no está activo?",
+      "a": "AICC no muestra ningún widget, no carga ningún script y no establece cookies nuevas en la tienda online, y en su lugar se muestran las recomendaciones nativas de WooCommerce. Las cookies que ya están en los navegadores se quedan allí, y nada las lee."
+    },
+    "q40": {
+      "q": "¿Puedo quitar AICC sin dejar rastro?",
+      "a": "Sí. AICC no edita los productos, precios ni plantillas de WooCommerce; por defecto solo oculta el bloque de productos relacionados de WooCommerce mientras se muestra su widget. Desconecte primero la tienda en Planes y tiendas para liberar su cupo, luego desactive AICC y vuelven las recomendaciones nativas.\n\nAICC deja en su base de datos sus ajustes y los campos privados de visitante y de sesión que añadió a los pedidos. [Datos y confianza](route:data-and-trust) explica qué se queda con AICC."
+    },
+    "q33": {
+      "q": "¿Qué datos usa AICC?",
+      "a": "AICC usa los datos de catálogo y de pedidos que necesita para entender las relaciones entre productos. Nunca recibe datos de pago ni datos de contacto de los compradores en claro (correo, nombre, teléfono, dirección). La medición a nivel de visitante depende del consentimiento: necesita que su herramienta de consentimiento de cookies permita las estadísticas.\n\n[Vea exactamente qué usa AICC](route:data-and-trust). El detalle legal está en la [política de privacidad](route:privacy)."
+    },
+    "q34": {
+      "q": "¿Se agrupan los datos de mis distintas tiendas o se usan entre tiendas?",
+      "a": "No. Los datos de cada tienda se mantienen separados. AICC no los agrupa, y los datos de una tienda no se usan para hacer recomendaciones a otra."
+    },
+    "q35": {
+      "q": "¿Puede una tienda, o su credencial, acceder a los datos de otra tienda?",
+      "a": "No. Cada tienda tiene su propia credencial, y todo lo que AICC almacena está limitado a la única tienda a la que pertenece. Una credencial solo funciona para su propia tienda."
+    },
+    "q36": {
+      "q": "¿Cómo puedo solicitar la eliminación o la exportación de mis datos?",
+      "a": "Escriba a la dirección de soporte desde el correo de su cuenta; estas solicitudes se gestionan a mano. La eliminación borra eventos, impresiones, clics y conversiones y anonimiza los pedidos. Algunos registros siguen su propia conservación o deben mantenerse, y las exportaciones se preparan a mano. [Datos y confianza](route:data-and-trust) tiene los detalles."
+    },
+    "q21": {
+      "q": "¿Qué pasa con mis datos si mi plan vence?",
+      "a": "AICC puede conservar el historial de su tienda cuando se pausa el acceso, para que pueda continuar en lugar de empezar desde cero. Los datos operativos pueden conservarse hasta 12 meses después de que termine el acceso, pero hoy no se elimina nada automáticamente, así que los datos pueden conservarse más tiempo hasta que se eliminen a petición. Los registros de cuenta y de compra siguen reglas distintas. [Conservación exacta](route:data-and-trust)."
+    },
+    "q23": {
+      "q": "¿Se conserva el historial anterior de mi tienda?",
+      "a": "Posiblemente. Los datos operativos pueden conservarse hasta 12 meses después de que termine el acceso, pero hoy no se elimina nada automáticamente, así que los datos pueden conservarse más tiempo hasta que se eliminen a petición. [Conservación exacta](route:data-and-trust)."
     }
   }
 }

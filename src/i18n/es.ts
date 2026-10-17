@@ -2,16 +2,35 @@ import type { Dictionary } from "./en";
 import type { DeepPartial } from "./merge";
 
 /**
- * Spanish dictionary: a PARTIAL dictionary (same shape as en.ts). It holds only strings whose English meaning is unchanged since they
- * were translated; every other unit falls back to English at load time (shown lang="en" dir="ltr"), see merge.ts. Stage 2 translates the rest.
- * Texts have not yet been reviewed by native speakers (see common.draft.translation). Legal text under `legal.*` is a draft translation
- * pending native legal review. FAQ translations live in brand/content/faq.es.json.
+ * Spanish dictionary (neutral international Spanish, formal "usted"). A PARTIAL dictionary in shape (see merge.ts), but every unit of en.ts is
+ * translated, so nothing falls back to English. Machine draft: texts have not yet been reviewed by native speakers (see common.draft.translation).
+ * Legal text under `legal.*` is a draft translation pending native legal review. FAQ translations live in brand/content/faq.es.json.
+ *
+ * Conventions a native reviewer should check:
+ *  - The plugin admin is English-only (and Hebrew), so labels that are REAL admin labels stay in English inside the site's UI replicas:
+ *    Recommendation Views / Clicks / Click Rate, Bundle Add-To-Carts, Associated Orders / Revenue, Merchant Insights, Recommendation Preview,
+ *    Strong Bundle Opportunity and the other insight titles, "Bought together {n} times", the rule names Pin / Prefer / Deprioritize / Exclude,
+ *    "Go to Order History". The text around them is Spanish and carries a short Spanish gloss where it helps ("Pin (fijar)").
+ *  - The storefront widget strings are the plugin's own Spanish strings (class-aicc-widget.php get_widget_strings()), verbatim.
+ *  - "30 días" is written with a no-break space (30 días) so a number never separates from its unit.
  */
 export const es: DeepPartial<Dictionary> = {
   meta: {
     siteName: "AI Commerce Copilot",
     ogImageAlt: "AICC: «Comprados juntos con frecuencia», aprendido de los pedidos de su propia tienda. Con Reco, la guía de AICC.",
     pages: {
+      home: {
+        title: "AICC: «Comprados juntos con frecuencia», aprendido de sus pedidos",
+        description: "AICC aprende qué productos compran juntos sus clientes, los muestra en las páginas de producto y de carrito, y le ofrece un panel y controles. Desde {priceSolo} al año.",
+      },
+      product: {
+        title: "Cómo funciona AICC: «Comprados juntos con frecuencia» para WooCommerce",
+        description: "Vea lo que ven los compradores, cómo decide AICC qué recomendar, qué puede medir y controlar, y cómo protege el proceso de pago de su WooCommerce.",
+      },
+      pricing: {
+        title: "Precios: planes Solo, Studio y Agency de AICC",
+        description: "Todos los planes incluyen el producto AICC completo. Plan Solo {priceSolo}, Studio {priceStudio}, Agency {priceAgency} al año, según el número de tiendas. Renovación manual y garantía de devolución del dinero de 14 días.",
+      },
       dataTrust: {
         title: "Datos y confianza: qué lee AICC y qué no",
         description: "Los datos de tienda y de pedidos que usa AICC, las cookies que puede establecer, cómo se mantienen separadas las tiendas y cuánto tiempo pueden conservarse los datos.",
@@ -31,6 +50,10 @@ export const es: DeepPartial<Dictionary> = {
       accessibility: {
         title: "Declaración de accesibilidad",
         description: "Cómo aspiramos a cumplir el nivel AA de WCAG 2.2 en este sitio web, qué hemos hecho, las limitaciones conocidas y cómo informar de una barrera.",
+      },
+      questions: {
+        title: "Preguntas sobre AICC, con respuestas claras",
+        description: "Respuestas directas sobre qué hace AICC, cómo funcionan las recomendaciones, planes y tiendas, renovación y reembolsos, datos y qué ocurre cuando se pausa el acceso.",
       },
       notFound: {
         title: "Página no encontrada",
@@ -66,6 +89,7 @@ export const es: DeepPartial<Dictionary> = {
     getStarted: "Empezar",
     seeHow: "Ver cómo funciona",
     seePricing: "Ver precios",
+    seeAllQuestions: "Ver todas las preguntas",
     readHistory: "Lea cómo se puede conservar su historial",
     learnMoreProduct: "Cómo funciona AICC",
     home: "Inicio de AICC",
@@ -97,6 +121,7 @@ export const es: DeepPartial<Dictionary> = {
       storage: "Los ajustes se guardan en este navegador (almacenamiento local).",
     },
     footer: {
+      tagline: "«Comprados juntos con frecuencia» para WooCommerce, aprendido de sus propios pedidos, con el panel y los controles a juego.",
       productHeading: "AICC",
       trustHeading: "Confianza y legal",
       languageHeading: "Idioma",
@@ -119,6 +144,8 @@ export const es: DeepPartial<Dictionary> = {
       recommended: "Recomendado para 2 o 3 tiendas",
       sameFeatures: "Todas las funciones, en todos los planes",
       countHelper: "Cuente las tiendas que quiere conectar: 1 tienda es el plan Solo, de 2 a 3 es Studio, de 4 a 10 es Agency.",
+      term: "Plan fijo de 365 días. La renovación es manual.",
+      renewal: "Usted mantiene el control: sin cobros automáticos. AICC nunca renueva su plan por su cuenta.",
       guarantee: "Garantía de devolución del dinero de 14 días en su primera compra",
       usd: "Todos los precios están en dólares estadounidenses (USD).",
     },
@@ -127,6 +154,7 @@ export const es: DeepPartial<Dictionary> = {
     draftUpdated: "Borrador actualizado por última vez",
     version: "Estado",
     versionDraft: "Borrador",
+    fallbackTag: "Inglés",
   },
   brand: {
     watchDemo: "Ver demostración",
@@ -135,12 +163,15 @@ export const es: DeepPartial<Dictionary> = {
       orders: "Historial de pedidos",
       clicks: "Tasa de clics",
       recs: "Recomendaciones",
-      insights: "Información útil",
+      insights: "Observaciones",
       bundles: "Paquetes",
     },
+    motion: { pause: "Pausar animación", play: "Reanudar animación" },
     modal: {
       title: "Demostración del producto",
       close: "Cerrar",
+      placeholder: "Pronto habrá un video breve del producto. Mientras tanto, pruebe la demostración interactiva.",
+      tryDemo: "Probar la demostración interactiva",
       captionsLabel: "Subtítulos",
     },
   },
@@ -150,9 +181,26 @@ export const es: DeepPartial<Dictionary> = {
     home: "Ir a la página de inicio",
     questions: "Leer las preguntas",
   },
+
+  // Kit module: fbt-demo.js. The "What shoppers see" side mirrors the plugin's own Spanish widget strings; the "What you see" side is a replica of
+  // the English-only admin, so its labels (rule names, dashboard tiles, insight title and metric, Recommendation Preview) stay English.
   demo: {
+    label: "Datos de ejemplo: no son de una tienda real",
     heading: "Pruebe el widget",
     groupLabel: "Productos de este paquete",
+    intro: "Marque los productos y vea cómo cambia el total del paquete. Los productos, los precios y las cantidades son datos de ejemplo inventados.",
+    nudge: "Compare los dos y luego véalo desde su lado.",
+    result: {
+      without: "Los productos relacionados básicos se eligen de la misma categoría: {names}. Nada de ello procede de lo que los compradores compran juntos.",
+      withTwo: "El mismo producto. Con AICC, los acompañantes son «{a}» y «{b}», comprados juntos {na} y {nb} veces.",
+      withOne: "El mismo producto. Con AICC, el primer acompañante es «{a}», comprado junto {na} veces; sus reglas dan forma al resto.",
+      withNone: "El mismo producto. Sus reglas han quitado aquí los acompañantes aprendidos, así que AICC completa la lista con productos de la misma categoría.",
+      merchant: "El mismo paquete visto desde su lado: por qué aparece cada producto y las reglas que dan forma a la lista.",
+    },
+    plain: {
+      title: "Productos relacionados",
+      note: "Los productos relacionados propios de WooCommerce: la misma categoría o las mismas etiquetas, sin paquete y sin total.",
+    },
     summary: "Seleccionados: {count}. Total del paquete: {total}.",
     widget: {
       title: "Comprados juntos con frecuencia",
@@ -162,13 +210,23 @@ export const es: DeepPartial<Dictionary> = {
       addMany: "Añadir {count} productos al carrito",
       added: "Añadido al carrito",
       selectAtLeastOne: "Selecciona al menos un producto",
-      noteAdd: "No se añade nada a ningún sitio: es una ilustración.",
+      noteAdd: "No se añade nada: es una ilustración.",
       addFew: "Añadir {count} productos al carrito",
     },
     mode: {
+      legend: "Comparar",
+      without: "Productos relacionados básicos",
       with: "Con AICC",
+      captionWithout: "Productos relacionados básicos: misma categoría, no a partir de pedidos.",
+      captionWith: "Con AICC: lo que más se compra junto.",
       withoutCaption: "Los productos relacionados de WooCommerce salen de la misma categoría o de las mismas etiquetas. No se basan en lo que los compradores compran juntos.",
       withCaption: "AICC muestra los productos que aparecen en los mismos pedidos que el producto que se está viendo.",
+    },
+    view: {
+      legend: "Vista",
+      shopper: "Lo que ven los compradores",
+      merchant: "Lo que ve usted",
+      cue: "Cambie a «Lo que ve usted» para ver el mismo paquete desde su lado.",
     },
     products: {
       kit: "Juego de café de filtro",
@@ -180,55 +238,597 @@ export const es: DeepPartial<Dictionary> = {
       scale: "Taza de viaje",
     },
     anchorTag: "Viendo este producto",
+    merchant: {
+      heading: "Por qué cada producto está en la lista",
+      intro: "El mismo paquete de ejemplo, tal como lo vería en su administración de WordPress, cuyas etiquetas están en inglés. En su tienda, las cantidades salen de sus propios pedidos.",
+      sameBundle: "El mismo paquete que en la vista del comprador",
+      forProduct: "Recomendaciones para",
+      insightHeading: "Una observación sobre este paquete",
+      insightTitle: "Strong Bundle Opportunity",
+      insightBody: "«Juego de café de filtro» y «{product}» suelen comprarse juntos.",
+      insightNone: "En la lista actual no queda ningún paquete fuerte.",
+      insightMetric: "Times bought together",
+      askHeading: "Pregunte a Reco por este paquete",
+      askLabel: "Respuesta de Reco",
+      askQuestion: "¿Qué paquete es el más fuerte?",
+      askAnswer: "{product} es el acompañante más fuerte del juego de café de filtro: comprados juntos {n} veces, más que cualquier otro producto de la lista. Abra Recommendation Preview para ver todos los acompañantes.",
+      askNone: "Ya no queda en la lista ningún acompañante comprado junto. AICC completaría los puestos con productos de la misma categoría.",
+      colProduct: "Producto",
+      colWhy: "Por qué está aquí",
+      colRule: "Su regla",
+      position: "Puesto {n}",
+      boughtTogether: "Bought together {n} times",
+      fallback: "Sin recuento: completado con la misma categoría",
+      previewNote: "En Recommendation Preview, en su panel, los acompañantes aprendidos muestran cuántas veces se compraron juntos; los productos añadidos como alternativa solo muestran un precio.",
+      shopperNow: "El comprador ve ahora:",
+      ruleLabel: "Regla para {product}",
+      rules: { none: "Sin regla", pin: "Pin", prefer: "Prefer", deprioritize: "Deprioritize", exclude: "Exclude" },
+      excluded: "Excluido: nunca se muestra a los compradores.",
+      ruleNote: "Las reglas se aplican después del recuento. Exclude siempre gana; Prefer y Deprioritize mueven un solo puesto.",
+      tilesHeading: "Lo que registra su panel",
+      tiles: { views: "Recommendation Views", clicks: "Recommendation Clicks", adds: "Bundle Add-To-Carts" },
+      tileNote: "Cifras de ejemplo. Añada el paquete al carrito en la vista del comprador y Bundle Add-To-Carts sube una unidad.",
+      tileAdded: "+1 por el añadido al carrito que acaba de hacer",
+      announceRule: "{product}: {rule}. La lista del comprador es ahora: {list}.",
+      announceNone: "{product}: sin regla. La lista del comprador es ahora: {list}.",
+      listEmpty: "nada",
+    },
+    why: {
+      heading: "Por qué AICC eligió estos",
+      recoIntro: "Reco es su guía dentro de AICC. Aquí explica cada elección.",
+      none: "Marque un producto para ver por qué AICC lo incluye junto al juego de café de filtro.",
+      filters: "En los pedidos de esta tienda de ejemplo, los filtros de papel aparecen con el juego de café de filtro más que cualquier otro producto, y se gastan con cada preparación.",
+      grinder: "Un molinillo manual se compró junto menos veces que los filtros: quienes montan su rutina de café de filtro suelen añadir uno, pero no siempre.",
+      kettle: "Un hervidor se compró junto con menos frecuencia todavía, así que AICC lo lista después de los productos anteriores.",
+      mug: "Todavía no hay historial de compras de este par, así que este puesto se completa con la misma categoría. A medida que lleguen pedidos, las compras conjuntas reales ocuparán su lugar.",
+      without: "Los productos relacionados básicos salen de la misma categoría, que es como funcionan por defecto los productos relacionados de WooCommerce. Nada de ello procede de lo que compran juntos sus compradores.",
+      merchant: "Esta es la evidencia detrás de la lista: cuántas veces se compró cada producto junto con el juego de café de filtro y qué puestos se completan con la misma categoría.",
+    },
+    reco: {
+      intro: "Reco: marque un producto y le diré por qué está en la lista.",
+      filters: "Reco: los filtros de papel se compraron junto con el juego de café de filtro más a menudo, por eso van primero.",
+      grinder: "Reco: un molinillo se compró junto menos veces que los filtros, así que va a continuación.",
+      kettle: "Reco: un hervidor se compró junto con menos frecuencia, así que se lista después de los demás.",
+      mug: "Reco: todavía no hay historial de compras de este par, así que es una alternativa de la misma categoría.",
+      without: "Reco: los productos relacionados básicos salen de la categoría, no de los pedidos.",
+      merchant: "Reco: esto es lo que mostraría su panel. Cambie una regla y la lista del comprador de abajo la sigue.",
+    },
     keyboardHint: "Use Tab y la barra espaciadora para marcar productos. Las teclas de flecha permiten pasar de uno a otro.",
+    plainHint: "Este es el bloque básico de productos relacionados: nada que marcar y sin total del paquete.",
     sample: "Ejemplo",
   },
+
+  // Kit module: rules-demo.js. The rule names are the admin's own English labels; the help text glosses them in Spanish.
+  rules: {
+    label: "Datos de ejemplo: no son de una tienda real",
+    heading: "Lo que mostraría el widget",
+    productLabel: "Producto al que aplicar una regla",
+    actionLabel: "Regla",
+    actions: { pin: "Pin", prefer: "Prefer", deprioritize: "Deprioritize", exclude: "Exclude" },
+    help: {
+      none: "Elija un producto y una regla. Si elige otra vez la misma regla, se quita.",
+      pin: "Pin (fijar): mantiene este producto cerca de la parte superior.",
+      exclude: "Exclude (excluir): nunca muestra este producto.",
+      prefer: "Prefer (preferir): da a este producto un poco más de prioridad.",
+      deprioritize: "Deprioritize (restar prioridad): baja la prioridad de este producto sin quitarlo del todo.",
+    },
+    effect: {
+      none: "Sin regla en este producto.",
+      pin: "Pin: el producto pasa al primer puesto.",
+      exclude: "Exclude: el producto se quita de la lista. Exclude siempre gana.",
+      prefer: "Prefer: el producto sube un puesto.",
+      deprioritize: "Deprioritize: el producto baja un puesto.",
+      stays: "Esta vez no se mueve: Prefer y Deprioritize mueven un solo puesto, nunca entre grupos y nunca por delante de un producto con el mismo tipo de regla.",
+      outOfStock: "Los productos agotados siguen fuera, aunque estén fijados con Pin.",
+    },
+    products: {
+      filters: "Filtros de papel, paquete de 100",
+      grinder: "Molinillo manual",
+      kettle: "Hervidor de cuello de cisne",
+      mug: "Taza de cerámica",
+      towel: "Paño de cocina de lino",
+      travel: "Taza de viaje",
+    },
+    evidence: { learned: "Comprados juntos {n} veces", fallback: "De la misma categoría", outOfStock: "Agotado" },
+    tags: { pin: "Pinned", prefer: "Preferred", deprioritize: "Deprioritized", exclude: "Excluded" },
+    place: "Puesto {n}",
+    hiddenHeading: "No se muestra a los compradores",
+    hiddenNone: "No se oculta nada.",
+    reset: "Restablecer",
+    activeHeading: "Reglas aplicadas",
+    activeNone: "Aún no hay reglas.",
+    announceList: "Lista del widget: {list}.",
+    announceHidden: "No se muestra: {list}.",
+    announceReset: "Se han quitado todas las reglas. La lista vuelve al orden propio de AICC.",
+    smallprint: "Ilustración con productos de ejemplo.",
+  },
+
+  // Kit module: dash-preview.js. A replica of the real (English-only) dashboard blocks: tile names, insight titles and metrics, Recommendation Preview
+  // and "Last 30 days" stay English; the "Shopper sees" panel uses the Spanish widget strings; sentences are Spanish.
+  dash: {
+    label: "Datos de ejemplo: no son de una tienda real",
+    shopperTitle: "Lo que ve el comprador",
+    youTitle: "Lo que ve usted",
+    widgetTitle: "Comprados juntos con frecuencia",
+    widgetSubtitle: "Los clientes suelen comprar estos productos juntos.",
+    widgetAdd: "Añadir 3 productos al carrito",
+    widgetTotal: "Total del paquete",
+    products: { kit: "Juego de café de filtro", filters: "Filtros de papel, paquete de 100", grinder: "Molinillo manual", mug: "Taza de cerámica" },
+    page: "AI Commerce Copilot",
+    period: "Last 30 days",
+    tiles: {
+      views: "Recommendation Views",
+      clicks: "Recommendation Clicks",
+      rate: "Recommendation Click Rate",
+      adds: "Bundle Add-To-Carts",
+      orders: "Associated Orders",
+      revenue: "Associated Revenue",
+    },
+    associationNote: "Los pedidos y los ingresos están asociados al widget; no prueban que los causara.",
+    insightsHeading: "Merchant Insights",
+    insightTitle: "Strong Bundle Opportunity",
+    insightBody: "«Juego de café de filtro» y «Filtros de papel, paquete de 100» suelen comprarse juntos.",
+    insightMetric: "Times bought together",
+    insightGate: "Las observaciones aparecen cuando hay al menos 10 pedidos en el periodo; cada tipo necesita además datos suficientes propios.",
+    insightsLead: "Observaciones en lenguaje sencillo a partir de reglas fijas, no escritas por una IA. Estos son los cuatro tipos que AICC puede mostrar.",
+    insightsBanner: "Top Recommendation",
+    insightKinds: {
+      hot: { title: "Top Performing Product", body: "«Filtros de papel, paquete de 100» es uno de sus productos más vendidos en este periodo.", metric: "Share of store purchases", value: "24%" },
+      bundle: { title: "Strong Bundle Opportunity", body: "«Juego de café de filtro» y «Filtros de papel, paquete de 100» suelen comprarse juntos.", metric: "Times bought together", value: "48" },
+      interest: { title: "High Interest, Low Conversion", body: "«Hervidor de cuello de cisne» se añade a menudo a los carritos, pero se compra menos.", metric: "Add-to-cart count", value: "22" },
+      winner: { title: "Recommendation Winner", body: "«Molinillo manual» recibe una gran parte de los clics en los productos recomendados.", metric: "Recommendation clicks", value: "41" },
+    },
+    previewHeading: "Recommendation Preview",
+    previewFor: "Recomendaciones para",
+    previewLearned: "Bought together {n} times",
+    callouts: {
+      a: "Actividad de las recomendaciones de los últimos 30 días.",
+      b: "Pedidos e ingresos asociados al widget en las 24 horas posteriores a añadir un paquete.",
+      c: "Observaciones en lenguaje sencillo a partir de reglas fijas, no de una IA.",
+      d: "Vea qué recomienda AICC para cualquier producto.",
+    },
+  },
+
+  // Kit module: reco-ask.js. In the plugin Reco answers in English and Hebrew only, so the footnote says the sample conversation is shown translated.
+  // "Go to Order History" is the real link label in the admin and stays English.
+  ask: {
+    label: "Conversación de ejemplo",
+    title: "Ask Reco",
+    suggestionsLabel: "Pruebe una pregunta de ejemplo",
+    answerLabel: "Respuesta de Reco",
+    footnote: "Las respuestas salen de los datos de su propio panel. Reco ofrece información y enlaces; nunca cambia sus ajustes. En su administración Reco responde en inglés y en hebreo; aquí la conversación aparece traducida.",
+    qa: {
+      next: {
+        q: "¿Qué debería hacer ahora?",
+        a: "Paso siguiente opcional: importar hasta 24 meses de su historial de pedidos de WooCommerce para que AICC aprenda qué productos compran ya juntos sus clientes. Los pedidos anteriores nunca se importan si usted no lo decide; sin la importación, AICC empieza con alternativas del catálogo y aprende de los pedidos nuevos.",
+        link: "Go to Order History",
+      },
+      perf: {
+        q: "¿Cómo están funcionando mis recomendaciones?",
+        a: "En los últimos 30 días sus recomendaciones tuvieron 3860 vistas y 241 clics, y los compradores añadieron el paquete al carrito 97 veces.",
+        link: "Abrir la sección de rendimiento",
+      },
+    },
+  },
+
+  loop: {
+    label: "Cómo funciona AICC, paso a paso",
+    title: "Cómo funciona, paso a paso",
+    steps: ["Sus pedidos", "Pares encontrados", "Mostrados a los compradores", "Clics y carritos contados", "Observaciones", "Sus reglas", "Aprende de los pedidos nuevos"],
+  },
+
+  faqSearch: {
+    label: "Buscar en las preguntas",
+    placeholder: "Pruebe con «reembolso», «pago» o «tiendas»",
+    hint: "Busca en las preguntas y respuestas de esta página. Su búsqueda se queda en su navegador.",
+    clear: "Borrar",
+    results: { one: "1 pregunta coincide con «{q}».", other: "{n} preguntas coinciden con «{q}»." },
+    empty: "Ninguna pregunta coincide con «{q}». Pruebe con menos palabras o explore por tema.",
+  },
+
+  flows: {
+    order: {
+      title: "Cuando se hace un pedido",
+      steps: ["Pedido realizado", "Datos en cola en su tienda", "Enviados a AICC en segundo plano"],
+      note: "Hacer un pedido nunca espera a AICC.",
+    },
+    down: {
+      title: "Si AICC o sus servidores van lentos o no funcionan",
+      steps: ["AICC no disponible", "El widget se oculta", "Vuelven los productos relacionados de WooCommerce"],
+      note: "Con el ajuste por defecto, cuando se ejecuta el JavaScript de la página.",
+    },
+    inactive: {
+      title: "Si su plan no está activo",
+      steps: ["Plan no activo", "Sin widget, sin script, sin cookies nuevas", "WooCommerce funciona como siempre"],
+      note: "Nada de AICC aparece en su tienda online.",
+    },
+  },
+
   home: {
     hero: {
       eyebrow: "Comprados juntos con frecuencia para WooCommerce",
       titleLead: "Muestre a sus compradores lo que sus propios clientes",
       titleAccent: "compran juntos.",
+      lead: "AICC encuentra en sus pedidos de WooCommerce los productos que sus clientes ya compran juntos y los muestra como un paquete que los compradores añaden en un solo paso, en las páginas de producto y de carrito. Su panel de WordPress muestra qué recomienda y por qué, y sus reglas dan forma al resultado.",
+      facts: {
+        learned: "Aprendido de sus propios pedidos",
+        control: "Usted controla qué se recomienda",
+        checkout: "Hacer un pedido nunca espera a AICC",
+      },
+      timeline: "Cuando su tienda está lista, el widget empieza con productos de la misma categoría y los más recientes, y pasa a pares realmente comprados juntos a medida que se cuentan los pedidos. Importe sus pedidos anteriores (opcional) para empezar con pares ya aprendidos.",
+      confidence: {
+        price: "Planes desde {priceSolo} al año",
+        guarantee: "Garantía de devolución del dinero de 14 días en su primera compra",
+        renewal: "Renovación manual, sin cobros automáticos",
+      },
     },
     demo: {
       title: "«Comprados juntos con frecuencia», aprendido de verdad.",
+      lead: "WooCommerce sabe qué productos comparten categoría. AICC añade la señal que los comerciantes suelen tener que adivinar: qué productos compran juntos de verdad los clientes, con alternativas sensatas donde el historial es escaso.",
+    },
+    why: {
+      title: "Los productos relacionados se eligen por categoría. AICC los elige por cesta de compra.",
+      lead: "Los productos relacionados de WooCommerce son una opción por defecto razonable: emparejan productos por categoría y etiquetas. No pueden decirle qué productos compra la gente junta de verdad.",
+      points: {
+        intent: {
+          title: "La misma categoría no es la misma intención.",
+          body: "Un molinillo y un paquete de granos de café pueden estar en categorías distintas y acabar en la misma cesta. La coincidencia por categoría no lo ve. Sus pedidos, sí.",
+        },
+        evidence: {
+          title: "Sus pedidos son la evidencia.",
+          body: "AICC cuenta qué productos aparecen juntos en sus pedidos completados y en proceso, y lista primero los acompañantes más frecuentes.",
+        },
+        fallback: {
+          title: "Un historial escaso recibe una alternativa segura.",
+          body: "Cuando un producto tiene pocas compras conjuntas, los puestos restantes se completan con la misma categoría y después con sus productos con stock más recientes. No se inventa nada, y la vista previa de su panel muestra qué acompañantes se compraron juntos de verdad.",
+        },
+      },
+      link: "Vea cómo se decide una recomendación",
+    },
+    workspace: {
+      title: "Más que un widget. Un espacio de trabajo de merchandising.",
+      lead: "El widget es lo que ven los compradores. A su alrededor, AICC le da un lugar en su administración de WordPress para entender qué ocurre, orientarlo y decidir qué hacer a continuación.",
+      connector: "La misma tienda de ejemplo que en la demostración de arriba",
+      connectorLink: "Volver a la demostración",
+      tabsLabel: "Lo que le ofrece el espacio de trabajo de AICC",
+      understand: {
+        tab: "Entender",
+        title: "Vea qué hacen sus recomendaciones.",
+        lead: "Vea qué hacen los compradores con sus recomendaciones: vistas, clics y paquetes añadidos al carrito de los últimos 30 días, y los pedidos y los ingresos asociados al widget. Previsualice qué recomienda AICC para cualquier producto, con las veces que se compró junto cada acompañante.",
+        note: "Los pedidos y los ingresos se muestran como asociación, no como prueba de causa.",
+      },
+      control: {
+        tab: "Controlar",
+        title: "Quédese con la última palabra.",
+        lead: "Con Pin, Prefer, Deprioritize o Exclude (fijar, preferir, restar prioridad o excluir) puede actuar sobre cualquier producto y ver cómo responde la lista. Exclude siempre gana.",
+        note: "Las reglas pueden dirigirse a un par de productos o a un producto en todas partes, y pueden caducar. Los productos agotados y los eliminados siguen fuera aunque estén fijados.",
+        link: "Cómo funcionan las reglas, en detalle",
+      },
+      insights: {
+        tab: "Oportunidades",
+        title: "Detecte lo que merece una acción.",
+        lead: "Observaciones en lenguaje sencillo a partir de sus propios datos: productos más vendidos, paquetes sólidos, productos que se añaden a menudo al carrito pero se compran menos, y qué productos recomendados reciben los clics.",
+        note: "Proceden de reglas fijas, no de un modelo generativo.",
+      },
+      ask: {
+        tab: "Ask Reco",
+        title: "Ask Reco, su guía dentro de AICC.",
+        lead: "Reco vive en su administración de WordPress y responde preguntas habituales sobre su configuración, su rendimiento y los siguientes pasos a partir de los datos de su propio panel, con enlaces a la pantalla adecuada.",
+        note: "Reco sigue reglas fijas y no IA generativa, así que no improvisa. Responde en inglés y en hebreo, ofrece información y enlaces, nunca cambia sus ajustes, y los compradores nunca lo ven.",
+        link: "Qué puede y qué no puede hacer Ask Reco",
+      },
     },
     how: {
+      title: "Conectar, aprender, recomendar.",
+      lead: "Usted da el primer paso. AICC hace el resto en segundo plano.",
       steps: {
         connect: {
           title: "Conectar",
+          body: "Inicie sesión en su cuenta de AICC y conecte su tienda desde la pantalla de AICC en WordPress. Normalmente no hay clave de licencia que pegar ni código que escribir.",
         },
         learn: {
           title: "Aprender",
+          body: "Conecte desde WordPress y AICC prepara su catálogo en segundo plano. Cuando su tienda está lista, el widget empieza con productos de la misma categoría y los más recientes, y pasa a pares realmente comprados juntos a medida que se cuentan los pedidos. Importe sus pedidos anteriores (opcional) para empezar con pares ya aprendidos.",
         },
         recommend: {
           title: "Recomendar",
+          body: "En las páginas de producto y de carrito, el widget muestra lo que sus clientes compraron juntos. Los pedidos nuevos siguen enseñando a AICC, y sus reglas ajustan el resultado.",
         },
       },
     },
-  },
-  product: {
-    shopper: {
-      title: "Qué ven los compradores",
+    safety: {
+      title: "Una herramienta de recomendaciones nunca debería depender del proceso de pago.",
+      lead: "AICC está construido para que, si algo sale mal, WooCommerce siga vendiendo.",
+      points: {
+        a: "Hacer un pedido nunca espera a AICC. Los datos del pedido se ponen en cola y se envían en segundo plano.",
+        b: "Si AICC o sus servidores van lentos o no funcionan, el widget se oculta tras una breve espera.",
+        c: "Vuelven los productos relacionados y las ventas cruzadas propios de WooCommerce.",
+        d: "Si su plan no está activo, nada de AICC aparece en su tienda online: ni widget, ni script, ni cookies nuevas.",
+      },
+      supporting: "AICC no edita sus productos, precios ni plantillas. Si lo desactiva, vuelven las recomendaciones nativas. Probado con Storefront y con un tema de bloques.",
+      link: "Cómo se tratan sus datos",
+      more: "Qué ocurre si AICC no está disponible",
+    },
+    pricing: {
+      title: "Un producto completo. El precio depende de cuántas tiendas.",
+      lead: "Todos los planes incluyen el widget, el panel y las observaciones, sus reglas, Ask Reco y una importación opcional de pedidos anteriores. Usted solo elige cuántas tiendas conectar. Usted mantiene el control: AICC nunca renueva su plan automáticamente.",
+      link: "Vea qué incluye cada plan",
+    },
+    questions: {
+      title: "Preguntas que los comerciantes hacen antes de comprar.",
+      lead: "Primero, respuestas breves. La lista completa cubre planes, datos y qué ocurre cuando vuelve.",
+    },
+    final: {
+      title: "Empiece con su propia tienda.",
+      body: "Cree su cuenta, elija un plan y conecte su primera tienda.",
+      guarantee: "La compra inicial de su plan incluye una garantía de devolución del dinero de 14 días. Los 14 días empiezan cuando se recibe el pago y se emite su plan. Consulte la [política de reembolso](route:refund-policy) para ver las condiciones completas.",
     },
   },
+
+  product: {
+    hero: {
+      title: "Recomendaciones que su tienda puede explicar.",
+      lead: "AICC aprende de sus propios pedidos, muestra a los compradores lo que de verdad se compra junto, y le da el panel, las reglas y la guía para entender cada recomendación. Fije, excluya o desplace cualquier producto desde WordPress.",
+    },
+    toc: {
+      shopper: "Experiencia del comprador",
+      learn: "Cómo aprende",
+      sparse: "Historial escaso",
+      dash: "Su panel",
+      control: "Sus controles",
+      ask: "Ask Reco",
+      measure: "Medición",
+      safety: "Si AICC no funciona",
+      history: "Pedidos anteriores",
+      stores: "Tiendas",
+      compare: "Frente a los relacionados",
+      limits: "Alcance actual",
+    },
+    shopper: {
+      title: "Qué ven los compradores",
+      lead: "Un widget «Comprados juntos con frecuencia» en sus páginas de producto y en la página del carrito.",
+      page: {
+        title: "En una página de producto",
+        body: "El producto que se está viendo aparece ya marcado. Los compradores marcan los demás y añaden el paquete al carrito en un solo paso.",
+      },
+      cart: {
+        title: "En la página del carrito",
+        body: "El primer artículo del carrito es el punto de partida. Los compradores añaden el paquete de la misma forma.",
+      },
+      fit: {
+        title: "En cualquier pantalla",
+        body: "El widget se adapta al ancho del espacio donde está, del móvil al escritorio, y sigue la dirección de su tema, así que las tiendas de derecha a izquierda se muestran de derecha a izquierda. Muestra hasta cinco filas: en una página de producto, el producto visto más hasta cuatro recomendaciones; en la página del carrito, hasta cinco.",
+      },
+      only: "Aparece únicamente en las páginas de producto y en la del carrito. No hay widget en la página de inicio, en las categorías ni en el proceso de pago. En un tema inusual donde AICC no encuentra un lugar seguro, se oculta en lugar de adivinar.",
+    },
+    learn: {
+      title: "Cómo decide AICC qué recomendar.",
+      lead: "Una lista breve y fija, recorrida en este orden, con sus reglas aplicadas al final.",
+      steps: {
+        learned: {
+          title: "Aprendido de sus pedidos",
+          body: "AICC examina sus pedidos completados y en proceso. Cuando los clientes compran el producto A, ¿qué otros productos van en el mismo pedido? Esos recuentos, de mayor a menor, son las recomendaciones.",
+        },
+        category: {
+          title: "Misma categoría",
+          body: "Si un producto tiene muy poco historial de compras para llenar el widget, los puestos restantes se completan con productos con stock de la misma categoría.",
+        },
+        newest: {
+          title: "Más recientes con stock",
+          body: "Si todavía quedan puestos libres, AICC añade sus productos con stock más recientes.",
+        },
+        rules: {
+          title: "Sus reglas",
+          body: "Pin, Exclude, Prefer y Deprioritize se aplican después. Los productos agotados y los eliminados siguen fuera.",
+        },
+      },
+      plain: "Cada recomendación se puede explicar, porque sale de contar sus propios pedidos y no de un modelo generativo ni de un perfil del comprador. Los mismos datos dan el mismo resultado.",
+    },
+    sparse: {
+      title: "Qué ocurre cuando no hay mucho historial.",
+      lead: "AICC completa los puestos que el historial de compras no puede llenar.",
+      p1: "Los puestos que el historial de compras no puede llenar se completan con productos con stock de la misma categoría y después con sus productos con stock más recientes. A medida que llegan pedidos, las compras conjuntas reales sustituyen a las alternativas.",
+      p2: "Puede importar hasta 24 meses de pedidos anteriores (opcional), para que AICC parta de su historial y no de cero.",
+      limitTitle: "En el widget",
+      limit: "El título del widget es el mismo para todos los elementos. En Recommendation Preview, en su panel, los acompañantes aprendidos muestran cuántas veces se compraron juntos y los productos alternativos solo muestran un precio, así que siempre puede distinguirlos.",
+      slots: {
+        caption: "Ilustración con cifras de ejemplo: las cuatro recomendaciones junto al producto visto en una página de producto, con dos acompañantes aprendidos.",
+        learned: "Comprados juntos {n} veces",
+        category: "Misma categoría",
+        newest: "Más reciente con stock",
+        slot: "Puesto {n}",
+      },
+    },
+    dash: {
+      title: "Vea qué hizo el widget.",
+      lead: "Un ejemplo con el estilo del panel de AICC en su administración de WordPress, cuyas etiquetas están en inglés. Las cifras son inventadas.",
+      readiness: "La preparación mide si la configuración está lista: conexión, seguimiento, productos y widget. No es una medida de ventas.",
+      items: {
+        a: { title: "Actividad de las recomendaciones", body: "Vistas, clics y tasa de clics de las recomendaciones, y paquetes añadidos al carrito, de los últimos 30 días." },
+        b: { title: "Pedidos e ingresos asociados", body: "Pedidos en los que un comprador añadió un paquete desde el widget y compró uno de esos productos en las 24 horas siguientes. Asociación, no prueba de causa." },
+        c: { title: "Merchant Insights", body: "Observaciones en lenguaje sencillo a partir de reglas fijas, no escritas por una IA: productos más vendidos, paquetes sólidos, productos que se añaden a menudo al carrito pero se compran menos, y qué productos recomendados reciben los clics." },
+        d: { title: "Recommendation Preview", body: "Elija cualquier producto y vea qué recomienda AICC para él. Los acompañantes aprendidos muestran cuántas veces se compraron juntos; los productos alternativos solo muestran un precio." },
+      },
+      gate: "Las observaciones aparecen cuando hay al menos 10 pedidos en el periodo; cada tipo necesita además datos suficientes propios.",
+      export: "Puede exportar el rendimiento de los productos a CSV para 7, 30 o 90 días. Todo procede de los datos de su tienda; AICC no proyecta resultados.",
+    },
+    control: {
+      title: "Usted tiene la última palabra.",
+      lead: "Añada una regla a un producto y vea cómo responde la lista. AICC hace el trabajo pesado; usted decide dónde no debe hacerlo.",
+      tableCaption: "Qué hace cada regla",
+      colRule: "Regla",
+      colDoes: "Qué hace",
+      rows: {
+        pin: "Fijar: mantiene el producto cerca de la parte superior. Si fija varios, el que se configuró más recientemente va primero.",
+        exclude: "Excluir: nunca se muestra. Siempre gana a cualquier otra regla.",
+        prefer: "Preferir: sube el producto un puesto.",
+        deprioritize: "Restar prioridad: baja el producto un puesto, sin quitarlo del todo.",
+      },
+      scopeTitle: "Dónde se aplica una regla",
+      scope: "Una regla puede dirigirse a un par de productos (cuando los compradores ven el producto A, el producto B recibe la acción) o a un producto en todas partes (recibe la acción en la lista de cualquier producto). Las reglas pueden tener una fecha de caducidad opcional y una nota interna. No hay reglas por categoría.",
+      guardTitle: "Lo que una regla no puede anular",
+      guard: "Los productos agotados y los eliminados siguen fuera, aunque estén fijados. Prefer y Deprioritize nunca mueven un producto por delante de uno de otro grupo (acompañantes aprendidos, productos de la misma categoría, productos más recientes). Únicamente Pin fuerza una posición. El widget muestra pocos productos, así que un producto con Deprioritize en el último puesto visible puede quedar fuera de la vista.",
+    },
+    ask: {
+      title: "Lo que aporta Ask Reco.",
+      lead: "Reco vive en su administración de WordPress y le ayuda a entender los datos de su tienda. Hágale una pregunta habitual y responde a partir de los datos de su propio panel, con enlaces a las pantallas adecuadas.",
+      canTitle: "Qué puede hacer",
+      can: {
+        a: "Decirle si su tienda está lista y qué corregir primero.",
+        b: "Explicar por qué no aparecen las recomendaciones.",
+        c: "Ayudarle a leer vistas, clics, paquetes añadidos al carrito y pedidos asociados.",
+        d: "Señalar oportunidades de paquetes y el estado del catálogo.",
+        e: "Sugerir un siguiente paso y llevarle a la pantalla adecuada.",
+      },
+      cannotTitle: "Qué no puede hacer",
+      cannot: {
+        a: "Responder preguntas abiertas ni redactar textos: está construido con reglas fijas, no con un modelo generativo.",
+        b: "Cambiar sus ajustes. Solo ofrece información y enlaces.",
+        c: "Aparecer ante los compradores. Es para comerciantes, en la administración.",
+        d: "Funcionar todavía en otros idiomas: responde en inglés y en hebreo.",
+      },
+      note: "Sus preguntas se responden en su administración de WordPress y no se envían a AICC.",
+    },
+    measure: {
+      title: "Cómo se mide el rendimiento.",
+      lead: "Vea qué ocurre después de que los compradores se encuentran con el widget: vistas, clics, paquetes añadidos al carrito y los pedidos que siguen.",
+      flow: {
+        title: "Cuándo un pedido cuenta como asociado",
+        steps: ["El comprador añade un paquete desde el widget", "Compra uno de esos productos en 24 horas", "El pedido se muestra como asociado, por su total completo"],
+      },
+      association: "AICC informa de los pedidos y los ingresos asociados al widget y le deja la conclusión a usted. La asociación indica dónde mirar; no prueba que el widget causara la venta, y AICC no ejecuta un grupo de control.",
+      consent: "Además necesita que la herramienta de consentimiento de cookies de su tienda permita las estadísticas, mediante un plugin de consentimiento compatible con la WP Consent API. Si no hay ninguno instalado, no hay cookies y no se puede asociar ningún pedido, aunque los datos de los pedidos se siguen enviando porque así se aprenden las recomendaciones.",
+      notTitle: "Lo que no se mide",
+      not: {
+        a: "El aumento frente a un grupo de control.",
+        b: "Las vistas sin clic (view-through) ni los clics que nunca llegaron a ser un paquete añadido al carrito.",
+        c: "Pedidos de visitantes que no han dado su consentimiento a las estadísticas.",
+        d: "Pedidos anteriores a su conexión.",
+        e: "Recorridos que continúan en otro dispositivo.",
+      },
+    },
+    safety: {
+      title: "Si AICC no estuviera disponible, su tienda sigue vendiendo.",
+      lead: "Hacer un pedido nunca espera a AICC, y el widget se aparta si no se puede contactar con AICC.",
+      conditions: "Esto se aplica con el ajuste por defecto, en el que el widget de AICC sustituye a los productos relacionados de WooCommerce, y cuando se ejecuta el JavaScript de la página.",
+      limit: "Los fallos que detienen PHP en sí, como un servidor que se queda sin memoria, quedan fuera de lo que cualquier plugin puede interceptar. Probado con Storefront, un tema de bloques y plugins habituales.",
+      requirements: "Mínimos declarados: WordPress 6.0, WooCommerce 7.0 y PHP 7.4. Compatible con el almacenamiento de pedidos de alto rendimiento (HPOS) de WooCommerce.",
+      light: "AICC no edita sus productos, precios ni plantillas. Si lo desactiva, vuelven las recomendaciones nativas. Desconecte antes la tienda para liberar su cupo.",
+      link: "Qué datos se envían y cuáles no",
+    },
+    history: {
+      title: "Sus pedidos anteriores pueden dar a AICC una ventaja inicial.",
+      lead: "Cuando su tienda está conectada, AICC le ofrece importar hasta 24 meses de pedidos anteriores, para que las recomendaciones aprendan de su historial existente. Es opcional: usted decide.",
+      p1: "Si lo omite, AICC empieza con recomendaciones de la misma categoría y de los productos más recientes, y aprende de los pedidos nuevos. AICC no importa sus pedidos anteriores hasta que usted lo decida. Los pedidos hechos antes de conectar no se envían a menos que los importe; los hechos después de conectar se envían al crearse o actualizarse.",
+      p2: "Puede iniciar la importación más tarde desde el panel. Lee sus pedidos y envía datos de los pedidos a AICC sin cambiarlos en WooCommerce, los pedidos ya importados no se duplican y puede cancelar una importación desde el panel. El tiempo varía según el tamaño del catálogo y las tareas programadas de su sitio.",
+      p3: "¿Vuelve tras una pausa? AICC puede conservar el historial de su tienda cuando se pausa el acceso, para que los comerciantes que regresan continúen en lugar de empezar desde cero. Si importó su historial, AICC se pone al día con su historial real de WooCommerce; una tienda que declinó la oferta de importación nunca se importa sin preguntar. Nunca inventa impresiones, clics ni ingresos del tiempo en que no estuvo funcionando.",
+      link: "Conservación exacta, hoy y como objetivo",
+      flowTitle: "Si decide importar",
+      flow: ["Pedidos anteriores de los últimos 24 meses, si lo decide", "Importados en segundo plano", "Relaciones aprendidas"],
+    },
+    stores: {
+      title: "Más de una tienda.",
+      lead: "Todos los planes tienen todas las funciones. La única diferencia es cuántas tiendas conecta: 1, hasta 3 o hasta 10.",
+      solo: "Solo",
+      studio: "Studio",
+      agency: "Agency",
+      slots: "{n} cupos de tienda",
+      slotsOne: "1 cupo de tienda",
+      p1: "Cada dirección de sitio web que conecta usa un cupo, y la tienda de pruebas y la de producción cuentan como tiendas distintas. Desconectar una tienda libera su cupo al instante.",
+      link: "Vea los planes Solo, Studio y Agency",
+    },
+    compare: {
+      title: "¿Por qué AICC y no otro plugin de productos relacionados?",
+      lead: "Los productos relacionados son una buena opción por defecto y siempre están ahí. AICC añade lo que ellos no intentan hacer.",
+      caption: "Productos relacionados de WooCommerce frente a AICC",
+      colTopic: "Qué se compara",
+      colWoo: "Productos relacionados de WooCommerce",
+      colAicc: "AICC",
+      rows: {
+        chosen: { topic: "Cómo se eligen los productos", woo: "Categoría y etiquetas compartidas (más las ventas dirigidas y las ventas cruzadas elegidas a mano)", aicc: "Lo que los clientes de su tienda compraron junto; categoría y productos más recientes como alternativa" },
+        see: { topic: "Qué puede ver", woo: "El propio bloque", aicc: "Un panel: vistas, clics, paquetes añadidos al carrito, pedidos asociados, observaciones" },
+        control: { topic: "Control", woo: "Ventas dirigidas y ventas cruzadas elegidas a mano; los productos relacionados en sí son automáticos", aicc: "Reglas (Pin, Exclude, Prefer, Deprioritize), para un par de productos o en todas partes" },
+        explain: { topic: "Capacidad de explicación", woo: "Sencilla: categoría o etiqueta compartida", aicc: "Un recuento que puede inspeccionar en Recommendation Preview" },
+        guide: { topic: "Orientación", woo: "Ninguna", aicc: "Ask Reco en su administración" },
+        history: { topic: "Historial", woo: "No se usa", aicc: "Importación opcional de hasta 24 meses de pedidos anteriores" },
+        fail: { topic: "Si algo falla", woo: "Bloque nativo", aicc: "El widget se oculta tras una breve espera; vuelve el bloque nativo" },
+      },
+    },
+    limits: {
+      title: "En qué se centra AICC hoy.",
+      lead: "Límites claros, para que sepa qué esperar.",
+      items: {
+        a: "Las recomendaciones siguen al producto, no al comprador: no hay personalización por comprador.",
+        b: "AICC recomienda productos comprados juntos. No es un motor de ventas dirigidas (upsell).",
+        c: "El widget aparece en las páginas de producto y de carrito, no en la página de inicio, en las páginas de categoría ni en el proceso de pago.",
+        d: "Ask Reco es para comerciantes y está construido con reglas fijas. Responde en inglés y en hebreo.",
+        e: "El título del widget es el mismo para los productos alternativos que para los aprendidos.",
+        f: "El botón del paquete añade productos simples. Los productos que requieren elegir una opción, como la talla o el color, se omiten, así que los compradores los eligen en la página del producto.",
+        g: "La administración del plugin está en inglés y en hebreo.",
+      },
+    },
+    languages: {
+      title: "Idiomas.",
+      lead: "Qué hay disponible en cada idioma.",
+      caption: "Idiomas por parte de AICC",
+      colPart: "Parte de AICC",
+      colLangs: "Idiomas",
+      rows: {
+        site: { part: "Este sitio web y su área de cuenta", langs: "Inglés, hebreo (de derecha a izquierda), español y ruso" },
+        admin: { part: "La administración de AICC en WordPress", langs: "Inglés y hebreo" },
+        reco: { part: "Ask Reco", langs: "Inglés y hebreo" },
+        widget: { part: "El widget de la tienda online", langs: "Inglés y hebreo completos, además de las etiquetas principales en español, ruso, francés, alemán y árabe; un idioma por tienda, elegido en los ajustes del plugin" },
+      },
+    },
+    questions: { title: "Preguntas habituales sobre cómo funciona." },
+    safetyCta: { title: "Véalo en su propia tienda.", body: "Cree su cuenta, elija un plan y conecte su primera tienda." },
+    cta: { title: "¿Listo para verlo en su tienda?", body: "Cree su cuenta, elija un plan y conecte su primera tienda." },
+  },
+
   pricing: {
+    hero: {
+      title: "Un producto completo. Elija cuántas tiendas.",
+      lead: "Plan Solo {priceSolo}, Studio {priceStudio} o Agency {priceAgency} al año. Todos los planes incluyen todo lo que hace AICC; la única diferencia es cuántas tiendas puede conectar.",
+    },
     plans: {
       solo: {
         name: "Solo",
+        fit: "Una tienda en producción. Una tienda de pruebas cuenta como segunda tienda.",
       },
       studio: {
         name: "Studio",
-        fit: "Una tienda más su copia de pruebas, o unas pocas tiendas de clientes.",
+        fit: "Una tienda más su tienda de pruebas, o unas pocas tiendas de clientes.",
       },
       agency: {
         name: "Agency",
         fit: "Una cartera de tiendas de clientes.",
       },
     },
+    included: {
+      title: "Todos los planes incluyen el producto AICC completo.",
+      lead: "Antes de mirar los precios, esto es lo que compra.",
+      items: {
+        a: "Recomendaciones aprendidas de sus propios pedidos",
+        b: "Un paquete «Comprados juntos con frecuencia» en las páginas de producto y de carrito",
+        c: "Un panel con vistas, clics, paquetes añadidos al carrito y pedidos asociados",
+        d: "Reglas para fijar, excluir, preferir o restar prioridad a productos",
+        e: "Observaciones en lenguaje sencillo a partir de los datos de su tienda",
+        f: "Ask Reco, su guía en WordPress",
+        g: "Importación opcional de hasta 24 meses de pedidos anteriores, para que AICC pueda empezar con pares ya aprendidos",
+        h: "Sitio web y área de cuenta en inglés, hebreo, español y ruso",
+        i: "Su tienda sigue funcionando aunque AICC no lo haga",
+      },
+      outro: "Los planes se diferencian únicamente por la capacidad de tiendas.",
+    },
+    plansSection: {
+      title: "Tres planes, con precio según la capacidad de tiendas.",
+      note: "Todos los precios están en dólares estadounidenses (USD). Usted confirma su plan en su cuenta de AICC.",
+    },
     slots: {
       title: "Cómo funcionan los cupos de tienda",
       p1: "Cada plan tiene un número de cupos de tienda: 1, 3 o 10. Conectar una tienda usa un cupo; desconectarla libera el cupo al instante.",
       p2: "La tienda de pruebas y la de producción cuentan como tiendas distintas. También las variantes con www y sin www de una dirección, y http y https.",
+      p3: "Para pasar su plan de una tienda a otra: desconecte la tienda antigua y conecte la nueva. No hay comisión de traslado.",
       p4: "Si todos los cupos están en uso, desconecte una tienda que ya no necesite o compre un plan mayor. No se puede ampliar un plan existente: un plan mayor es una compra aparte, con sus propios 365 días de duración y sus propios cupos de tienda, y no abona ni sustituye su plan actual.",
     },
     which: {
@@ -243,7 +843,9 @@ export const es: DeepPartial<Dictionary> = {
     },
     finder: {
       label: "¿Cuántas tiendas va a conectar?",
+      hint: "¿En cuántos sitios web se ejecutará AICC? La tienda de pruebas cuenta como una.",
       error: "Introduzca un número entero del 1 al 10.",
+      many: "¿Más de 10 tiendas? Contacte con soporte; todavía no existe un plan mayor.",
       resultSolo: "El plan Solo cubre 1 tienda.",
       resultStudio: "El plan Studio cubre hasta 3 tiendas.",
       resultAgency: "El plan Agency cubre hasta 10 tiendas.",
@@ -252,6 +854,20 @@ export const es: DeepPartial<Dictionary> = {
     },
     terms: {
       title: "Duración, renovación y reembolsos",
+      try: {
+        title: "Pruébelo",
+        body: "La compra inicial de su plan incluye una garantía de devolución del dinero de 14 días. Los 14 días empiezan cuando se recibe el pago y se emite su plan. Consulte la [política de reembolso](route:refund-policy) para ver las condiciones completas.",
+      },
+      renewal: {
+        title: "Renovación",
+        body: "Usted mantiene el control: AICC nunca renueva su plan automáticamente. Un plan dura 365 días fijos desde la compra. Para renovar, lo compra desde Planes y tiendas en su cuenta y se suman 365 días a la más tardía de estas dos fechas: hoy o su fecha de fin actual, así que renovar antes conserva su tiempo sin usar. No se guarda ninguna autorización de cobro para cargos futuros.",
+      },
+      back: {
+        title: "Si vuelve",
+        body: "AICC puede conservar el historial de su tienda cuando se pausa el acceso, para que los comerciantes que regresan continúen en lugar de empezar desde cero. Si su plan venció, renueve el mismo plan y sus tiendas vuelven sin reconectar. Si se reembolsó, el plan antiguo sigue revocado: compre un plan nuevo y conecte la misma tienda. AICC puede reconocerla si la tienda conservó su conexión.",
+        link: "Conservación exacta, hoy y como objetivo",
+      },
+      account: "Necesita una cuenta de AICC para comprar. Normalmente no hay clave de licencia que pegar: usted conecta cada tienda desde su propia pantalla de AICC.",
     },
     questions: {
       title: "Preguntas sobre planes y reembolsos",
@@ -263,6 +879,31 @@ export const es: DeepPartial<Dictionary> = {
     teaser: {
       text: "¿Quiere ver cómo decide el widget? Pruébelo con productos de ejemplo.",
       link: "Abrir la demostración interactiva",
+    },
+    final: {
+      title: "Empiece con una tienda.",
+      body: "Cree su cuenta, elija un plan y conecte su primera tienda.",
+    },
+  },
+
+  questionsPage: {
+    hero: {
+      title: "Preguntas, con respuestas claras.",
+      lead: "Respuestas directas, agrupadas según lo que está intentando decidir. Si algo no está aquí, pregunte a soporte. Dirección de soporte: {supportEmail}",
+    },
+    top: {
+      title: "Lo más preguntado antes de comprar",
+      lead: "Las preguntas que los comerciantes leen primero. Respuestas breves, con un enlace al detalle.",
+    },
+    search: {
+      title: "Encuentre una respuesta",
+    },
+    browse: {
+      title: "Explore las preguntas por tema",
+    },
+    nav: {
+      label: "Ir a un tema",
+      backToTop: "Volver a los temas",
     },
   },
   legal: {
@@ -480,10 +1121,35 @@ export const es: DeepPartial<Dictionary> = {
     },
     dataTrust: {
       title: "Datos y confianza",
+      intro: "AICC nunca recibe los nombres, los correos electrónicos en claro, los números de teléfono, las direcciones postales ni los datos de pago de sus compradores. Aquí se explica exactamente qué lee y qué no lee nunca. La [política de privacidad](route:privacy) es el texto completo.",
+      short: {
+        h: "La versión corta",
+        needsTitle: "AICC necesita",
+        needs: [
+          "Su catálogo de productos",
+          "Las relaciones entre pedidos: qué productos estaban en qué pedidos, con totales, moneda, país de facturación, el ID de cliente de los clientes con sesión iniciada y un identificador de correo con hash",
+          "Actividad opcional de los compradores, solo si su herramienta de consentimiento de cookies permite las estadísticas",
+        ],
+        neverTitle: "AICC no recibe",
+        never: [
+          "Correos electrónicos en claro",
+          "Nombres",
+          "Números de teléfono",
+          "Direcciones postales",
+          "Datos de pago",
+          "Direcciones IP de los compradores (se procesan en su sitio, no se envían)",
+        ],
+        note: "Llamamos a estos identificadores seudonimizados, no anónimos. Las secciones siguientes explican exactamente qué se envía, qué cookies pueden establecerse y cuánto tiempo pueden conservarse los datos.",
+      },
       s: {
         reads: {
           h: "Qué lee AICC de su tienda",
           a: "Cuando conecta una tienda, AICC recibe lo que necesita para saber qué productos se compran juntos:",
+          b: [
+            "Catálogo: nombres, precios, categorías, imágenes, SKU, enlaces de producto y estado del stock.",
+            "Pedidos: productos y nombres de producto, cantidades, totales, moneda, país de facturación, los ID de visitante y de sesión cuando existen, el ID de cliente de WooCommerce de los clientes con sesión iniciada y un identificador de correo seudonimizado (con hash). Se envían los pedidos de todos los estados; solo los pedidos completados y en proceso se cuentan para las recomendaciones.",
+            "Pedidos anteriores de hasta los últimos 24 meses, solo si decide importarlos. AICC no importa sus pedidos anteriores hasta que usted lo decida: los pedidos hechos antes de conectar no se envían a menos que los importe, y los hechos después de conectar se envían al crearse o actualizarse.",
+          ],
         },
         never: {
           h: "Qué no recibe nunca AICC",
@@ -526,12 +1192,16 @@ export const es: DeepPartial<Dictionary> = {
         },
         retention: {
           h: "Su historial puede conservarse cuando el acceso se pausa",
+          a: "**Nuestro objetivo de conservación:** los datos operativos (el estado derivado del catálogo, el historial de pedidos importado, sus reglas y lo que AICC aprendió) pueden conservarse hasta 12 meses después de que termine el acceso, para que un comerciante que regresa continúe en lugar de empezar desde cero.",
+          b: "**Lo que ocurre hoy:** no se elimina nada automáticamente, así que los datos pueden conservarse más tiempo hasta que se eliminen a petición. Los registros de cuenta, compra, licencia, reembolso y auditoría siguen una conservación distinta.",
+          c: "Cuando vuelve, AICC actualiza su copia del catálogo. Si eligió importar su historial de pedidos, también se pone al día con los pedidos del periodo de pausa; si no lo hizo, no importa nada sin preguntar. Nunca inventa historial de recomendaciones del tiempo en que no estuvo funcionando.",
         },
         requests: {
           h: "Pídanos que eliminemos o exportemos",
           a: "Escriba a soporte desde el correo de su cuenta. Estas solicitudes se gestionan a mano. La eliminación borra eventos, impresiones, clics y conversiones y anonimiza los pedidos; el registro de la tienda, la configuración, los datos derivados del catálogo y los registros de licencia y de auditoría siguen su propia conservación, y WooCommerce puede exigir que se conserven algunos registros. Las exportaciones se preparan manualmente. Dirección de soporte: {supportEmail}",
         },
         pending: {
+          h: "Lo que aún no hemos definido",
           a: "Algunos detalles todavía no se han publicado: los datos de la empresa, la dirección de soporte, la ley aplicable, el procesador de pagos y la región de alojamiento. Se publicarán antes del lanzamiento.",
         },
       },
@@ -550,6 +1220,15 @@ export const es: DeepPartial<Dictionary> = {
         },
         done: {
           h: "Lo que hemos hecho",
+          a: [
+            "Puntos de referencia semánticos, un solo encabezado principal por página y un orden de encabezados secuencial.",
+            "Un enlace para saltar al contenido. Los recorridos principales se pueden usar con teclado: pruebas automáticas cubren la cabecera, los menús, el cuadro de accesibilidad, el selector de idioma, las preguntas y la demostración interactiva, y continúan las pruebas manuales de los recorridos completos.",
+            "Un anillo de foco visible en cada control, con contraste suficiente sobre fondos claros y oscuros.",
+            "Los colores del texto y de la interfaz se comprueban con un script frente a las relaciones de contraste de WCAG. Los botones y controles miden al menos 44 píxeles de alto, y los enlaces dentro del texto al menos 24 píxeles.",
+            "Se respeta la reducción de movimiento según el ajuste de su sistema y según nuestro propio control, incluido el desplazamiento suave.",
+            "Diseño de derecha a izquierda para el hebreo, construido con propiedades lógicas, y con el texto de dirección mixta, como los precios y los nombres de marca, mantenido en orden.",
+            "Sin audio, sin video de reproducción automática y sin superposición de accesibilidad de terceros. Sus ajustes de accesibilidad se guardan solo en su navegador.",
+          ],
         },
         limits: {
           h: "Limitaciones conocidas",
