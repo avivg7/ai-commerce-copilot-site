@@ -43,7 +43,11 @@ npm run serve:out -- --port 3011   # serve out/ locally (add --prefix /ai-commer
 | `npm run brand:check` | `brand/i18n/strings.json` and `brand/MANIFEST.json` are current (`npm run brand:build` regenerates them) |
 | `npm run test:visual-contract` | computed-style, placement, behaviour and pixel parity against the live copilt.org for the site and the Control Plane (`:site` = site only) |
 | `npm run pricing:check` | prices and limits equal 99/1, 199/3, 499/10 and the Control Plane bootstrap file; no hard-coded prices in copy |
-| `npm run i18n:check` | every key in en/he/es/ru, no untranslated values, placeholder/markup parity, terminology table, legal + FAQ structure |
+| `npm run i18n:check` | every translated unit in he/es/ru is valid (placeholders, markup, terminology, register) and every untranslated unit is an explicit `lang="en"` fallback; reports how much falls back. `npm run i18n:strict` fails until nothing does |
+| `npm run content:check` | the content pack (`brand/content`): banned claims, UK spellings, fact consistency with `facts.json`, FAQ integrity, no apologetic phrasing outside legal pages, rendered English pages; `-- --cp <theme dir>` verifies Control Plane byte parity |
+| `npm run fallback:check` | on every he/es/ru page, English text is only ever shown inside an element marked `lang="en"` (needs `serve:out`) |
+| `npm run axe:check` | axe-core on Home, Product, Pricing, Questions and Data & Trust at 1280/768/390/360/320 in default, Enhanced contrast and reduced-motion modes (needs `serve:out`) |
+| `npm run shots:content` | the content-pass screenshots at 1280 and 390 (needs `serve:out`) |
 | `npm run copy:check` | banned phrases (fabricated results, free-tier and urgency claims, unshipped features) in every locale source, plus `docs/` and this file |
 | `npm run contrast:check` | WCAG contrast of every token pair the components use, including the sampled primary-button, headline and eyebrow treatments, and the guard that `.aicc-text-gradient` stays on display text (all real pass/fail, no exceptions list) |
 | `npm run perf:check` | gzip first-load JS per route against the budgets (needs a build) |

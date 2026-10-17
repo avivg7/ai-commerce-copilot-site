@@ -16,7 +16,9 @@ other side carries a **mirror**: the same facts and wording, flagged as a mirror
 | The interactive Frequently Bought Together demo (`brand/js/fbt-demo.js`) | **this repo (brand kit)** | the Control Plane home page renders the same module; strings come from `brand/i18n/strings.json` |
 | **Brand kit** (tokens, button/header/language/hero/modal/FBT CSS and vanilla JS, Reco assets, shared strings) | **this repo** (`brand/`) | the Control Plane theme, delivered byte-for-byte by `node scripts/sync-brand-kit.mjs --to <theme dir>` and verified against `brand/MANIFEST.json` (`tokens:check`, `sync-brand-kit --verify`, `test:visual-contract`) |
 | Plan prices and store limits **as purchased** | **Control Plane** (WooCommerce products, `scripts/bootstrap-commercial-products.php`) | `src/data/plans.ts` (`npm run pricing:check`) |
-| Facts, voice, claims allowed and not allowed | Control Plane repo `docs/unified-experience/content-source.md` and `claims-inventory.md` | dictionaries here (`npm run copy:check`) |
+| **Content pack: facts and the FAQ** (`brand/content/facts.json`, `faq.<locale>.json`) | **this repo**, one file for both surfaces | the Control Plane receives the same bytes with the brand kit (`sync-brand-kit`), never a copy it edits; `npm run content:check -- --cp <theme dir>` verifies identity. The Control Plane renders its FAQ and any fact it states from this file. |
+| Voice, claims allowed and not allowed | Control Plane repo `docs/unified-experience/content-source.md` and `claims-inventory.md`; this repo `docs/claims-inventory-content-pass.md` maps every public claim to evidence | dictionaries here (`npm run copy:check`, `npm run content:check`) |
+| Signature demo, rules demo, dashboard preview, Ask Reco panel, flow diagrams | **this repo (brand kit)** | the Control Plane renders the same modules and classes (`brand/README.md`) |
 
 ## What "mirror" means
 
@@ -26,7 +28,9 @@ other side carries a **mirror**: the same facts and wording, flagged as a mirror
   The draft notice appears **on the legal pages only** (never on marketing cards) until `NEXT_PUBLIC_LEGAL_REVIEW_APPROVED=true`.
   Supplying the company values does **not** hide it. Hebrew, Spanish and Russian legal text is a draft translation
   (`TRANSLATION_REVIEW`) and needs native legal review.
-- FAQ answers flagged for review are left out of the `FAQPage` JSON-LD until approval.
+- FAQ answers flagged for review (`legalReview` in `brand/content/faq.en.json`) are left out of the `FAQPage` JSON-LD until approval.
+- Translations are not blocked by the English pass: a unit or FAQ question that has no current translation shows its English text marked `lang="en" dir="ltr"`
+  (see `docs/content-architecture.md`). `npm run i18n:strict` fails until none is left.
 - Owner values that do not exist yet (company name, address, support email, governing law, payment processor, hosting region)
   render one plain muted line ("Support details will be published before launch."). Set `NEXT_PUBLIC_AICC_LEGAL_NAME`,
   `NEXT_PUBLIC_AICC_ADDRESS`, `NEXT_PUBLIC_AICC_SUPPORT_EMAIL`, `NEXT_PUBLIC_AICC_GOVERNING_LAW`,
