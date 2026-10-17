@@ -215,7 +215,7 @@ export const es: DeepPartial<Dictionary> = {
     },
     mode: {
       legend: "Comparar",
-      without: "Productos relacionados básicos",
+      without: "Sin AICC",
       with: "Con AICC",
       captionWithout: "Productos relacionados básicos: misma categoría, no a partir de pedidos.",
       captionWith: "Con AICC: lo que más se compra junto.",
