@@ -7,6 +7,7 @@ import { COMPANY, type CompanyKey } from "@/lib/site";
 import { localePath, isRouteId } from "@/lib/routes";
 import { formatDate, formatYear } from "@/lib/format";
 import { ACCESSIBILITY_REVIEWED_ON } from "@/lib/site";
+import { splitLabels } from "../../brand/js/motion.js";
 
 /**
  * Renders the dictionary mini-markup (see src/i18n/en.ts header): **bold**, [label](route:x), [label](https://...),
@@ -45,13 +46,26 @@ function resolveToken(name: string, ctx: RichCtx): Resolved | null {
 
 const LATIN_RUN = /(\$?[A-Za-z][A-Za-z0-9_.&’'-]*(?: [A-Za-z][A-Za-z0-9_.&’'-]*)*|\$\d[\d,.]*)/g;
 
-function isolate(text: string, rtl: boolean, keyBase: string): ReactNode {
+function isolate(text: string, rtl: boolean, keyBase: string, locale: Locale = "en"): ReactNode {
+  // Real plugin-admin labels (Recommendation Preview, Pin, Bought together {n} times ...) stay English in the admin of every language but Hebrew:
+  // on a translated page each occurrence says lang="en" at the leaf (WCAG 3.1.2), the words around it do not. (Hebrew uses the plugin's Hebrew labels.)
+  if (locale !== "en" && locale !== "he") {
+    const parts = splitLabels(text);
+    if (parts.some((p: { label: boolean }) => p.label)) {
+      return parts.map((p: { text: string; label: boolean }, i: number) => (p.label ? <span key={`${keyBase}-l${i}`} lang="en" dir="ltr" className="aicc-admin-label">{p.text}</span> : p.text));
+    }
+  }
   if (!rtl) return text;
   const parts = text.split(LATIN_RUN);
   if (parts.length === 1) return text;
   return parts.map((part, i) =>
     i % 2 === 1 ? <bdi key={`${keyBase}-${i}`} lang="en">{part}</bdi> : part,
   );
+}
+
+/** Plain dictionary string with no mini-markup, rendered so that real plugin-admin labels get their lang="en" leaf (es, ru). Use for headings, table cells and paragraphs that name labels. */
+export function Lb({ text, locale }: { text: string; locale: Locale }): ReactNode {
+  return <>{isolate(text, false, "lb", locale)}</>;
 }
 
 const TOKEN_RE = /(\*\*[^*]+\*\*|\[[^\]]+\]\((?:route:[a-z-]+|https?:\/\/[^)]+)\)|\{[A-Za-z0-9]+\})/g;
@@ -65,7 +79,7 @@ export function Rich({ text, ctx }: { text: string; ctx: RichCtx }): ReactNode {
         if (!piece) return null;
         const key = `r${i}`;
         if (piece.startsWith("**") && piece.endsWith("**")) {
-          return <strong key={key}>{isolate(piece.slice(2, -2), rtl, key)}</strong>;
+          return <strong key={key}>{isolate(piece.slice(2, -2), rtl, key, ctx.locale)}</strong>;
         }
         const link = /^\[([^\]]+)\]\((route:[a-z-]+|https?:\/\/[^)]+)\)$/.exec(piece);
         if (link) {
@@ -75,14 +89,14 @@ export function Rich({ text, ctx }: { text: string; ctx: RichCtx }): ReactNode {
             if (isRouteId(id)) {
               return (
                 <Link key={key} href={localePath(ctx.locale, id)} className="aicc-link">
-                  {isolate(label, rtl, key)}
+                  {isolate(label, rtl, key, ctx.locale)}
                 </Link>
               );
             }
           }
           return (
             <a key={key} href={target} className="aicc-link" rel="noopener noreferrer">
-              {isolate(label, rtl, key)}
+              {isolate(label, rtl, key, ctx.locale)}
             </a>
           );
         }
@@ -106,7 +120,7 @@ export function Rich({ text, ctx }: { text: string; ctx: RichCtx }): ReactNode {
           }
           return <bdi key={key}>{r.text}</bdi>;
         }
-        return <Fragment key={key}>{isolate(piece, rtl, key)}</Fragment>;
+        return <Fragment key={key}>{isolate(piece, rtl, key, ctx.locale)}</Fragment>;
       })}
     </>
   );

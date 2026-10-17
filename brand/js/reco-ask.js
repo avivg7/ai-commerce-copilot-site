@@ -5,24 +5,25 @@
 // renderRecoAskHTML(strings, opts) -> markup (server-rendered by the site); initRecoAsk(el) wires the two sample-question buttons.
 // Strings: strings.json[locale].ask. opts: { assetsBase, locale, dir }
 import { icon } from "./icons.js";
-import { esc, langAttrs } from "./motion.js";
+import { esc, langAttrs, labeler } from "./motion.js";
 
 const KEYS = ["next", "perf"];
 
 export function renderRecoAskHTML(s, o = {}) {
+  const { T } = labeler(s, o);
   const logo = o.assetsBase !== undefined ? `<img src="${esc(o.assetsBase)}/aicc-logomark.svg" alt="" width="24" height="24" decoding="async">` : "";
   return (
     `<div class="aicc-ask"${langAttrs(s, o)} data-aicc-ask data-aicc-ssr>` +
-    `<p class="aicc-ask__label">${icon("info", 16)}<span>${esc(s.label)}</span></p>` +
-    `<div class="aicc-ask__panel"><div class="aicc-ask__head">${logo}<span>${esc(s.title)}</span></div>` +
-    `<p class="aicc-ask__try" id="aicc-ask-try">${esc(s.suggestionsLabel)}</p>` +
+    `<p class="aicc-ask__label">${icon("info", 16)}<span>${T(s.label)}</span></p>` +
+    `<div class="aicc-ask__panel"><div class="aicc-ask__head">${logo}<span>${T(s.title)}</span></div>` +
+    `<p class="aicc-ask__try" id="aicc-ask-try">${T(s.suggestionsLabel)}</p>` +
     `<div class="aicc-ask__chips" role="group" aria-labelledby="aicc-ask-try">` +
-    KEYS.map((k, i) => `<button type="button" class="aicc-ask__chip" data-qa="${k}" aria-pressed="${i === 0}">${esc(s.qa[k].q)}</button>`).join("") +
+    KEYS.map((k, i) => `<button type="button" class="aicc-ask__chip" data-qa="${k}" aria-pressed="${i === 0}">${T(s.qa[k].q)}</button>`).join("") +
     `</div><div class="aicc-ask__thread" aria-live="polite">` +
-    KEYS.map((k, i) => `<div class="aicc-ask__pair" data-pair="${k}"${i ? " hidden" : ""}><p class="aicc-ask__q">${esc(s.qa[k].q)}</p>` +
-      `<div class="aicc-ask__a"><span class="aicc-ask__who">${esc(s.answerLabel)}</span><p>${esc(s.qa[k].a)}</p><span class="aicc-ask__link">${esc(s.qa[k].link)}${icon("arrow-right", 14)}</span></div></div>`).join("") +
+    KEYS.map((k, i) => `<div class="aicc-ask__pair" data-pair="${k}"${i ? " hidden" : ""}><p class="aicc-ask__q">${T(s.qa[k].q)}</p>` +
+      `<div class="aicc-ask__a"><span class="aicc-ask__who">${T(s.answerLabel)}</span><p>${T(s.qa[k].a)}</p><span class="aicc-ask__link">${T(s.qa[k].link)}${icon("arrow-right", 14)}</span></div></div>`).join("") +
     `</div></div>` +
-    `<p class="aicc-ask__foot">${esc(s.footnote)}</p></div>`
+    `<p class="aicc-ask__foot">${T(s.footnote)}</p></div>`
   );
 }
 

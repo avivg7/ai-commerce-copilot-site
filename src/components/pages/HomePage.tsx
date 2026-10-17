@@ -2,7 +2,7 @@ import { ArrowRight, Check, Coffee } from "lucide-react";
 import type { Locale } from "@/i18n/config";
 import type { Dictionary } from "@/i18n";
 import { fbProps, txProps } from "@/i18n";
-import { Rich, type RichCtx } from "@/lib/rich";
+import { Lb, Rich, type RichCtx } from "@/lib/rich";
 import { PLANS } from "@/data/plans";
 import { GET_STARTED_URL } from "@/lib/site";
 import { localePath } from "@/lib/routes";
@@ -129,7 +129,7 @@ export function HomePage({ locale, t }: { locale: Locale; t: Dictionary }) {
                 key: "control", label: w.control.tab, title: w.control.title,
                 children: (
                   <>
-                    <p className="aicc-lead aicc-tabs__lead">{w.control.lead}</p>
+                    <p className="aicc-lead aicc-tabs__lead"><Lb text={w.control.lead} locale={locale} /></p>
                     <RulesDemo locale={locale} t={t} />
                     <p className="aicc-muted aicc-small aicc-tabs__note">{w.control.note}</p>
                     <p><LocaleLink locale={locale} route="product" hash="control" className="aicc-link">{w.control.link}</LocaleLink></p>

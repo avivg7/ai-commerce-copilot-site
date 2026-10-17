@@ -98,25 +98,29 @@
       "sha256": "5cc408c44a68bd8859fd50299900d037c700120025228bd18412063331ac810d",
       "bytes": 39520
     },
+    "content/replica-labels.json": {
+      "sha256": "a351cf318cbbef820742c1fe2478eacec1e34e40c3479a1f954d986af1679558",
+      "bytes": 3084
+    },
     "contract-baseline.json": {
       "sha256": "ffcbeb777c9e9d6c28c5c73e9d8f66590382068b8768001eb828d0b2b5349d27",
       "bytes": 1339
     },
     "i18n/strings.json": {
-      "sha256": "0a927d9ac7c151c650b1649cad8e4c91f83343e51bd7e311ce072379aad6ca58",
-      "bytes": 84075
+      "sha256": "9d5cbef85429977ac4805f41ba4a6fc4797d4a4b484b72dea09a52df70e57962",
+      "bytes": 84856
     },
     "js/dash-preview.js": {
-      "sha256": "5451459a1a798b1cd5bfb14349deb299b9ed84ea29f8405fdeb1bb02639b2b92",
-      "bytes": 7230
+      "sha256": "5566a2220a0e87fa1b253f75b3bf00e238ccb54c3c03d8af36f84fae4330a9ba",
+      "bytes": 7224
     },
     "js/faq-search.js": {
       "sha256": "dd07f5fda4743bf0052f06660bbed99acc1c11e5192e2b0e5c2dce833d11b1bd",
       "bytes": 7290
     },
     "js/fbt-demo.js": {
-      "sha256": "27dafbb87c6b837162fa42b6580f29cc7ce860940a3b331cb73dbc5f37b450aa",
-      "bytes": 19252
+      "sha256": "d4c5065a246414433e4400840c6dc84d2620b193b3ae210f9bf88e27640d2554",
+      "bytes": 19238
     },
     "js/flow.js": {
       "sha256": "7f992c41b22d2d1592e9afc4da0c4ac0e4055c0c9a471d84523026a8ada8de05",
@@ -147,24 +151,28 @@
       "bytes": 1909
     },
     "js/motion.js": {
-      "sha256": "7b17932828bc407a6402ffd51bbc8366d1f626a97e5e504e6013c9cad4be1d16",
-      "bytes": 2062
+      "sha256": "64592613d0e5f6a9188a3194f26828be1dda7b78f9278f9a55073d6cb4644699",
+      "bytes": 4181
     },
     "js/reco-ask.js": {
-      "sha256": "466d94af27c6a098317db6a962b5bf493b31e48ee6fc8732d18337b48156e665",
-      "bytes": 2798
+      "sha256": "6da17074bd834f8a275de4f2ebb579f0b6b290b3c51bd636b19af8d39dbbf0f8",
+      "bytes": 2820
     },
     "js/reco-hero.js": {
       "sha256": "7e1a7c551c96d07a22a0b7f1e438ae1c27cd3d268fabe271be023863e7d41a47",
       "bytes": 5434
+    },
+    "js/replica-labels.js": {
+      "sha256": "f7eb1e0f4e22afd81bd371a5dfe60fedb42998bb4904d95f4fd763f13a2454ee",
+      "bytes": 908
     },
     "js/rules-core.js": {
       "sha256": "c18a9fa7c53546ecc338a6ef01c33b69c90745acefe02ee5f30cdb0359d29365",
       "bytes": 3540
     },
     "js/rules-demo.js": {
-      "sha256": "6fe210e3b81d7c54242f512bd98a582fa52372c6a766ab63c22cd8880949f09c",
-      "bytes": 7321
+      "sha256": "2cae3661af4d47b5594fa31a4d0854f98fe0528cb6d6b784c287ac96c271bf5a",
+      "bytes": 7328
     },
     "js/tabs.js": {
       "sha256": "0974f7a3e03df12a3c55ec270d125896998a796f41b7dd6987190820807dec60",

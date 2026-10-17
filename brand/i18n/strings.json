@@ -640,7 +640,7 @@
         "hot": {
           "title": "המוצר בעל הביצועים המובילים",
           "body": "פילטרי נייר, 100 יחידות הוא אחד מהמוצרים הנמכרים ביותר שלכם בתקופה הזו.",
-          "metric": "נתח מהרכישות בחנות",
+          "metric": "נתח מרכישות החנות",
           "value": "24%"
         },
         "bundle": {
@@ -652,13 +652,13 @@
         "interest": {
           "title": "עניין גבוה, המרה נמוכה",
           "body": "קומקום עם צוואר ברבור נוסף הרבה לעגלות, אבל נקנה פחות.",
-          "metric": "מספר ההוספות לעגלה",
+          "metric": "מספר הוספות לעגלה",
           "value": "22"
         },
         "winner": {
           "title": "המלצה מנצחת",
           "body": "מטחנת קפה ידנית מקבלת נתח גבוה מההקלקות על מוצרים מומלצים.",
-          "metric": "הקלקות על המלצות",
+          "metric": "הקלקות המלצות",
           "value": "41"
         }
       },
@@ -959,10 +959,10 @@
         "outOfStock": "Agotado"
       },
       "tags": {
-        "pin": "Pinned",
-        "prefer": "Preferred",
-        "deprioritize": "Deprioritized",
-        "exclude": "Excluded"
+        "pin": "Fijado",
+        "prefer": "Preferido",
+        "deprioritize": "Con menos prioridad",
+        "exclude": "Excluido"
       },
       "place": "Puesto {n}",
       "hiddenHeading": "No se muestra a los compradores",
@@ -1489,5 +1489,37 @@
     "fbtHeading": "«Часто покупают вместе» — по реальным заказам.",
     "fbtLead": "WooCommerce может определить, какие товары относятся к одной категории. AICC добавляет сигнал, который владельцам магазинов обычно приходится угадывать: какие товары клиенты действительно покупают вместе, а там, где истории мало, использует разумные запасные варианты.",
     "needsTranslation": []
-  }
+  },
+  "replicaLabels": [
+    "High Interest, Low Conversion",
+    "Recommendation Click Rate",
+    "Strong Bundle Opportunity",
+    "Bought together {n} times",
+    "Share of store purchases",
+    "Recommendation Preview",
+    "Top Performing Product",
+    "Recommendation Clicks",
+    "Recommendation Winner",
+    "Times bought together",
+    "Recommendation clicks",
+    "Recommendation Views",
+    "Import order history",
+    "Bundle Add-To-Carts",
+    "Go to Order History",
+    "Associated Revenue",
+    "Top Recommendation",
+    "Associated Orders",
+    "Merchant Insights",
+    "Add-to-cart count",
+    "Bought together",
+    "Order History",
+    "Last 30 days",
+    "Add Override",
+    "Deprioritize",
+    "Hot Product",
+    "Not now",
+    "Exclude",
+    "Prefer",
+    "Pin"
+  ]
 }

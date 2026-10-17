@@ -2,7 +2,7 @@ import { ArrowRight, Minus, X } from "lucide-react";
 import type { Locale } from "@/i18n/config";
 import type { Dictionary } from "@/i18n";
 import { fbProps, txProps } from "@/i18n";
-import type { RichCtx } from "@/lib/rich";
+import { Lb, type RichCtx } from "@/lib/rich";
 import { localePath } from "@/lib/routes";
 import { Container, Section, SectionHeading } from "@/components/ui/Primitives";
 import { FbtSection } from "@/components/brand/FbtSection";
@@ -91,7 +91,7 @@ export function ProductPage({ locale, t }: { locale: Locale; t: Dictionary }) {
       <Section id="how-decided" tone="sunken" labelledBy="learn-title" fb={fb("product.learn")}>
         <Container>
           <SectionHeading id="learn-title" title={p.learn.title} lead={p.learn.lead} />
-          <Track items={[p.learn.steps.learned, p.learn.steps.category, p.learn.steps.newest, p.learn.steps.rules]} />
+          <Track items={[p.learn.steps.learned, p.learn.steps.category, p.learn.steps.newest, p.learn.steps.rules]} locale={locale} />
           <p className="aicc-note" style={{ marginBlockStart: "2.5rem", maxInlineSize: "52rem" }}>{p.learn.plain}</p>
         </Container>
       </Section>
@@ -107,7 +107,7 @@ export function ProductPage({ locale, t }: { locale: Locale; t: Dictionary }) {
             </div>
             <div className="aicc-note">
               <strong>{p.sparse.limitTitle}</strong>
-              {p.sparse.limit}
+              <Lb text={p.sparse.limit} locale={locale} />
             </div>
           </div>
           <ol className="aicc-slots" style={{ marginBlockStart: "2rem" }} aria-label={p.sparse.slots.caption}>
@@ -146,7 +146,7 @@ export function ProductPage({ locale, t }: { locale: Locale; t: Dictionary }) {
                   <tr key={k}>
                     <th scope="row">{p.compare.rows[k].topic}</th>
                     <td data-label={p.compare.colWoo}>{p.compare.rows[k].woo}</td>
-                    <td data-col="aicc" data-label={p.compare.colAicc}>{p.compare.rows[k].aicc}</td>
+                    <td data-col="aicc" data-label={p.compare.colAicc}><Lb text={p.compare.rows[k].aicc} locale={locale} /></td>
                   </tr>
                 ))}
               </tbody>
@@ -163,8 +163,8 @@ export function ProductPage({ locale, t }: { locale: Locale; t: Dictionary }) {
           <ol className="aicc-numbered">
             {(["a", "b", "c", "d"] as const).map((k) => (
               <li key={k}>
-                <h3>{p.dash.items[k].title}</h3>
-                <p>{p.dash.items[k].body}</p>
+                <h3><Lb text={p.dash.items[k].title} locale={locale} /></h3>
+                <p><Lb text={p.dash.items[k].body} locale={locale} /></p>
               </li>
             ))}
           </ol>
@@ -189,8 +189,8 @@ export function ProductPage({ locale, t }: { locale: Locale; t: Dictionary }) {
               <tbody>
                 {(["pin", "exclude", "prefer", "deprioritize"] as const).map((k) => (
                   <tr key={k}>
-                    <th scope="row">{t.rules.actions[k === "exclude" ? "exclude" : k]}</th>
-                    <td data-label={p.control.colDoes}>{p.control.rows[k]}</td>
+                    <th scope="row"><Lb text={t.rules.actions[k]} locale={locale} /></th>
+                    <td data-label={p.control.colDoes}><Lb text={p.control.rows[k]} locale={locale} /></td>
                   </tr>
                 ))}
               </tbody>
@@ -198,7 +198,7 @@ export function ProductPage({ locale, t }: { locale: Locale; t: Dictionary }) {
           </div>
           <div className="aicc-twocol aicc-twocol--even" style={{ marginBlockStart: "2rem" }}>
             <div className="aicc-note"><strong>{p.control.scopeTitle}</strong>{p.control.scope}</div>
-            <div className="aicc-note aicc-note--warm"><strong>{p.control.guardTitle}</strong>{p.control.guard}</div>
+            <div className="aicc-note aicc-note--warm"><strong>{p.control.guardTitle}</strong><Lb text={p.control.guard} locale={locale} /></div>
           </div>
         </Container>
       </Section>
@@ -285,7 +285,7 @@ export function ProductPage({ locale, t }: { locale: Locale; t: Dictionary }) {
             <div className="aicc-prose">
               <p>{p.history.p1}</p>
               <p>{p.history.p2}</p>
-              <p>{p.history.p3}</p>
+              <p><Lb text={p.history.p3} locale={locale} /></p>
               <p><LocaleLink locale={locale} route="data-and-trust" hash="dataTrust-retention" className="aicc-link">{p.history.link}</LocaleLink></p>
             </div>
             <Flow locale={locale} t={t} kind="history" unit="product.history" flow={{ title: p.history.flowTitle, steps: p.history.flow }} />

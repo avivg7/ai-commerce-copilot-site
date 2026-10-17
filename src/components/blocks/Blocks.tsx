@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { Check, X } from "lucide-react";
-import { Rich, type RichCtx } from "@/lib/rich";
+import { Lb, Rich, type RichCtx } from "@/lib/rich";
 import type { Locale } from "@/i18n/config";
 import { txProps } from "@/i18n";
 
@@ -20,14 +20,14 @@ export function Strip({ items, ctx }: { items: { title: string; body: string }[]
 }
 
 /** A sequence on a rail: numbered nodes, the last one highlighted. Text sits under each node. */
-export function Track({ items, headingLevel = 3 }: { items: { title: string; body: string }[]; headingLevel?: 3 | 4 }) {
+export function Track({ items, headingLevel = 3, locale = "en" }: { items: { title: string; body: string }[]; headingLevel?: 3 | 4; locale?: Locale }) {
   const H = `h${headingLevel}` as "h3" | "h4";
   return (
     <ol className="aicc-track" style={{ ["--track-n" as string]: items.length }}>
       {items.map((it) => (
         <li key={it.title}>
           <H>{it.title}</H>
-          <p>{it.body}</p>
+          <p><Lb text={it.body} locale={locale} /></p>
         </li>
       ))}
     </ol>

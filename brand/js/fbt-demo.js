@@ -13,7 +13,7 @@
 // There are no Strong/Medium/Light tiers: they do not exist in the product.
 // Keyboard: Tab/Space; arrows follow reading direction and do not wrap. Reduced motion (OS or data-aicc-motion="reduce"): no count-up.
 import { icon } from "./icons.js";
-import { esc, motionAllowed, setLang } from "./motion.js";
+import { esc, motionAllowed, setLang, labeler } from "./motion.js";
 import { applyRules } from "./rules-core.js";
 
 const ANCHOR = { id: "kit", price: 38, icon: "coffee" };
@@ -51,6 +51,7 @@ export function mountFbt(el, opts) {
   const locale = opts.locale || "en";
   const fallback = !!s._fallback;
   setLang(el, s, locale, opts.dir || el.dataset.dir);
+  const { T, A } = labeler(s, { locale });
   const rtl = !fallback && (opts.dir || document.documentElement.dir) === "rtl";
   const num = new Intl.NumberFormat(fallback ? "en" : locale);
   const state = { mode: "with", view: "shopper", switched: false, checked: { kit: true }, last: null, added: false, shown: ANCHOR.price, raf: 0, rules: [], seq: 0, addsDelta: 0, announce: "" };
@@ -60,37 +61,37 @@ export function mountFbt(el, opts) {
   el.innerHTML =
     `<div class="aicc-fbt__glow" aria-hidden="true"></div>` +
     `<div class="aicc-fbt__main"><div class="aicc-fbt__widget">` +
-    `<div class="aicc-fbt__top"><p class="aicc-fbt__label">${icon("info", 18)}<span>${esc(s.label)}</span></p>` +
+    `<div class="aicc-fbt__top"><p class="aicc-fbt__label">${icon("info", 18)}<span>${T(s.label)}</span></p>` +
     `<div class="aicc-fbt__controls">` +
     `<div role="group" aria-label="${esc(s.view.legend)}" class="aicc-fbt__views">` +
-    `<button type="button" class="aicc-fbt__view" data-view="shopper" aria-pressed="true">${esc(s.view.shopper)}</button>` +
-    `<button type="button" class="aicc-fbt__view" data-view="merchant" aria-pressed="false">${esc(s.view.merchant)}</button></div>` +
+    `<button type="button" class="aicc-fbt__view" data-view="shopper" aria-pressed="true">${T(s.view.shopper)}</button>` +
+    `<button type="button" class="aicc-fbt__view" data-view="merchant" aria-pressed="false">${T(s.view.merchant)}</button></div>` +
     `<div role="group" aria-label="${esc(s.mode.legend)}" class="aicc-fbt__modes" data-modes>` +
-    `<button type="button" class="aicc-fbt__mode" data-mode="without" aria-pressed="false">${esc(s.mode.without)}</button>` +
-    `<button type="button" class="aicc-fbt__mode" data-mode="with" aria-pressed="true">${esc(s.mode.with)}</button></div></div></div>` +
+    `<button type="button" class="aicc-fbt__mode" data-mode="without" aria-pressed="false">${T(s.mode.without)}</button>` +
+    `<button type="button" class="aicc-fbt__mode" data-mode="with" aria-pressed="true">${T(s.mode.with)}</button></div></div></div>` +
     `<p class="aicc-fbt__result" aria-live="polite" aria-atomic="true" data-result></p>` +
-    `<p class="aicc-fbt__nudge">${esc(s.nudge)}</p>` +
+    `<p class="aicc-fbt__nudge">${T(s.nudge)}</p>` +
     `<div data-panel="shopper" class="aicc-fbt__panel">` +
-    `<div class="aicc-fbt__head"><h3 data-title></h3><p data-sub></p><p class="aicc-sr-only" data-subsr hidden>${esc(s.mode.withCaption)}</p></div>` +
+    `<div class="aicc-fbt__head"><h3 data-title></h3><p data-sub></p><p class="aicc-sr-only" data-subsr hidden>${T(s.mode.withCaption)}</p></div>` +
     `<div data-bundle>` +
-    `<fieldset class="aicc-fbt__fieldset"><legend class="aicc-sr-only">${esc(s.groupLabel)}</legend><div data-anchor></div><ul class="aicc-fbt__cands" data-cands></ul></fieldset>` +
-    `<p class="aicc-fbt__hint" data-kbd>${esc(s.keyboardHint)}</p>` +
-    `<div class="aicc-fbt__foot"><p class="aicc-fbt__total"><span>${esc(s.widget.bundleTotal)}</span><strong><bdi data-total></bdi></strong></p>` +
+    `<fieldset class="aicc-fbt__fieldset"><legend class="aicc-sr-only">${T(s.groupLabel)}</legend><div data-anchor></div><ul class="aicc-fbt__cands" data-cands></ul></fieldset>` +
+    `<p class="aicc-fbt__hint" data-kbd>${T(s.keyboardHint)}</p>` +
+    `<div class="aicc-fbt__foot"><p class="aicc-fbt__total"><span>${T(s.widget.bundleTotal)}</span><strong><bdi data-total></bdi></strong></p>` +
     `<button type="button" class="aicc-btn aicc-btn--primary" data-add aria-disabled="false"><span data-add-icon></span><span data-add-text></span></button></div>` +
     `<p class="aicc-fbt__status" data-status></p></div>` +
-    `<div data-plain hidden><ul class="aicc-fbt__plain" data-plainlist></ul><p class="aicc-fbt__hint">${esc(s.plainHint)}</p></div></div>` +
+    `<div data-plain hidden><ul class="aicc-fbt__plain" data-plainlist></ul><p class="aicc-fbt__hint">${T(s.plainHint)}</p></div></div>` +
     `<div data-panel="merchant" class="aicc-fbt__panel aicc-fbt__merchant" hidden>` +
-    `<div class="aicc-fbt__head"><h3>${esc(s.merchant.heading)}</h3><p>${esc(s.merchant.intro)}</p></div>` +
-    `<p class="aicc-fbt__ctx"><span class="aicc-fbt__ctxthumb" aria-hidden="true">${icon(ANCHOR.icon, 18)}</span><span>${esc(s.merchant.forProduct)} <strong>${esc(s.products[ANCHOR.id])}</strong></span><em>${esc(s.merchant.sameBundle)}</em></p>` +
-    `<div class="aicc-fbt__rows" role="table" aria-label="${esc(s.merchant.heading)}"><div class="aicc-fbt__rowhead" role="row"><span role="columnheader">${esc(s.merchant.colProduct)}</span><span role="columnheader">${esc(s.merchant.colWhy)}</span><span role="columnheader">${esc(s.merchant.colRule)}</span></div><div data-rows class="aicc-fbt__rowbody"></div></div>` +
+    `<div class="aicc-fbt__head"><h3>${T(s.merchant.heading)}</h3><p>${T(s.merchant.intro)}</p></div>` +
+    `<p class="aicc-fbt__ctx"><span class="aicc-fbt__ctxthumb" aria-hidden="true">${icon(ANCHOR.icon, 18)}</span><span>${T(s.merchant.forProduct)} <strong>${T(s.products[ANCHOR.id])}</strong></span><em>${T(s.merchant.sameBundle)}</em></p>` +
+    `<div class="aicc-fbt__rows" role="table" aria-label="${esc(s.merchant.heading)}"><div class="aicc-fbt__rowhead" role="row"><span role="columnheader">${T(s.merchant.colProduct)}</span><span role="columnheader">${T(s.merchant.colWhy)}</span><span role="columnheader">${T(s.merchant.colRule)}</span></div><div data-rows class="aicc-fbt__rowbody"></div></div>` +
     `<p class="aicc-fbt__now" data-now></p>` +
-    `<p class="aicc-fbt__hint">${esc(s.merchant.ruleNote)} ${esc(s.merchant.previewNote)}</p>` +
-    `<div class="aicc-fbt__tilebox"><h3>${esc(s.merchant.tilesHeading)}</h3><ul class="aicc-fbt__tiles" data-tiles></ul><p class="aicc-fbt__hint">${esc(s.merchant.tileNote)}</p></div>` +
+    `<p class="aicc-fbt__hint">${T(s.merchant.ruleNote)} ${T(s.merchant.previewNote)}</p>` +
+    `<div class="aicc-fbt__tilebox"><h3>${T(s.merchant.tilesHeading)}</h3><ul class="aicc-fbt__tiles" data-tiles></ul><p class="aicc-fbt__hint">${T(s.merchant.tileNote)}</p></div>` +
     `<div class="aicc-fbt__extras" data-extras></div></div>` +
     `<p class="aicc-sr-only" role="status" data-announce></p>` +
     `</div>` +
-    `<div class="aicc-fbt__whyinline"><h3>${esc(s.why.heading)}</h3><p data-why-inline></p></div></div>` +
-    `<aside class="aicc-fbt__why" aria-labelledby="fbt-why-h"><div class="aicc-fbt__reco"><img src="${esc(opts.assets?.reco || "")}" alt="" width="96" height="137" loading="lazy" decoding="async"><p class="aicc-fbt__bubble" data-bubble></p></div><h3 id="fbt-why-h">${esc(s.why.heading)}</h3><p class="aicc-fbt__recointro">${esc(s.why.recoIntro)}</p><p data-why></p></aside>`;
+    `<div class="aicc-fbt__whyinline"><h3>${T(s.why.heading)}</h3><p data-why-inline></p></div></div>` +
+    `<aside class="aicc-fbt__why" aria-labelledby="fbt-why-h"><div class="aicc-fbt__reco"><img src="${esc(opts.assets?.reco || "")}" alt="" width="96" height="137" loading="lazy" decoding="async"><p class="aicc-fbt__bubble" data-bubble></p></div><h3 id="fbt-why-h">${T(s.why.heading)}</h3><p class="aicc-fbt__recointro">${T(s.why.recoIntro)}</p><p data-why></p></aside>`;
 
   const $ = (sel) => el.querySelector(sel);
   const boxes = [];
@@ -104,12 +105,12 @@ export function mountFbt(el, opts) {
     `<label class="aicc-fbt-card" data-checked="${!!state.checked[it.id]}"${anchor ? ' data-anchor="true"' : ""}>` +
     `<input type="checkbox" data-id="${it.id}"${state.checked[it.id] ? " checked" : ""}>` +
     `<span class="aicc-fbt-card__thumb" aria-hidden="true">${icon(it.icon, 26)}</span>` +
-    `<span class="aicc-fbt-card__body"><span class="aicc-fbt-card__name">${esc(nameOf(it.id))}</span><span class="aicc-fbt-card__price"><bdi>${money(it.price)}</bdi></span>${meta}</span></label>`;
+    `<span class="aicc-fbt-card__body"><span class="aicc-fbt-card__name">${T(nameOf(it.id))}</span><span class="aicc-fbt-card__price"><bdi>${money(it.price)}</bdi></span>${meta}</span></label>`;
 
   function renderList() {
-    $("[data-anchor]").innerHTML = cardHTML(ANCHOR, `<span class="aicc-fbt__tag">${esc(s.anchorTag)}</span>`, true);
+    $("[data-anchor]").innerHTML = cardHTML(ANCHOR, `<span class="aicc-fbt__tag">${T(s.anchorTag)}</span>`, true);
     $("[data-cands]").innerHTML = withShown().map((c) => `<li>${cardHTML(c, "", false)}</li>`).join("");
-    $("[data-plainlist]").innerHTML = WITHOUT.map((c) => `<li class="aicc-fbt-plain"><span class="aicc-fbt-card__thumb" aria-hidden="true">${icon(c.icon, 26)}</span><span class="aicc-fbt-card__name">${esc(nameOf(c.id))}</span><span class="aicc-fbt-card__price"><bdi>${money(c.price)}</bdi></span></li>`).join("");
+    $("[data-plainlist]").innerHTML = WITHOUT.map((c) => `<li class="aicc-fbt-plain"><span class="aicc-fbt-card__thumb" aria-hidden="true">${icon(c.icon, 26)}</span><span class="aicc-fbt-card__name">${T(nameOf(c.id))}</span><span class="aicc-fbt-card__price"><bdi>${money(c.price)}</bdi></span></li>`).join("");
     boxes.length = 0;
     el.querySelectorAll('[data-bundle] input[type="checkbox"]').forEach((b) => boxes.push(b));
   }
@@ -121,25 +122,25 @@ export function mountFbt(el, opts) {
   function renderMerchant(refocus) {
     const { shown, hidden } = applyRules(WITH, state.rules);
     const sel = (id) =>
-      `<label class="aicc-fbt-row__rule"><span class="aicc-sr-only">${esc(s.merchant.ruleLabel.replace("{product}", nameOf(id)))}</span>` +
-      `<select data-rule="${id}">${["none", "pin", "prefer", "deprioritize", "exclude"].map((a) => `<option value="${a}"${ruleOf(id) === a ? " selected" : ""}>${esc(s.merchant.rules[a])}</option>`).join("")}</select></label>`;
+      `<label class="aicc-fbt-row__rule"><span class="aicc-sr-only">${T(s.merchant.ruleLabel.replace("{product}", nameOf(id)))}</span>` +
+      `<select data-rule="${id}">${["none", "pin", "prefer", "deprioritize", "exclude"].map((a) => `<option value="${a}"${A(s.merchant.rules[a])}${ruleOf(id) === a ? " selected" : ""}>${esc(s.merchant.rules[a])}</option>`).join("")}</select></label>`;
     $("[data-rows]").innerHTML =
-      shown.map((it, i) => `<div class="aicc-fbt-row" role="row" data-id="${it.id}"><span class="aicc-fbt-row__name" role="cell"><span class="aicc-fbt-row__pos" aria-hidden="true">${i + 1}</span><span><span class="aicc-sr-only">${esc(s.merchant.position.replace("{n}", String(i + 1)))}: </span>${esc(nameOf(it.id))}</span></span><span class="aicc-fbt-row__why" role="cell" data-kind="${it.tier}">${esc(why(it))}</span><span role="cell">${sel(it.id)}</span></div>`).join("") +
-      hidden.map(({ item }) => `<div class="aicc-fbt-row" role="row" data-id="${item.id}" data-hidden="true"><span class="aicc-fbt-row__name" role="cell"><span class="aicc-fbt-row__pos" aria-hidden="true">–</span><span>${esc(nameOf(item.id))}</span></span><span class="aicc-fbt-row__why" role="cell">${esc(s.merchant.excluded)}</span><span role="cell">${sel(item.id)}</span></div>`).join("");
+      shown.map((it, i) => `<div class="aicc-fbt-row" role="row" data-id="${it.id}"><span class="aicc-fbt-row__name" role="cell"><span class="aicc-fbt-row__pos" aria-hidden="true">${i + 1}</span><span><span class="aicc-sr-only">${T(s.merchant.position.replace("{n}", String(i + 1)))}: </span>${T(nameOf(it.id))}</span></span><span class="aicc-fbt-row__why" role="cell" data-kind="${it.tier}">${T(why(it))}</span><span role="cell">${sel(it.id)}</span></div>`).join("") +
+      hidden.map(({ item }) => `<div class="aicc-fbt-row" role="row" data-id="${item.id}" data-hidden="true"><span class="aicc-fbt-row__name" role="cell"><span class="aicc-fbt-row__pos" aria-hidden="true">–</span><span>${T(nameOf(item.id))}</span></span><span class="aicc-fbt-row__why" role="cell">${T(s.merchant.excluded)}</span><span role="cell">${sel(item.id)}</span></div>`).join("");
     if (refocus) $(`[data-rows] select[data-rule="${refocus}"]`)?.focus();
-    $("[data-now]").innerHTML = `<strong>${esc(s.merchant.shopperNow)}</strong> <span data-now-list>${esc(list(shown.map((it) => nameOf(it.id))))}</span>`;
+    $("[data-now]").innerHTML = `<strong>${T(s.merchant.shopperNow)}</strong> <span data-now-list>${T(list(shown.map((it) => nameOf(it.id))))}</span>`;
     const t = { ...BASE_TILES, adds: BASE_TILES.adds + state.addsDelta };
     $("[data-tiles]").innerHTML = ["views", "clicks", "adds"].map((k) =>
-      `<li class="aicc-fbt-tile" data-tile="${k}"><span class="aicc-fbt-tile__label">${esc(s.merchant.tiles[k])}</span><strong><bdi>${num.format(t[k])}</bdi></strong>${k === "adds" && state.addsDelta ? `<span class="aicc-fbt-tile__delta">${esc(s.merchant.tileAdded)}</span>` : ""}</li>`).join("");
+      `<li class="aicc-fbt-tile" data-tile="${k}"><span class="aicc-fbt-tile__label">${T(s.merchant.tiles[k])}</span><strong><bdi>${num.format(t[k])}</bdi></strong>${k === "adds" && state.addsDelta ? `<span class="aicc-fbt-tile__delta">${T(s.merchant.tileAdded)}</span>` : ""}</li>`).join("");
     // One observation and one Ask Reco line about THIS bundle, from the strongest partner that is still listed.
     const top = strongest();
     $("[data-extras]").innerHTML =
-      `<section class="aicc-fbt__insight"><h3>${esc(s.merchant.insightHeading)}</h3>` +
+      `<section class="aicc-fbt__insight"><h3>${T(s.merchant.insightHeading)}</h3>` +
       (top
-        ? `<p class="aicc-fbt__itype">${icon("lightbulb", 16)}<span>${esc(s.merchant.insightTitle)}</span></p><p>${esc(s.merchant.insightBody.replace("{product}", nameOf(top.id)))}</p><p class="aicc-fbt__imetric">${esc(s.merchant.insightMetric)}: <strong><bdi>${num.format(top.count)}</bdi></strong></p>`
-        : `<p>${esc(s.merchant.insightNone)}</p>`) +
+        ? `<p class="aicc-fbt__itype">${icon("lightbulb", 16)}<span>${T(s.merchant.insightTitle)}</span></p><p>${T(s.merchant.insightBody.replace("{product}", nameOf(top.id)))}</p><p class="aicc-fbt__imetric">${T(s.merchant.insightMetric)}: <strong><bdi>${num.format(top.count)}</bdi></strong></p>`
+        : `<p>${T(s.merchant.insightNone)}</p>`) +
       `</section>` +
-      `<section class="aicc-fbt__askline"><h3>${esc(s.merchant.askHeading)}</h3><p class="aicc-fbt__aq">${esc(s.merchant.askQuestion)}</p><p class="aicc-fbt__aa"><span>${esc(s.merchant.askLabel)}</span>${esc(top ? s.merchant.askAnswer.replace("{product}", nameOf(top.id)).replace("{n}", num.format(top.count)) : s.merchant.askNone)}</p></section>`;
+      `<section class="aicc-fbt__askline"><h3>${T(s.merchant.askHeading)}</h3><p class="aicc-fbt__aq">${T(s.merchant.askQuestion)}</p><p class="aicc-fbt__aa"><span>${T(s.merchant.askLabel)}</span>${T(top ? s.merchant.askAnswer.replace("{product}", nameOf(top.id)).replace("{n}", num.format(top.count)) : s.merchant.askNone)}</p></section>`;
   }
 
   function total() { return items().filter((i) => state.checked[i.id]).reduce((n, i) => n + i.price, 0); }
@@ -190,21 +191,21 @@ export function mountFbt(el, opts) {
     if (view === "merchant") { whyText = s.why.merchant; reco = s.reco.merchant; }
     else if (!withMode) { whyText = s.why.without; reco = s.reco.without; }
     else { whyText = focus ? s.why[focus.id] : s.why.none; reco = focus ? s.reco[focus.id] : s.reco.intro; }
-    $("[data-result]").textContent = resultText();
+    $("[data-result]").innerHTML = T(resultText());
     $(".aicc-fbt__nudge").hidden = state.switched;
     $("[data-title]").textContent = withMode ? s.widget.title : s.plain.title;
     $("[data-sub]").textContent = withMode ? s.widget.subtitle : s.plain.note;
     $("[data-subsr]").hidden = !withMode;
-    $("[data-why]").textContent = whyText;
-    $("[data-why-inline]").textContent = whyText;
-    $("[data-bubble]").textContent = reco;
+    $("[data-why]").innerHTML = T(whyText);
+    $("[data-why-inline]").innerHTML = T(whyText);
+    $("[data-bubble]").innerHTML = T(reco);
     if (withMode) animateTotal(t);
     const addBtn = $("[data-add]");
     addBtn.setAttribute("aria-disabled", String(n === 0));
     $("[data-add-icon]").innerHTML = icon(state.added ? "check" : "shopping-cart", 18);
     $("[data-add-text]").textContent = state.added ? s.widget.added : addToCartText(locale, s.widget, Math.max(1, n));
     $("[data-status]").textContent = n === 0 ? s.widget.selectAtLeastOne : state.added ? s.widget.noteAdd : "";
-    $("[data-announce]").textContent = state.announce || (speak && withMode && view === "shopper" ? `${s.summary.replace("{count}", String(n)).replace("{total}", money(t))}${n === 0 ? ` ${s.widget.selectAtLeastOne}.` : ""}${state.added ? ` ${s.widget.added}.` : ""}` : "");
+    $("[data-announce]").innerHTML = T(state.announce || (speak && withMode && view === "shopper" ? `${s.summary.replace("{count}", String(n)).replace("{total}", money(t))}${n === 0 ? ` ${s.widget.selectAtLeastOne}.` : ""}${state.added ? ` ${s.widget.added}.` : ""}` : ""));
     state.announce = "";
   }
 

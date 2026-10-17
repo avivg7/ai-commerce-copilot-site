@@ -3,7 +3,7 @@
 // Pin -> first place; Exclude -> removed and always wins; Prefer -> up one place; Deprioritize -> down one place; out-of-stock products stay out even when pinned.
 // Keyboard: a native <select> for the product, four toggle buttons (aria-pressed), Reset; every change is announced in one polite live region.
 // Reduced motion: nothing animates here except a short highlight that is switched off by the motion tokens.
-import { esc, setLang } from "./motion.js";
+import { setLang, labeler } from "./motion.js";
 import { applyRules, RULE_ACTIONS } from "./rules-core.js";
 
 const BASE = [
@@ -23,6 +23,7 @@ export function mountRules(el, opts) {
   const locale = opts.locale || "en";
   const fallback = !!s._fallback;
   setLang(el, s, locale, opts.dir || el.dataset.dir);
+  const { T } = labeler(s, { locale });
   const num = new Intl.NumberFormat(fallback ? "en" : locale);
   const id = `aicc-rules-${++uid}`;
   const state = { product: BASE[0].id, rules: [], seq: 0, effect: "", help: "none", announce: "", moved: null };
@@ -31,23 +32,23 @@ export function mountRules(el, opts) {
   el.classList.add("aicc-rules");
   el.removeAttribute("aria-busy");
   el.innerHTML =
-    `<p class="aicc-rules__label">${esc(s.label)}</p>` +
+    `<p class="aicc-rules__label">${T(s.label)}</p>` +
     `<div class="aicc-rules__grid">` +
     `<div class="aicc-rules__panel aicc-rules__controls">` +
-    `<div class="aicc-rules__field"><label for="${id}-product">${esc(s.productLabel)}</label>` +
-    `<select id="${id}-product" data-product>${BASE.map((b) => `<option value="${b.id}">${esc(name(b.id))}</option>`).join("")}</select></div>` +
-    `<div class="aicc-rules__field"><span id="${id}-act">${esc(s.actionLabel)}</span>` +
-    `<div class="aicc-rules__actions" role="group" aria-labelledby="${id}-act">${RULE_ACTIONS.map((a) => `<button type="button" class="aicc-rules__btn" data-action="${a}" aria-pressed="false" aria-describedby="${id}-help">${esc(s.actions[a])}</button>`).join("")}</div></div>` +
+    `<div class="aicc-rules__field"><label for="${id}-product">${T(s.productLabel)}</label>` +
+    `<select id="${id}-product" data-product>${BASE.map((b) => `<option value="${b.id}">${T(name(b.id))}</option>`).join("")}</select></div>` +
+    `<div class="aicc-rules__field"><span id="${id}-act">${T(s.actionLabel)}</span>` +
+    `<div class="aicc-rules__actions" role="group" aria-labelledby="${id}-act">${RULE_ACTIONS.map((a) => `<button type="button" class="aicc-rules__btn" data-action="${a}" aria-pressed="false" aria-describedby="${id}-help">${T(s.actions[a])}</button>`).join("")}</div></div>` +
     `<p class="aicc-rules__help" id="${id}-help" data-help></p>` +
     `<p class="aicc-rules__effect" data-effect></p>` +
-    `<div class="aicc-rules__active"><p class="aicc-rules__sub">${esc(s.activeHeading)}</p><ul data-active class="aicc-rules__chips"></ul></div>` +
-    `<button type="button" class="aicc-btn aicc-btn--outline aicc-btn--sm" data-reset>${esc(s.reset)}</button>` +
+    `<div class="aicc-rules__active"><p class="aicc-rules__sub">${T(s.activeHeading)}</p><ul data-active class="aicc-rules__chips"></ul></div>` +
+    `<button type="button" class="aicc-btn aicc-btn--outline aicc-btn--sm" data-reset>${T(s.reset)}</button>` +
     `</div>` +
-    `<div class="aicc-rules__panel aicc-rules__result"><h3>${esc(s.heading)}</h3><ol class="aicc-rules__list" data-list></ol>` +
-    `<p class="aicc-rules__sub">${esc(s.hiddenHeading)}</p><ul class="aicc-rules__hidden" data-hidden></ul></div>` +
+    `<div class="aicc-rules__panel aicc-rules__result"><h3>${T(s.heading)}</h3><ol class="aicc-rules__list" data-list></ol>` +
+    `<p class="aicc-rules__sub">${T(s.hiddenHeading)}</p><ul class="aicc-rules__hidden" data-hidden></ul></div>` +
     `</div>` +
     `<p class="aicc-sr-only" role="status" data-announce></p>` +
-    `<p class="aicc-rules__small">${esc(s.smallprint)}</p>`;
+    `<p class="aicc-rules__small">${T(s.smallprint)}</p>`;
 
   const $ = (q) => el.querySelector(q);
   const ruleOf = (pid) => state.rules.find((r) => r.id === pid);
@@ -57,19 +58,19 @@ export function mountRules(el, opts) {
     const { shown, hidden } = applyRules(BASE, state.rules);
     $("[data-list]").innerHTML = shown.map((b, i) => {
       const r = ruleOf(b.id);
-      return `<li data-id="${b.id}"${state.moved === b.id ? ' data-moved="true"' : ""}><span class="aicc-rules__pos" aria-hidden="true">${i + 1}</span><span class="aicc-rules__name"><span class="aicc-sr-only">${esc(s.place.replace("{n}", String(i + 1)))}: </span>${esc(name(b.id))}<small>${esc(evidence(b))}</small></span>${r ? `<span class="aicc-rules__tag" data-action="${r.action}">${esc(s.tags[r.action])}</span>` : ""}</li>`;
+      return `<li data-id="${b.id}"${state.moved === b.id ? ' data-moved="true"' : ""}><span class="aicc-rules__pos" aria-hidden="true">${i + 1}</span><span class="aicc-rules__name"><span class="aicc-sr-only">${T(s.place.replace("{n}", String(i + 1)))}: </span>${T(name(b.id))}<small>${T(evidence(b))}</small></span>${r ? `<span class="aicc-rules__tag" data-action="${r.action}">${T(s.tags[r.action])}</span>` : ""}</li>`;
     }).join("");
     $("[data-hidden]").innerHTML = hidden.length
-      ? hidden.map(({ item, reason }) => `<li><span>${esc(name(item.id))}</span><small>${esc(reason === "outOfStock" ? s.effect.outOfStock : s.effect.exclude)}</small></li>`).join("")
-      : `<li class="aicc-rules__none">${esc(s.hiddenNone)}</li>`;
+      ? hidden.map(({ item, reason }) => `<li><span>${T(name(item.id))}</span><small>${T(reason === "outOfStock" ? s.effect.outOfStock : s.effect.exclude)}</small></li>`).join("")
+      : `<li class="aicc-rules__none">${T(s.hiddenNone)}</li>`;
     $("[data-active]").innerHTML = state.rules.length
-      ? state.rules.map((r) => `<li><span class="aicc-rules__tag" data-action="${r.action}">${esc(s.tags[r.action])}</span> ${esc(name(r.id))}</li>`).join("")
-      : `<li class="aicc-rules__none">${esc(s.activeNone)}</li>`;
+      ? state.rules.map((r) => `<li><span class="aicc-rules__tag" data-action="${r.action}">${T(s.tags[r.action])}</span> ${T(name(r.id))}</li>`).join("")
+      : `<li class="aicc-rules__none">${T(s.activeNone)}</li>`;
     const cur = ruleOf(state.product)?.action;
     el.querySelectorAll("[data-action]").forEach((b) => { if (b.tagName === "BUTTON") b.setAttribute("aria-pressed", String(b.dataset.action === cur)); });
-    $("[data-help]").textContent = s.help[state.help] || s.help.none;
-    $("[data-effect]").textContent = state.effect;
-    $("[data-announce]").textContent = state.announce;
+    $("[data-help]").innerHTML = T(s.help[state.help] || s.help.none);
+    $("[data-effect]").innerHTML = T(state.effect);
+    $("[data-announce]").innerHTML = T(state.announce);
   }
 
   function listText() {
