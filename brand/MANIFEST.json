@@ -7,8 +7,8 @@
       "bytes": 20094
     },
     "aicc-brand.css": {
-      "sha256": "068489f8ea440d73f3420d5570e81bd7bae081eac4f5cfb04015c8af561bff79",
-      "bytes": 67946
+      "sha256": "6c5899c3c77dc884b84d4210be848a779d93e835a1a5dc93a2c3f01f84702a1b",
+      "bytes": 68723
     },
     "aicc-tokens.css": {
       "sha256": "bcf951af272e0adb914b154a811047c3d5224ff6d33179b7e9f9fcc792592955",
@@ -83,20 +83,20 @@
       "bytes": 4077
     },
     "content/faq.en.json": {
-      "sha256": "806e7c3f8764b8aaa6083036baede86a1090e2f4de2528a3d7af84bdcf913ffd",
-      "bytes": 25141
+      "sha256": "0b52655c82da4648d965ae78d182a0cbf208b6cec4ce4ff1d058d388f9caba38",
+      "bytes": 25790
     },
     "content/faq.es.json": {
-      "sha256": "81f402f9c70a28f3107b577732cc0cd57b3a76f7f2380f93cfe8456a5f39a8a5",
-      "bytes": 24682
+      "sha256": "c87d86feb038ad35a8facdfc386db6fc08ba6510757ad82acc809f081506fa15",
+      "bytes": 25424
     },
     "content/faq.he.json": {
-      "sha256": "129b1d7da876b9a6c1382deef00c35818c1ce9be977dbce9ec3ca7c2de27b8f5",
-      "bytes": 30037
+      "sha256": "38a8d5b5872c748257c417665ca6433044fbe805ec8bf5b9baccd941c3f5981f",
+      "bytes": 31007
     },
     "content/faq.ru.json": {
-      "sha256": "6d53a56887e13834ea8ed992dc3d100a0e2dbeb40c067d2847f8499a29535afe",
-      "bytes": 39696
+      "sha256": "4487bb78a9cdaac33aae850754a1842f5f0eee56839e7c9bd07096202cd5ed86",
+      "bytes": 40867
     },
     "content/replica-labels.json": {
       "sha256": "a351cf318cbbef820742c1fe2478eacec1e34e40c3479a1f954d986af1679558",
@@ -119,8 +119,8 @@
       "bytes": 8284
     },
     "js/fbt-demo.js": {
-      "sha256": "d4c5065a246414433e4400840c6dc84d2620b193b3ae210f9bf88e27640d2554",
-      "bytes": 19238
+      "sha256": "eadf39662ed698c5e2521381fd581332943de19de4352c44434872369462cd75",
+      "bytes": 19431
     },
     "js/flow.js": {
       "sha256": "7f992c41b22d2d1592e9afc4da0c4ac0e4055c0c9a471d84523026a8ada8de05",

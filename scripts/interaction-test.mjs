@@ -996,6 +996,47 @@ for (const [route, contrast] of [["", false], ["", true], ["pricing", false], ["
   check(`ru meta descriptions state "(USD)" at most once (${counts.join(", ")})`, counts.every((c) => c <= 1), counts.join());
   await ctx.close();
 }
+// 27. Final merchant review: phone demo cue, Escape on the mobile menu, scroll cue on the Product strip, FAQ synonyms
+{
+  const [ctx, p] = await fresh({ viewport: { width: 390, height: 844 } });
+  await p.addInitScript(() => { try { localStorage.setItem("aicc_lang_dismissed", "1"); } catch {} });
+  await p.goto(urlFor("en", ""));
+  await p.evaluate(() => document.querySelector("#demo").scrollIntoView());
+  await p.waitForSelector(".aicc-fbt input[type=checkbox]", { state: "attached", timeout: 8000 });
+  await p.waitForTimeout(600);
+  const before = await p.$eval("[data-cue]", (e) => e.textContent.trim());
+  const second = (await p.$$(".aicc-fbt input[type=checkbox]"))[1];
+  await second.evaluate((e) => e.closest("li, label, div").scrollIntoView({ block: "center" }));
+  await second.check({ force: true });
+  await p.waitForTimeout(500);
+  const r = await p.evaluate(() => {
+    const cue = document.querySelector("[data-cue]"); const box = document.querySelectorAll(".aicc-fbt input[type=checkbox]")[1];
+    const c = cue.getBoundingClientRect(), b = box.getBoundingClientRect();
+    return { text: cue.textContent.trim(), shown: getComputedStyle(cue).display !== "none", gap: Math.round(c.top - b.bottom), inView: c.top >= 0 && c.bottom <= innerHeight, hidden: cue.getAttribute("aria-hidden") };
+  });
+  check(`phone demo: Reco's one-line reaction sits right under the product list and changes on a tap (${r.gap}px below the ticked box, in view: ${r.inView}; "${before.slice(0, 24)}" -> "${r.text.slice(0, 40)}")`, r.shown && r.text && r.text !== before && r.gap >= 0 && r.gap < 420 && r.inView && r.hidden === "true", JSON.stringify(r));
+  await p.goto(urlFor("en", ""));
+  await p.waitForSelector("[data-aicc-header][data-aicc-ready]");
+  await p.click("[data-aicc-menu-btn]");
+  await p.keyboard.press("Tab");
+  await p.keyboard.press("Escape");
+  const m = await p.evaluate(() => ({ expanded: document.querySelector("[data-aicc-menu-btn]").getAttribute("aria-expanded"), hidden: document.querySelector("[data-aicc-menu-panel]").hidden, onBtn: document.activeElement === document.querySelector("[data-aicc-menu-btn]") }));
+  check("mobile menu: Escape closes it and returns focus to the menu button", m.expanded === "false" && m.hidden && m.onBtn, JSON.stringify(m));
+  await p.goto(urlFor("en", "product"));
+  const sn = await p.$eval(".aicc-subnav ul", (u) => ({ overflow: u.scrollWidth > u.clientWidth, bg: getComputedStyle(u).backgroundImage, att: getComputedStyle(u).backgroundAttachment }));
+  check(`product in-page strip: it overflows at 390px and carries an edge-fade scroll cue (local covers + scroll shadows: ${sn.att})`, sn.overflow && (sn.bg.match(/gradient/g) || []).length === 4 && /local/.test(sn.att) && /scroll/.test(sn.att), JSON.stringify(sn));
+  await p.goto(urlFor("en", "product"));
+  await ctx.close();
+}
+{
+  const [ctx, p] = await fresh();
+  const has = async (q, id) => { await p.goto(urlFor("en", "questions") + "?q=" + encodeURIComponent(q)); await p.waitForSelector("[data-aicc-faq-search] input"); await p.waitForTimeout(250); return p.evaluate((i) => { const d = document.getElementById(i); return !!d && !d.closest("[hidden]"); }, id); };
+  check("faq: 'small store', 'minimum' and 'volume' find 'How many orders does AICC need?' (q59); 'uninstall' finds q40", (await has("small store", "q59")) && (await has("minimum", "q59")) && (await has("volume", "q59")) && (await has("uninstall", "q40")));
+  await p.goto(urlFor("en", ""));
+  const ids = await p.$$eval("details[id^='q']", (d) => d.map((x) => x.id));
+  check(`faq: q59 is on the Home page and q51 is not (${ids.join(",")})`, ids.includes("q59") && !ids.includes("q51"), ids.join());
+  await ctx.close();
+}
 await browser.close();
 const failed = results.filter((r) => !r.ok);
 console.log(`\ninteraction tests: ${results.length - failed.length}/${results.length} passed`);

@@ -480,7 +480,7 @@ export const es: DeepPartial<Dictionary> = {
         },
         fallback: {
           title: "Un historial escaso recibe una alternativa segura.",
-          body: "Cuando un producto tiene pocas compras conjuntas, los puestos restantes se completan con la misma categoría y después con sus productos con stock más recientes. No se inventa nada, y la vista previa de su panel muestra qué acompañantes se compraron juntos de verdad.",
+          body: "Cuando un producto tiene pocas compras conjuntas, los puestos restantes se completan con la misma categoría y después con sus productos con stock más recientes. No se inventa nada, y la vista previa de su panel muestra qué acompañantes se compraron juntos de verdad. Los acompañantes aprendidos y los productos alternativos comparten hoy el título del widget; la vista previa de su panel muestra cuál es cuál.",
         },
       },
       link: "Vea cómo se decide una recomendación",
@@ -495,7 +495,7 @@ export const es: DeepPartial<Dictionary> = {
         tab: "Entender",
         title: "Vea qué hacen sus recomendaciones.",
         lead: "Vea qué hacen los compradores con sus recomendaciones: vistas, clics y paquetes añadidos al carrito de los últimos 30 días, y los pedidos y los ingresos asociados al widget. Previsualice qué recomienda AICC para cualquier producto, con las veces que se compró junto cada acompañante.",
-        note: "Los pedidos y los ingresos se muestran como asociación, no como prueba de causa.",
+        note: "Los pedidos y los ingresos se muestran como asociación, no como prueba de causa. Un pedido asociado cuenta por el total completo del pedido.",
       },
       control: {
         tab: "Controlar",
@@ -696,7 +696,7 @@ export const es: DeepPartial<Dictionary> = {
         title: "Cuándo un pedido cuenta como asociado",
         steps: ["El comprador añade un paquete desde el widget", "Compra uno de esos productos en 24 horas", "El pedido se muestra como asociado, por su total completo"],
       },
-      association: "AICC informa de los pedidos y los ingresos asociados al widget y le deja la conclusión a usted. La asociación indica dónde mirar; no prueba que el widget causara la venta, y AICC no ejecuta un grupo de control.",
+      association: "AICC informa de los pedidos y los ingresos asociados al widget y le deja la conclusión a usted. La asociación indica dónde mirar; no prueba que el widget causara la venta, y AICC no ejecuta un grupo de control. Un pedido asociado cuenta por el total completo del pedido.",
       consent: "Además necesita que la herramienta de consentimiento de cookies de su tienda permita las estadísticas, mediante un plugin de consentimiento compatible con la WP Consent API. Si no hay ninguno instalado, no hay cookies y no se puede asociar ningún pedido, aunque los datos de los pedidos se siguen enviando porque así se aprenden las recomendaciones.",
       notTitle: "Lo que no se mide",
       not: {
@@ -856,7 +856,7 @@ export const es: DeepPartial<Dictionary> = {
       title: "Duración, renovación y reembolsos",
       try: {
         title: "Pruébelo",
-        body: "La compra inicial de su plan incluye una garantía de devolución del dinero de 14 días. Los 14 días empiezan cuando se recibe el pago y se emite su plan. Consulte la [política de reembolso](route:refund-policy) para ver las condiciones completas.",
+        body: "La compra inicial de su plan incluye una garantía de devolución del dinero de 14 días. Los 14 días empiezan cuando se recibe el pago y se emite su plan. Importe sus pedidos anteriores (opcional) desde el primer día para ver antes los acompañantes aprendidos. Consulte la [política de reembolso](route:refund-policy) para ver las condiciones completas.",
       },
       renewal: {
         title: "Renovación",
@@ -1147,6 +1147,7 @@ export const es: DeepPartial<Dictionary> = {
           "Datos de pago",
           "Direcciones IP de los compradores (se procesan en su sitio, no se envían)",
         ],
+        receives: "Sí recibe identificadores seudonimizados (un correo con hash, ID de cliente y de visitante), el país de facturación y el contenido de los pedidos.",
         note: "Llamamos a estos identificadores seudonimizados, no anónimos. Las secciones siguientes explican exactamente qué se envía, qué cookies pueden establecerse y cuánto tiempo pueden conservarse los datos.",
       },
       s: {

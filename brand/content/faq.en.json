@@ -18,9 +18,9 @@
     { "id": "safety", "title": "Reliability" },
     { "id": "data", "title": "Data and privacy" }
   ],
-  "mostAskedBeforeBuying": ["q41", "q57", "q58", "q42", "q51", "q44", "q45", "q05", "q33", "q56"],
+  "mostAskedBeforeBuying": ["q41", "q57", "q58", "q42", "q59", "q44", "q45", "q05", "q33", "q56"],
   "selection": {
-    "home": ["q41", "q57", "q58", "q51", "q05", "q33", "q56"],
+    "home": ["q41", "q57", "q58", "q59", "q05", "q33", "q56"],
     "product": ["q42", "q02", "q44", "q45", "q47", "q49", "q31", "q06", "q39", "q33"],
     "pricing": ["q09", "q55", "q13", "q12", "q18", "q19", "q17", "q26", "q54", "q22"],
     "questions": "all"
@@ -113,6 +113,11 @@
       "layer": "sales", "topic": "setup",
       "q": "How soon can I start seeing recommendations?",
       "a": "AICC prepares your store in the background after you connect: it syncs your catalog and checks that the widget is ready. Timing varies with catalog size and your site's scheduled tasks.\n\nOnce your store is ready, the widget starts with same-category and newest products, then moves to real bought-together pairs as orders are counted. Import your past orders (optional) to start with pairs already learned."
+    },
+    "q59": {
+      "layer": "sales", "topic": "recs",
+      "q": "How many orders does AICC need?",
+      "a": "There is no minimum order volume, so a small store can use AICC too. Any two products that appear in the same completed or processing order become a pair, and partners are ranked by how many orders contained both. A product with few or no partners uses same-category and newest products for the remaining spots, and real partners take over as orders come in. Importing your past orders (optional, up to 24 months) gives AICC your history from the start. Dashboard observations need at least 10 orders in the period."
     },
     "q31": {
       "layer": "product", "topic": "setup",
@@ -281,7 +286,7 @@
     },
     "q40": {
       "layer": "product", "topic": "safety",
-      "q": "Can I remove AICC cleanly?",
+      "q": "Can I remove or uninstall AICC cleanly?",
       "a": "Yes. AICC doesn't edit WooCommerce's products, prices or templates; by default it only hides WooCommerce's related-products block while its widget shows. Disconnect the store in Plans & Stores first to free its slot, then deactivate AICC and the native recommendations return.\n\nAICC leaves its settings, and the private visitor and session fields it added to orders, in your database. [Data and trust](route:data-and-trust) covers what stays with AICC."
     },
     "q33": {

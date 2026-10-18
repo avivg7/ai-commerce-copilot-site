@@ -625,6 +625,9 @@ html.aicc-scroll-lock { overflow: hidden; scrollbar-gutter: stable; }
 .aicc-fbt__whyinline h3 { font-size: var(--aicc-text-lg); font-weight: 700; }
 .aicc-fbt__whyinline p { color: var(--aicc-text-muted); }
 .aicc-fbt__why { display: none; }
+/* Phones and tablets: Reco's live one-line reaction directly under the product list (the dark Reco panel only exists from 62rem), so a tap visibly changes something next to the finger (sticky to the bottom edge while the list is on screen). aria-hidden: the polite result line already announces the change. */
+.aicc-fbt__cue { display: block; margin: 0; padding: var(--aicc-space-3) var(--aicc-space-4); border-radius: var(--aicc-radius-lg); border-inline-start: 3px solid var(--aicc-primary); background: var(--aicc-surface-sunken); color: var(--aicc-text); font-size: var(--aicc-text-sm); font-weight: 600; position: sticky; inset-block-end: 0.75rem; z-index: 2; box-shadow: 0 6px 18px rgb(15 23 42 / 0.14); }
+@media (min-width: 62rem) { .aicc-fbt__cue { display: none; } }
 @media (min-width: 62rem) {
   .aicc-fbt__whyinline { display: none; }
   .aicc-fbt__why {

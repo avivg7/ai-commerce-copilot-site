@@ -89,6 +89,10 @@
       "q": "¿Cuánto tardaré en ver recomendaciones?",
       "a": "AICC prepara su tienda en segundo plano después de conectar: sincroniza su catálogo y comprueba que el widget esté listo. El tiempo varía según el tamaño del catálogo y las tareas programadas de su sitio.\n\nCuando su tienda está lista, el widget empieza con productos de la misma categoría y los más recientes, y pasa a pares realmente comprados juntos a medida que se cuentan los pedidos. Importe sus pedidos anteriores (opcional) para empezar con pares ya aprendidos."
     },
+    "q59": {
+      "q": "¿Cuántos pedidos necesita AICC?",
+      "a": "No hay un volumen mínimo de pedidos, así que una tienda pequeña también puede usar AICC. Dos productos cualesquiera que aparecen en el mismo pedido completado o en proceso forman un par, y los acompañantes se ordenan según cuántos pedidos contenían ambos. Un producto con pocos acompañantes o ninguno completa los puestos restantes con productos de la misma categoría y los más recientes, y los acompañantes reales toman el relevo a medida que llegan pedidos. Importar sus pedidos anteriores (opcional, hasta 24 meses) da a AICC su historial desde el principio. Las observaciones del panel necesitan al menos 10 pedidos en el periodo."
+    },
     "q31": {
       "q": "¿Tengo que importar mi historial de pedidos?",
       "a": "No, es opcional. Cuando su tienda está conectada, AICC le ofrece importar hasta 24 meses de pedidos anteriores para aprender desde el principio las relaciones que ya existen entre sus productos. Si lo omite, AICC empieza con recomendaciones de la misma categoría y de los productos más recientes, y aprende de los pedidos nuevos.\n\nAICC no importa sus pedidos anteriores hasta que usted lo decida. Los pedidos hechos antes de conectar no se envían a menos que los importe; los hechos después de conectar se envían al crearse o actualizarse."
@@ -222,7 +226,7 @@
       "a": "AICC no muestra ningún widget, no carga ningún script y no establece cookies nuevas en la tienda online, y en su lugar se muestran las recomendaciones nativas de WooCommerce. Las cookies que ya están en los navegadores se quedan allí, y nada las lee."
     },
     "q40": {
-      "q": "¿Puedo quitar AICC sin dejar rastro?",
+      "q": "¿Puedo quitar o desinstalar AICC sin dejar rastro?",
       "a": "Sí. AICC no edita los productos, precios ni plantillas de WooCommerce; por defecto solo oculta el bloque de productos relacionados de WooCommerce mientras se muestra su widget. Desconecte primero la tienda en Planes y tiendas para liberar su cupo, luego desactive AICC y vuelven las recomendaciones nativas.\n\nAICC deja en su base de datos sus ajustes y los campos privados de visitante y de sesión que añadió a los pedidos. [Datos y confianza](route:data-and-trust) explica qué se queda con AICC."
     },
     "q33": {

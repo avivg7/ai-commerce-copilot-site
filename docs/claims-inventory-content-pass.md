@@ -106,7 +106,7 @@ the corrections are listed at the end ("What the review changed"). The first inv
 | Deletion and export requests are handled by hand | | SUPPORTED |
 | One draft notice per page; "What we haven't finalized" lists the details not yet published | `docs/AUTHORITY.md`, `launch:check` | POLICY |
 
-## Questions (57 active)
+## Questions (58 active)
 
 | Questions | Evidence | Status |
 |---|---|---|
@@ -164,3 +164,11 @@ Still different from the Control Plane by design: the site's accessibility state
 * **Studio badge**: "Built for multiple stores" (he "מיועדת לכמה חנויות", es "Pensado para varias tiendas", ru "Для нескольких магазинов"), a neutral purpose label. The old store-count recommendation is gone from the site because two Solo plans ($198) cost less than one Studio ($199). The plan finder and the "Which plan?" list state capacity only (Solo covers 1 store, Studio up to 3, Agency up to 10); the finder logic is unchanged. `facts.json` plans[studio].badge is the canonical string; `content:check` asserts the English dictionary equals it, and the phrase is a banned claim in all four languages (`facts.json` bannedClaims, `copy:check`).
 * **Optional import sweep**: every customer-visible statement about past orders already said the import is optional except the answer to "Will AICC invent history for the time it was inactive?" (q25: "Past orders are imported as orders"), now "If you choose to import past orders, ..." in all four languages. Lint: `content:check` bans "imports your past orders automatically / when you connect" style sentences (facts.json bannedClaims, with a self-test), `copy:check` bans the he, es and ru equivalents (with a self-test).
 * **Accessibility statement, site against Control Plane**: justified differences are different surfaces (the Control Plane covers account, forms and checkout, the site covers the demo and the marketing pages). Accidental drift fixed on the site: "No autoplaying video" (false: the muted looping hero video plays while it is on screen; the statement now says so, with the pause control and reduced motion), "Buttons and controls are at least 44 pixels" (the Control Plane says "our targets are"; the site now says targets), and the accessibility settings are named (reduce motion, higher contrast, larger text), as in the Control Plane.
+
+## Final merchant review (2026-10-18)
+
+* **New q59 "How many orders does AICC need?"** (replaces q51 on Home and in "Most asked before buying"): there is no minimum; any two products in the same completed or processing order become a pair; partners are ranked by how many orders contained both; fewer partners are filled with same-category and newest products; the optional import gives the history from the start; dashboard observations need at least 10 orders in the period. Evidence: BE `recommendation_engine.py` (raw pair counts, no threshold), facts `insightsMinOrders`, `importMonths`. SUPPORTED. q40 is titled "Can I remove or uninstall AICC cleanly?" (search synonym).
+* **Home "Thin history gets a safe fallback"** says learned partners and fallbacks share the widget heading today (PL widget strings: same heading for fallback items); the dashboard preview shows which is which. SUPPORTED.
+* **Associated orders** count at the full order total (Understand tab and Product measurement; facts `attributionCredit`). SUPPORTED.
+* **Data and trust, short version**: "It does receive pseudonymous identifiers (a hashed email, customer and visitor IDs), billing country and order contents." Same facts as the lists below it. SUPPORTED (legal text: counsel review).
+* **Pricing "Try it"**: the optional import is suggested as the way to see learned partners sooner. POLICY.

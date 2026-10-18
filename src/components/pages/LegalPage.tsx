@@ -72,6 +72,7 @@ export function LegalPage({ locale, t, doc }: { locale: Locale; t: Dictionary; d
                 yes={{ title: short.needsTitle, items: short.needs }}
                 no={{ title: short.neverTitle, items: short.never }}
               />
+              <p className="aicc-short__receives">{short.receives}</p>
               <p className="aicc-short__note">{short.note}</p>
             </section>
           ) : null}

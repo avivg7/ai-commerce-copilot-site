@@ -75,6 +75,7 @@ export function mountFbt(el, opts) {
     `<div class="aicc-fbt__head"><h3 data-title></h3><p data-sub></p><p class="aicc-sr-only" data-subsr hidden>${T(s.mode.withCaption)}</p></div>` +
     `<div data-bundle>` +
     `<fieldset class="aicc-fbt__fieldset"><legend class="aicc-sr-only">${T(s.groupLabel)}</legend><div data-anchor></div><ul class="aicc-fbt__cands" data-cands></ul></fieldset>` +
+    `<p class="aicc-fbt__cue" data-cue aria-hidden="true"></p>` +
     `<p class="aicc-fbt__hint" data-kbd>${T(s.keyboardHint)}</p>` +
     `<div class="aicc-fbt__foot"><p class="aicc-fbt__total"><span>${T(s.widget.bundleTotal)}</span><strong><bdi data-total></bdi></strong></p>` +
     `<button type="button" class="aicc-btn aicc-btn--primary" data-add aria-disabled="false"><span data-add-icon></span><span data-add-text></span></button></div>` +
@@ -199,6 +200,7 @@ export function mountFbt(el, opts) {
     $("[data-why]").innerHTML = T(whyText);
     $("[data-why-inline]").innerHTML = T(whyText);
     $("[data-bubble]").innerHTML = T(reco);
+    $("[data-cue]").innerHTML = T(reco); // phones: Reco's one-line reaction sits right under the list, where the tap happened
     if (withMode) animateTotal(t);
     const addBtn = $("[data-add]");
     addBtn.setAttribute("aria-disabled", String(n === 0));

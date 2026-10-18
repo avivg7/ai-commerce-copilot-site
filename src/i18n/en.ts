@@ -505,7 +505,7 @@ export const en = {
         },
         fallback: {
           title: "Thin history gets a safe fallback.",
-          body: "When a product has few co-purchases, the remaining spots come from the same category, then your newest in-stock products. Nothing is invented, and your dashboard preview shows which partners were really bought together.",
+          body: "When a product has few co-purchases, the remaining spots come from the same category, then your newest in-stock products. Nothing is invented, and your dashboard preview shows which partners were really bought together. Learned partners and fallbacks share the widget heading today; your dashboard preview shows which is which.",
         },
       },
       link: "See how a recommendation is decided",
@@ -521,7 +521,7 @@ export const en = {
         tab: "Understand",
         title: "See what your recommendations are doing.",
         lead: "See what shoppers do with your recommendations: views, clicks and bundle add-to-carts from the last 30 days, and the orders and revenue associated with the widget. Preview what AICC recommends for any product, with how many times each partner was bought together.",
-        note: "Orders and revenue are shown as association, not proof of cause.",
+        note: "Orders and revenue are shown as association, not proof of cause. An associated order counts at its full order total.",
       },
       control: {
         tab: "Control",
@@ -730,7 +730,7 @@ export const en = {
         steps: ["Shopper adds a bundle from the widget", "Buys one of those products within 24 hours", "Order shown as associated, at its full order total"],
       },
       association:
-        "AICC reports the orders and revenue associated with the widget and leaves the conclusion to you. Association shows where to look; it is not proof that the widget caused the sale, and AICC doesn't run a control group.",
+        "AICC reports the orders and revenue associated with the widget and leaves the conclusion to you. Association shows where to look; it is not proof that the widget caused the sale, and AICC doesn't run a control group. An associated order counts at its full order total.",
       consent:
         "It also needs your store's cookie consent tool to allow statistics, through a consent plugin compatible with the WP Consent API. With none installed there are no cookies and no orders can be associated, though order facts are still sent because they are how recommendations are learned.",
       notTitle: "Not measured",
@@ -886,7 +886,7 @@ export const en = {
       title: "Term, renewal and refunds",
       try: {
         title: "Try it",
-        body: "Your initial plan purchase includes a 14-day money-back guarantee. The 14 days start when payment is received and your plan is issued. See the [Refund Policy](route:refund-policy) for full terms.",
+        body: "Your initial plan purchase includes a 14-day money-back guarantee. The 14 days start when payment is received and your plan is issued. Import your past orders (optional) on day one to see learned partners sooner. See the [Refund Policy](route:refund-policy) for full terms.",
       },
       renewal: {
         title: "Renewal",
@@ -1182,6 +1182,7 @@ export const en = {
           "Payment details",
           "Shopper IP addresses (processed on your site, not sent)",
         ],
+        receives: "It does receive pseudonymous identifiers (a hashed email, customer and visitor IDs), billing country and order contents.",
         note: "We call these identifiers pseudonymous, not anonymous. The sections below say exactly what is sent, which cookies can be set and how long data may be kept.",
       },
       s: {

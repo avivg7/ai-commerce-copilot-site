@@ -1092,6 +1092,7 @@ main:focus {
 .aicc-short { display: grid; gap: var(--aicc-space-5); margin-block-end: var(--aicc-space-8); }
 .aicc-short h2 { font-size: var(--aicc-text-2xl); font-weight: 700; }
 .aicc-short__note { max-inline-size: var(--aicc-measure); color: var(--aicc-text-muted); }
+.aicc-short__receives { max-inline-size: var(--aicc-measure); color: var(--aicc-text); font-weight: 600; margin-block-start: var(--aicc-space-4); }
 
 
 .aicc-valuelines { margin-block-start: var(--aicc-space-7); }
@@ -1147,7 +1148,15 @@ main:focus {
 
 /* Product: compact sticky in-page navigation */
 .aicc-subnav { position: sticky; inset-block-start: var(--aicc-header-h); z-index: 20; background: color-mix(in oklab, var(--aicc-surface) 92%, transparent); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); border-block-end: 1px solid var(--aicc-border); }
-.aicc-subnav ul { list-style: none; margin: 0 auto; padding: 0.25rem 1rem; display: flex; gap: 0.25rem; overflow-x: auto; scrollbar-width: thin; max-inline-size: 80rem; }
+.aicc-subnav ul {
+  list-style: none; margin: 0 auto; padding: 0.25rem 1rem; display: flex; gap: 0.25rem; overflow-x: auto; scrollbar-width: thin; max-inline-size: 80rem;
+  /* Scroll cue: an edge fade on the side that still has items (the "local" covers hide it at the ends, so it shows only when the strip overflows). */
+  background:
+    linear-gradient(to right, var(--aicc-surface) 30%, transparent) left center / 2.5rem 100% no-repeat local,
+    linear-gradient(to left, var(--aicc-surface) 30%, transparent) right center / 2.5rem 100% no-repeat local,
+    radial-gradient(farthest-side at 0 50%, rgb(15 23 42 / 0.4), transparent) left center / 1.5rem 100% no-repeat scroll,
+    radial-gradient(farthest-side at 100% 50%, rgb(15 23 42 / 0.4), transparent) right center / 1.5rem 100% no-repeat scroll;
+}
 .aicc-subnav a { display: inline-flex; align-items: center; min-block-size: var(--aicc-tap); padding-inline: 0.85rem; border-radius: var(--aicc-radius-pill); white-space: nowrap; font-size: var(--aicc-text-sm); font-weight: 600; color: var(--aicc-text); text-decoration: none; }
 .aicc-subnav a:hover { background: var(--aicc-info-bg); }
 .aicc-section[id] { scroll-margin-top: 8rem; }
