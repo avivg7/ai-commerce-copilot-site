@@ -172,3 +172,29 @@ Still different from the Control Plane by design: the site's accessibility state
 * **Associated orders** count at the full order total (Understand tab and Product measurement; facts `attributionCredit`). SUPPORTED.
 * **Data and trust, short version**: "It does receive pseudonymous identifiers (a hashed email, customer and visitor IDs), billing country and order contents." Same facts as the lists below it. SUPPORTED (legal text: counsel review).
 * **Pricing "Try it"**: the optional import is suggested as the way to see learned partners sooner. POLICY.
+
+## Positioning v3 (owner direction 2026-10-18/19)
+
+Source of truth for scope: `positioning-v3.md` (owner direction reconciled with the code). Not claimed, by design: several recommendation strategies (engine v2 and the strategy presets are OFF), any platform other than WooCommerce, AI-powered, uplift/ROI, invented numbers.
+
+| Where | Sentence | Evidence | Status |
+|---|---|---|---|
+| Hero | "Commerce recommendation and merchandising copilot" / "Available for WooCommerce" | positioning v3; plugin declares WordPress 6.0, WooCommerce 7.0, PHP 7.4; no other platform | SUPPORTED |
+| Hero | "Make every product page a smarter selling opportunity." | positioning: outcome-led H1 (no number, no uplift) | POSITIONING |
+| Hero | "AICC turns your store data into better product recommendations, useful merchant insight, and practical merchandising control." | recommendations (BE ranking from orders and catalog), insight (rule-based Merchant Insights), control (rules pin/exclude/prefer/deprioritize) | SUPPORTED |
+| Pillars | Better recommendations: "Suggestions drawn from your own store data: what customers buy together, your catalog and your stock." | BE co-purchase counts, same category, newest in stock (`recommendation_policy.py`) | SUPPORTED |
+| Pillars | Less manual merchandising: "AICC finds the pairs in your orders. You keep the last word with a few rules, instead of curating every product." | BE pair counts; PL rules | SUPPORTED |
+| Pillars | Visibility and control: "A dashboard, plain-English insights and a guide show what is recommended and why." | PL dashboard, Recommendation Preview, Merchant Insights, Ask Reco | SUPPORTED |
+| Demo | "See the signal behind every recommendation." | heading only; the demo is a labelled illustration | POSITIONING |
+| Demo | "How AICC decided (illustration)": bought together, then same category, then newest in stock, then your rules; the dashboard shows a count for learned partners and only a price for fallbacks | BE ranking order; PL Recommendation Preview (count only for learned partners). The per-item source label is an explanatory layer: the admin does not display one | SUPPORTED (labelled illustration) |
+| Demo | the product the shopper ticked is marked in the merchant list; "Pinned by you" style chips | demo behavior only | ILLUSTRATION |
+| Demo | sample counts 9, 6, 5 | invented sample data, labelled "Sample data: not from a real store" | ILLUSTRATION |
+| Ask Reco mock | "Choose a question for Reco"; two sample questions, no text input | PL Reco question buttons (guided intents); no generative claims | SUPPORTED |
+| FAQ q01 | What is AICC? outcome plus three pillars; the bundle is "how recommendations reach shoppers today" | capability sheet | SUPPORTED |
+| FAQ q60 | "Is AICC just Frequently Bought Together?" No: the name of the storefront widget; the product is the copilot around it | capability sheet; `docs/fbt-usage-audit.md` | SUPPORTED |
+| FAQ q61 | "Available for WooCommerce" means a plugin with a hosted service for WooCommerce; declared minimums; HPOS | PL plugin header | SUPPORTED |
+| FAQ q62 | What happens after I buy: account and plan, install the plugin from your WordPress admin, connect, optional import, recommendations | PL connect flow; no ZIP-only assumption (WordPress.org-ready wording) | SUPPORTED |
+| FAQ q63 | What happens on refund, revocation, suspension or expiry | CP lifecycle (stop on the storefront, store stops sending data, WooCommerce keeps working); retention target vs today | SUPPORTED (legal review) |
+| FAQ q64 | Other platforms: available for WooCommerce today; none announced | positioning v3 | SUPPORTED |
+| Header | "Accessibility settings" icon button at every width | a11y statement | SUPPORTED |
+

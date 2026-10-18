@@ -270,7 +270,8 @@ for (const l of LOCALES) {
       } else if (v && typeof v === "object") walk(v, he?.[k], q);
     }
   };
-  for (const root of ["dash", "rules", "demo"]) walk(dicts.en[root], dicts.he[root], root);
+  // a kit set that still falls back to English (not translated yet) is not Hebrew text: nothing to compare
+  for (const root of ["dash", "rules", "demo"]) if (!fallbacks.he.includes(root)) walk(dicts.en[root], dicts.he[root], root);
 }
 
 const nKeys = enKeys.filter((k) => !k.endsWith("#len")).length;

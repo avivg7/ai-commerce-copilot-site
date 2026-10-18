@@ -68,7 +68,7 @@ async function tabTo(p, test, max = 40) { for (let i = 0; i < max; i++) { await 
 {
   const [ctx, p] = await fresh();
   await p.goto(urlFor("en", ""));
-  const found = await tabTo(p, () => document.activeElement?.classList.contains("aicc-site-header__desktop-only"));
+  const found = await tabTo(p, () => document.activeElement?.classList.contains("aicc-a11y-trigger"));
   check("a11y control: reachable with Tab in the header", found);
   await p.keyboard.press("Enter");
   check("a11y control: Enter opens a modal dialog and focus moves inside", await p.evaluate(() => document.querySelector("dialog[open]") && document.querySelector("dialog[open]").contains(document.activeElement)));
@@ -83,14 +83,14 @@ async function tabTo(p, test, max = 40) { for (let i = 0; i < max; i++) { await 
   const rootFont = await p.evaluate(() => parseFloat(getComputedStyle(document.documentElement).fontSize));
   check("a11y control: larger text really scales the root font (19px)", Math.abs(rootFont - 19) < 0.6, String(rootFont));
   await p.keyboard.press("Escape");
-  check("a11y control: Esc closes and focus returns to the trigger", await p.evaluate(() => !document.querySelector("dialog[open]") && document.activeElement?.classList.contains("aicc-site-header__desktop-only")));
+  check("a11y control: Esc closes and focus returns to the trigger", await p.evaluate(() => !document.querySelector("dialog[open]") && document.activeElement?.classList.contains("aicc-a11y-trigger")));
   await p.reload();
   const persisted = await p.evaluate(() => document.documentElement.getAttribute("data-aicc-motion") + "," + document.documentElement.getAttribute("data-aicc-contrast") + "," + document.documentElement.getAttribute("data-aicc-text"));
   check("a11y control: settings persist across reload", persisted === "reduce,high,large", persisted);
   const html = await (await fetch(urlFor("en", ""))).text();
   const headEnd = html.indexOf("</head>");
   check("a11y control: preference script runs in <head> (applied before first paint)", html.indexOf("aicc_a11y") > 0 && html.indexOf("aicc_a11y") < headEnd);
-  await p.click(".aicc-site-header__desktop-only.aicc-iconbtn"); await p.click("dialog[open] .aicc-btn--quiet");
+  await p.click(".aicc-a11y-trigger"); await p.click("dialog[open] .aicc-btn--quiet");
   const cleared = await p.evaluate(() => ["motion", "contrast", "text"].every((k) => !document.documentElement.hasAttribute("data-aicc-" + k)) && !localStorage.getItem("aicc_a11y"));
   check("a11y control: Reset clears attributes and storage", cleared);
   check("a11y control: links to the accessibility statement", await p.$eval("dialog[open] a", (a) => a.getAttribute("href").includes("/accessibility/")));
@@ -339,7 +339,7 @@ for (const [w, h] of [[390, 844], [320, 256]]) {
   check("language button name is 'Language: English, EN' (contains its visible code as a word: WCAG 2.5.3)", (await p.getAttribute(".aicc-lang button", "aria-label")) === "Language: English, EN");
   await p.click(".aicc-lang button"); await p.focus(".aicc-lang__menu a"); await p.keyboard.press("Shift+Tab"); await p.keyboard.press("Shift+Tab"); await p.keyboard.press("Shift+Tab");
   check("language menu closes when focus leaves it", await p.evaluate(() => document.querySelector(".aicc-lang__menu").hidden));
-  check("home has no draft pills and no pending lines; hero says the new headline", await p.evaluate(() => !document.querySelector("[data-legal-draft]") && !document.querySelector("[data-pending]") && /buy together\./.test(document.querySelector("h1").textContent) && !/actually/.test(document.querySelector("h1").textContent)));
+  check("home has no draft pills and no pending lines; hero says the new headline", await p.evaluate(() => !document.querySelector("[data-legal-draft]") && !document.querySelector("[data-pending]") && /smarter selling opportunity\./.test(document.querySelector("h1").textContent)));
   await p.goto(urlFor("en", "pricing"));
   check("pricing: no draft pill on marketing content; one muted pending line pattern absent here", await p.evaluate(() => !document.querySelector("[data-legal-draft]")));
   const tops = await p.$$eval(".aicc-plan__amount", (e) => e.map((x) => Math.round(x.getBoundingClientRect().top)));
@@ -441,7 +441,7 @@ for (const loc of ["en", "es", "ru", "he"]) {
   await p.focus('button[data-view="merchant"]'); await p.keyboard.press("Enter");
   const m = await p.evaluate(() => ({ pressed: document.querySelector('button[data-view="merchant"]').getAttribute("aria-pressed"), shopperHidden: document.querySelector('[data-panel="shopper"]').hidden, merchantShown: !document.querySelector('[data-panel="merchant"]').hidden, modes: [...document.querySelectorAll("[data-modes] button")].every((b) => b.disabled), sample: /Sample data: not from a real store/.test(document.querySelector(".aicc-fbt").textContent), rows: [...document.querySelectorAll(".aicc-fbt-row[data-id]")].map((r) => r.dataset.id + ":" + r.querySelector(".aicc-fbt-row__why").textContent.trim()) }));
   check("view toggle: Enter switches to the merchant view (aria-pressed, panels; the compare group stays in place, disabled)", m.pressed === "true" && m.shopperHidden && m.merchantShown && m.modes, JSON.stringify(m));
-  check("merchant view: counts say \"Bought together N times\" for learned partners and the fallback row says it has no count (no invented plugin label, no tiers)", m.rows.some((r) => /^filters:Bought together 48 times/.test(r)) && m.rows.some((r) => /^mug:No count: filled from the same category/.test(r)) && !m.rows.some((r) => /strong|medium|light/i.test(r)), m.rows.join(" | "));
+  check("merchant view: counts say \"Bought together N times\" for learned partners and the fallback row says it has no count (no invented plugin label, no tiers)", m.rows.some((r) => /^filters:Bought together 9 times/.test(r)) && m.rows.some((r) => /^mug:No count: filled from the same category/.test(r)) && !m.rows.some((r) => /strong|medium|light/i.test(r)), m.rows.join(" | "));
   check("merchant view: labelled \"Sample data: not from a real store\"", m.sample);
   const adds0 = await p.$eval('[data-tile="adds"] strong', (e) => e.textContent.trim());
   await p.click('button[data-view="shopper"]');
@@ -546,7 +546,7 @@ for (const route of ["", "product"]) {
   await p.goto(urlFor("en", route));
   const tag = route || "home";
   if (!route) { await p.click("#ws-t-understand"); }
-  const d = await p.evaluate(() => { const txt = document.querySelector(".aicc-dash")?.textContent || ""; return { has: !!document.querySelector(".aicc-dash"), labels: ["Recommendation Views", "Recommendation Clicks", "Recommendation Click Rate", "Bundle Add-To-Carts", "Associated Orders", "Associated Revenue", "Merchant Insights", "Recommendation Preview"].filter((l) => !txt.includes(l)), sample: /Sample data: not from a real store/.test(txt), bought: /Bought together 48 times/.test(txt), fallback: /\$16\.00/.test(txt) && !/Same category — no purchase history/.test(txt) && !/\$16\.00\s*·/.test(txt), banned: /AI Assisted|widget views/i.test(txt) }; });
+  const d = await p.evaluate(() => { const txt = document.querySelector(".aicc-dash")?.textContent || ""; return { has: !!document.querySelector(".aicc-dash"), labels: ["Recommendation Views", "Recommendation Clicks", "Recommendation Click Rate", "Bundle Add-To-Carts", "Associated Orders", "Associated Revenue", "Merchant Insights", "Recommendation Preview"].filter((l) => !txt.includes(l)), sample: /Sample data: not from a real store/.test(txt), bought: /Bought together 9 times/.test(txt), fallback: /\$16\.00/.test(txt) && !/Same category — no purchase history/.test(txt) && !/\$16\.00\s*·/.test(txt), banned: /AI Assisted|widget views/i.test(txt) }; });
   check(`dashboard preview[${tag}]: the plugin's labels (missing: ${d.labels.join(", ") || "none"}), labelled SAMPLE, learned partners show a count, a fallback product shows only its price`, d.has && !d.labels.length && d.sample && d.bought && d.fallback && !d.banned, JSON.stringify(d));
   if (!route) await p.click("#ws-t-ask");
   await p.evaluate(() => document.querySelector(".aicc-ask").scrollIntoView());
@@ -620,8 +620,8 @@ for (const route of ["", "product"]) {
     await p.click('.aicc-loop__step a[data-aicc-tab="ws-t-control"]');
     await p.waitForTimeout(300);
     check("loop strip[home]: the Control step opens the Control tab of the workspace", await p.evaluate(() => document.getElementById("ws-t-control").getAttribute("aria-selected") === "true" && location.hash === "#workspace"));
-    const f = await p.evaluate(() => ({ values: [...document.querySelectorAll(".aicc-hero__facts--values li")].map((x) => x.textContent.trim()), conf: document.querySelector(".aicc-hero__confidence")?.textContent.replace(/\s+/g, " ").trim(), ctaTop: document.querySelector(".aicc-hero-actions .aicc-btn--primary").getBoundingClientRect().top, confTop: document.querySelector(".aicc-hero__confidence").getBoundingClientRect().top, valTop: document.querySelector(".aicc-hero__facts--values").getBoundingClientRect().top, confSize: parseFloat(getComputedStyle(document.querySelector(".aicc-hero__confidence")).fontSize), valSize: parseFloat(getComputedStyle(document.querySelector(".aicc-hero__facts--values li")).fontSize) }));
-    check(`hero facts: the smaller muted purchase-confidence line sits directly under the CTAs, then the three value facts (${f.conf})`, f.values.join("|") === "Learned from your own orders|You control what gets recommended|Placing an order never waits on AICC" && /Plans from \$99 a year/.test(f.conf) && /14-day money-back guarantee on your first purchase/.test(f.conf) && /No automatic renewal/.test(f.conf) && f.confSize < f.valSize && f.confTop > f.ctaTop && f.valTop > f.confTop, JSON.stringify(f));
+    const f = await p.evaluate(() => ({ conf: document.querySelector(".aicc-hero__confidence")?.textContent.replace(/\s+/g, " ").trim(), ctaBottom: document.querySelector(".aicc-hero-actions").getBoundingClientRect().bottom, confTop: document.querySelector(".aicc-hero__confidence").getBoundingClientRect().top, confSize: parseFloat(getComputedStyle(document.querySelector(".aicc-hero__confidence")).fontSize), leadSize: parseFloat(getComputedStyle(document.querySelector(".aicc-hero-lead")).fontSize) }));
+    check(`hero: the purchase-confidence line is one quiet, smaller line directly under the CTAs (${f.conf})`, /Plans from \$99 a year/.test(f.conf) && /14-day money-back guarantee on your first purchase/.test(f.conf) && /No automatic renewal/.test(f.conf) && f.confSize < f.leadSize && f.confTop > f.ctaBottom && f.confTop - f.ctaBottom < 60, JSON.stringify(f));
   }
   await ctx.close();
 }
@@ -1035,6 +1035,86 @@ for (const [route, contrast] of [["", false], ["", true], ["pricing", false], ["
   await p.goto(urlFor("en", ""));
   const ids = await p.$$eval("details[id^='q']", (d) => d.map((x) => x.id));
   check(`faq: q59 is on the Home page and q51 is not (${ids.join(",")})`, ids.includes("q59") && !ids.includes("q51"), ids.join());
+  await ctx.close();
+}
+// 28. Positioning v3: quiet accessibility control, outcome-led hero, pillars strip, renamed demo section
+for (const w of [1280, 390, 320]) {
+  const [ctx, p] = await fresh({ viewport: { width: w, height: 800 } });
+  await p.addInitScript(() => { try { localStorage.setItem("aicc_lang_dismissed", "1"); } catch {} });
+  await p.goto(urlFor("en", ""));
+  const a = await p.$eval(".aicc-site-header__bar .aicc-a11y-trigger", (e) => { const r = e.getBoundingClientRect(); return { name: e.getAttribute("aria-label"), w: Math.round(r.width), h: Math.round(r.height), text: e.textContent.trim(), vis: r.width > 0 && getComputedStyle(e).visibility !== "hidden" }; });
+  const fit = await p.evaluate(() => document.documentElement.scrollWidth <= innerWidth);
+  check(`a11y trigger @${w}: a small icon button in the header bar named "Accessibility settings", ${a.w}x${a.h}px target, no label text, header fits`, a.name === "Accessibility settings" && a.vis && a.w >= 44 && a.h >= 44 && a.text === "" && fit, JSON.stringify(a));
+  if (w === 390) {
+    await p.click(".aicc-a11y-trigger");
+    check("a11y trigger @390: opens the settings dialog from the header bar (no need to open the menu)", await p.evaluate(() => !!document.querySelector("dialog[open]")));
+  }
+  await ctx.close();
+}
+{
+  const [ctx, p] = await fresh({ viewport: { width: 1280, height: 800 } });
+  await p.addInitScript(() => { try { localStorage.setItem("aicc_lang_dismissed", "1"); } catch {} });
+  await p.goto(urlFor("en", ""));
+  const h = await p.evaluate(() => ({
+    eyebrow: document.querySelector(".aicc-eyebrow-pill")?.textContent.trim(), h1: document.querySelector("h1")?.textContent.replace(/\s+/g, " ").trim(),
+    paras: document.querySelectorAll(".aicc-hero__copy > p").length, lead: document.querySelector(".aicc-hero-lead")?.textContent.trim(),
+    ctas: [...document.querySelectorAll(".aicc-hero .aicc-hero-actions > *")].map((e) => e.textContent.trim()),
+    category: document.querySelector(".aicc-hero__category")?.textContent.trim(),
+    conf: [...document.querySelectorAll(".aicc-hero__confidence li")].map((e) => e.textContent.trim()),
+    order: [...document.querySelectorAll(".aicc-hero__copy > *")].map((e) => e.className.split(" ")[0]),
+    strip: [...document.querySelectorAll(".aicc-pillars__title")].map((e) => e.textContent.trim()),
+    stripLinks: [...document.querySelectorAll(".aicc-pillars__link")].map((e) => e.getAttribute("href")),
+    demoTitle: document.querySelector("#demo-title")?.textContent.replace(/\s+/g, " ").trim(),
+    stripBeforeDemo: !!(document.querySelector(".aicc-pillars")?.compareDocumentPosition(document.querySelector("#demo")) & Node.DOCUMENT_POSITION_FOLLOWING),
+    heroBottom: Math.round(document.querySelector(".aicc-hero").getBoundingClientRect().bottom),
+    words: document.querySelector(".aicc-hero__copy").textContent.trim().split(/\s+/).length,
+  }));
+  check(`hero: category cue and "Available for WooCommerce", the new H1, ONE sentence, two CTAs, then the quiet purchase-confidence line, in that order (${h.words} words in the copy column)`,
+    h.eyebrow?.toLowerCase() === "available for woocommerce" && h.h1 === "Make every product page a smarter selling opportunity." && h.paras === 1 && h.lead === "AICC turns your store data into better product recommendations, useful merchant insight, and practical merchandising control." &&
+    h.ctas.join("|") === "Get started|Watch demo" && h.category === "Commerce recommendation and merchandising copilot" && h.conf.length === 3 && h.words <= 60 &&
+    h.order.join(",") === "aicc-hero__kicker,aicc-hero-title,aicc-hero-lead,aicc-hero-actions,aicc-hero__confidence", JSON.stringify(h));
+  check(`pillars strip: three pillars with one line each and anchor links, right after the hero and before the demo (${h.strip.join(" / ")}; ${h.stripLinks.join(" ")})`, h.strip.length === 3 && h.stripLinks.join() === "#demo,#workspace,#workspace" && h.stripBeforeDemo);
+  await p.evaluate(() => document.querySelector("#demo").scrollIntoView()); await p.waitForSelector(".aicc-fbt input[type=checkbox]", { state: "attached", timeout: 8000 });
+  check(`demo section: titled "See the signal behind every recommendation." (not the Frequently Bought Together category line); the widget inside keeps its own heading`, h.demoTitle === "See the signal behind every recommendation." && /Frequently Bought Together/.test(await p.evaluate(() => document.querySelector(".aicc-fbt")?.textContent || "")), h.demoTitle);
+  check("hero: nothing about Frequently Bought Together in the eyebrow, headline or hero sentence", !/frequently[- ]bought/i.test(`${h.eyebrow} ${h.h1} ${h.lead}`));
+  const tabbed = await p.evaluate(async () => { document.querySelector('.aicc-pillars__link[data-aicc-tab="ws-t-control"]')?.click(); await new Promise((r) => setTimeout(r, 600)); return document.getElementById("ws-t-control")?.getAttribute("aria-selected"); });
+  check("pillars strip: the second pillar link opens the Control tab of the workspace", tabbed === "true", String(tabbed));
+  await ctx.close();
+}
+// 29. The aha: the same sample relationship from the shopper's side and the merchant's side, with the evidence layer
+{
+  const [ctx, p] = await fresh({ viewport: { width: 1280, height: 900 } });
+  await p.addInitScript(() => { try { localStorage.setItem("aicc_lang_dismissed", "1"); } catch {} });
+  await p.goto(urlFor("en", ""));
+  await p.evaluate(() => document.querySelector("#demo").scrollIntoView());
+  await p.waitForSelector(".aicc-fbt input[type=checkbox]", { state: "attached", timeout: 8000 });
+  await p.waitForTimeout(500);
+  const boxes = await p.$$(".aicc-fbt input[type=checkbox]");
+  await boxes[2].check({ force: true }); // the second recommendation (hand grinder)
+  await p.click('.aicc-fbt button[data-view="merchant"]');
+  await p.waitForTimeout(400);
+  const m = await p.evaluate(() => ({
+    heading: document.querySelector(".aicc-fbt__evidence")?.textContent.replace(/\s+/g, " ").trim(),
+    colWhy: document.querySelector('.aicc-fbt__rowhead [role="columnheader"]:nth-child(2)')?.textContent.trim(),
+    ticked: [...document.querySelectorAll('.aicc-fbt-row[data-ticked="true"]')].map((r) => r.dataset.id + ":" + r.querySelector(".aicc-fbt-row__ticked")?.textContent.trim()),
+    whys: [...document.querySelectorAll(".aicc-fbt-row__why")].map((e) => e.textContent.trim()),
+  }));
+  check(`merchant view: the evidence layer is labelled an illustration and lists the order (bought together, same category, newest, then your rules); the product the shopper ticked is marked here too (${m.ticked.join(",")})`,
+    /How AICC decided \(illustration\)/.test(m.heading) && /bought together first, then the same category, then your newest in-stock products\. Your rules apply last/.test(m.heading) && /^How AICC decided \(illustration\)$/.test(m.colWhy) && m.ticked.join() === "grinder:In the shopper's bundle" && m.whys.some((w) => /^Bought together \d+ times$/.test(w)) && m.whys.some((w) => /same category/.test(w)), JSON.stringify(m));
+  await p.selectOption('select[data-rule="filters"]', "pin");
+  await p.waitForTimeout(300);
+  const pinned = await p.$eval('.aicc-fbt-row[data-id="filters"] .aicc-fbt-row__why', (e) => e.textContent.trim());
+  check(`merchant view: a rule is evidence too ("${pinned}")`, /Bought together \d+ times\s*Pinned by you$/.test(pinned.replace(/\s+/g, " ")) || /Pinned by you/.test(pinned), pinned);
+  const counts = await p.evaluate(() => [...document.querySelectorAll(".aicc-fbt-row__why")].map((e) => (e.textContent.match(/Bought together (\d+) times/) || [])[1]).filter(Boolean).map(Number));
+  check(`demo sample counts look like a small merchant's (${counts.join(", ")}) and avoid the Russian "few" plural forms`, counts.length >= 2 && counts.every((n) => n >= 3 && n <= 12 && ![2, 3, 4, 22, 23, 24].includes(n % 100)), counts.join());
+  await ctx.close();
+}
+// 30. Ask Reco mock: a guided assistant, not a chat box
+{
+  const [ctx, p] = await fresh({ viewport: { width: 1280, height: 900 } });
+  await p.goto(urlFor("en", "product"));
+  const a = await p.evaluate(() => ({ inputs: document.querySelectorAll(".aicc-ask input, .aicc-ask textarea").length, label: document.querySelector(".aicc-ask__try")?.textContent.trim(), chips: [...document.querySelectorAll(".aicc-ask__chip")].map((c) => c.textContent.trim()) }));
+  check(`Ask Reco mock: no text input, "Choose a question for Reco", only the real questions (${a.chips.join(" / ")})`, a.inputs === 0 && a.label === "Choose a question for Reco" && a.chips.length === 2, JSON.stringify(a));
   await ctx.close();
 }
 await browser.close();

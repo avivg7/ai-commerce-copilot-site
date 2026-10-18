@@ -1,7 +1,7 @@
 # AI Commerce Copilot: public website
 
-The public marketing site for **AICC** (AI Commerce Copilot), a WooCommerce plugin that adds a Frequently Bought Together
-widget learned from a store's own orders. Static export, four languages (English at the root, Hebrew right-to-left under `/he/`,
+The public marketing site for **AICC** (AI Commerce Copilot), a commerce recommendation and merchandising copilot,
+available for WooCommerce (its storefront widget is headed "Frequently Bought Together"; that phrase names the widget, never the product: `docs/fbt-usage-audit.md`). Static export, four languages (English at the root, Hebrew right-to-left under `/he/`,
 Spanish `/es/`, Russian `/ru/`).
 
 **Stack:** Next.js 16 (App Router, `output: "export"`, built with webpack for the smaller client runtime), React 19, Tailwind 4
@@ -51,6 +51,8 @@ npm run serve:out -- --port 3011   # serve out/ locally (add --prefix /ai-commer
 | `npm run axe:check` | axe-core on Home, Product, Pricing, Questions and Data & Trust at 1280/768/390/360/320 in default, Enhanced contrast and reduced-motion modes (needs `serve:out`) |
 | `npm run shots:content` | the content-pass screenshots at 1280 and 390 (needs `serve:out`) |
 | `npm run copy:check` | banned phrases (fabricated results, free-tier and urgency claims, unshipped features) in every locale source, plus `docs/` and this file |
+| `npm run fbt:audit` | "Frequently Bought Together" / co-purchase wording only as a class-A usage (`scripts/fbt-allowlist.json`, `docs/fbt-usage-audit.md`), and never in a positioning slot in any locale (also enforced by `content:check`) |
+| `npm run density:check` | the first viewport of Home carries a short text budget at 1280x800 and 390x844 (the hero must not read like a spec) |
 | `npm run contrast:check` | WCAG contrast of every token pair the components use, including the sampled primary-button, headline and eyebrow treatments, and the guard that `.aicc-text-gradient` stays on display text (all real pass/fail, no exceptions list) |
 | `npm run perf:check` | gzip first-load JS per route against the budgets (needs a build) |
 | `npm run audit` | axe-core + structure + overflow on every page, locale and width (needs `serve:out`) |

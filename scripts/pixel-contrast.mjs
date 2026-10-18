@@ -48,6 +48,7 @@ for (const c of CONFIGS) {
       const p = n.parentElement; if (!p || p.closest("script,style,noscript,svg,option")) continue;
       const cs = getComputedStyle(p);
       if (cs.visibility === "hidden" || cs.display === "none") continue;
+      const det = p.closest("details"); if (det && !det.open && !p.closest("summary")) continue; // a closed answer keeps its layout box but paints nothing: it is not text a visitor can read
       let hidden = false, fixed = false, op = 1;
       for (let e = p; e && e !== document.documentElement; e = e.parentElement) { const s = getComputedStyle(e); if (s.display === "none" || s.visibility === "hidden" || e.hidden) { hidden = true; break; } if (s.position === "fixed") fixed = true; op *= parseFloat(s.opacity); if (e.matches?.(".aicc-sr-only") || (s.position === "absolute" && parseFloat(s.width) <= 1 && parseFloat(s.height) <= 1)) { hidden = true; break; } }
       if (hidden) continue;
