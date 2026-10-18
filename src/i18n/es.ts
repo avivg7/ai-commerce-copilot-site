@@ -17,16 +17,7 @@ import type { DeepPartial } from "./merge";
 export const es: DeepPartial<Dictionary> = {
   meta: {
     siteName: "AI Commerce Copilot",
-    ogImageAlt: "AICC: «Comprados juntos con frecuencia», aprendido de los pedidos de su propia tienda. Con Reco, la guía de AICC.",
     pages: {
-      home: {
-        title: "AICC: «Comprados juntos con frecuencia», aprendido de sus pedidos",
-        description: "AICC aprende qué productos compran juntos sus clientes, los muestra en las páginas de producto y de carrito, y le ofrece un panel y controles. Desde {priceSolo} al año.",
-      },
-      product: {
-        title: "Cómo funciona AICC: «Comprados juntos con frecuencia» para WooCommerce",
-        description: "Vea lo que ven los compradores, cómo decide AICC qué recomendar, qué puede medir y controlar, y cómo protege el proceso de pago de su WooCommerce.",
-      },
       pricing: {
         title: "Precios: planes Solo, Studio y Agency de AICC",
         description: "Todos los planes incluyen el producto AICC completo. Plan Solo {priceSolo}, Studio {priceStudio}, Agency {priceAgency} al año, según el número de tiendas. Renovación manual y garantía de devolución del dinero de 14 días.",
@@ -121,7 +112,6 @@ export const es: DeepPartial<Dictionary> = {
       storage: "Los ajustes se guardan en este navegador (almacenamiento local).",
     },
     footer: {
-      tagline: "«Comprados juntos con frecuencia» para WooCommerce, aprendido de sus propios pedidos, con el panel y los controles a juego.",
       productHeading: "AICC",
       trustHeading: "Confianza y legal",
       languageHeading: "Idioma",
@@ -445,27 +435,6 @@ export const es: DeepPartial<Dictionary> = {
   },
 
   home: {
-    hero: {
-      eyebrow: "Comprados juntos con frecuencia para WooCommerce",
-      titleLead: "Muestre a sus compradores lo que sus propios clientes",
-      titleAccent: "compran juntos.",
-      lead: "AICC encuentra en sus pedidos de WooCommerce los productos que sus clientes ya compran juntos y los muestra como un paquete que los compradores añaden en un solo paso, en las páginas de producto y de carrito. Su panel de WordPress muestra qué recomienda y por qué, y sus reglas dan forma al resultado.",
-      facts: {
-        learned: "Aprendido de sus propios pedidos",
-        control: "Usted controla qué se recomienda",
-        checkout: "Hacer un pedido nunca espera a AICC",
-      },
-      timeline: "Cuando su tienda está lista, el widget empieza con productos de la misma categoría y los más recientes, y pasa a pares realmente comprados juntos a medida que se cuentan los pedidos. Importe sus pedidos anteriores (opcional) para empezar con pares ya aprendidos.",
-      confidence: {
-        price: "Planes desde {priceSolo} al año",
-        guarantee: "Garantía de devolución del dinero de 14 días en su primera compra",
-        renewal: "Renovación manual, sin cobros automáticos",
-      },
-    },
-    demo: {
-      title: "«Comprados juntos con frecuencia», aprendido de verdad.",
-      lead: "WooCommerce sabe qué productos comparten categoría. AICC añade la señal que los comerciantes suelen tener que adivinar: qué productos compran juntos de verdad los clientes, con alternativas sensatas donde el historial es escaso.",
-    },
     why: {
       title: "Los productos relacionados se eligen por categoría. AICC los elige por cesta de compra.",
       lead: "Los productos relacionados de WooCommerce son una opción por defecto razonable: emparejan productos por categoría y etiquetas. No pueden decirle qué productos compra la gente junta de verdad.",
@@ -518,24 +487,6 @@ export const es: DeepPartial<Dictionary> = {
         link: "Qué puede y qué no puede hacer Ask Reco",
       },
     },
-    how: {
-      title: "Conectar, aprender, recomendar.",
-      lead: "Usted da el primer paso. AICC hace el resto en segundo plano.",
-      steps: {
-        connect: {
-          title: "Conectar",
-          body: "Inicie sesión en su cuenta de AICC y conecte su tienda desde la pantalla de AICC en WordPress. Normalmente no hay clave de licencia que pegar ni código que escribir.",
-        },
-        learn: {
-          title: "Aprender",
-          body: "Conecte desde WordPress y AICC prepara su catálogo en segundo plano. Cuando su tienda está lista, el widget empieza con productos de la misma categoría y los más recientes, y pasa a pares realmente comprados juntos a medida que se cuentan los pedidos. Importe sus pedidos anteriores (opcional) para empezar con pares ya aprendidos.",
-        },
-        recommend: {
-          title: "Recomendar",
-          body: "En las páginas de producto y de carrito, el widget muestra lo que sus clientes compraron juntos. Los pedidos nuevos siguen enseñando a AICC, y sus reglas ajustan el resultado.",
-        },
-      },
-    },
     safety: {
       title: "Una herramienta de recomendaciones nunca debería depender del proceso de pago.",
       lead: "AICC está construido para que, si algo sale mal, WooCommerce siga vendiendo.",
@@ -566,10 +517,6 @@ export const es: DeepPartial<Dictionary> = {
   },
 
   product: {
-    hero: {
-      title: "Recomendaciones que su tienda puede explicar.",
-      lead: "AICC aprende de sus propios pedidos, muestra a los compradores lo que de verdad se compra junto, y le da el panel, las reglas y la guía para entender cada recomendación. Fije, excluya o desplace cualquier producto desde WordPress.",
-    },
     toc: {
       shopper: "Experiencia del comprador",
       learn: "Cómo aprende",
@@ -1003,11 +950,6 @@ export const es: DeepPartial<Dictionary> = {
           h: "Entre quiénes se establecen estos términos",
           a: "Estos términos se establecen entre usted y la empresa que opera AICC. Al comprar un plan o conectar una tienda, los acepta. Datos de la empresa: {companyDetails}",
           b: "AICC es para uso empresarial. Si lo usa para una empresa o un cliente, confirma que puede aceptar estos términos en su nombre.",
-        },
-        service: {
-          h: "Qué es AICC",
-          a: "AICC es un plugin de WooCommerce con un servicio alojado. Añade un widget de «Comprados juntos con frecuencia» aprendido de los pedidos de su tienda, un panel, observaciones basadas en reglas, controles para el comerciante y Ask Reco.",
-          b: "AICC no sustituye a WooCommerce. Sus productos, carrito, proceso de pago y pedidos siguen en WooCommerce.",
         },
         account: {
           h: "Su cuenta",

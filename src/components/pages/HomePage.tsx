@@ -38,7 +38,10 @@ export function HomePage({ locale, t }: { locale: Locale; t: Dictionary }) {
       <section className="aicc-hero" aria-labelledby="hero-title" {...fb("home.hero")}>
         <div className="aicc-hero__grid">
           <div className="aicc-hero__copy">
-            <span className="aicc-eyebrow-pill aicc-fade-up" style={{ ["--i" as string]: 0 }}>{h.hero.eyebrow}</span>
+            <div className="aicc-hero__kicker aicc-fade-up" style={{ ["--i" as string]: 0 }}>
+              <span className="aicc-eyebrow-pill">{h.hero.eyebrow}</span>
+              <span className="aicc-hero__category">{h.hero.category}</span>
+            </div>
             <h1 id="hero-title" className="aicc-hero-title aicc-fade-up" style={{ ["--i" as string]: 1 }}>
               {h.hero.titleLead} <span className="aicc-text-gradient">{h.hero.titleAccent}</span>
             </h1>
@@ -54,11 +57,6 @@ export function HomePage({ locale, t }: { locale: Locale; t: Dictionary }) {
               <li>{h.hero.confidence.guarantee}</li>
               <li>{h.hero.confidence.renewal}</li>
             </ul>
-            <ul className="aicc-hero__facts aicc-hero__facts--values aicc-fade-up" style={{ ["--i" as string]: 5 }}>
-              <li><Check size={18} aria-hidden="true" /><span>{h.hero.facts.learned}</span></li>
-              <li><Check size={18} aria-hidden="true" /><span>{h.hero.facts.control}</span></li>
-              <li><Check size={18} aria-hidden="true" /><span>{h.hero.facts.checkout}</span></li>
-            </ul>
           </div>
           <div className="aicc-hero__visual">
             <div {...tx("brand.chips")}><RecoHero labels={[t.brand.chips.orders, t.brand.chips.clicks, t.brand.chips.recs, t.brand.chips.insights, t.brand.chips.bundles]} motion={t.brand.motion} /></div>
@@ -66,25 +64,25 @@ export function HomePage({ locale, t }: { locale: Locale; t: Dictionary }) {
         </div>
       </section>
 
-      {/* 1b. The merchandising loop as one strip, legible in about a minute (each step links to its section) */}
-      <div className="aicc-loopband">
+      {/* 1b. The three pillars, one line each, each linking to the part of the page that shows it (positioning v3) */}
+      <section className="aicc-pillars" aria-label={h.pillars.label} {...fb("home.pillars")}>
         <Container>
-          <Loop
-            locale={locale}
-            t={t}
-            links={[
-              "#how-it-works",
-              "#why",
-              "#demo",
-              { href: "#workspace", tab: "ws-t-understand" },
-              { href: "#workspace", tab: "ws-t-insights" },
-              { href: "#workspace", tab: "ws-t-control" },
-              "#how-it-works",
-            ]}
-          />
-          <p className="aicc-loopband__note" {...fb("home.hero")}>{h.hero.timeline}</p>
+          <ul className="aicc-pillars__list">
+            {([["a", "#demo"], ["b", "#workspace"], ["c", "#workspace"]] as const).map(([k, href], i) => (
+              <li key={k}>
+                <span className="aicc-pillars__n" aria-hidden="true">{i + 1}</span>
+                <div>
+                  <h2 className="aicc-pillars__title">{h.pillars[k].title}</h2>
+                  <p>{h.pillars[k].body}</p>
+                  <a className="aicc-link aicc-pillars__link" href={href} {...(k === "b" ? { "data-aicc-tab": "ws-t-control" } : k === "c" ? { "data-aicc-tab": "ws-t-understand" } : {})}>
+                    {h.pillars[k].link}
+                  </a>
+                </div>
+              </li>
+            ))}
+          </ul>
         </Container>
-      </div>
+      </section>
 
       {/* 2. The difference, shown: the signature demo, with the one argument for it (category versus basket) directly beneath it */}
       <FbtSection
@@ -172,6 +170,21 @@ export function HomePage({ locale, t }: { locale: Locale; t: Dictionary }) {
         <Container>
           <SectionHeading id="how-title" title={h.how.title} lead={h.how.lead} />
           <Track items={[h.how.steps.connect, h.how.steps.learn, h.how.steps.recommend]} />
+          <div className="aicc-loopband aicc-loopband--inline">
+            <Loop
+              locale={locale}
+              t={t}
+              links={[
+                "#how-it-works",
+                "#why",
+                "#demo",
+                { href: "#workspace", tab: "ws-t-understand" },
+                { href: "#workspace", tab: "ws-t-insights" },
+                { href: "#workspace", tab: "ws-t-control" },
+                "#how-it-works",
+              ]}
+            />
+          </div>
         </Container>
       </Section>
 

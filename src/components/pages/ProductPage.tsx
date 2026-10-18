@@ -112,8 +112,8 @@ export function ProductPage({ locale, t }: { locale: Locale; t: Dictionary }) {
           </div>
           <ol className="aicc-slots" style={{ marginBlockStart: "2rem" }} aria-label={p.sparse.slots.caption}>
             {[
-              ["learned", p.sparse.slots.learned.replace("{n}", "48")],
-              ["learned", p.sparse.slots.learned.replace("{n}", "31")],
+              ["learned", p.sparse.slots.learned.replace("{n}", "9")],
+              ["learned", p.sparse.slots.learned.replace("{n}", "6")],
               ["category", p.sparse.slots.category],
               ["newest", p.sparse.slots.newest],
             ].map(([kind, label], i) => (

@@ -21,10 +21,6 @@
     }
   },
   "items": {
-    "q01": {
-      "q": "¿Qué hace exactamente AICC?",
-      "a": "AICC convierte sus pedidos de WooCommerce en un espacio de trabajo de merchandising. Aprende qué productos compran juntos de verdad sus clientes, muestra esos paquetes a los compradores en las páginas de producto y de carrito, y le da el panel, las reglas y la guía para ver y orientar el resultado.\n\nPara los compradores, es un widget «Comprados juntos con frecuencia». Para usted, es un panel en WordPress con la actividad de las recomendaciones y los pedidos asociados, observaciones en lenguaje sencillo a partir de sus propios datos, reglas para fijar, excluir, preferir o restar prioridad a productos, y Ask Reco, la guía de su administración. Cuando un producto tiene poco historial de compras, AICC completa los huecos con productos de la misma categoría y con los más recientes que tienen stock. [Vea cómo funciona](route:product)."
-    },
     "q41": {
       "q": "¿En qué se diferencia AICC de los productos relacionados de WooCommerce?",
       "a": "Los productos relacionados de WooCommerce le indican qué productos van juntos por categoría o etiqueta. AICC añade la señal que de otro modo tendría que adivinar: qué productos compran juntos de verdad sus clientes.\n\nCuenta los productos que aparecen en los mismos pedidos completados y en proceso, y lista primero los acompañantes más frecuentes. Además, aporta un panel, reglas que usted controla, observaciones en lenguaje sencillo y Ask Reco. Cuando un producto tiene poco historial, AICC recurre a su categoría y a sus productos con stock más recientes, de modo que el widget tenga algo que mostrar."

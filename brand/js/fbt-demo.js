@@ -19,9 +19,9 @@ import { applyRules } from "./rules-core.js";
 const ANCHOR = { id: "kit", price: 38, icon: "coffee" };
 // AICC's own order for the sample product. tier: learned (counted from orders) | category (same-category fallback).
 const WITH = [
-  { id: "filters", price: 14, icon: "filter", tier: "learned", count: 48 },
-  { id: "grinder", price: 46, icon: "cog", tier: "learned", count: 31 },
-  { id: "kettle", price: 52, icon: "flame", tier: "learned", count: 12 },
+  { id: "filters", price: 14, icon: "filter", tier: "learned", count: 9 },
+  { id: "grinder", price: 46, icon: "cog", tier: "learned", count: 6 },
+  { id: "kettle", price: 52, icon: "flame", tier: "learned", count: 5 },
   { id: "mug", price: 16, icon: "cup-soda", tier: "category", count: 0 },
 ];
 const WITHOUT = [
@@ -84,7 +84,7 @@ export function mountFbt(el, opts) {
     `<div data-panel="merchant" class="aicc-fbt__panel aicc-fbt__merchant" hidden>` +
     `<div class="aicc-fbt__head"><h3>${T(s.merchant.heading)}</h3><p>${T(s.merchant.intro)}</p></div>` +
     `<p class="aicc-fbt__ctx"><span class="aicc-fbt__ctxthumb" aria-hidden="true">${icon(ANCHOR.icon, 18)}</span><span>${T(s.merchant.forProduct)} <strong>${T(s.products[ANCHOR.id])}</strong></span><em>${T(s.merchant.sameBundle)}</em></p>` +
-    `<div class="aicc-fbt__rows" role="table" aria-label="${esc(s.merchant.heading)}"><div class="aicc-fbt__rowhead" role="row"><span role="columnheader">${T(s.merchant.colProduct)}</span><span role="columnheader">${T(s.merchant.colWhy)}</span><span role="columnheader">${T(s.merchant.colRule)}</span></div><div data-rows class="aicc-fbt__rowbody"></div></div>` +
+    `<p class="aicc-fbt__evidence"><strong>${T(s.merchant.evidenceHeading)}</strong> ${T(s.merchant.evidenceOrder)}</p><div class="aicc-fbt__rows" role="table" aria-label="${esc(s.merchant.heading)}"><div class="aicc-fbt__rowhead" role="row"><span role="columnheader">${T(s.merchant.colProduct)}</span><span role="columnheader">${T(s.merchant.colWhy)}</span><span role="columnheader">${T(s.merchant.colRule)}</span></div><div data-rows class="aicc-fbt__rowbody"></div></div>` +
     `<p class="aicc-fbt__now" data-now></p>` +
     `<p class="aicc-fbt__hint">${T(s.merchant.ruleNote)} ${T(s.merchant.previewNote)}</p>` +
     `<div class="aicc-fbt__tilebox"><h3>${T(s.merchant.tilesHeading)}</h3><ul class="aicc-fbt__tiles" data-tiles></ul><p class="aicc-fbt__hint">${T(s.merchant.tileNote)}</p></div>` +
@@ -117,6 +117,8 @@ export function mountFbt(el, opts) {
   }
 
   const why = (it) => (it.tier === "category" ? s.merchant.fallback : s.merchant.boughtTogether.replace("{n}", num.format(it.count)));
+  /** The rule the merchant set is evidence too: "Pinned by you". */
+  const byRule = (id) => { const r = ruleOf(id); return r && r !== "none" && r !== "exclude" ? `<span class="aicc-fbt-row__byrule">${T(s.merchant.byRule[r])}</span>` : ""; };
   /** The strongest learned partner that is still in the list (an excluded product is never promoted). */
   const strongest = () => WITH.filter((it) => it.tier === "learned" && ruleOf(it.id) !== "exclude").sort((a, b) => b.count - a.count)[0];
 
@@ -126,7 +128,7 @@ export function mountFbt(el, opts) {
       `<label class="aicc-fbt-row__rule"><span class="aicc-sr-only">${T(s.merchant.ruleLabel.replace("{product}", nameOf(id)))}</span>` +
       `<select data-rule="${id}">${["none", "pin", "prefer", "deprioritize", "exclude"].map((a) => `<option value="${a}"${A(s.merchant.rules[a])}${ruleOf(id) === a ? " selected" : ""}>${esc(s.merchant.rules[a])}</option>`).join("")}</select></label>`;
     $("[data-rows]").innerHTML =
-      shown.map((it, i) => `<div class="aicc-fbt-row" role="row" data-id="${it.id}"><span class="aicc-fbt-row__name" role="cell"><span class="aicc-fbt-row__pos" aria-hidden="true">${i + 1}</span><span><span class="aicc-sr-only">${T(s.merchant.position.replace("{n}", String(i + 1)))}: </span>${T(nameOf(it.id))}</span></span><span class="aicc-fbt-row__why" role="cell" data-kind="${it.tier}">${T(why(it))}</span><span role="cell">${sel(it.id)}</span></div>`).join("") +
+      shown.map((it, i) => `<div class="aicc-fbt-row" role="row" data-id="${it.id}"${state.checked[it.id] ? ' data-ticked="true"' : ""}><span class="aicc-fbt-row__name" role="cell"><span class="aicc-fbt-row__pos" aria-hidden="true">${i + 1}</span><span><span class="aicc-sr-only">${T(s.merchant.position.replace("{n}", String(i + 1)))}: </span>${T(nameOf(it.id))}${state.checked[it.id] ? ` <em class="aicc-fbt-row__ticked">${T(s.merchant.inBundle)}</em>` : ""}</span></span><span class="aicc-fbt-row__why" role="cell" data-kind="${it.tier}">${T(why(it))}${byRule(it.id)}</span><span role="cell">${sel(it.id)}</span></div>`).join("") +
       hidden.map(({ item }) => `<div class="aicc-fbt-row" role="row" data-id="${item.id}" data-hidden="true"><span class="aicc-fbt-row__name" role="cell"><span class="aicc-fbt-row__pos" aria-hidden="true">–</span><span>${T(nameOf(item.id))}</span></span><span class="aicc-fbt-row__why" role="cell">${T(s.merchant.excluded)}</span><span role="cell">${sel(item.id)}</span></div>`).join("");
     if (refocus) $(`[data-rows] select[data-rule="${refocus}"]`)?.focus();
     $("[data-now]").innerHTML = `<strong>${T(s.merchant.shopperNow)}</strong> <span data-now-list>${T(list(shown.map((it) => nameOf(it.id))))}</span>`;

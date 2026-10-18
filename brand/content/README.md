@@ -69,3 +69,7 @@ string sets (`brand/i18n/strings.json` marks a set `_fallback: true`). `npm run 
 * **A banned claim**: add its regex to `bannedClaims`. UK spellings go in `ukSpellings` (stems, matched at a word start).
 
 After any change: `npm run brand:build` (regenerates `brand/i18n/strings.json` and `brand/MANIFEST.json`), then the checks, then sync.
+
+## Brand guardrail: what AICC is (do not erode)
+
+AICC (AI Commerce Copilot) is a **commerce recommendation and merchandising copilot**. WooCommerce is the **first supported platform** ("Available for WooCommerce"), not the permanent definition. **"Frequently Bought Together" must not be used as AICC's product category, primary positioning, umbrella descriptor, footer definition or brand identity**: it is the real heading of one storefront widget, and co-purchase behavior is one recommendation signal among several (catalog category, stock and recency, the merchant's rules). Never claim several recommendation strategies (the engine's strategy presets are off), another platform, uplift or invented numbers. `npm run content:check` enforces this with a positional guard in every locale (hero, meta, share-image text, footer, "What is AICC?") and a reviewed allow-list; see `docs/fbt-usage-audit.md`.

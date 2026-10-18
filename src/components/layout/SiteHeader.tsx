@@ -42,7 +42,7 @@ export function SiteHeader({ locale, route, t }: { locale: Locale; route: RouteI
         </nav>
         <div className="aicc-site-header__actions">
           <LangMenu locale={locale} route={route} label={c.language.label} currentWord={c.language.current} idSuffix="header" />
-          <A11yTrigger label={c.a11y.button} iconOnly className="aicc-iconbtn aicc-site-header__desktop-only" />
+          <A11yTrigger label={c.a11y.title} iconOnly className="aicc-iconbtn aicc-a11y-trigger" />
           <a href={GET_STARTED_URL} className="aicc-btn aicc-btn--quiet aicc-site-header__desktop-only">{t.brand.signIn}</a>
           <a href={GET_STARTED_URL} className="aicc-btn aicc-btn--primary aicc-site-header__desktop-only">
             {c.getStarted}
@@ -59,7 +59,7 @@ export function SiteHeader({ locale, route, t }: { locale: Locale; route: RouteI
             <ul>{nav.map((n) => <li key={n.route}>{link(n)}</li>)}</ul>
           </nav>
           <LangMenu locale={locale} route={route} label={c.language.label} currentWord={c.language.current} idSuffix="mobile" block />
-          <div><A11yTrigger label={c.a11y.button} className="aicc-btn aicc-btn--outline aicc-btn--sm" /></div>
+          <div><A11yTrigger label={c.a11y.title} className="aicc-btn aicc-btn--quiet aicc-btn--sm" /></div>
           <a href={GET_STARTED_URL} className="aicc-btn aicc-btn--quiet aicc-btn--block">{t.brand.signIn}</a>
           <a href={GET_STARTED_URL} className="aicc-btn aicc-btn--primary aicc-btn--lg aicc-btn--block">{c.getStarted}</a>
         </div>

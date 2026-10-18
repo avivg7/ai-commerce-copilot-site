@@ -37,12 +37,12 @@ export function renderDashPreviewHTML(s, o = {}) {
     `<div class="aicc-dash__sub">${mark(2)}<ul class="aicc-dash__tiles aicc-dash__tiles--three">${tile("adds", n.format(SAMPLE.adds))}${tile("orders", n.format(SAMPLE.orders), `<span class="aicc-dash__assoc">${T(s.associationNote)}</span>`)}${tile("revenue", usd)}</ul></div></div>` +
     `<div class="aicc-dash__cards"><article class="aicc-dash__card">${mark(3)}<p class="aicc-dash__ctitle">${icon("lightbulb", 16)}${T(s.insightsHeading)}</p>` +
     `<p class="aicc-dash__itype">${T(s.insightTitle)}</p><p class="aicc-dash__ibody">${T(s.insightBody)}</p>` +
-    `<p class="aicc-dash__imetric">${T(s.insightMetric)}: <strong><bdi>${n.format(48)}</bdi></strong></p><p class="aicc-dash__gate">${T(s.insightGate)}</p></article>` +
+    `<p class="aicc-dash__imetric">${T(s.insightMetric)}: <strong><bdi>${n.format(9)}</bdi></strong></p><p class="aicc-dash__gate">${T(s.insightGate)}</p></article>` +
     `<article class="aicc-dash__card">${mark(4)}<p class="aicc-dash__ctitle">${icon("package", 16)}${T(s.previewHeading)}</p>` +
     `<p class="aicc-dash__pfor">${T(s.previewFor)} <strong>${T(s.products.kit)}</strong></p>` +
     // As in the plugin: every product shows its price; only learned partners add "Bought together N times". A fallback product shows the price alone.
-    `<ul class="aicc-dash__prows"><li><span>${T(s.products.filters)}</span><em><bdi>$14.00</bdi> · ${T(s.previewLearned.replace("{n}", n.format(48)))}</em></li>` +
-    `<li><span>${T(s.products.grinder)}</span><em><bdi>$46.00</bdi> · ${T(s.previewLearned.replace("{n}", n.format(31)))}</em></li>` +
+    `<ul class="aicc-dash__prows"><li><span>${T(s.products.filters)}</span><em><bdi>$14.00</bdi> · ${T(s.previewLearned.replace("{n}", n.format(9)))}</em></li>` +
+    `<li><span>${T(s.products.grinder)}</span><em><bdi>$46.00</bdi> · ${T(s.previewLearned.replace("{n}", n.format(6)))}</em></li>` +
     `<li><span>${T(s.products.mug)}</span><em data-fallback="true"><bdi>$16.00</bdi></em></li></ul></article></div>` +
     `</div></section></div>` +
     (variant === "full" && o.callouts !== false ? `<ol class="aicc-dash__callouts"><li><span aria-hidden="true">1</span>${T(s.callouts.a)}</li><li><span aria-hidden="true">2</span>${T(s.callouts.b)}</li><li><span aria-hidden="true">3</span>${T(s.callouts.c)}</li><li><span aria-hidden="true">4</span>${T(s.callouts.d)}</li></ol>` : "") +

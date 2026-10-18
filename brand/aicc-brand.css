@@ -225,6 +225,10 @@ html { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
   transition: all var(--aicc-dur-legacy) var(--aicc-ease-legacy);
 }
 .aicc-iconbtn:hover { background: rgb(37 99 235 / 0.08); color: var(--aicc-text); }
+/* The accessibility-settings trigger: quiet by default (muted icon, no label), a real 44px target, always in the header bar */
+.aicc-a11y-trigger { padding-inline: 0; inline-size: var(--aicc-tap); }
+.aicc-a11y-trigger svg { inline-size: 1.25rem; block-size: 1.25rem; }
+
 .aicc-site-header__menu-btn { color: var(--aicc-text); inline-size: var(--aicc-tap); padding: 0; }
 .aicc-site-header__panel { border-block-start: 1px solid var(--aicc-border); background: transparent; overflow-y: auto; max-block-size: calc(100dvh - var(--aicc-header-h)); }
 .aicc-site-header__panel[hidden] { display: none; }
@@ -888,6 +892,12 @@ html.aicc-scroll-lock { overflow: hidden; scrollbar-gutter: stable; }
 :root[data-aicc-contrast="high"] .aicc-tabs__tab[aria-selected="true"] { background: #000; color: #fff; }
 
 /* ── FBT demo, merchant view: continuity cue, one relevant observation, one Ask Reco line ───────────────────────────────────── */
+.aicc-fbt__evidence { margin: 0; color: var(--aicc-text-muted); font-size: var(--aicc-text-sm); max-inline-size: 60rem; }
+.aicc-fbt__evidence strong { color: var(--aicc-text); }
+.aicc-fbt-row__byrule { display: inline-block; margin-inline-start: 0.4rem; padding: 0 0.5rem; border-radius: var(--aicc-radius-pill); background: var(--aicc-surface); border: 1px solid var(--aicc-primary); color: var(--aicc-primary-ink, var(--aicc-text)); font-size: var(--aicc-text-xs); font-weight: 650; }
+/* The same product, in both views: the product the shopper ticked is marked in the merchant list */
+.aicc-fbt-row[data-ticked="true"] { box-shadow: inset 3px 0 0 var(--aicc-primary); background: var(--aicc-info-bg); }
+.aicc-fbt-row__ticked { display: inline-block; margin-inline-start: 0.4rem; padding: 0 0.5rem; border-radius: var(--aicc-radius-pill); background: var(--aicc-surface); border: 1px solid var(--aicc-border-strong); font-style: normal; font-size: var(--aicc-text-xs); font-weight: 650; color: var(--aicc-text); }
 .aicc-fbt__ctx { display: flex; flex-wrap: wrap; align-items: center; gap: var(--aicc-space-2) var(--aicc-space-3); margin: 0; padding: var(--aicc-space-2) var(--aicc-space-4) var(--aicc-space-2) var(--aicc-space-2); border-radius: var(--aicc-radius-pill); background: var(--aicc-info-bg); border: 1px solid var(--aicc-border); inline-size: fit-content; max-inline-size: 100%; font-size: var(--aicc-text-sm); }
 .aicc-fbt__ctxthumb { display: grid; place-items: center; inline-size: 2rem; block-size: 2rem; border-radius: var(--aicc-radius-md); background: var(--aicc-gradient-action-aa); color: #fff; }
 .aicc-fbt__ctx em { font-style: normal; color: var(--aicc-text-muted); }

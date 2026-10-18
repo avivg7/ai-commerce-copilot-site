@@ -1118,8 +1118,8 @@ main:focus {
 
 /* ── Content pass: Home hero fact hierarchy (value facts first, purchase confidence second and muted) ── */
 .aicc-hero__facts--values { margin-block-start: 0.9rem; gap: 0.35rem 1.25rem; display: flex; flex-wrap: wrap; color: var(--aicc-text); font-size: var(--aicc-text-sm); font-weight: 600; }
-.aicc-hero__confidence { list-style: none; padding: 0; margin: 1.1rem 0 0; display: flex; flex-wrap: wrap; gap: 0.25rem 0; color: var(--aicc-text-muted); font-size: var(--aicc-text-sm); }
-.aicc-hero__confidence li:not(:last-child)::after { content: "·"; margin-inline: 0.6rem; color: var(--aicc-text-subtle); }
+.aicc-hero__confidence { list-style: none; padding: 0; margin: 1.1rem 0 0; display: flex; flex-wrap: wrap; gap: 0.15rem 1.25rem; color: var(--aicc-text-muted); font-size: var(--aicc-text-sm); }
+/* items wrap as whole phrases; no separator dots (a dot stranded at a line end looked broken) */
 
 /* The merchandising loop sits as a quiet band directly under the hero */
 .aicc-loopband { background: var(--aicc-surface); border-block: 1px solid var(--aicc-border); padding-block: var(--aicc-space-4) var(--aicc-space-3); }
@@ -1175,3 +1175,24 @@ p > .aicc-link:only-child { display: inline-block; min-block-size: 1.5rem; paddi
 
 /* Hebrew has no italic form: the browser would slant the glyphs artificially. The pending line stays upright in Hebrew (colour already marks it as muted). */
 .aicc-pending:lang(he) { font-style: normal; }
+
+/* ── Positioning v3: outcome-led hero (one sentence, CTAs, one slim pillar line, muted purchase confidence) and the pillars strip ── */
+.aicc-hero__kicker { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.75rem; }
+.aicc-hero__category { color: var(--aicc-text-muted); font-size: var(--aicc-text-sm); font-weight: 600; }
+.aicc-hero__confidence { margin-block-start: 1.25rem; }
+.aicc-pillars { background: var(--aicc-surface); border-block: 1px solid var(--aicc-border); }
+.aicc-pillars__list { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); }
+.aicc-pillars__list > li { display: flex; gap: 0.9rem; align-items: flex-start; padding-block: var(--aicc-space-5); min-inline-size: 0; }
+.aicc-pillars__list > li + li { border-block-start: 1px solid var(--aicc-border); }
+.aicc-pillars__n { flex: none; display: inline-grid; place-items: center; inline-size: 2rem; block-size: 2rem; border-radius: 9999px; border: 1.5px solid var(--aicc-primary); color: var(--aicc-primary); font-weight: 700; font-size: var(--aicc-text-sm); }
+.aicc-pillars__title { font-size: var(--aicc-text-lg); font-weight: 700; letter-spacing: -0.01em; line-height: 1.25; }
+.aicc-pillars__list p { margin: 0.25rem 0 0; color: var(--aicc-text-muted); font-size: var(--aicc-text-sm); max-inline-size: 28rem; }
+.aicc-pillars__link { display: inline-flex; align-items: center; min-block-size: 1.5rem; margin-block-start: 0.35rem; font-size: var(--aicc-text-sm); font-weight: 600; }
+@media (pointer: coarse) { .aicc-pillars__link { min-block-size: var(--aicc-tap); } }
+@media (min-width: 48rem) {
+  .aicc-pillars__list { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0 var(--aicc-space-6); }
+  .aicc-pillars__list > li { padding-block: var(--aicc-space-6); }
+  .aicc-pillars__list > li + li { border-block-start: 0; border-inline-start: 1px solid var(--aicc-border); padding-inline-start: var(--aicc-space-6); }
+}
+/* The merchandising loop now lives under "How it works" */
+.aicc-loopband--inline { background: transparent; border-block: 0; padding-block: var(--aicc-space-6) 0; }

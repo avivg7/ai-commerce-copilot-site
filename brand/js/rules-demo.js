@@ -7,9 +7,9 @@ import { setLang, labeler } from "./motion.js";
 import { applyRules, RULE_ACTIONS } from "./rules-core.js";
 
 const BASE = [
-  { id: "filters", tier: "learned", count: 48, inStock: true },
-  { id: "grinder", tier: "learned", count: 31, inStock: true },
-  { id: "kettle", tier: "learned", count: 12, inStock: true },
+  { id: "filters", tier: "learned", count: 9, inStock: true },
+  { id: "grinder", tier: "learned", count: 6, inStock: true },
+  { id: "kettle", tier: "learned", count: 5, inStock: true },
   { id: "mug", tier: "category", inStock: true },
   { id: "towel", tier: "category", inStock: true },
   { id: "travel", tier: "category", inStock: false },

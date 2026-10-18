@@ -8,6 +8,7 @@ import { initRecoHero } from "./reco-hero.js";
 export { initSiteHeader, initLangMenu, initRecoHero };
 export { renderRecoHeroHTML } from "./reco-hero.js";
 export { renderLangMenuHTML } from "./lang-menu.js";
+export { renderA11yTriggerHTML, initA11yTrigger } from "./a11y-trigger.js";
 export { storeLang, LANG_KEY } from "./lang-store.js";
 export { renderDashPreviewHTML, renderInsightsHTML } from "./dash-preview.js";
 export { renderRecoAskHTML } from "./reco-ask.js";

@@ -18,11 +18,11 @@
     { "id": "safety", "title": "Reliability" },
     { "id": "data", "title": "Data and privacy" }
   ],
-  "mostAskedBeforeBuying": ["q41", "q57", "q58", "q42", "q59", "q44", "q45", "q05", "q33", "q56"],
+  "mostAskedBeforeBuying": ["q01", "q60", "q41", "q58", "q59", "q62", "q44", "q45", "q05", "q56"],
   "selection": {
-    "home": ["q41", "q57", "q58", "q59", "q05", "q33", "q56"],
+    "home": ["q01", "q60", "q41", "q58", "q59", "q62", "q05"],
     "product": ["q42", "q02", "q44", "q45", "q47", "q49", "q31", "q06", "q39", "q33"],
-    "pricing": ["q09", "q55", "q13", "q12", "q18", "q19", "q17", "q26", "q54", "q22"],
+    "pricing": ["q09", "q55", "q13", "q12", "q18", "q19", "q63", "q26", "q54", "q22"],
     "questions": "all"
   },
   "retired": {
@@ -31,8 +31,8 @@
   "items": {
     "q01": {
       "layer": "sales", "topic": "why",
-      "q": "What exactly does AICC do?",
-      "a": "AICC turns your WooCommerce orders into a merchandising workspace. It learns which products your customers actually buy together, shows those bundles to shoppers on product and cart pages, and gives you the dashboard, rules and guide to see and steer the result.\n\nFor shoppers, that is a Frequently Bought Together widget. For you, it is a dashboard in WordPress with recommendation activity and associated orders, plain-English observations from your own data, rules to pin, exclude, prefer or deprioritize products, and Ask Reco, the guide in your admin. Where a product has little purchase history, AICC fills the gaps with same-category and newest in-stock products. [See how it works](route:product)."
+      "q": "What is AICC?",
+      "a": "AICC is a commerce recommendation and merchandising copilot, available for WooCommerce. It turns your store data into three things.\n\n**Better recommendations.** Products suggested from what your own customers actually buy together, with same-category and newest in-stock products where history is thin.\n\n**Less manual merchandising.** AICC counts the pairs in your orders, so you don't curate every product by hand, and a few rules (pin, exclude, prefer, deprioritize) cover the exceptions.\n\n**Visibility and control.** A dashboard in WordPress with views, clicks, bundle add-to-carts and associated orders, plain-English insights from your own data, a Recommendation Preview, and Reco, the guide in your admin.\n\nShoppers meet it today as a Frequently Bought Together bundle on product and cart pages; the dashboard, rules, insights and Reco around it are what make it more than a widget. Placing an order never waits on AICC. [See how it works](route:product)."
     },
     "q41": {
       "layer": "sales", "topic": "why",
@@ -118,6 +118,31 @@
       "layer": "sales", "topic": "recs",
       "q": "How many orders does AICC need?",
       "a": "There is no minimum order volume, so a small store can use AICC too. Any two products that appear in the same completed or processing order become a pair, and partners are ranked by how many orders contained both. A product with few or no partners uses same-category and newest products for the remaining spots, and real partners take over as orders come in. Importing your past orders (optional, up to 24 months) gives AICC your history from the start. Dashboard observations need at least 10 orders in the period."
+    },
+    "q60": {
+      "layer": "sales", "topic": "why",
+      "q": "Is AICC just Frequently Bought Together?",
+      "a": "No. “Frequently Bought Together” is the name of the storefront widget: today, the way AICC's recommendations reach shoppers on product and cart pages. AICC itself is a recommendation and merchandising copilot for WooCommerce. It learns from your orders and catalog, shows you why each product is recommended, lets you pin, exclude, prefer or deprioritize products, turns your data into plain-English insights and gives you Reco, a guide in your WordPress admin.\n\nThe bundle is one experience; the visibility and control around it are the rest of the product. [See how it works](route:product)."
+    },
+    "q61": {
+      "layer": "sales", "topic": "why",
+      "q": "What does “Available for WooCommerce” mean?",
+      "a": "AICC is built for WooCommerce stores. It runs as a plugin in your WordPress admin with a hosted service, reads your WooCommerce catalog and orders, and shows its recommendations on your WooCommerce product and cart pages. It declares WordPress 6.0, WooCommerce 7.0 and PHP 7.4 as minimums and is compatible with WooCommerce's high-performance order storage (HPOS).\n\nAvailable today means exactly that: it is available for WooCommerce. See the question about other platforms below."
+    },
+    "q62": {
+      "layer": "sales", "topic": "setup",
+      "q": "What happens after I buy?",
+      "a": "First you create your AICC account and choose a plan; the 14-day money-back guarantee starts when payment is received and your plan is issued, and renewal is manual. Then you install the AICC plugin from your WordPress admin and connect your store from the AICC screen. Normally there is no license key to paste and no code to write.\n\nAICC then prepares your catalog in the background. Once your store is ready, recommendations start with same-category and newest products and move to real bought-together pairs as orders are counted. Importing your past orders (up to 24 months) is optional and only happens if you choose it. Your dashboard, rules and Reco are then available in WordPress. [Plans and pricing](route:pricing)."
+    },
+    "q63": {
+      "layer": "account", "topic": "billing", "legalReview": true,
+      "q": "What happens on refund, revocation, suspension or expiry?",
+      "a": "In each case AICC stops on the affected storefront and the store stops sending business data. Your WooCommerce store keeps selling: its products, orders, customers and checkout are unaffected, and WooCommerce's own related products return.\n\nIf your plan expired, renew the same plan and your stores return without reconnecting. After a full refund the plan is revoked permanently and is not revived; buy a new plan and connect the store again. If a plan was revoked or suspended and you think that is a mistake, contact support. A disconnected store stops sending data and its slot becomes free.\n\nYour store history may be kept for up to 12 months as our retention target, but today nothing is deleted automatically, so it may be kept longer until it is deleted on request. [Data and trust](route:data-and-trust) has the details."
+    },
+    "q64": {
+      "layer": "sales", "topic": "why",
+      "q": "Does AICC work with platforms other than WooCommerce?",
+      "a": "AICC is available for WooCommerce today. It reads your WooCommerce orders and catalog and runs as a WooCommerce plugin with a hosted service. No other platform is available or announced, so please don't assume support for one."
     },
     "q31": {
       "layer": "product", "topic": "setup",

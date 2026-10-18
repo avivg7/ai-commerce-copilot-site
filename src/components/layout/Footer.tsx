@@ -60,7 +60,7 @@ export function Footer({ locale, route, t }: { locale: Locale; route: RouteId; t
             <h2>{c.footer.languageHeading}</h2>
             <LangMenu locale={locale} route={route} label={c.language.label} currentWord={c.language.current} idSuffix="footer" up />
             <div>
-              <A11yTrigger label={c.a11y.button} className="aicc-btn aicc-btn--ghost" />
+              <A11yTrigger label={c.a11y.title} className="aicc-btn aicc-btn--ghost" />
             </div>
           </div>
         </div>

@@ -99,6 +99,11 @@
   "checkoutDependsOnAicc": false,
   "bannedClaims": [
     "recommended for \\d",
+    "(several|multiple|many|different) (recommendation )?strategies",
+    "strategy presets?",
+    "\\ban? (fbt|frequently[- ]bought[- ]together) (plugin|tool|app|engine|product)",
+    "\\b(fbt|frequently[- ]bought[- ]together) for woocommerce",
+    "works? (with|on) (shopify|bigcommerce|magento|squarespace|wix)",
     "increases? (your )?(conversion|revenue|sales|aov)",
     "boosts? (your )?(conversion|revenue|sales|aov)",
     "revenue (generated|created|driven) by aicc",

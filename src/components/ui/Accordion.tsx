@@ -29,7 +29,7 @@ export function Accordion({ items, className }: { items: AccordionItem[]; classN
             <summary>
               <span {...(it.fallback ? { lang: "en", dir: "ltr" as const, "data-needs-translation": it.id } : it.lang ? { lang: it.lang, dir: it.dir } : {})}>
                 {it.question}
-                {it.fallback && it.tag ? <span className="aicc-fallbacktag" aria-hidden="true">{it.tag}</span> : null}
+                {it.fallback && it.tag ? <span className="aicc-fallbacktag" aria-hidden="true" lang={it.lang} dir={it.dir}>{it.tag}</span> : null}
               </span>
               <ChevronDown size={22} aria-hidden="true" />
             </summary>
