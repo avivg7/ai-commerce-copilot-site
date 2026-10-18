@@ -136,7 +136,7 @@ export const en = {
       trustHeading: "Trust and legal",
       languageHeading: "Language",
       copyright: "© {year} {name}",
-      note: "AICC is a WooCommerce plugin. WooCommerce and WordPress are trademarks of their respective owners.",
+      note: "AICC is available for WooCommerce. WooCommerce and WordPress are trademarks of their respective owners.",
     },
     breadcrumbs: { label: "Breadcrumb" },
     draft: {
@@ -1042,7 +1042,7 @@ export const en = {
         },
         service: {
           h: "What AICC is",
-          a: "AICC is a WooCommerce plugin with a hosted service. It adds product recommendations learned from your store's orders (shown to shoppers as a Frequently Bought Together bundle), a dashboard, rule-based insights, merchant controls and Ask Reco.",
+          a: "AICC is a commerce recommendation and merchandising copilot, available for WooCommerce as a plugin with a hosted service. It adds product recommendations learned from your store's orders (shown to shoppers as a Frequently Bought Together bundle), a dashboard, rule-based insights, merchant controls and Ask Reco.",
           b: "AICC does not replace WooCommerce. Your products, cart, checkout and orders stay in WooCommerce.",
         },
         account: {

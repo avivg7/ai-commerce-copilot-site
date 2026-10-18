@@ -115,7 +115,6 @@ export const he: DeepPartial<Dictionary> = {
       trustHeading: "אמון ומסמכים משפטיים",
       languageHeading: "שפה",
       copyright: "© {year} {name}",
-      note: "AICC הוא תוסף ל־WooCommerce. WooCommerce ו־WordPress הם סימנים מסחריים של בעליהם.",
     },
     breadcrumbs: {
       label: "נתיב ניווט",

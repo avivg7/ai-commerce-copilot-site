@@ -83,20 +83,20 @@
       "bytes": 4393
     },
     "content/faq.en.json": {
-      "sha256": "fb5c255b8c8029290e6c8f3a4b9bafab7f2e870f55c3b89b0d42a1dca9eeddfb",
-      "bytes": 29603
+      "sha256": "ef899069664278c7416fceb415ab952ca5fa1b6ffbed54f958a069a08ddc6cce",
+      "bytes": 29613
     },
     "content/faq.es.json": {
-      "sha256": "bd95e1c6bb335f8769b3a83d462bdde070840e50b81465293e7bd66c2d513a3a",
-      "bytes": 24494
+      "sha256": "6a52aaf0266435e8a10cf7eedd96522f3040d15fbe8a465d518d05de83b914e2",
+      "bytes": 24309
     },
     "content/faq.he.json": {
-      "sha256": "a0f4418f6ab38774490d8fbd77e1d51a9f5b4dafb239145d008262a22d448199",
-      "bytes": 29864
+      "sha256": "9eb349bf407f64cdf14608d2d0c5d2eaa27ec74c8bd9a314f37c663a185fd1d5",
+      "bytes": 29651
     },
     "content/faq.ru.json": {
-      "sha256": "e3b5a001c4cd34f8ffcc4b299dc620055199e354318095e710c27055e28ee38c",
-      "bytes": 39408
+      "sha256": "f452cf35c4ee334ac036ddf2bf940a64c4b26d6d835b41a33f2f2c566b9b43a5",
+      "bytes": 39153
     },
     "content/replica-labels.json": {
       "sha256": "a351cf318cbbef820742c1fe2478eacec1e34e40c3479a1f954d986af1679558",

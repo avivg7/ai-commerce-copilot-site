@@ -57,7 +57,7 @@
     "q03": {
       "layer": "product", "topic": "why",
       "q": "Does AICC replace WooCommerce?",
-      "a": "No. It is a WooCommerce plugin. Your products, cart, checkout and orders stay in WooCommerce."
+      "a": "No. AICC works alongside WooCommerce. Your products, cart, checkout and orders stay in WooCommerce."
     },
     "q06": {
       "layer": "product", "topic": "setup",
@@ -142,7 +142,7 @@
     "q64": {
       "layer": "sales", "topic": "why",
       "q": "Does AICC work with platforms other than WooCommerce?",
-      "a": "AICC is available for WooCommerce today. It reads your WooCommerce orders and catalog and runs as a WooCommerce plugin with a hosted service. No other platform is available or announced, so please don't assume support for one."
+      "a": "AICC is available for WooCommerce today. It reads your WooCommerce orders and catalog and runs as a plugin for WooCommerce with a hosted service. No other platform is available or announced, so please don't assume support for one."
     },
     "q31": {
       "layer": "product", "topic": "setup",

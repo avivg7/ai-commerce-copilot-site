@@ -115,7 +115,6 @@ export const ru: DeepPartial<Dictionary> = {
       trustHeading: "Доверие и\u00a0правовые документы",
       languageHeading: "Язык",
       copyright: "© {year} {name}",
-      note: "AICC\u00a0— плагин для\u00a0WooCommerce. WooCommerce и\u00a0WordPress\u00a0— товарные знаки их владельцев.",
     },
     breadcrumbs: {
       label: "Навигационная цепочка",

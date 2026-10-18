@@ -37,10 +37,6 @@
       "q": "¿Es AICC un motor de recomendaciones con IA?",
       "a": "Las recomendaciones de AICC salen de lo que los clientes de su tienda compran juntos de verdad, contado y ordenado por reglas fijas y no por un modelo generativo. Puede ver, influir y anular el resultado, y los mismos datos de la tienda dan el mismo resultado.\n\nEso es lo que hace que cada recomendación se pueda explicar. Ask Reco, la guía de su administración, también sigue reglas fijas y los datos de su propio panel; no es un chatbot."
     },
-    "q03": {
-      "q": "¿AICC sustituye a WooCommerce?",
-      "a": "No. Es un plugin de WooCommerce. Sus productos, carrito, proceso de pago y pedidos siguen en WooCommerce."
-    },
     "q06": {
       "q": "¿Necesito un desarrollador?",
       "a": "No hay que escribir código. Usted conecta desde su administración de WordPress y una lista de verificación de configuración en el panel le guía. AICC coloca el widget en ubicaciones estándar de WooCommerce y, si en un tema inusual no encuentra un lugar seguro, se oculta en lugar de adivinar. En ese caso, un desarrollador puede ayudar."

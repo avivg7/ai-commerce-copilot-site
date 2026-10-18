@@ -68,7 +68,7 @@ export function Footer({ locale, route, t }: { locale: Locale; route: RouteId; t
           <p>
             <Rich text={c.footer.copyright} ctx={ctx} />
           </p>
-          <p>{c.footer.note}</p>
+          <p {...fbProps(locale, "common.footer.note")}>{c.footer.note}</p>
         </div>
       </div>
     </footer>
