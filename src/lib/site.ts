@@ -48,6 +48,6 @@ export const COMPANY = {
 export type CompanyKey = keyof typeof COMPANY;
 
 /** When the legal drafts were last updated (shown as "Draft last updated"). */
-export const DRAFT_UPDATED_ON = "2026-10-16";
+export const DRAFT_UPDATED_ON = "2026-10-18";
 /** When the accessibility statement was last reviewed (a separate review, separate date). */
-export const ACCESSIBILITY_REVIEWED_ON = "2026-10-16";
+export const ACCESSIBILITY_REVIEWED_ON = "2026-10-18";

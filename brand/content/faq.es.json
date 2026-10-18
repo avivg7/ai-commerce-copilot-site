@@ -151,7 +151,7 @@
     },
     "q22": {
       "q": "Si me voy y vuelvo más tarde, ¿empiezo desde cero?",
-      "a": "No necesariamente. Si su plan venció, renuévelo y sus tiendas vuelven sin reconectar. Si se reembolsó, compre un plan nuevo y conecte la misma tienda: AICC puede reconocerla si la tienda aún conserva su conexión con AICC, y su historial anterior puede volver a estar disponible. Un plan reembolsado nunca se reactiva.\n\nCuando vuelve, AICC se pone al día con los productos y los pedidos del periodo de pausa usando su historial real de WooCommerce, y nunca inventa actividad del tiempo en que no estuvo funcionando. Si eligió no importar su historial de pedidos, AICC no lo importará sin preguntar; puede aceptar más adelante."
+      "a": "No necesariamente. Si su plan venció, renuévelo y sus tiendas vuelven sin reconectar. Si se reembolsó, compre un plan nuevo y conecte la misma tienda: AICC puede reconocerla si la tienda aún conserva su conexión con AICC, y su historial anterior puede volver a estar disponible. Un plan reembolsado nunca se reactiva.\n\nCuando vuelve, AICC se pone al día con los productos del periodo de pausa usando su tienda real de WooCommerce y nunca inventa actividad del tiempo en que no estuvo funcionando. Los pedidos del periodo de pausa solo se importan si eligió importar su historial de pedidos; si no lo hizo, AICC no los importará sin preguntar, y puede aceptar más adelante."
     },
     "q24": {
       "q": "¿Qué pasa con los productos y pedidos creados mientras AICC estuvo inactivo?",
@@ -159,7 +159,7 @@
     },
     "q25": {
       "q": "¿Inventará AICC historial del tiempo en que estuvo inactivo?",
-      "a": "No. Los pedidos anteriores se importan como pedidos. No se crean impresiones, clics ni ingresos atribuidos para un tiempo en que AICC no estaba funcionando."
+      "a": "No. Los pedidos anteriores que decida importar se importan como pedidos. No se crean impresiones, clics ni ingresos atribuidos para un tiempo en que AICC no estaba funcionando."
     },
     "q53": {
       "q": "¿Puedo probar AICC sin comprometerme a renovar automáticamente?",

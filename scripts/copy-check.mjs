@@ -30,6 +30,12 @@ const RULES = [
   [/suscripci[oó]n/i, "es: subscription"], [/renovaci[oó]n autom[aá]tica/i, "es: auto-renew"], [/cancela cuando quieras/i, "es: cancel anytime"],
   [/30[ \u00a0]d[ií]as de (prueba|garant[ií]a|reembolso|devoluci[oó]n)|garant[ií]a de 30[ \u00a0]d[ií]as|(prueba|reembolso|devoluci[oó]n)[^.]{0,24}30[ \u00a0]d[ií]as|30[- ]d[ií]as? de dinero/i, "es: 30-day refund/trial claim (the guarantee is 14 days; \"últimos 30 días\" for the dashboard period is fine)"], [/m[aá]s popular/i, "es: most popular"], [/resultados reales/i, "es: real results"], [/[uú]nete\b|[uú]nase/i, "es: join"],
   [/conf[ií]an en nosotros/i, "es: trusted by"],
+  // The Studio badge is a neutral label ("Built for multiple stores"), never "recommended for N stores": two Solo plans cost less than one Studio
+  [/recommended for \d/i, "en: Studio badge must not recommend a store count"], [/מומלצ[תה]? ל־?\d/, "he: Studio badge must not recommend a store count"], [/recomendad[oa] para \d/i, "es: Studio badge must not recommend a store count"], [/рекомендуется для[\s\u00a0]*\d/i, "ru: Studio badge must not recommend a store count"],
+  // Past-order import is optional and needs the merchant's choice: never "imports your orders automatically / when you connect" (en: content:check; he, es, ru: here)
+  [/מייבא (את )?(ההזמנות|היסטוריית)[^.]{0,40}(אוטומטית|בעת החיבור|כשמתחברים)|(אוטומטית|בעת החיבור|כשמתחברים)[^.]{0,30}מייבא|ייבוא[^.]{0,20}(מתחיל|רץ|מתבצע) אוטומטית|(הזמנות|היסטוריה)[^.]{0,30}מיובאות (אוטומטית|בעת החיבור|כשמתחברים)/, "he: past-order import must be optional, never automatic or on connect"],
+  [/importa (automáticamente|al conectar)|importa (los |sus )?(pedidos|historial)[^.]{0,40}(automáticamente|al conectar|cuando conecta)|importación (comienza|empieza|se inicia|se ejecuta) automáticamente|pedidos[^.]{0,30}se importan (automáticamente|al conectar|cuando conecta)/i, "es: past-order import must be optional, never automatic or on connect"],
+  [/импортирует[^.]{0,40}(автоматически|при подключении)|(автоматически|при подключении)[^.]{0,40}импортирует|импорт (начинается|запускается|выполняется) автоматически|заказы[^.]{0,30}импортируются (автоматически|при подключении)/i, "ru: past-order import must be optional, never automatic or on connect"],
   // Russian
   [/бесплатн/i, "ru: free"], [/без банковской карты|без кредитной карты/i, "ru: no credit card"], [/тренд/i, "ru: trends"], [/подписк/i, "ru: subscription"],
   [/автопродлен|автоматическое продление|автоматически продлева/i, "ru: auto-renew"], [/отмен\w* в любой момент/i, "ru: cancel anytime"],
@@ -58,6 +64,24 @@ function stripComments(src) {
   const rule = (t) => RULES.some(([re]) => re.test(t));
   const missed = bad.filter((t) => !rule(t)), wrong = ok.filter((t) => rule(t));
   if (missed.length || wrong.length) { console.error(`FAIL: self-test of the 30-day rules: missed [${missed}] flagged [${wrong}]`); process.exit(1); }
+}
+// Self-test of the optional-import rules (he, es, ru) and the Studio badge rule: automatic / on-connect import and "recommended for 2 stores" are caught; the opt-in phrasing passes.
+{
+  const bad = [
+    "AICC מייבא את ההזמנות הקודמות שלכם אוטומטית.", "ההזמנות מיובאות בעת החיבור.", "הייבוא מתחיל אוטומטית.",
+    "AICC importa automáticamente los pedidos anteriores.", "AICC importa los pedidos anteriores al conectar.", "La importación empieza automáticamente.",
+    "AICC автоматически импортирует прошлые заказы.", "AICC импортирует заказы при подключении.", "Импорт начинается автоматически.",
+    "מומלצת ל־2 עד 3 חנויות", "Recomendado para 2 o 3 tiendas", "Рекомендуется для\u00a02–3\u00a0магазинов", "Recommended for 2 to 3 stores",
+  ];
+  const ok = [
+    "ייבוא הזמנות קודמות הוא אופציונלי ומתחיל רק כשאתם בוחרים בכך.", "אם תבחרו לייבא, יישלחו הזמנות מ־24 החודשים האחרונים.", "AICC לא מייבא את ההזמנות הקודמות שלכם עד שתבחרו.",
+    "Importar los pedidos anteriores es opcional y solo empieza cuando usted lo decide.", "AICC no importa nada sin preguntar.",
+    "Импорт прошлых заказов необязателен и начинается, только когда вы его выберете.", "Он ничего не импортирует, не спросив вас.",
+    "מיועדת לכמה חנויות", "Pensado para varias tiendas", "Для нескольких магазинов",
+  ];
+  const rule = (t) => RULES.some(([re]) => re.test(t));
+  const missed = bad.filter((t) => !rule(t)), wrong = ok.filter((t) => rule(t));
+  if (missed.length || wrong.length) { console.error(`FAIL: self-test of the import / badge rules: missed [${missed}] flagged [${wrong}]`); process.exit(1); }
 }
 const hits = [];
 let scanned = 0;

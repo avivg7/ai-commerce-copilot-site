@@ -28,7 +28,7 @@ export interface PricingCardProps {
 
 /**
  * One plan. The price and limits come from src/data/plans.ts. The CTA goes to the single GET_STARTED_URL with ?plan=.
- * Studio may carry a "Recommended for 2 to 3 stores" badge; nothing here says "most popular" and there is no urgency.
+ * Studio carries a neutral "Built for multiple stores" badge (a purpose label, not a recommendation: two Solo plans cost less than one Studio); nothing here says "most popular" and there is no urgency.
  */
 export function PricingCard(p: PricingCardProps) {
   const H = `h${p.headingLevel ?? 3}` as "h2" | "h3";

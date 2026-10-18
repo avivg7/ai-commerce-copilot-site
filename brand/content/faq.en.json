@@ -192,7 +192,7 @@
     "q22": {
       "layer": "account", "topic": "plans",
       "q": "If I leave and come back later, do I start from zero?",
-      "a": "Not necessarily. If your plan expired, renew it and your stores return without reconnecting. If it was refunded, buy a new plan and connect the same store: AICC can recognize it if the store still has its AICC connection, and your earlier history may be available again. A refunded plan is never revived.\n\nWhen you return, AICC catches up on products and orders from the gap using your real WooCommerce history, and never invents activity for the time it wasn't running. If you chose not to import your order history, AICC won't import it without asking; you can opt in later."
+      "a": "Not necessarily. If your plan expired, renew it and your stores return without reconnecting. If it was refunded, buy a new plan and connect the same store: AICC can recognize it if the store still has its AICC connection, and your earlier history may be available again. A refunded plan is never revived.\n\nWhen you return, AICC catches up on products from the gap using your real WooCommerce store, and never invents activity for the time it wasn't running. Orders from the gap are imported only if you chose to import your order history; if you didn't, AICC won't import them without asking, and you can opt in later."
     },
     "q24": {
       "layer": "account", "topic": "plans",
@@ -202,7 +202,7 @@
     "q25": {
       "layer": "account", "topic": "plans",
       "q": "Will AICC invent history for the time it was inactive?",
-      "a": "No. Past orders are imported as orders. No impressions, clicks or attributed revenue are created for a time when AICC wasn't running."
+      "a": "No. Past orders you choose to import are imported as orders. No impressions, clicks or attributed revenue are created for a time when AICC wasn't running."
     },
     "q53": {
       "layer": "sales", "topic": "billing",

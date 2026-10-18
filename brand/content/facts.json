@@ -14,7 +14,8 @@
       "name": "Studio",
       "price": 199,
       "stores": 3,
-      "featured": true
+      "featured": true,
+      "badge": "Built for multiple stores"
     },
     {
       "id": "agency",
@@ -97,6 +98,7 @@
   "failSoft": "widget hides; WooCommerce related products and cross-sells reappear (default setting, JavaScript needed)",
   "checkoutDependsOnAicc": false,
   "bannedClaims": [
+    "recommended for \\d",
     "increases? (your )?(conversion|revenue|sales|aov)",
     "boosts? (your )?(conversion|revenue|sales|aov)",
     "revenue (generated|created|driven) by aicc",
@@ -113,6 +115,9 @@
     "guaranteed (results|uplift|roi)",
     "import(s)? (starts|runs|begins) automatically",
     "starts automatically after connect",
+    "\\bimports? (your |the )?(past |previous |historical |old |earlier )?(orders|order history)( \\w+){0,2} (automatically|when you connect|on connect|as soon as you connect|after you connect)",
+    "\\bautomatically imports?\\b",
+    "\\b(orders|order history|history) (is|are) imported (automatically|when you connect|on connect|after you connect)",
     "we don't promise",
     "can't promise",
     "cannot promise",
