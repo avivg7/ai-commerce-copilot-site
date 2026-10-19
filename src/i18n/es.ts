@@ -17,6 +17,7 @@ import type { DeepPartial } from "./merge";
 export const es: DeepPartial<Dictionary> = {
   meta: {
     siteName: "AI Commerce Copilot",
+    ogImageAlt: "AICC: recomendaciones de producto, información para el comerciante y control del merchandising para WooCommerce. Un boceto sencillo de una página de producto con un paquete recomendado.",
     pages: {
       home: {
         title: "AICC: copiloto de recomendaciones de producto y merchandising",
@@ -24,6 +25,7 @@ export const es: DeepPartial<Dictionary> = {
       },
       product: {
         title: "Cómo funciona AICC: recomendaciones que puede explicar y controlar",
+        description: "Vea lo que ven los compradores, cómo decide AICC qué recomendar, qué puede medir y controlar, y cómo evita interferir con su proceso de pago.",
       },
       pricing: {
         title: "Precios: planes Solo, Studio y Agency de AICC",
@@ -124,6 +126,7 @@ export const es: DeepPartial<Dictionary> = {
       trustHeading: "Confianza y legal",
       languageHeading: "Idioma",
       copyright: "© {year} {name}",
+      note: "AICC está creado para WooCommerce y no está afiliado ni respaldado por WooCommerce ni por WordPress. WooCommerce y WordPress son marcas de sus respectivos propietarios.",
     },
     breadcrumbs: {
       label: "Ruta de navegación",
@@ -188,8 +191,11 @@ export const es: DeepPartial<Dictionary> = {
     intro: "Marque los productos y vea cómo cambia el total del paquete. Los productos, los precios y las cantidades son datos de ejemplo inventados.",
     nudge: "Compare los dos y luego véalo desde su lado.",
     result: {
+      without: "Los productos relacionados de WooCommerce se eligen de la misma categoría: {names}. Nada de ello procede de lo que los compradores compran juntos.",
       withTwo: "El mismo producto. Con AICC, los acompañantes son «{a}» y «{b}», comprados juntos {na} y {nb} veces.",
       withOne: "El mismo producto. Con AICC, el primer acompañante es «{a}», comprado junto {na} veces; sus reglas dan forma al resto.",
+      withNone: "El mismo producto. Sus reglas han quitado los acompañantes que AICC aprendió de sus pedidos, así que la lista se completa con su catálogo.",
+      merchant: "El mismo paquete visto desde su lado: cómo se ordenó cada producto y las reglas que dan forma a la lista.",
     },
     plain: {
       title: "Productos relacionados",
@@ -209,8 +215,12 @@ export const es: DeepPartial<Dictionary> = {
     },
     mode: {
       legend: "Comparar",
+      without: "Productos relacionados de WooCommerce",
       with: "Con AICC",
+      captionWithout: "Productos relacionados de WooCommerce: misma categoría, no a partir de pedidos.",
+      captionWith: "Con AICC: primero los productos comprados juntos.",
       withoutCaption: "Los productos relacionados de WooCommerce salen de la misma categoría o de las mismas etiquetas. No se basan en lo que los compradores compran juntos.",
+      withCaption: "AICC lista primero los productos que aparecen en los mismos pedidos que el producto que se está viendo y después completa los puestos restantes con su catálogo.",
     },
     view: {
       legend: "Vista",
@@ -228,6 +238,8 @@ export const es: DeepPartial<Dictionary> = {
     },
     anchorTag: "Viendo este producto",
     merchant: {
+      heading: "Cómo se ordenó cada producto",
+      intro: "Un ejemplo con el estilo del panel de AICC, cuyas etiquetas están en inglés; las reglas se configuran en el formulario Merchant Controls. Los productos y las cantidades son inventados.",
       sameBundle: "El mismo paquete que en la vista del comprador",
       forProduct: "Recomendaciones para",
       insightHeading: "Una observación sobre este paquete",
@@ -235,15 +247,28 @@ export const es: DeepPartial<Dictionary> = {
       insightBody: "«Juego de café de filtro» y «{product}» suelen comprarse juntos.",
       insightNone: "En la lista actual no queda ningún paquete fuerte.",
       insightMetric: "Times bought together",
+      askHeading: "Ask Reco",
+      askLabel: "Respuesta de ejemplo",
+      askQuestion: "¿Cuál es mi mayor oportunidad?",
+      askAnswer: "{product} es su paquete más fuerte con el juego de café de filtro en este ejemplo: comprados juntos {n} veces. Abra Recommendation Preview para ver los acompañantes y los recuentos de cualquier producto.",
+      askNone: "En esta lista de ejemplo no queda ningún acompañante comprado junto. Abra Recommendation Preview para ver los acompañantes de cualquier producto.",
       colProduct: "Producto",
+      colWhy: "Base (ilustración)",
       colRule: "Su regla",
       position: "Puesto {n}",
       boughtTogether: "Bought together {n} times",
-      byRule: { pin: "Fijado por usted", prefer: "Preferido por usted", exclude: "Excluido por usted" },
+      fallback: "Sin recuento: completado con su catálogo",
+      fallbackNewest: "Sin recuento: uno de sus productos con stock más recientes",
+      byRule: { pin: "Fijado por usted", prefer: "Preferido por usted", deprioritize: "Con menos prioridad, por usted", exclude: "Excluido por usted" },
+      inBundle: "Marcado en la vista del comprador",
+      evidenceHeading: "Cómo se construye la lista (ilustración).",
+      evidenceOrder: "AICC completa la lista en este orden: primero los productos comprados juntos, después la misma categoría y después sus productos con stock más recientes. Sus reglas se aplican al final. En su panel, un acompañante aprendido (comprado junto en sus pedidos) muestra un recuento; una alternativa (completada con su catálogo) o un producto fijado muestra solo un precio.",
+      previewNote: "En su panel de AICC, Recommendation Preview le permite elegir cualquier producto y ver su propia lista.",
       shopperNow: "El comprador ve ahora:",
       ruleLabel: "Regla para {product}",
       rules: { none: "Sin regla", pin: "Pin", prefer: "Prefer", deprioritize: "Deprioritize", exclude: "Exclude" },
       excluded: "Excluido: nunca se muestra a los compradores.",
+      ruleNote: "Las reglas se aplican después de la ordenación. Exclude gana a cualquier otra regla; Prefer y Deprioritize mueven un solo puesto.",
       tilesHeading: "Lo que registra su panel",
       tiles: { views: "Recommendation Views", clicks: "Recommendation Clicks", adds: "Bundle Add-To-Carts" },
       tileNote: "Cifras de ejemplo. Añada el paquete al carrito en la vista del comprador y Bundle Add-To-Carts sube una unidad.",
@@ -253,8 +278,21 @@ export const es: DeepPartial<Dictionary> = {
       listEmpty: "nada",
     },
     why: {
+      heading: "Por qué este producto (ilustración)",
+      recoIntro: "Reco es su guía dentro de AICC.",
+      none: "Marque un producto para ver en qué se basa su puesto en este ejemplo.",
+      filters: "Filtros de papel: comprados juntos con el juego de café de filtro más veces que cualquier otro producto de este ejemplo.",
+      grinder: "Molinillo manual: comprado junto con el juego de café de filtro menos veces que los filtros, así que se lista a continuación.",
+      mug: "Taza de cerámica: no hay historial de compras de este par en el ejemplo, así que este puesto se completa con la misma categoría.",
+      towel: "Paño de cocina de lino: completado con sus productos con stock más recientes, después de los acompañantes comprados juntos y de los productos de la misma categoría.",
+      without: "Los productos relacionados de WooCommerce salen de la misma categoría, que es como funcionan por defecto. Nada de ello procede de lo que compran juntos sus compradores.",
+      merchant: "Un ejemplo de cómo se construye la lista: cuántas veces se compró cada producto junto con el juego de café de filtro y qué puestos se completan con su catálogo.",
+    },
+    reco: {
+      preview: "Reco: para ver los acompañantes y los recuentos reales de cualquier producto, abra Recommendation Preview en su panel.",
     },
     keyboardHint: "Use Tab y la barra espaciadora para marcar productos. Las teclas de flecha permiten pasar de uno a otro.",
+    plainHint: "Este es el bloque de productos relacionados de WooCommerce: nada que marcar y sin total del paquete.",
     sample: "Ejemplo",
   },
 
@@ -355,6 +393,30 @@ export const es: DeepPartial<Dictionary> = {
     label: "Conversación de ejemplo",
     title: "Ask Reco",
     suggestionsLabel: "Elija una pregunta para Reco",
+    answerLabel: "Respuesta de ejemplo",
+    footnote: "Las respuestas salen de los datos de su propio panel. Reco ofrece información y enlaces; nunca cambia sus ajustes. En su administración también puede escribir una pregunta breve, y Reco la asocia con los temas que conoce. Reco responde en inglés y en hebreo; aquí la conversación aparece traducida.",
+    qa: {
+      focus: {
+        q: "¿En qué debería centrarme hoy?",
+        a: "Paso siguiente opcional: importar hasta 24 meses de su historial de pedidos de WooCommerce para que AICC aprenda qué productos compran ya juntos sus clientes. Los pedidos anteriores nunca se importan si usted no lo decide; sin la importación, AICC empieza con alternativas del catálogo y aprende de los pedidos nuevos.",
+        link: "Go to Order History",
+      },
+      opportunity: {
+        q: "¿Cuál es mi mayor oportunidad?",
+        a: "«Juego de café de filtro» y «Filtros de papel, paquete de 100» se compran juntos 9 veces, su paquete más fuerte en este ejemplo. Abra Merchant Insights para ver las demás observaciones.",
+        link: "Open Merchant Insights",
+      },
+      win: {
+        q: "Deme una mejora rápida.",
+        a: "Elija uno de sus productos más vendidos en Recommendation Preview y compruebe que sus acompañantes tienen buen aspecto. Fije un producto con Pin para mantenerlo cerca de la parte superior, o excluya con Exclude uno que no quiera mostrar.",
+        link: "Open Recommendation Preview",
+      },
+      help: {
+        q: "¿En qué puede ayudarme?",
+        a: "Puedo revisar su configuración y sus datos, ayudarle a leer las cifras de su panel, señalar oportunidades de paquetes y el estado del catálogo, y llevarle a la pantalla adecuada. No cambio ajustes ni respondo preguntas abiertas.",
+        link: "",
+      },
+    },
   },
 
   loop: {
@@ -391,12 +453,13 @@ export const es: DeepPartial<Dictionary> = {
   },
 
   home: {
+    connectorNote: "Un panel de ejemplo con el estilo de la administración de AICC",
     hero: {
       eyebrow: "Disponible para WooCommerce",
       category: "Copiloto de recomendaciones y merchandising",
       titleLead: "Haga de cada página de producto",
       titleAccent: "una oportunidad de venta más inteligente.",
-      lead: "AICC convierte los datos de su tienda en mejores recomendaciones de producto, información útil para el comerciante y control práctico del merchandising.",
+      lead: "AICC convierte los datos de su tienda en mejores recomendaciones en sus páginas de producto y de carrito, con información y control prácticos para orientarlas.",
       confidence: {
         price: "Planes desde {priceSolo} al año",
         guarantee: "Garantía de devolución del dinero de 14 días en su primera compra",
@@ -407,8 +470,11 @@ export const es: DeepPartial<Dictionary> = {
       label: "Lo que le ofrece AICC",
       a: { title: "Mejores recomendaciones", body: "Sugerencias basadas en los datos de su propia tienda: lo que compran juntos los clientes, su catálogo y su stock.", link: "Ver un ejemplo" },
       b: { title: "Menos merchandising manual", body: "AICC encuentra los pares en sus pedidos. Usted conserva la última palabra con unas pocas reglas, en lugar de seleccionar cada producto.", link: "Ver los controles" },
+      c: { title: "Visibilidad y control", body: "Un panel, observaciones en lenguaje sencillo y una guía muestran qué se recomienda y cuántas veces se compró junto.", link: "Ver el espacio de trabajo" },
     },
     demo: {
+      title: "Vea en qué se basa cada recomendación.",
+      lead: "Un comprador ve un paquete breve y relevante. Pase a su lado para ver qué se recomienda y cuántas veces se compra junto, qué puede cambiar y qué registra su panel.",
     },
     how: {
       title: "Conectar, aprender, recomendar.",
@@ -416,6 +482,7 @@ export const es: DeepPartial<Dictionary> = {
       steps: {
         connect: {
           title: "Conectar",
+          body: "Cree su cuenta de AICC y elija un plan, instale y active el plugin de AICC en su tienda WooCommerce y conecte su tienda desde la pantalla de AICC. Normalmente no hay clave de licencia que pegar ni código que escribir.",
         },
         learn: {
           title: "Aprender",
@@ -428,6 +495,7 @@ export const es: DeepPartial<Dictionary> = {
       },
     },
     why: {
+      title: "Los productos relacionados se eligen por categoría. AICC parte de la cesta de compra.",
       lead: "Los productos relacionados de WooCommerce son una opción por defecto razonable: emparejan productos por categoría y etiquetas. No pueden decirle qué productos compra la gente junta de verdad.",
       points: {
         intent: {
@@ -440,6 +508,7 @@ export const es: DeepPartial<Dictionary> = {
         },
         fallback: {
           title: "Un historial escaso recibe una alternativa segura.",
+          body: "Cuando un producto tiene pocas compras conjuntas, los puestos restantes se completan con alternativas: productos con stock de la misma categoría y después sus productos con stock más recientes. No se inventa nada. Los acompañantes aprendidos (productos que sus pedidos muestran comprados juntos) y las alternativas comparten hoy el título del widget; la vista previa de su panel muestra cuál es cuál.",
         },
       },
       link: "Vea cómo se decide una recomendación",
@@ -541,6 +610,7 @@ export const es: DeepPartial<Dictionary> = {
       },
       only: "Aparece únicamente en las páginas de producto y en la del carrito. No hay widget en la página de inicio, en las categorías ni en el proceso de pago. En un tema inusual donde AICC no encuentra un lugar seguro, se oculta en lugar de adivinar.",
     },
+    learnPlain: "Cada recomendación se puede explicar: sale de contar sus propios pedidos, de su catálogo (misma categoría, productos más recientes) o de una regla que usted fija, no de un modelo generativo ni de un perfil del comprador. Los mismos datos dan el mismo resultado.",
     learn: {
       title: "Cómo decide AICC qué recomendar.",
       lead: "Una lista breve y fija, recorrida en este orden, con sus reglas aplicadas al final.",
