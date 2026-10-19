@@ -29,7 +29,7 @@ npm run serve:out -- --port 3011   # serve out/ locally (add --prefix /ai-commer
 | `AICC_BASE_PATH` | `/ai-commerce-copilot-site` in production, empty in dev | URL prefix of the deployment |
 | `SITE_URL` | `https://copilt.org` | origin for canonical, hreflang, sitemap and Open Graph URLs |
 | `NEXT_PUBLIC_AICC_ACCOUNT_URL` | `https://copilt.org/my-account/` | the single "Get started" destination (`?plan=solo|studio|agency` is added on plan buttons) |
-| `NEXT_PUBLIC_AICC_DEMO_VIDEO`, `..._POSTER`, `..._CAPTIONS` | unset | the Watch demo video; unset shows a labelled placeholder (a `launch:check` blocker). No fake footage |
+| `NEXT_PUBLIC_DEMO_VIDEO_SRC`, `..._POSTER`, `..._CAPTIONS`, `..._CAPTIONS_LANG` | unset | the Watch demo video (prepared, not enabled): unset shows a labelled placeholder (a `launch:check` blocker); set renders an accessible `<video controls>` with poster and captions. No fake footage. How to enable: `docs/watch-demo-video.md` (the older `NEXT_PUBLIC_AICC_DEMO_VIDEO`, `_POSTER`, `_CAPTIONS` names still work) |
 | `NEXT_PUBLIC_LEGAL_REVIEW_APPROVED` | unset | `true` only after a lawyer approves the legal text: removes the draft notices and lets flagged FAQ answers into JSON-LD |
 | `NEXT_PUBLIC_LEGAL_DRAFT_NOTICE` | on | `off` hides the draft pills (screenshots only); `launch:check` still fails without approval |
 | `NEXT_PUBLIC_AICC_LEGAL_NAME`, `..._ADDRESS`, `..._SUPPORT_EMAIL`, `..._GOVERNING_LAW`, `..._PAYMENT_PROCESSOR`, `..._HOSTING_REGION` | unset | owner values; unset renders one plain "will be published before launch" line |
@@ -47,6 +47,7 @@ npm run serve:out -- --port 3011   # serve out/ locally (add --prefix /ai-commer
 | `npm run content:check` | the content pack (`brand/content`): banned claims, UK spellings, fact consistency with `facts.json`, FAQ integrity, no apologetic phrasing outside legal pages, rendered English pages; `-- --cp <theme dir>` verifies Control Plane byte parity |
 | `npm run fallback:check` | on every he/es/ru page, English text is only ever shown inside an element marked `lang="en"` (needs `serve:out`) |
 | `npm run lang:check` | on every he/es/ru page, translated text never sits under `lang="en"` and Hebrew never under `dir="ltr"` (WCAG 3.1.2; needs `serve:out`) |
+| `npm run test:video` | the Watch demo modal in both states: the labelled placeholder with no video, and an accessible captioned `<video>` when one is configured (`docs/watch-demo-video.md`) |
 | `npm run test:rules` | the demos' rule engine (`brand/js/rules-core.js`) ranks exactly like the backend policy in all 32,500 rule combinations (an independent literal port of `recommendation_policy.py`) |
 | `npm run axe:check` | axe-core on Home, Product, Pricing, Questions and Data & Trust at 1280/768/390/360/320 in default, Enhanced contrast and reduced-motion modes (needs `serve:out`) |
 | `npm run shots:content` | the content-pass screenshots at 1280 and 390 (needs `serve:out`) |

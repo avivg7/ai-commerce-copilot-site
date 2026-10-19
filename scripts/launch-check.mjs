@@ -30,7 +30,8 @@ if (!approved) {
   problems.push(`draft translations: ${Object.entries(TRANSLATION_REVIEW).filter(([, v]) => v !== "source-draft-pending-legal-review").map(([l]) => l).join(", ")} legal text needs native legal review`);
   problems.push(`marketing copy with legal weight needs the same approval: ${LEGAL_REVIEW_KEYS.join(", ")}`);
 }
-if (!env.NEXT_PUBLIC_AICC_DEMO_VIDEO) problems.push("demo video: NEXT_PUBLIC_AICC_DEMO_VIDEO is not set; the Watch demo modal would show the labelled placeholder (no footage exists yet)");
+if (!env.NEXT_PUBLIC_DEMO_VIDEO_SRC && !env.NEXT_PUBLIC_AICC_DEMO_VIDEO) problems.push("demo video: NEXT_PUBLIC_DEMO_VIDEO_SRC is not set (see docs/watch-demo-video.md); the Watch demo modal would show the labelled placeholder (no footage exists yet)");
+else if (!env.NEXT_PUBLIC_DEMO_VIDEO_CAPTIONS && !env.NEXT_PUBLIC_AICC_DEMO_VIDEO_CAPTIONS) problems.push("demo video: NEXT_PUBLIC_DEMO_VIDEO_CAPTIONS is not set; a video without captions is not accessible (docs/watch-demo-video.md)");
 if (env.NEXT_PUBLIC_LEGAL_DRAFT_NOTICE === "off" && !approved) problems.push("NEXT_PUBLIC_LEGAL_DRAFT_NOTICE=off hides the draft pills without approval");
 
 // If a build exists, look at what it really contains.

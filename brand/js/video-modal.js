@@ -1,6 +1,7 @@
 // "Watch demo" modal: a native <dialog> (focus trap, Esc, backdrop click, focus returns to the trigger), body scroll lock, responsive 16:9
 // player, <video controls playsinline preload="metadata"> with poster + <track kind="captions">, pauses and resets on close.
-// Configuration, NO fake footage: the trigger carries data-demo-video / data-demo-poster / data-demo-captions (+ data-demo-captions-lang).
+// Configuration, NO fake footage: the trigger carries data-demo-video / data-demo-poster / data-demo-captions (+ data-demo-captions-lang, default: the page language).
+// On the site these come from NEXT_PUBLIC_DEMO_VIDEO_SRC / _POSTER / _CAPTIONS / _CAPTIONS_LANG at build time (docs/watch-demo-video.md); tested by `npm run test:video`.
 // With no video configured the same frame shows a calm, clearly labelled placeholder (data-demo-placeholder="true"), which
 // `npm run launch:check` treats as a launch blocker.
 import { icon } from "./icons.js";
@@ -29,7 +30,7 @@ export function initVideoModal(trigger, strings) {
       `<button type="button" class="aicc-modal__close" aria-label="${esc(strings.close)}">${icon("x", 22)}</button></div>` +
       `<div class="aicc-modal__player">` +
       (video
-        ? `<video controls playsinline preload="metadata"${poster ? ` poster="${esc(poster)}"` : ""}><source src="${esc(video)}">${caps ? `<track kind="captions" src="${esc(caps)}" srclang="${esc(capsLang)}" label="${esc(strings.captionsLabel)}" default>` : ""}</video>`
+        ? `<video controls playsinline preload="metadata" aria-label="${esc(strings.title)}"${poster ? ` poster="${esc(poster)}"` : ""}><source src="${esc(video)}">${caps ? `<track kind="captions" src="${esc(caps)}" srclang="${esc(capsLang)}" label="${esc(strings.captionsLabel)}" default>` : ""}</video>`
         : `<div class="aicc-modal__placeholder" data-demo-placeholder="true">${icon("video", 36)}<p>${esc(strings.placeholder)}</p><button type="button" class="aicc-btn aicc-btn--primary" data-aicc-try-demo>${esc(strings.tryDemo)}</button></div>`) +
       `</div>`;
     document.body.appendChild(dialog);

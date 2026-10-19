@@ -23,6 +23,7 @@
     "fallback:check": "node scripts/fallback-check.mjs",
     "lang:check": "node scripts/lang-scope-check.mjs",
     "test:rules": "node scripts/rules-core-test.mjs",
+    "test:video": "node scripts/test-video-modal.mjs",
     "perf:check": "node scripts/perf-check.mjs",
     "test:interaction": "node scripts/interaction-test.mjs",
     "og:build": "node scripts/build-og.mjs",

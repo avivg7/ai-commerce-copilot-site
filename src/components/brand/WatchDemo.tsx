@@ -15,6 +15,7 @@ export function WatchDemo({ locale, t, size = "lg" }: { locale: Locale; t: Dicti
       data-demo-video={DEMO.video}
       data-demo-poster={DEMO.poster || kitAsset("reco-hero-poster.jpg")}
       data-demo-captions={DEMO.captions}
+      data-demo-captions-lang={DEMO.captionsLang}
       {...(({ lang, dir }) => ({ lang, dir }))(txProps(locale, "brand.watchDemo"))}
     >
       {t.brand.watchDemo}
