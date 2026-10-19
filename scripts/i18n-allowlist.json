@@ -40,7 +40,9 @@
     "dash.insightKinds.winner.metric",
     "dash.previewHeading",
     "dash.previewLearned",
-    "ask.qa.next.link",
+    "ask.qa.focus.link",
+    "ask.qa.opportunity.link",
+    "ask.qa.win.link",
     "product.dash.items.c.title",
     "product.dash.items.d.title",
     "product.compare.rows.control.topic"
