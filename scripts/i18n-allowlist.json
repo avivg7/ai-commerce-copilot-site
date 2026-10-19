@@ -48,5 +48,5 @@
     "product.compare.rows.control.topic"
   ],
   "he": [],
-  "ru": ["common.fallbackTag"]
+  "ru": ["common.fallbackTag", "ask.qa.opportunity.link", "ask.qa.win.link"]
 }

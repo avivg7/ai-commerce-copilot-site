@@ -98,7 +98,7 @@ for (const l of LOCALES.filter((x) => x !== "en")) {
     const lv = flatP[l][k];
     if (typeof ev !== typeof lv) { err(l, k, "type differs from English"); continue; }
     if (typeof ev !== "string") continue;
-    if (lv.trim() === "") { err(l, k, "empty value"); continue; }
+    if (lv.trim() === "") { if (ev.trim() !== "") err(l, k, "empty value"); continue; } // an empty English value (a link-less sample answer) stays empty
     if (tokensOf(ev) !== tokensOf(lv)) err(l, k, `placeholder mismatch: en "${tokensOf(ev)}" vs ${l} "${tokensOf(lv)}"`);
     if (linksOf(ev) !== linksOf(lv)) err(l, k, `link target mismatch: en "${linksOf(ev)}" vs ${l} "${linksOf(lv)}"`);
     if (boldOf(ev) !== boldOf(lv)) err(l, k, "bold marker count mismatch");
