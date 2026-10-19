@@ -1,8 +1,18 @@
 # Watch demo video: how to enable it
 
-Status: **prepared, not enabled.** No footage exists on the site. Until a source is set, the "Watch demo" button opens a calm, clearly labelled placeholder ("A short product video is coming. Meanwhile, try the interactive demo.") with a button to the interactive demo, and `npm run launch:check` reports it as a launch blocker. Do not point the variables at placeholder or stock footage.
+Status: **enabled with the owner-approved master.** Every "Watch demo" button opens the Michael V3 main demo at 1.1x (108 s, English narration), served first-party from `public/demo/`:
 
-## Enable it
+| File | What it is |
+|---|---|
+| `public/demo/aicc-demo.mp4` | byte-identical copy of `~/Downloads/AICC-demo/video/final-v3-main-michael-1.1x.mp4` (sha256 pinned in `docs/approved-demo.sha256`; `npm run launch:check` fails if it ever differs) |
+| `public/demo/aicc-demo.vtt` | the complete spoken transcript as WebVTT, timestamps divided by 1.1 to match the 1.1x master (the burned-in summaries are inside the video) |
+| `public/demo/aicc-demo-poster.jpg` | the still shown before play (Poster V2, 1280x720) |
+
+Do not re-edit, re-encode, re-time or substitute the video (not V1, V2, original-speed V3, Emma or any short cut). The source file stays untouched in Downloads. It does not autoplay: the dialog opens with the poster and native controls, and the viewer starts it.
+
+The defaults live in `src/lib/brand.ts`; the build-time variables below still override them (for a CDN, say).
+
+## Override it (optional)
 
 1. Put the finished files where the site can serve them. Either:
    * drop them into `public/` (for example `public/demo/aicc-demo.mp4`, `public/demo/aicc-demo-poster.jpg`, `public/demo/aicc-demo.en.vtt`), which the static export copies as-is; or

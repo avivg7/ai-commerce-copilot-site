@@ -16,7 +16,7 @@ const prefix = arg("prefix", "").replace(/\/$/, "");
 const TYPES = {
   ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".css": "text/css", ".json": "application/json",
   ".svg": "image/svg+xml", ".png": "image/png", ".jpg": "image/jpeg", ".webp": "image/webp", ".woff2": "font/woff2",
-  ".txt": "text/plain; charset=utf-8", ".xml": "application/xml", ".ico": "image/x-icon", ".map": "application/json",
+  ".txt": "text/plain; charset=utf-8", ".xml": "application/xml", ".ico": "image/x-icon", ".map": "application/json", ".mp4": "video/mp4", ".vtt": "text/vtt; charset=utf-8",
 };
 
 function resolve(urlPath) {
@@ -36,7 +36,18 @@ http
   .createServer((req, res) => {
     const file = resolve(req.url);
     if (file) {
-      res.writeHead(200, { "Content-Type": TYPES[path.extname(file)] || "application/octet-stream", "Cache-Control": "no-store" });
+      const type = TYPES[path.extname(file)] || "application/octet-stream";
+      const size = fs.statSync(file).size;
+      const m = /^bytes=(\d*)-(\d*)$/.exec(req.headers.range || "");
+      if (m && (m[1] || m[2])) {
+        // Byte ranges, as a real static host serves them (the demo video needs them for seeking).
+        const start = m[1] ? Number(m[1]) : Math.max(0, size - Number(m[2]));
+        const end = m[1] && m[2] ? Math.min(Number(m[2]), size - 1) : size - 1;
+        if (start > end || start >= size) { res.writeHead(416, { "Content-Range": `bytes */${size}` }); return res.end(); }
+        res.writeHead(206, { "Content-Type": type, "Accept-Ranges": "bytes", "Content-Range": `bytes ${start}-${end}/${size}`, "Content-Length": end - start + 1, "Cache-Control": "no-store" });
+        return fs.createReadStream(file, { start, end }).pipe(res);
+      }
+      res.writeHead(200, { "Content-Type": type, "Accept-Ranges": "bytes", "Content-Length": size, "Cache-Control": "no-store" });
       fs.createReadStream(file).pipe(res);
     } else {
       const nf = path.join(root, "404.html");

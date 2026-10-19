@@ -30,8 +30,17 @@ if (!approved) {
   problems.push(`draft translations: ${Object.entries(TRANSLATION_REVIEW).filter(([, v]) => v !== "source-draft-pending-legal-review").map(([l]) => l).join(", ")} legal text needs native legal review`);
   problems.push(`marketing copy with legal weight needs the same approval: ${LEGAL_REVIEW_KEYS.join(", ")}`);
 }
-if (!env.NEXT_PUBLIC_DEMO_VIDEO_SRC && !env.NEXT_PUBLIC_AICC_DEMO_VIDEO) problems.push("demo video: NEXT_PUBLIC_DEMO_VIDEO_SRC is not set (see docs/watch-demo-video.md); the Watch demo modal would show the labelled placeholder (no footage exists yet)");
-else if (!env.NEXT_PUBLIC_DEMO_VIDEO_CAPTIONS && !env.NEXT_PUBLIC_AICC_DEMO_VIDEO_CAPTIONS) problems.push("demo video: NEXT_PUBLIC_DEMO_VIDEO_CAPTIONS is not set; a video without captions is not accessible (docs/watch-demo-video.md)");
+{
+  // The Watch demo video is the owner-approved master, served first-party from public/demo/ (src/lib/brand.ts defaults).
+  const demoDir = path.join(ROOT, "public/demo");
+  const mp4 = path.join(demoDir, "aicc-demo.mp4");
+  for (const f of ["aicc-demo.mp4", "aicc-demo-poster.jpg", "aicc-demo.vtt"]) if (!fs.existsSync(path.join(demoDir, f))) problems.push(`demo video: public/demo/${f} is missing (docs/watch-demo-video.md)`);
+  if (fs.existsSync(mp4) && fs.existsSync(path.join(ROOT, "docs/approved-demo.sha256"))) {
+    const want = fs.readFileSync(path.join(ROOT, "docs/approved-demo.sha256"), "utf8").trim().split(/\s+/)[0];
+    const got = (await import("node:crypto")).createHash("sha256").update(fs.readFileSync(mp4)).digest("hex");
+    if (got !== want) problems.push(`demo video: public/demo/aicc-demo.mp4 (${got.slice(0, 12)}) is not the owner-approved master (${want.slice(0, 12)})`);
+  } else problems.push("demo video: docs/approved-demo.sha256 is missing");
+}
 if (env.NEXT_PUBLIC_LEGAL_DRAFT_NOTICE === "off" && !approved) problems.push("NEXT_PUBLIC_LEGAL_DRAFT_NOTICE=off hides the draft pills without approval");
 
 // If a build exists, look at what it really contains.

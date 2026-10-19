@@ -707,19 +707,19 @@ for (const route of ["", "product"]) {
   check(`questions search: ?q= scrolls the field and its results into view (field y=${q.top}, ${q.results} results)`, q.top >= 0 && q.top < 400 && q.results > 0, JSON.stringify(q));
   await ctx.close();
 }
-// 16. Watch demo: a useful dialog (no "placeholder" chip), its button takes you to the interactive demo
+// 16. Watch demo: the owner-approved master plays in a real dialog (full playback checks live in `npm run test:demo`)
 for (const route of ["", "product"]) {
   const [ctx, p] = await fresh({ viewport: { width: 1280, height: 800 } });
   await p.goto(urlFor("en", route));
   await p.waitForSelector("[data-aicc-demo-trigger][data-aicc-ready], [data-aicc-demo-trigger]");
   await p.click("[data-aicc-demo-trigger]");
   await p.waitForSelector("dialog[open]");
-  const d = await p.evaluate(() => ({ text: document.querySelector("dialog[open]").textContent, badge: !!document.querySelector(".aicc-modal__badge"), btn: document.querySelector("dialog[open] [data-aicc-try-demo]")?.textContent }));
-  check(`watch demo[${route || "home"}]: the dialog says a video is coming and offers the interactive demo (no "placeholder" chip)`, /A short product video is coming\. Meanwhile, try the interactive demo\./.test(d.text) && !d.badge && !/placeholder/i.test(d.text) && d.btn === "Try the interactive demo", JSON.stringify(d));
-  await p.click("dialog[open] [data-aicc-try-demo]");
-  await p.waitForTimeout(1500);
-  const after = await p.evaluate(() => ({ open: !!document.querySelector("dialog[open]"), focus: document.activeElement?.id, top: Math.round(document.getElementById("demo").getBoundingClientRect().top) }));
-  check(`watch demo[${route || "home"}]: the button closes the dialog, scrolls to #demo and focuses its heading (${after.focus}, section top ${after.top}px)`, !after.open && after.focus === "demo-title" && after.top < 400 && after.top > -200, JSON.stringify(after));
+  const d = await p.evaluate(() => { const v = document.querySelector("dialog[open] video"); return { text: document.querySelector("dialog[open]").textContent, video: !!v, src: v?.querySelector("source")?.getAttribute("src"), controls: v?.controls, autoplay: v?.autoplay, track: v?.querySelector("track")?.kind, ph: !!document.querySelector("dialog[open] [data-demo-placeholder]") }; });
+  check(`watch demo[${route || "home"}]: the dialog holds the approved demo video with controls and a captions track, no placeholder, no autoplay`, d.video && /\/demo\/aicc-demo\.mp4$/.test(d.src || "") && d.controls && !d.autoplay && d.track === "captions" && !d.ph && !/video is coming/.test(d.text), JSON.stringify(d));
+  await p.keyboard.press("Escape");
+  await p.waitForTimeout(300);
+  const after = await p.evaluate(() => ({ open: !!document.querySelector("dialog[open]"), trig: document.activeElement?.hasAttribute("data-aicc-demo-trigger") }));
+  check(`watch demo[${route || "home"}]: Escape closes it and focus returns to the Watch demo button`, !after.open && after.trig, JSON.stringify(after));
   await ctx.close();
 }
 // 17. In-page anchors land on their target on a phone (lazy modules above the target used to push it ~800px down after the jump)

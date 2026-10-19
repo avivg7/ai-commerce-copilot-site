@@ -7,14 +7,14 @@ export const kitAsset = (name: string) => withBase(`/brand-kit/${name}`);
 const asset = (u: string) => (!u ? "" : /^(https?:)?\/\//.test(u) ? u : withBase(u.startsWith("/") ? u : `/${u}`));
 
 /**
- * Optional Watch demo video. NOT enabled by default: with no source set the modal shows a labelled placeholder and `launch:check` reports a blocker.
- * Set NEXT_PUBLIC_DEMO_VIDEO_SRC (a file in public/ such as "/demo/aicc-demo.mp4", or a full URL), and optionally NEXT_PUBLIC_DEMO_VIDEO_POSTER,
- * NEXT_PUBLIC_DEMO_VIDEO_CAPTIONS (a .vtt file) and NEXT_PUBLIC_DEMO_VIDEO_CAPTIONS_LANG (default "en", the language of the video's audio) at build time.
- * The older names NEXT_PUBLIC_AICC_DEMO_VIDEO / _POSTER / _CAPTIONS still work. Details: docs/watch-demo-video.md.
+ * Watch demo video: the owner-approved master (Michael V3 main demo at 1.1x), served first-party from public/demo/.
+ * The files are copied byte-for-byte from the approved source; docs/approved-demo.sha256 pins the video's hash and `npm run launch:check` verifies it.
+ * Build-time overrides still work: NEXT_PUBLIC_DEMO_VIDEO_SRC / _POSTER / _CAPTIONS / _CAPTIONS_LANG (older names NEXT_PUBLIC_AICC_DEMO_VIDEO / _POSTER / _CAPTIONS).
+ * Details: docs/watch-demo-video.md.
  */
 export const DEMO = {
-  video: asset(process.env.NEXT_PUBLIC_DEMO_VIDEO_SRC || process.env.NEXT_PUBLIC_AICC_DEMO_VIDEO || ""),
-  poster: asset(process.env.NEXT_PUBLIC_DEMO_VIDEO_POSTER || process.env.NEXT_PUBLIC_AICC_DEMO_VIDEO_POSTER || ""),
-  captions: asset(process.env.NEXT_PUBLIC_DEMO_VIDEO_CAPTIONS || process.env.NEXT_PUBLIC_AICC_DEMO_VIDEO_CAPTIONS || ""),
+  video: asset(process.env.NEXT_PUBLIC_DEMO_VIDEO_SRC || process.env.NEXT_PUBLIC_AICC_DEMO_VIDEO || "/demo/aicc-demo.mp4"),
+  poster: asset(process.env.NEXT_PUBLIC_DEMO_VIDEO_POSTER || process.env.NEXT_PUBLIC_AICC_DEMO_VIDEO_POSTER || "/demo/aicc-demo-poster.jpg"),
+  captions: asset(process.env.NEXT_PUBLIC_DEMO_VIDEO_CAPTIONS || process.env.NEXT_PUBLIC_AICC_DEMO_VIDEO_CAPTIONS || "/demo/aicc-demo.vtt"),
   captionsLang: process.env.NEXT_PUBLIC_DEMO_VIDEO_CAPTIONS_LANG || "en",
 };
