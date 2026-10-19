@@ -60,11 +60,11 @@
       "intro": "Tick the products and watch the bundle total change. The products, prices and counts are invented sample data.",
       "nudge": "Compare the two, then see it from your side.",
       "result": {
-        "without": "Plain related products pick from the same category: {names}. Nothing about them comes from what shoppers buy together.",
+        "without": "WooCommerce related products pick from the same category: {names}. Nothing about them comes from what shoppers buy together.",
         "withTwo": "Same product. With AICC the partners are {a} and {b}, bought together {na} and {nb} times.",
         "withOne": "Same product. With AICC the first partner is {a}, bought together {na} times; your rules shape the rest.",
-        "withNone": "Same product. Your rules have removed the learned partners here, so AICC fills the list from the same category.",
-        "merchant": "The same bundle from your side: why each product is listed, and the rules that shape the list."
+        "withNone": "Same product. Your rules have removed the partners AICC learned from your orders, so the list is filled in from your catalog.",
+        "merchant": "The same bundle from your side: how each product was ranked, and the rules that shape the list."
       },
       "plain": {
         "title": "Related products",
@@ -84,12 +84,12 @@
       },
       "mode": {
         "legend": "Compare",
-        "without": "Plain related products",
+        "without": "WooCommerce related products",
         "with": "With AICC",
-        "captionWithout": "Plain related products: same category, not from orders.",
-        "captionWith": "With AICC: bought together most often.",
+        "captionWithout": "WooCommerce related products: same category, not from orders.",
+        "captionWith": "With AICC: products bought together come first.",
         "withoutCaption": "WooCommerce's own related products come from the same category or tags. They are not based on what shoppers buy together.",
-        "withCaption": "AICC lists the products that appear in the same orders as the product being viewed."
+        "withCaption": "AICC lists the products that appear in the same orders as the product being viewed first, then fills the remaining spots from your catalog."
       },
       "view": {
         "legend": "View",
@@ -101,15 +101,14 @@
         "kit": "Pour-over coffee set",
         "filters": "Paper filters, 100 pack",
         "grinder": "Hand grinder",
-        "kettle": "Gooseneck kettle",
         "mug": "Ceramic mug",
         "towel": "Linen tea towel",
         "scale": "Travel mug"
       },
       "anchorTag": "Viewing this product",
       "merchant": {
-        "heading": "Why each product is in the list",
-        "intro": "The same sample bundle, as you would see it in your WordPress admin. In your store the counts come from your own orders.",
+        "heading": "How each product was ranked",
+        "intro": "A sample styled after the AICC dashboard; rules are set in the Merchant Controls form. The products and counts are invented.",
         "sameBundle": "Same bundle as in the shopper view",
         "forProduct": "Recommendations for",
         "insightHeading": "An observation about this bundle",
@@ -117,27 +116,28 @@
         "insightBody": "Pour-over coffee set and {product} are often bought together.",
         "insightNone": "No strong bundle is left in the current list.",
         "insightMetric": "Times bought together",
-        "askHeading": "Ask Reco about this bundle",
-        "askLabel": "Reco's answer",
-        "askQuestion": "Which bundle is strongest?",
-        "askAnswer": "{product} is the strongest partner for the pour-over set here: bought together {n} times, more than any other product in the list. Open Recommendation Preview to see every partner.",
-        "askNone": "No bought-together partner is left in the list. AICC would fill the spots from the same category.",
+        "askHeading": "Ask Reco",
+        "askLabel": "Sample answer",
+        "askQuestion": "What is my biggest opportunity?",
+        "askAnswer": "{product} is your strongest bundle with the pour-over set in this sample: bought together {n} times. Open Recommendation Preview to see the partners and counts for any product.",
+        "askNone": "No bought-together partner is left in this sample list. Open Recommendation Preview to see the partners for any product.",
         "colProduct": "Product",
-        "colWhy": "How AICC decided (illustration)",
+        "colWhy": "Basis (illustration)",
         "colRule": "Your rule",
         "position": "Place {n}",
         "boughtTogether": "Bought together {n} times",
-        "fallback": "No count: filled from the same category",
+        "fallback": "No count: filled in from your catalog",
+        "fallbackNewest": "No count: one of your newest in-stock products",
         "byRule": {
           "pin": "Pinned by you",
           "prefer": "Preferred by you",
-          "deprioritize": "Moved down by you",
+          "deprioritize": "Deprioritized by you",
           "exclude": "Excluded by you"
         },
-        "inBundle": "In the shopper's bundle",
-        "evidenceHeading": "How AICC decided (illustration).",
-        "evidenceOrder": "It fills the list in this order: products bought together first, then the same category, then your newest in-stock products. Your rules apply last. Your dashboard shows a count for learned partners and only a price for fallbacks.",
-        "previewNote": "In your dashboard's Recommendation Preview, learned partners show how many times they were bought together; products added as fallbacks show only a price.",
+        "inBundle": "Ticked in the shopper view",
+        "evidenceHeading": "How the list is built (illustration).",
+        "evidenceOrder": "AICC fills the list in this order: products bought together first, then the same category, then your newest in-stock products. Your rules apply last. In your dashboard, a learned partner (bought together in your orders) shows a count; a fallback (filled in from your catalog) or a pinned product shows only a price.",
+        "previewNote": "In your AICC dashboard, Recommendation Preview lets you pick any product and see its own list.",
         "shopperNow": "The shopper sees now:",
         "ruleLabel": "Rule for {product}",
         "rules": {
@@ -148,7 +148,7 @@
           "exclude": "Exclude"
         },
         "excluded": "Excluded: never shown to shoppers.",
-        "ruleNote": "Rules are applied after the counting. Exclude always wins; prefer and deprioritize nudge one place.",
+        "ruleNote": "Rules are applied after the ranking. Exclude wins over every other rule; prefer and deprioritize nudge one place.",
         "tilesHeading": "What your dashboard records",
         "tiles": {
           "views": "Recommendation Views",
@@ -162,27 +162,21 @@
         "listEmpty": "nothing"
       },
       "why": {
-        "heading": "Why AICC picked these",
-        "recoIntro": "Reco is your guide inside AICC. Here it explains each choice.",
-        "none": "Tick a product to see why AICC lists it for the pour-over set.",
-        "filters": "In this sample store's orders, paper filters appear with the pour-over set more often than anything else, and they are used up with every brew.",
-        "grinder": "A hand grinder was bought together fewer times than the filters: shoppers setting up a pour-over routine often add one, but not every time.",
-        "kettle": "A kettle was bought together less often still, so AICC lists it after the products above.",
-        "mug": "There is no purchase history for this pair yet, so this spot is filled from the same category. As orders come in, real co-purchases take over.",
-        "without": "Plain related products come from the same category, which is how WooCommerce related products work by default. Nothing about them comes from what your shoppers buy together.",
-        "merchant": "This is the evidence behind the list: how many times each product was bought together with the pour-over set, and which spots are filled from the same category."
+        "heading": "Why this product (illustration)",
+        "recoIntro": "Reco is your guide inside AICC.",
+        "none": "Tick a product to see what this sample bases its place on.",
+        "filters": "Paper filters: bought together with the pour-over set more often than any other product in this sample.",
+        "grinder": "Hand grinder: bought together with the pour-over set less often than the filters, so it is listed next.",
+        "mug": "Ceramic mug: no purchase history for this pair in the sample, so this spot is filled in from the same category.",
+        "towel": "Linen tea towel: filled in from your newest in-stock products, after the bought-together partners and the same-category products.",
+        "without": "WooCommerce related products come from the same category, which is how they work by default. Nothing about them comes from what your shoppers buy together.",
+        "merchant": "A sample of how the list is built: how many times each product was bought together with the pour-over set, and which spots are filled in from your catalog."
       },
       "reco": {
-        "intro": "Reco: tick a product and I'll tell you why it is in the list.",
-        "filters": "Reco: paper filters were bought together with the pour-over set most often, so they come first.",
-        "grinder": "Reco: a grinder was bought together fewer times than the filters, so it comes next.",
-        "kettle": "Reco: a kettle was bought together less often, so it is listed after the others.",
-        "mug": "Reco: no purchase history for this pair yet, so this is a same-category fallback.",
-        "without": "Reco: plain related products come from the category, not from orders.",
-        "merchant": "Reco: this is what your dashboard would show. Change a rule and the shopper list below follows."
+        "preview": "Reco: for the real partners and counts of any product, open Recommendation Preview in your dashboard."
       },
       "keyboardHint": "Use Tab and Space to tick products. Arrow keys move between them.",
-      "plainHint": "This is the plain related-products block: nothing to tick, no bundle total.",
+      "plainHint": "This is the WooCommerce related-products block: nothing to tick, no bundle total.",
       "sample": "Sample"
     },
     "rules": {
@@ -314,18 +308,28 @@
       "label": "Sample conversation",
       "title": "Ask Reco",
       "suggestionsLabel": "Choose a question for Reco",
-      "answerLabel": "Reco's answer",
-      "footnote": "Answers come from your own dashboard data. Reco gives information and links; it never changes your settings.",
+      "answerLabel": "Sample answer",
+      "footnote": "Answers come from your own dashboard data. Reco gives information and links; it never changes your settings. In your admin you can also type a short question, and Reco matches it to the topics it knows.",
       "qa": {
-        "next": {
-          "q": "What should I do next?",
+        "focus": {
+          "q": "What should I focus on today?",
           "a": "Optional next step: import up to 24 months of your WooCommerce order history so AICC can learn which products your customers already buy together. Past orders are never imported unless you choose to; without it, AICC starts with catalog fallbacks and learns from new orders.",
           "link": "Go to Order History"
         },
-        "perf": {
-          "q": "How are my recommendations performing?",
-          "a": "In the last 30 days your recommendations had 3,860 views and 241 clicks, and shoppers added the bundle to the cart 97 times.",
-          "link": "Open the performance section"
+        "opportunity": {
+          "q": "What is my biggest opportunity?",
+          "a": "Pour-over coffee set and Paper filters, 100 pack are bought together 9 times, your strongest bundle in this sample. Open Merchant Insights to see the other observations.",
+          "link": "Open Merchant Insights"
+        },
+        "win": {
+          "q": "Give me one quick win.",
+          "a": "Pick one of your best sellers in Recommendation Preview and check that its partners look right. Pin a product to keep it near the top, or exclude one you don't want shown.",
+          "link": "Open Recommendation Preview"
+        },
+        "help": {
+          "q": "What can you help me with?",
+          "a": "I can check your setup and data, help you read your dashboard numbers, point out bundle opportunities and catalog health, and link you to the right screen. I don't change settings or answer open-ended questions.",
+          "link": ""
         }
       }
     },
@@ -382,8 +386,8 @@
       },
       "empty": "No question matches “{q}”. Try fewer words, or browse by topic."
     },
-    "fbtHeading": "See the signal behind every recommendation.",
-    "fbtLead": "A shopper sees a short, relevant bundle. Switch to your side to see why each product is there, what you can change and what your dashboard records.",
+    "fbtHeading": "See what each recommendation is based on.",
+    "fbtLead": "A shopper sees a short, relevant bundle. Switch to your side to see what is recommended and how often it is bought together, what you can change and what your dashboard records.",
     "needsTranslation": []
   },
   "he": {
@@ -434,136 +438,131 @@
       "captionsLabel": "כתוביות"
     },
     "demo": {
-      "label": "נתוני דוגמה: לא מחנות אמיתית",
-      "heading": "נסו את הווידג׳ט",
-      "groupLabel": "מוצרים בחבילה הזו",
-      "intro": "סמנו מוצרים וראו איך סך החבילה משתנה. המוצרים, המחירים והמספרים הם נתוני דוגמה מומצאים.",
-      "nudge": "השוו בין השניים, ואז ראו את זה מהצד שלכם.",
+      "label": "Sample data: not from a real store",
+      "heading": "Try the widget",
+      "groupLabel": "Products in this bundle",
+      "intro": "Tick the products and watch the bundle total change. The products, prices and counts are invented sample data.",
+      "nudge": "Compare the two, then see it from your side.",
       "result": {
-        "without": "מוצרים קשורים רגילים נבחרים מאותה קטגוריה: {names}. שום דבר בהם לא מגיע ממה שקונים רוכשים יחד.",
-        "withTwo": "אותו מוצר. עם AICC המוצרים הנלווים הם {a} ו{b}, שנרכשו יחד {na} ו־{nb} פעמים.",
-        "withOne": "אותו מוצר. עם AICC המוצר הנלווה הראשון הוא {a}, שנרכש יחד {na} פעמים; הכללים שלכם מעצבים את השאר.",
-        "withNone": "אותו מוצר. הכללים שלכם הסירו כאן את המוצרים הנלווים שנלמדו, ולכן AICC ממלא את הרשימה מאותה קטגוריה.",
-        "merchant": "אותה חבילה מהצד שלכם: למה כל מוצר ברשימה, והכללים שמעצבים אותה."
+        "without": "WooCommerce related products pick from the same category: {names}. Nothing about them comes from what shoppers buy together.",
+        "withTwo": "Same product. With AICC the partners are {a} and {b}, bought together {na} and {nb} times.",
+        "withOne": "Same product. With AICC the first partner is {a}, bought together {na} times; your rules shape the rest.",
+        "withNone": "Same product. Your rules have removed the partners AICC learned from your orders, so the list is filled in from your catalog.",
+        "merchant": "The same bundle from your side: how each product was ranked, and the rules that shape the list."
       },
       "plain": {
-        "title": "מוצרים קשורים",
-        "note": "המוצרים הקשורים של WooCommerce עצמו: אותה קטגוריה או אותן תגיות, בלי חבילה ובלי סך הכל."
+        "title": "Related products",
+        "note": "WooCommerce's own related products: the same category or tags, with no bundle and no total."
       },
-      "summary": "נבחרו: {count}. סך החבילה: {total}.",
+      "summary": "Selected: {count}. Bundle total: {total}.",
       "widget": {
-        "title": "נרכשים לעיתים קרובות יחד",
-        "subtitle": "לקוחות רוכשים לעיתים קרובות את המוצרים האלה יחד.",
-        "bundleTotal": "סך הכל בחבילה",
-        "addOne": "הוספת מוצר אחד לעגלה",
-        "addMany": "הוספת {count} מוצרים לעגלה",
-        "added": "נוסף לעגלה",
-        "selectAtLeastOne": "יש לבחור לפחות מוצר אחד",
-        "noteAdd": "שום דבר לא נוסף לשום מקום: זו המחשה בלבד.",
-        "addFew": "הוספת {count} מוצרים לעגלה"
+        "title": "Frequently Bought Together",
+        "subtitle": "Customers often purchase these products together.",
+        "bundleTotal": "Bundle total",
+        "addOne": "Add 1 product to cart",
+        "addMany": "Add {count} products to cart",
+        "added": "Added to cart",
+        "selectAtLeastOne": "Select at least one product",
+        "noteAdd": "Nothing is added anywhere: this is an illustration.",
+        "addFew": "Add {count} products to cart"
       },
       "mode": {
-        "legend": "השוואה",
-        "without": "מוצרים קשורים רגילים",
-        "with": "עם AICC",
-        "captionWithout": "מוצרים קשורים רגילים: אותה קטגוריה, לא מההזמנות.",
-        "captionWith": "עם AICC: המוצרים שנרכשים יחד הכי הרבה.",
-        "withoutCaption": "המוצרים הקשורים של WooCommerce עצמו מגיעים מאותה קטגוריה או מאותן תגיות. הם לא מבוססים על מה שהקונים רוכשים יחד.",
-        "withCaption": "AICC מציג את המוצרים שמופיעים באותן הזמנות יחד עם המוצר שנצפה."
+        "legend": "Compare",
+        "without": "WooCommerce related products",
+        "with": "With AICC",
+        "captionWithout": "WooCommerce related products: same category, not from orders.",
+        "captionWith": "With AICC: products bought together come first.",
+        "withoutCaption": "WooCommerce's own related products come from the same category or tags. They are not based on what shoppers buy together.",
+        "withCaption": "AICC lists the products that appear in the same orders as the product being viewed first, then fills the remaining spots from your catalog."
       },
       "view": {
-        "legend": "תצוגה",
-        "shopper": "מה הקונים רואים",
-        "merchant": "מה אתם רואים",
-        "cue": "עברו אל ״מה אתם רואים״ כדי לראות את אותה חבילה מהצד שלכם."
+        "legend": "View",
+        "shopper": "What shoppers see",
+        "merchant": "What you see",
+        "cue": "Switch to “What you see” for the same bundle from your side."
       },
       "products": {
-        "kit": "ערכת קפה פור־אובר",
-        "filters": "פילטרי נייר, 100 יחידות",
-        "grinder": "מטחנת קפה ידנית",
-        "kettle": "קומקום עם צוואר ברבור",
-        "mug": "ספל קרמיקה",
-        "towel": "מגבת מטבח מפשתן",
-        "scale": "כוס נסיעות"
+        "kit": "Pour-over coffee set",
+        "filters": "Paper filters, 100 pack",
+        "grinder": "Hand grinder",
+        "mug": "Ceramic mug",
+        "towel": "Linen tea towel",
+        "scale": "Travel mug"
       },
-      "anchorTag": "המוצר הנצפה",
+      "anchorTag": "Viewing this product",
       "merchant": {
-        "heading": "למה כל מוצר ברשימה",
-        "intro": "אותה חבילת דוגמה, כפי שתראו אותה באזור הניהול של WordPress. בחנות שלכם הספירות מגיעות מההזמנות שלכם.",
-        "sameBundle": "אותה חבילה כמו בתצוגת הקונה",
-        "forProduct": "המלצות עבור",
-        "insightHeading": "תובנה על החבילה הזו",
-        "insightTitle": "הזדמנות חזקה לחבילת מוצרים",
-        "insightBody": "ערכת קפה פור־אובר ו{product} נרכשים יחד לעיתים קרובות.",
-        "insightNone": "לא נשארה חבילה חזקה ברשימה הנוכחית.",
-        "insightMetric": "מספר פעמים שנרכשו יחד",
-        "askHeading": "שאלו את Reco על החבילה הזו",
-        "askLabel": "התשובה של Reco",
-        "askQuestion": "איזו חבילה היא החזקה ביותר?",
-        "askAnswer": "הנלווה החזק ביותר לערכת הפור־אובר כאן הוא {product}, עם {n} רכישות משותפות, יותר מכל מוצר אחר ברשימה. פתחו את ״תצוגה מקדימה של המלצות״ כדי לראות את כל הנלווים.",
-        "askNone": "לא נשאר ברשימה מוצר נלווה שנרכש יחד. AICC היה ממלא את המקומות מאותה קטגוריה.",
-        "colProduct": "מוצר",
-        "colWhy": "איך AICC החליט (המחשה)",
-        "colRule": "הכלל שלכם",
-        "position": "מקום {n}",
-        "boughtTogether": "נרכשו יחד {n} פעמים",
-        "fallback": "אין ספירה: מולא מאותה קטגוריה",
+        "heading": "How each product was ranked",
+        "intro": "A sample styled after the AICC dashboard; rules are set in the Merchant Controls form. The products and counts are invented.",
+        "sameBundle": "Same bundle as in the shopper view",
+        "forProduct": "Recommendations for",
+        "insightHeading": "An observation about this bundle",
+        "insightTitle": "Strong Bundle Opportunity",
+        "insightBody": "Pour-over coffee set and {product} are often bought together.",
+        "insightNone": "No strong bundle is left in the current list.",
+        "insightMetric": "Times bought together",
+        "askHeading": "Ask Reco",
+        "askLabel": "Sample answer",
+        "askQuestion": "What is my biggest opportunity?",
+        "askAnswer": "{product} is your strongest bundle with the pour-over set in this sample: bought together {n} times. Open Recommendation Preview to see the partners and counts for any product.",
+        "askNone": "No bought-together partner is left in this sample list. Open Recommendation Preview to see the partners for any product.",
+        "colProduct": "Product",
+        "colWhy": "Basis (illustration)",
+        "colRule": "Your rule",
+        "position": "Place {n}",
+        "boughtTogether": "Bought together {n} times",
+        "fallback": "No count: filled in from your catalog",
+        "fallbackNewest": "No count: one of your newest in-stock products",
         "byRule": {
-          "pin": "ננעץ על ידכם",
-          "prefer": "הועדף על ידכם",
-          "deprioritize": "הוזז מטה על ידכם",
-          "exclude": "הוחרג על ידכם"
+          "pin": "Pinned by you",
+          "prefer": "Preferred by you",
+          "deprioritize": "Deprioritized by you",
+          "exclude": "Excluded by you"
         },
-        "inBundle": "בחבילה של הקונה",
-        "evidenceHeading": "איך AICC החליט (המחשה).",
-        "evidenceOrder": "הוא ממלא את הרשימה בסדר הזה: קודם מוצרים שנרכשו יחד, אחר כך אותה קטגוריה, ואחר כך המוצרים החדשים ביותר שיש במלאי. הכללים שלכם מוחלים אחרונים. הדשבורד שלכם מראה ספירה למוצרים נלווים שנלמדו, ורק מחיר למוצרי השלמה.",
-        "previewNote": "בתצוגה מקדימה של המלצות בדשבורד שלכם, מוצרים נלווים שנלמדו מראים כמה פעמים נרכשו יחד; מוצרים שנוספו כהשלמה מראים מחיר בלבד.",
-        "shopperNow": "הקונה רואה עכשיו:",
-        "ruleLabel": "כלל עבור {product}",
+        "inBundle": "Ticked in the shopper view",
+        "evidenceHeading": "How the list is built (illustration).",
+        "evidenceOrder": "AICC fills the list in this order: products bought together first, then the same category, then your newest in-stock products. Your rules apply last. In your dashboard, a learned partner (bought together in your orders) shows a count; a fallback (filled in from your catalog) or a pinned product shows only a price.",
+        "previewNote": "In your AICC dashboard, Recommendation Preview lets you pick any product and see its own list.",
+        "shopperNow": "The shopper sees now:",
+        "ruleLabel": "Rule for {product}",
         "rules": {
-          "none": "ללא כלל",
-          "pin": "נעץ",
-          "prefer": "העדף",
-          "deprioritize": "הורד בעדיפות",
-          "exclude": "החרג"
+          "none": "No rule",
+          "pin": "Pin",
+          "prefer": "Prefer",
+          "deprioritize": "Deprioritize",
+          "exclude": "Exclude"
         },
-        "excluded": "מוחרג: לא מוצג לקונים לעולם.",
-        "ruleNote": "כללים מוחלים אחרי הספירה. החרגה תמיד גוברת; העדפה והורדה בעדיפות מזיזות מקום אחד.",
-        "tilesHeading": "מה הדשבורד שלכם מתעד",
+        "excluded": "Excluded: never shown to shoppers.",
+        "ruleNote": "Rules are applied after the ranking. Exclude wins over every other rule; prefer and deprioritize nudge one place.",
+        "tilesHeading": "What your dashboard records",
         "tiles": {
-          "views": "צפיות בהמלצות",
-          "clicks": "הקלקות המלצה",
-          "adds": "הוספות חבילה לעגלה"
+          "views": "Recommendation Views",
+          "clicks": "Recommendation Clicks",
+          "adds": "Bundle Add-To-Carts"
         },
-        "tileNote": "מספרי דוגמה. הוסיפו את החבילה לעגלה בתצוגת הקונה, והוספות חבילה לעגלה עולות באחד.",
-        "tileAdded": "+1 מההוספה לעגלה שעשיתם עכשיו",
-        "announceRule": "{product}: {rule}. רשימת הקונה היא עכשיו: {list}.",
-        "announceNone": "{product}: ללא כלל. רשימת הקונה היא עכשיו: {list}.",
-        "listEmpty": "אין מוצרים"
+        "tileNote": "Sample numbers. Add the bundle to the cart in the shopper view and Bundle Add-To-Carts goes up by one.",
+        "tileAdded": "+1 from the add-to-cart you just made",
+        "announceRule": "{product}: {rule}. The shopper list is now: {list}.",
+        "announceNone": "{product}: no rule. The shopper list is now: {list}.",
+        "listEmpty": "nothing"
       },
       "why": {
-        "heading": "למה AICC בחר אותם",
-        "recoIntro": "Reco הוא המדריך שלכם בתוך AICC. כאן הוא מסביר כל בחירה.",
-        "none": "סמנו מוצר כדי לראות למה AICC מציג אותו לערכת הפור־אובר.",
-        "filters": "בהזמנות של חנות הדוגמה הזו, פילטרי נייר מופיעים עם ערכת הפור־אובר יותר מכל דבר אחר, והם מתכלים בכל חליטה.",
-        "grinder": "מטחנה ידנית נרכשה יחד פחות פעמים מהפילטרים: מי שמקים שגרת פור־אובר מוסיף אותה לעיתים קרובות, אבל לא בכל פעם.",
-        "kettle": "קומקום נרכש יחד פחות פעמים עוד יותר, ולכן AICC מציג אותו אחרי המוצרים שלמעלה.",
-        "mug": "עדיין אין היסטוריית רכישות לצמד הזה, ולכן המקום הזה מתמלא מאותה קטגוריה. ככל שמגיעות הזמנות, רכישות משותפות אמיתיות תופסות את מקומן.",
-        "without": "מוצרים קשורים רגילים מגיעים מאותה קטגוריה, וכך המוצרים הקשורים של WooCommerce עובדים כברירת מחדל. שום דבר בהם לא מגיע ממה שהקונים שלכם רוכשים יחד.",
-        "merchant": "זו הראיה שמאחורי הרשימה: כמה פעמים כל מוצר נרכש יחד עם ערכת הפור־אובר, ואילו מקומות מתמלאים מאותה קטגוריה."
+        "heading": "Why this product (illustration)",
+        "recoIntro": "Reco is your guide inside AICC.",
+        "none": "Tick a product to see what this sample bases its place on.",
+        "filters": "Paper filters: bought together with the pour-over set more often than any other product in this sample.",
+        "grinder": "Hand grinder: bought together with the pour-over set less often than the filters, so it is listed next.",
+        "mug": "Ceramic mug: no purchase history for this pair in the sample, so this spot is filled in from the same category.",
+        "towel": "Linen tea towel: filled in from your newest in-stock products, after the bought-together partners and the same-category products.",
+        "without": "WooCommerce related products come from the same category, which is how they work by default. Nothing about them comes from what your shoppers buy together.",
+        "merchant": "A sample of how the list is built: how many times each product was bought together with the pour-over set, and which spots are filled in from your catalog."
       },
       "reco": {
-        "intro": "Reco:‎ סמנו מוצר ואסביר למה הוא ברשימה.",
-        "filters": "Reco:‎ פילטרי נייר נרכשו יחד עם ערכת הפור־אובר הכי הרבה פעמים, ולכן הם ראשונים.",
-        "grinder": "Reco:‎ מטחנה נרכשה יחד פחות פעמים מהפילטרים, ולכן היא באה אחריהם.",
-        "kettle": "Reco:‎ קומקום נרכש יחד פחות פעמים, ולכן הוא מוצג אחרי האחרים.",
-        "mug": "Reco:‎ אין עדיין היסטוריית רכישות לצמד הזה, ולכן זו השלמה מאותה קטגוריה.",
-        "without": "Reco:‎ מוצרים קשורים רגילים מגיעים מהקטגוריה, לא מההזמנות.",
-        "merchant": "Reco:‎ זה מה שהדשבורד שלכם היה מראה. שנו כלל ורשימת הקונה שלמטה תתעדכן."
+        "preview": "Reco: for the real partners and counts of any product, open Recommendation Preview in your dashboard."
       },
-      "keyboardHint": "השתמשו ב־Tab וברווח כדי לסמן מוצרים. מקשי החיצים עוברים ביניהם.",
-      "plainHint": "זה בלוק המוצרים הקשורים הרגיל: אין מה לסמן, ואין סך הכל לחבילה.",
-      "sample": "דוגמה"
+      "keyboardHint": "Use Tab and Space to tick products. Arrow keys move between them.",
+      "plainHint": "This is the WooCommerce related-products block: nothing to tick, no bundle total.",
+      "sample": "Sample",
+      "_fallback": true
     },
     "rules": {
       "label": "נתוני דוגמה: לא מחנות אמיתית",
@@ -691,23 +690,34 @@
       }
     },
     "ask": {
-      "label": "שיחה לדוגמה",
-      "title": "שאלו את Reco",
-      "suggestionsLabel": "בחרו שאלה ל־Reco",
-      "answerLabel": "התשובה של Reco",
-      "footnote": "התשובות מגיעות מנתוני הדשבורד שלכם. Reco נותן מידע וקישורים; הוא אף פעם לא משנה את ההגדרות שלכם.",
+      "label": "Sample conversation",
+      "title": "Ask Reco",
+      "suggestionsLabel": "Choose a question for Reco",
+      "answerLabel": "Sample answer",
+      "footnote": "Answers come from your own dashboard data. Reco gives information and links; it never changes your settings. In your admin you can also type a short question, and Reco matches it to the topics it knows.",
       "qa": {
-        "next": {
-          "q": "מה כדאי לי לעשות עכשיו?",
-          "a": "צעד אופציונלי: ייבאו עד 24 חודשים של היסטוריית הזמנות ב־WooCommerce, כדי ש־AICC ילמד אילו מוצרים הלקוחות שלכם כבר קונים יחד. הזמנות קודמות אף פעם לא מיובאות אלא אם תבחרו; בלי זה AICC מתחיל עם השלמות מהקטלוג ולומד מהזמנות חדשות.",
-          "link": "מעבר להיסטוריית הזמנות"
+        "focus": {
+          "q": "What should I focus on today?",
+          "a": "Optional next step: import up to 24 months of your WooCommerce order history so AICC can learn which products your customers already buy together. Past orders are never imported unless you choose to; without it, AICC starts with catalog fallbacks and learns from new orders.",
+          "link": "Go to Order History"
         },
-        "perf": {
-          "q": "איך ההמלצות שלי מתפקדות?",
-          "a": "ב־30 הימים האחרונים ההמלצות שלכם קיבלו 3,860 צפיות ו־241 הקלקות, והקונים הוסיפו את החבילה לעגלה 97 פעמים.",
-          "link": "פתיחת אזור הביצועים"
+        "opportunity": {
+          "q": "What is my biggest opportunity?",
+          "a": "Pour-over coffee set and Paper filters, 100 pack are bought together 9 times, your strongest bundle in this sample. Open Merchant Insights to see the other observations.",
+          "link": "Open Merchant Insights"
+        },
+        "win": {
+          "q": "Give me one quick win.",
+          "a": "Pick one of your best sellers in Recommendation Preview and check that its partners look right. Pin a product to keep it near the top, or exclude one you don't want shown.",
+          "link": "Open Recommendation Preview"
+        },
+        "help": {
+          "q": "What can you help me with?",
+          "a": "I can check your setup and data, help you read your dashboard numbers, point out bundle opportunities and catalog health, and link you to the right screen. I don't change settings or answer open-ended questions.",
+          "link": ""
         }
-      }
+      },
+      "_fallback": true
     },
     "flows": {
       "order": {
@@ -762,9 +772,13 @@
       },
       "empty": "אין שאלה שתואמת את ״{q}״. נסו פחות מילים, או עיינו לפי נושא."
     },
-    "fbtHeading": "ראו מה עומד מאחורי כל המלצה.",
-    "fbtLead": "הקונה רואה חבילה קצרה ורלוונטית. עברו לצד שלכם כדי לראות למה כל מוצר שם, מה אפשר לשנות ומה הדשבורד שלכם מתעד.",
-    "needsTranslation": []
+    "fbtHeading": "See what each recommendation is based on.",
+    "fbtLead": "A shopper sees a short, relevant bundle. Switch to your side to see what is recommended and how often it is bought together, what you can change and what your dashboard records.",
+    "needsTranslation": [
+      "ask",
+      "demo",
+      "home.demo"
+    ]
   },
   "es": {
     "dir": "ltr",
@@ -814,136 +828,131 @@
       "captionsLabel": "Subtítulos"
     },
     "demo": {
-      "label": "Datos de ejemplo: no son de una tienda real",
-      "heading": "Pruebe el widget",
-      "groupLabel": "Productos de este paquete",
-      "intro": "Marque los productos y vea cómo cambia el total del paquete. Los productos, los precios y las cantidades son datos de ejemplo inventados.",
-      "nudge": "Compare los dos y luego véalo desde su lado.",
+      "label": "Sample data: not from a real store",
+      "heading": "Try the widget",
+      "groupLabel": "Products in this bundle",
+      "intro": "Tick the products and watch the bundle total change. The products, prices and counts are invented sample data.",
+      "nudge": "Compare the two, then see it from your side.",
       "result": {
-        "without": "Los productos relacionados básicos se eligen de la misma categoría: {names}. Nada de ello procede de lo que los compradores compran juntos.",
-        "withTwo": "El mismo producto. Con AICC, los acompañantes son «{a}» y «{b}», comprados juntos {na} y {nb} veces.",
-        "withOne": "El mismo producto. Con AICC, el primer acompañante es «{a}», comprado junto {na} veces; sus reglas dan forma al resto.",
-        "withNone": "El mismo producto. Sus reglas han quitado aquí los acompañantes aprendidos, así que AICC completa la lista con productos de la misma categoría.",
-        "merchant": "El mismo paquete visto desde su lado: por qué aparece cada producto y las reglas que dan forma a la lista."
+        "without": "WooCommerce related products pick from the same category: {names}. Nothing about them comes from what shoppers buy together.",
+        "withTwo": "Same product. With AICC the partners are {a} and {b}, bought together {na} and {nb} times.",
+        "withOne": "Same product. With AICC the first partner is {a}, bought together {na} times; your rules shape the rest.",
+        "withNone": "Same product. Your rules have removed the partners AICC learned from your orders, so the list is filled in from your catalog.",
+        "merchant": "The same bundle from your side: how each product was ranked, and the rules that shape the list."
       },
       "plain": {
-        "title": "Productos relacionados",
-        "note": "Los productos relacionados propios de WooCommerce: la misma categoría o las mismas etiquetas, sin paquete y sin total."
+        "title": "Related products",
+        "note": "WooCommerce's own related products: the same category or tags, with no bundle and no total."
       },
-      "summary": "Seleccionados: {count}. Total del paquete: {total}.",
+      "summary": "Selected: {count}. Bundle total: {total}.",
       "widget": {
-        "title": "Comprados juntos con frecuencia",
-        "subtitle": "Los clientes suelen comprar estos productos juntos.",
-        "bundleTotal": "Total del paquete",
-        "addOne": "Añadir 1 producto al carrito",
-        "addMany": "Añadir {count} productos al carrito",
-        "added": "Añadido al carrito",
-        "selectAtLeastOne": "Selecciona al menos un producto",
-        "noteAdd": "No se añade nada: es una ilustración.",
-        "addFew": "Añadir {count} productos al carrito"
+        "title": "Frequently Bought Together",
+        "subtitle": "Customers often purchase these products together.",
+        "bundleTotal": "Bundle total",
+        "addOne": "Add 1 product to cart",
+        "addMany": "Add {count} products to cart",
+        "added": "Added to cart",
+        "selectAtLeastOne": "Select at least one product",
+        "noteAdd": "Nothing is added anywhere: this is an illustration.",
+        "addFew": "Add {count} products to cart"
       },
       "mode": {
-        "legend": "Comparar",
-        "without": "Sin AICC",
-        "with": "Con AICC",
-        "captionWithout": "Productos relacionados básicos: misma categoría, no a partir de pedidos.",
-        "captionWith": "Con AICC: lo que más se compra junto.",
-        "withoutCaption": "Los productos relacionados de WooCommerce salen de la misma categoría o de las mismas etiquetas. No se basan en lo que los compradores compran juntos.",
-        "withCaption": "AICC muestra los productos que aparecen en los mismos pedidos que el producto que se está viendo."
+        "legend": "Compare",
+        "without": "WooCommerce related products",
+        "with": "With AICC",
+        "captionWithout": "WooCommerce related products: same category, not from orders.",
+        "captionWith": "With AICC: products bought together come first.",
+        "withoutCaption": "WooCommerce's own related products come from the same category or tags. They are not based on what shoppers buy together.",
+        "withCaption": "AICC lists the products that appear in the same orders as the product being viewed first, then fills the remaining spots from your catalog."
       },
       "view": {
-        "legend": "Vista",
-        "shopper": "Lo que ven los compradores",
-        "merchant": "Lo que ve usted",
-        "cue": "Cambie a «Lo que ve usted» para ver el mismo paquete desde su lado."
+        "legend": "View",
+        "shopper": "What shoppers see",
+        "merchant": "What you see",
+        "cue": "Switch to “What you see” for the same bundle from your side."
       },
       "products": {
-        "kit": "Juego de café de filtro",
-        "filters": "Filtros de papel, paquete de 100",
-        "grinder": "Molinillo manual",
-        "kettle": "Hervidor de cuello de cisne",
-        "mug": "Taza de cerámica",
-        "towel": "Paño de cocina de lino",
-        "scale": "Taza de viaje"
+        "kit": "Pour-over coffee set",
+        "filters": "Paper filters, 100 pack",
+        "grinder": "Hand grinder",
+        "mug": "Ceramic mug",
+        "towel": "Linen tea towel",
+        "scale": "Travel mug"
       },
-      "anchorTag": "Viendo este producto",
+      "anchorTag": "Viewing this product",
       "merchant": {
-        "heading": "Por qué cada producto está en la lista",
-        "intro": "El mismo paquete de ejemplo, tal como lo vería en su administración de WordPress, cuyas etiquetas están en inglés. En su tienda, las cantidades salen de sus propios pedidos.",
-        "sameBundle": "El mismo paquete que en la vista del comprador",
-        "forProduct": "Recomendaciones para",
-        "insightHeading": "Una observación sobre este paquete",
+        "heading": "How each product was ranked",
+        "intro": "A sample styled after the AICC dashboard; rules are set in the Merchant Controls form. The products and counts are invented.",
+        "sameBundle": "Same bundle as in the shopper view",
+        "forProduct": "Recommendations for",
+        "insightHeading": "An observation about this bundle",
         "insightTitle": "Strong Bundle Opportunity",
-        "insightBody": "«Juego de café de filtro» y «{product}» suelen comprarse juntos.",
-        "insightNone": "En la lista actual no queda ningún paquete fuerte.",
+        "insightBody": "Pour-over coffee set and {product} are often bought together.",
+        "insightNone": "No strong bundle is left in the current list.",
         "insightMetric": "Times bought together",
-        "askHeading": "Pregunte a Reco por este paquete",
-        "askLabel": "Respuesta de Reco",
-        "askQuestion": "¿Qué paquete es el más fuerte?",
-        "askAnswer": "{product} es el acompañante más fuerte del juego de café de filtro: comprados juntos {n} veces, más que cualquier otro producto de la lista. Abra Recommendation Preview para ver todos los acompañantes.",
-        "askNone": "Ya no queda en la lista ningún acompañante comprado junto. AICC completaría los puestos con productos de la misma categoría.",
-        "colProduct": "Producto",
-        "colWhy": "Cómo decidió AICC (ilustración)",
-        "colRule": "Su regla",
-        "position": "Puesto {n}",
+        "askHeading": "Ask Reco",
+        "askLabel": "Sample answer",
+        "askQuestion": "What is my biggest opportunity?",
+        "askAnswer": "{product} is your strongest bundle with the pour-over set in this sample: bought together {n} times. Open Recommendation Preview to see the partners and counts for any product.",
+        "askNone": "No bought-together partner is left in this sample list. Open Recommendation Preview to see the partners for any product.",
+        "colProduct": "Product",
+        "colWhy": "Basis (illustration)",
+        "colRule": "Your rule",
+        "position": "Place {n}",
         "boughtTogether": "Bought together {n} times",
-        "fallback": "Sin recuento: completado con la misma categoría",
+        "fallback": "No count: filled in from your catalog",
+        "fallbackNewest": "No count: one of your newest in-stock products",
         "byRule": {
-          "pin": "Fijado por usted",
-          "prefer": "Preferido por usted",
-          "deprioritize": "Bajado de puesto por usted",
-          "exclude": "Excluido por usted"
+          "pin": "Pinned by you",
+          "prefer": "Preferred by you",
+          "deprioritize": "Deprioritized by you",
+          "exclude": "Excluded by you"
         },
-        "inBundle": "En el paquete del comprador",
-        "evidenceHeading": "Cómo decidió AICC (ilustración).",
-        "evidenceOrder": "Rellena la lista en este orden: primero los productos comprados juntos, después la misma categoría y después sus productos con stock más recientes. Sus reglas se aplican al final. Su panel muestra un recuento para los acompañantes aprendidos y solo un precio para las alternativas.",
-        "previewNote": "En Recommendation Preview, en su panel, los acompañantes aprendidos muestran cuántas veces se compraron juntos; los productos añadidos como alternativa solo muestran un precio.",
-        "shopperNow": "El comprador ve ahora:",
-        "ruleLabel": "Regla para {product}",
+        "inBundle": "Ticked in the shopper view",
+        "evidenceHeading": "How the list is built (illustration).",
+        "evidenceOrder": "AICC fills the list in this order: products bought together first, then the same category, then your newest in-stock products. Your rules apply last. In your dashboard, a learned partner (bought together in your orders) shows a count; a fallback (filled in from your catalog) or a pinned product shows only a price.",
+        "previewNote": "In your AICC dashboard, Recommendation Preview lets you pick any product and see its own list.",
+        "shopperNow": "The shopper sees now:",
+        "ruleLabel": "Rule for {product}",
         "rules": {
-          "none": "Sin regla",
+          "none": "No rule",
           "pin": "Pin",
           "prefer": "Prefer",
           "deprioritize": "Deprioritize",
           "exclude": "Exclude"
         },
-        "excluded": "Excluido: nunca se muestra a los compradores.",
-        "ruleNote": "Las reglas se aplican después del recuento. Exclude siempre gana; Prefer y Deprioritize mueven un solo puesto.",
-        "tilesHeading": "Lo que registra su panel",
+        "excluded": "Excluded: never shown to shoppers.",
+        "ruleNote": "Rules are applied after the ranking. Exclude wins over every other rule; prefer and deprioritize nudge one place.",
+        "tilesHeading": "What your dashboard records",
         "tiles": {
           "views": "Recommendation Views",
           "clicks": "Recommendation Clicks",
           "adds": "Bundle Add-To-Carts"
         },
-        "tileNote": "Cifras de ejemplo. Añada el paquete al carrito en la vista del comprador y Bundle Add-To-Carts sube una unidad.",
-        "tileAdded": "+1 por el añadido al carrito que acaba de hacer",
-        "announceRule": "{product}: {rule}. La lista del comprador es ahora: {list}.",
-        "announceNone": "{product}: sin regla. La lista del comprador es ahora: {list}.",
-        "listEmpty": "nada"
+        "tileNote": "Sample numbers. Add the bundle to the cart in the shopper view and Bundle Add-To-Carts goes up by one.",
+        "tileAdded": "+1 from the add-to-cart you just made",
+        "announceRule": "{product}: {rule}. The shopper list is now: {list}.",
+        "announceNone": "{product}: no rule. The shopper list is now: {list}.",
+        "listEmpty": "nothing"
       },
       "why": {
-        "heading": "Por qué AICC eligió estos",
-        "recoIntro": "Reco es su guía dentro de AICC. Aquí explica cada elección.",
-        "none": "Marque un producto para ver por qué AICC lo incluye junto al juego de café de filtro.",
-        "filters": "En los pedidos de esta tienda de ejemplo, los filtros de papel aparecen con el juego de café de filtro más que cualquier otro producto, y se gastan con cada preparación.",
-        "grinder": "Un molinillo manual se compró junto menos veces que los filtros: quienes montan su rutina de café de filtro suelen añadir uno, pero no siempre.",
-        "kettle": "Un hervidor se compró junto con menos frecuencia todavía, así que AICC lo lista después de los productos anteriores.",
-        "mug": "Todavía no hay historial de compras de este par, así que este puesto se completa con la misma categoría. A medida que lleguen pedidos, las compras conjuntas reales ocuparán su lugar.",
-        "without": "Los productos relacionados básicos salen de la misma categoría, que es como funcionan por defecto los productos relacionados de WooCommerce. Nada de ello procede de lo que compran juntos sus compradores.",
-        "merchant": "Esta es la evidencia detrás de la lista: cuántas veces se compró cada producto junto con el juego de café de filtro y qué puestos se completan con la misma categoría."
+        "heading": "Why this product (illustration)",
+        "recoIntro": "Reco is your guide inside AICC.",
+        "none": "Tick a product to see what this sample bases its place on.",
+        "filters": "Paper filters: bought together with the pour-over set more often than any other product in this sample.",
+        "grinder": "Hand grinder: bought together with the pour-over set less often than the filters, so it is listed next.",
+        "mug": "Ceramic mug: no purchase history for this pair in the sample, so this spot is filled in from the same category.",
+        "towel": "Linen tea towel: filled in from your newest in-stock products, after the bought-together partners and the same-category products.",
+        "without": "WooCommerce related products come from the same category, which is how they work by default. Nothing about them comes from what your shoppers buy together.",
+        "merchant": "A sample of how the list is built: how many times each product was bought together with the pour-over set, and which spots are filled in from your catalog."
       },
       "reco": {
-        "intro": "Reco: marque un producto y le diré por qué está en la lista.",
-        "filters": "Reco: los filtros de papel se compraron junto con el juego de café de filtro más a menudo, por eso van primero.",
-        "grinder": "Reco: un molinillo se compró junto menos veces que los filtros, así que va a continuación.",
-        "kettle": "Reco: un hervidor se compró junto con menos frecuencia, así que se lista después de los demás.",
-        "mug": "Reco: todavía no hay historial de compras de este par, así que es una alternativa de la misma categoría.",
-        "without": "Reco: los productos relacionados básicos salen de la categoría, no de los pedidos.",
-        "merchant": "Reco: esto es lo que mostraría su panel. Cambie una regla y la lista del comprador de abajo la sigue."
+        "preview": "Reco: for the real partners and counts of any product, open Recommendation Preview in your dashboard."
       },
-      "keyboardHint": "Use Tab y la barra espaciadora para marcar productos. Las teclas de flecha permiten pasar de uno a otro.",
-      "plainHint": "Este es el bloque básico de productos relacionados: nada que marcar y sin total del paquete.",
-      "sample": "Ejemplo"
+      "keyboardHint": "Use Tab and Space to tick products. Arrow keys move between them.",
+      "plainHint": "This is the WooCommerce related-products block: nothing to tick, no bundle total.",
+      "sample": "Sample",
+      "_fallback": true
     },
     "rules": {
       "label": "Datos de ejemplo: no son de una tienda real",
@@ -1071,23 +1080,34 @@
       }
     },
     "ask": {
-      "label": "Conversación de ejemplo",
+      "label": "Sample conversation",
       "title": "Ask Reco",
-      "suggestionsLabel": "Elija una pregunta para Reco",
-      "answerLabel": "Respuesta de Reco",
-      "footnote": "Las respuestas salen de los datos de su propio panel. Reco ofrece información y enlaces; nunca cambia sus ajustes. En su administración Reco responde en inglés y en hebreo; aquí la conversación aparece traducida.",
+      "suggestionsLabel": "Choose a question for Reco",
+      "answerLabel": "Sample answer",
+      "footnote": "Answers come from your own dashboard data. Reco gives information and links; it never changes your settings. In your admin you can also type a short question, and Reco matches it to the topics it knows.",
       "qa": {
-        "next": {
-          "q": "¿Qué debería hacer ahora?",
-          "a": "Paso siguiente opcional: importar hasta 24 meses de su historial de pedidos de WooCommerce para que AICC aprenda qué productos compran ya juntos sus clientes. Los pedidos anteriores nunca se importan si usted no lo decide; sin la importación, AICC empieza con alternativas del catálogo y aprende de los pedidos nuevos.",
+        "focus": {
+          "q": "What should I focus on today?",
+          "a": "Optional next step: import up to 24 months of your WooCommerce order history so AICC can learn which products your customers already buy together. Past orders are never imported unless you choose to; without it, AICC starts with catalog fallbacks and learns from new orders.",
           "link": "Go to Order History"
         },
-        "perf": {
-          "q": "¿Cómo están funcionando mis recomendaciones?",
-          "a": "En los últimos 30 días sus recomendaciones tuvieron 3860 vistas y 241 clics, y los compradores añadieron el paquete al carrito 97 veces.",
-          "link": "Abrir la sección de rendimiento"
+        "opportunity": {
+          "q": "What is my biggest opportunity?",
+          "a": "Pour-over coffee set and Paper filters, 100 pack are bought together 9 times, your strongest bundle in this sample. Open Merchant Insights to see the other observations.",
+          "link": "Open Merchant Insights"
+        },
+        "win": {
+          "q": "Give me one quick win.",
+          "a": "Pick one of your best sellers in Recommendation Preview and check that its partners look right. Pin a product to keep it near the top, or exclude one you don't want shown.",
+          "link": "Open Recommendation Preview"
+        },
+        "help": {
+          "q": "What can you help me with?",
+          "a": "I can check your setup and data, help you read your dashboard numbers, point out bundle opportunities and catalog health, and link you to the right screen. I don't change settings or answer open-ended questions.",
+          "link": ""
         }
-      }
+      },
+      "_fallback": true
     },
     "flows": {
       "order": {
@@ -1142,9 +1162,13 @@
       },
       "empty": "Ninguna pregunta coincide con «{q}». Pruebe con menos palabras o explore por tema."
     },
-    "fbtHeading": "Vea la señal detrás de cada recomendación.",
-    "fbtLead": "Un comprador ve un paquete breve y relevante. Pase a su lado para ver por qué está cada producto, qué puede cambiar y qué registra su panel.",
-    "needsTranslation": []
+    "fbtHeading": "See what each recommendation is based on.",
+    "fbtLead": "A shopper sees a short, relevant bundle. Switch to your side to see what is recommended and how often it is bought together, what you can change and what your dashboard records.",
+    "needsTranslation": [
+      "ask",
+      "demo",
+      "home.demo"
+    ]
   },
   "ru": {
     "dir": "ltr",
@@ -1194,136 +1218,131 @@
       "captionsLabel": "Субтитры"
     },
     "demo": {
-      "label": "Примерные данные: не из реального магазина",
-      "heading": "Попробуйте виджет",
-      "groupLabel": "Товары в этом наборе",
-      "intro": "Отмечайте товары и смотрите, как меняется итог по набору. Товары, цены и числа придуманы для примера.",
-      "nudge": "Сравните оба варианта, а потом посмотрите на это глазами владельца магазина.",
+      "label": "Sample data: not from a real store",
+      "heading": "Try the widget",
+      "groupLabel": "Products in this bundle",
+      "intro": "Tick the products and watch the bundle total change. The products, prices and counts are invented sample data.",
+      "nudge": "Compare the two, then see it from your side.",
       "result": {
-        "without": "Обычные похожие товары берутся из той же категории: {names}. К тому, что покупатели берут вместе, они отношения не имеют.",
-        "withTwo": "Тот же товар. С AICC сопутствующие товары — «{a}» и «{b}»: их покупали вместе {na} и {nb} раз.",
-        "withOne": "Тот же товар. С AICC первым сопутствующим будет «{a}»: вместе куплено {na} раз, а остальное формируют ваши правила.",
-        "withNone": "Тот же товар. Ваши правила убрали найденные сопутствующие товары, поэтому AICC заполняет список товарами из той же категории.",
-        "merchant": "Тот же набор с вашей стороны: почему каждый товар в списке и какие правила формируют список."
+        "without": "WooCommerce related products pick from the same category: {names}. Nothing about them comes from what shoppers buy together.",
+        "withTwo": "Same product. With AICC the partners are {a} and {b}, bought together {na} and {nb} times.",
+        "withOne": "Same product. With AICC the first partner is {a}, bought together {na} times; your rules shape the rest.",
+        "withNone": "Same product. Your rules have removed the partners AICC learned from your orders, so the list is filled in from your catalog.",
+        "merchant": "The same bundle from your side: how each product was ranked, and the rules that shape the list."
       },
       "plain": {
-        "title": "Похожие товары",
-        "note": "Собственные похожие товары WooCommerce: та же категория или те же метки, без набора и без итога."
+        "title": "Related products",
+        "note": "WooCommerce's own related products: the same category or tags, with no bundle and no total."
       },
-      "summary": "Выбрано: {count}. Итого за набор: {total}.",
+      "summary": "Selected: {count}. Bundle total: {total}.",
       "widget": {
-        "title": "Часто покупают вместе",
-        "subtitle": "Покупатели часто приобретают эти товары вместе.",
-        "bundleTotal": "Итого за набор",
-        "addOne": "Добавить 1 товар в корзину",
-        "addMany": "Добавить {count} товаров в корзину",
-        "added": "Добавлено в корзину",
-        "selectAtLeastOne": "Выберите хотя бы один товар",
-        "noteAdd": "Ничего никуда не добавляется: это только иллюстрация.",
-        "addFew": "Добавить {count} товара в корзину"
+        "title": "Frequently Bought Together",
+        "subtitle": "Customers often purchase these products together.",
+        "bundleTotal": "Bundle total",
+        "addOne": "Add 1 product to cart",
+        "addMany": "Add {count} products to cart",
+        "added": "Added to cart",
+        "selectAtLeastOne": "Select at least one product",
+        "noteAdd": "Nothing is added anywhere: this is an illustration.",
+        "addFew": "Add {count} products to cart"
       },
       "mode": {
-        "legend": "Сравнение",
-        "without": "Без AICC",
-        "with": "С AICC",
-        "captionWithout": "Обычные похожие товары: та же категория, не по заказам.",
-        "captionWith": "С AICC: то, что покупают вместе чаще всего.",
-        "withoutCaption": "Похожие товары WooCommerce берутся из той же категории или с теми же метками. Они не основаны на том, что покупатели берут вместе.",
-        "withCaption": "AICC показывает товары, которые встречаются в тех же заказах, что и просматриваемый товар."
+        "legend": "Compare",
+        "without": "WooCommerce related products",
+        "with": "With AICC",
+        "captionWithout": "WooCommerce related products: same category, not from orders.",
+        "captionWith": "With AICC: products bought together come first.",
+        "withoutCaption": "WooCommerce's own related products come from the same category or tags. They are not based on what shoppers buy together.",
+        "withCaption": "AICC lists the products that appear in the same orders as the product being viewed first, then fills the remaining spots from your catalog."
       },
       "view": {
-        "legend": "Вид",
-        "shopper": "Что видят покупатели",
-        "merchant": "Что видите вы",
-        "cue": "Переключитесь на «Что видите вы», чтобы увидеть тот же набор со своей стороны."
+        "legend": "View",
+        "shopper": "What shoppers see",
+        "merchant": "What you see",
+        "cue": "Switch to “What you see” for the same bundle from your side."
       },
       "products": {
-        "kit": "Набор для кофе пуровер",
-        "filters": "Бумажные фильтры, 100 шт.",
-        "grinder": "Ручная кофемолка",
-        "kettle": "Чайник с тонким носиком",
-        "mug": "Керамическая кружка",
-        "towel": "Льняное чайное полотенце",
-        "scale": "Дорожная кружка"
+        "kit": "Pour-over coffee set",
+        "filters": "Paper filters, 100 pack",
+        "grinder": "Hand grinder",
+        "mug": "Ceramic mug",
+        "towel": "Linen tea towel",
+        "scale": "Travel mug"
       },
-      "anchorTag": "Вы смотрите этот товар",
+      "anchorTag": "Viewing this product",
       "merchant": {
-        "heading": "Почему каждый товар в списке",
-        "intro": "Тот же примерный набор, каким вы увидите его в админ‑панели WordPress. Подписи панели остаются на английском, как в самом плагине. В вашем магазине числа берутся из ваших заказов.",
-        "sameBundle": "Тот же набор, что и в виде покупателя",
-        "forProduct": "Рекомендации для товара:",
-        "insightHeading": "Наблюдение об этом наборе",
+        "heading": "How each product was ranked",
+        "intro": "A sample styled after the AICC dashboard; rules are set in the Merchant Controls form. The products and counts are invented.",
+        "sameBundle": "Same bundle as in the shopper view",
+        "forProduct": "Recommendations for",
+        "insightHeading": "An observation about this bundle",
         "insightTitle": "Strong Bundle Opportunity",
-        "insightBody": "Набор для кофе пуровер и «{product}» часто покупают вместе.",
-        "insightNone": "В текущем списке не осталось сильного набора.",
+        "insightBody": "Pour-over coffee set and {product} are often bought together.",
+        "insightNone": "No strong bundle is left in the current list.",
         "insightMetric": "Times bought together",
-        "askHeading": "Спросите Reco об этом наборе",
-        "askLabel": "Ответ Reco",
-        "askQuestion": "Какой набор самый сильный?",
-        "askAnswer": "Самый сильный сопутствующий товар для набора пуровер — «{product}»: вместе с набором куплено {n} раз, чаще, чем любой другой товар в списке. Откройте Recommendation Preview, чтобы увидеть все пары.",
-        "askNone": "В списке не осталось сопутствующих товаров, которые покупают вместе. AICC заполнил бы места товарами из той же категории.",
-        "colProduct": "Товар",
-        "colWhy": "Как AICC решил (иллюстрация)",
-        "colRule": "Ваше правило",
-        "position": "Место {n}",
-        "boughtTogether": "Покупали вместе {n} раз",
-        "fallback": "Без числа: из той же категории",
+        "askHeading": "Ask Reco",
+        "askLabel": "Sample answer",
+        "askQuestion": "What is my biggest opportunity?",
+        "askAnswer": "{product} is your strongest bundle with the pour-over set in this sample: bought together {n} times. Open Recommendation Preview to see the partners and counts for any product.",
+        "askNone": "No bought-together partner is left in this sample list. Open Recommendation Preview to see the partners for any product.",
+        "colProduct": "Product",
+        "colWhy": "Basis (illustration)",
+        "colRule": "Your rule",
+        "position": "Place {n}",
+        "boughtTogether": "Bought together {n} times",
+        "fallback": "No count: filled in from your catalog",
+        "fallbackNewest": "No count: one of your newest in-stock products",
         "byRule": {
-          "pin": "Закреплено вами",
-          "prefer": "Приоритет повышен вами",
-          "deprioritize": "Понижено вами",
-          "exclude": "Исключено вами"
+          "pin": "Pinned by you",
+          "prefer": "Preferred by you",
+          "deprioritize": "Deprioritized by you",
+          "exclude": "Excluded by you"
         },
-        "inBundle": "В наборе покупателя",
-        "evidenceHeading": "Как AICC решил (иллюстрация).",
-        "evidenceOrder": "AICC заполняет список в таком порядке: сначала товары, которые покупали вместе, затем та же категория, затем ваши самые новые товары в наличии. Ваши правила применяются в последнюю очередь. Панель показывает число для найденных по заказам товаров и только цену для запасных.",
-        "previewNote": "В Recommendation Preview на вашей панели найденные по заказам товары показывают, сколько раз их покупали вместе; товары, добавленные как запасной вариант, показывают только цену.",
-        "shopperNow": "Покупатель видит сейчас:",
-        "ruleLabel": "Правило для товара «{product}»",
+        "inBundle": "Ticked in the shopper view",
+        "evidenceHeading": "How the list is built (illustration).",
+        "evidenceOrder": "AICC fills the list in this order: products bought together first, then the same category, then your newest in-stock products. Your rules apply last. In your dashboard, a learned partner (bought together in your orders) shows a count; a fallback (filled in from your catalog) or a pinned product shows only a price.",
+        "previewNote": "In your AICC dashboard, Recommendation Preview lets you pick any product and see its own list.",
+        "shopperNow": "The shopper sees now:",
+        "ruleLabel": "Rule for {product}",
         "rules": {
-          "none": "Без правила",
+          "none": "No rule",
           "pin": "Pin",
           "prefer": "Prefer",
           "deprioritize": "Deprioritize",
           "exclude": "Exclude"
         },
-        "excluded": "Не показывается покупателям: правило Exclude.",
-        "ruleNote": "Правила применяются после подсчёта. Exclude всегда главнее остальных; Prefer и Deprioritize сдвигают товар на одно место.",
-        "tilesHeading": "Что записывает ваша панель",
+        "excluded": "Excluded: never shown to shoppers.",
+        "ruleNote": "Rules are applied after the ranking. Exclude wins over every other rule; prefer and deprioritize nudge one place.",
+        "tilesHeading": "What your dashboard records",
         "tiles": {
           "views": "Recommendation Views",
           "clicks": "Recommendation Clicks",
           "adds": "Bundle Add-To-Carts"
         },
-        "tileNote": "Примерные числа. Добавьте набор в корзину в виде покупателя, и Bundle Add-To-Carts вырастет на единицу.",
-        "tileAdded": "+1 от только что сделанного добавления в корзину",
-        "announceRule": "{product}: {rule}. Список для покупателя теперь: {list}.",
-        "announceNone": "{product}: без правила. Список для покупателя теперь: {list}.",
-        "listEmpty": "ничего"
+        "tileNote": "Sample numbers. Add the bundle to the cart in the shopper view and Bundle Add-To-Carts goes up by one.",
+        "tileAdded": "+1 from the add-to-cart you just made",
+        "announceRule": "{product}: {rule}. The shopper list is now: {list}.",
+        "announceNone": "{product}: no rule. The shopper list is now: {list}.",
+        "listEmpty": "nothing"
       },
       "why": {
-        "heading": "Почему AICC выбрал эти товары",
-        "recoIntro": "Reco — ваш гид внутри AICC. Здесь он объясняет каждый выбор.",
-        "none": "Отметьте товар, чтобы увидеть, почему AICC ставит его рядом с набором для пуровера.",
-        "filters": "В заказах этого примерного магазина бумажные фильтры встречаются вместе с набором для пуровера чаще всего остального, а расходуются они при каждой заварке.",
-        "grinder": "Ручную кофемолку покупали вместе реже, чем фильтры: покупатели, которые налаживают пуровер, часто добавляют её, но не каждый раз.",
-        "kettle": "Чайник покупали вместе ещё реже, поэтому AICC ставит его после товаров выше.",
-        "mug": "Истории покупок для этой пары пока нет, поэтому место заполнено товаром из той же категории. Когда поступают заказы, реальные совместные покупки занимают его.",
-        "without": "Обычные похожие товары берутся из той же категории: так по умолчанию работают похожие товары WooCommerce. К тому, что ваши покупатели берут вместе, они отношения не имеют.",
-        "merchant": "Вот доказательства, на которых построен список: сколько раз каждый товар покупали вместе с набором для пуровера и какие места заполнены из той же категории."
+        "heading": "Why this product (illustration)",
+        "recoIntro": "Reco is your guide inside AICC.",
+        "none": "Tick a product to see what this sample bases its place on.",
+        "filters": "Paper filters: bought together with the pour-over set more often than any other product in this sample.",
+        "grinder": "Hand grinder: bought together with the pour-over set less often than the filters, so it is listed next.",
+        "mug": "Ceramic mug: no purchase history for this pair in the sample, so this spot is filled in from the same category.",
+        "towel": "Linen tea towel: filled in from your newest in-stock products, after the bought-together partners and the same-category products.",
+        "without": "WooCommerce related products come from the same category, which is how they work by default. Nothing about them comes from what your shoppers buy together.",
+        "merchant": "A sample of how the list is built: how many times each product was bought together with the pour-over set, and which spots are filled in from your catalog."
       },
       "reco": {
-        "intro": "Reco: отметьте товар, и я расскажу, почему он в списке.",
-        "filters": "Reco: бумажные фильтры чаще всего покупали вместе с набором для пуровера, поэтому они первые.",
-        "grinder": "Reco: кофемолку покупали вместе реже, чем фильтры, поэтому она следующая.",
-        "kettle": "Reco: чайник покупали вместе реже, поэтому он стоит после остальных.",
-        "mug": "Reco: истории покупок для этой пары пока нет, поэтому это запасной вариант из той же категории.",
-        "without": "Reco: обычные похожие товары берутся из категории, а не из заказов.",
-        "merchant": "Reco: так выглядела бы ваша панель. Измените правило, и список для покупателя ниже изменится вслед за ним."
+        "preview": "Reco: for the real partners and counts of any product, open Recommendation Preview in your dashboard."
       },
-      "keyboardHint": "Клавишами Tab и пробел отмечайте товары. Стрелки переключают между ними.",
-      "plainHint": "Это обычный блок похожих товаров: отмечать нечего, итога по набору нет.",
-      "sample": "Пример"
+      "keyboardHint": "Use Tab and Space to tick products. Arrow keys move between them.",
+      "plainHint": "This is the WooCommerce related-products block: nothing to tick, no bundle total.",
+      "sample": "Sample",
+      "_fallback": true
     },
     "rules": {
       "label": "Примерные данные: не из реального магазина",
@@ -1451,23 +1470,34 @@
       }
     },
     "ask": {
-      "label": "Пример диалога",
+      "label": "Sample conversation",
       "title": "Ask Reco",
-      "suggestionsLabel": "Выберите вопрос для Reco",
-      "answerLabel": "Ответ Reco",
-      "footnote": "Ответы строятся на данных вашей панели. Reco даёт сведения и ссылки и никогда не меняет ваши настройки. Сейчас Reco отвечает на английском и иврите: здесь вопросы и ответы переведены для примера.",
+      "suggestionsLabel": "Choose a question for Reco",
+      "answerLabel": "Sample answer",
+      "footnote": "Answers come from your own dashboard data. Reco gives information and links; it never changes your settings. In your admin you can also type a short question, and Reco matches it to the topics it knows.",
       "qa": {
-        "next": {
-          "q": "Что мне делать дальше?",
-          "a": "Необязательный следующий шаг: импортировать историю заказов WooCommerce за срок до 24 месяцев, чтобы AICC узнал, какие товары ваши клиенты уже покупают вместе. Прошлые заказы не импортируются, пока вы сами этого не выберете; без импорта AICC начинает с запасных вариантов из каталога и учится на новых заказах.",
+        "focus": {
+          "q": "What should I focus on today?",
+          "a": "Optional next step: import up to 24 months of your WooCommerce order history so AICC can learn which products your customers already buy together. Past orders are never imported unless you choose to; without it, AICC starts with catalog fallbacks and learns from new orders.",
           "link": "Go to Order History"
         },
-        "perf": {
-          "q": "Как работают мои рекомендации?",
-          "a": "За последние 30 дней ваши рекомендации получили 3 860 просмотров и 241 клик, а покупатели 97 раз добавили набор в корзину.",
-          "link": "Открыть раздел с показателями"
+        "opportunity": {
+          "q": "What is my biggest opportunity?",
+          "a": "Pour-over coffee set and Paper filters, 100 pack are bought together 9 times, your strongest bundle in this sample. Open Merchant Insights to see the other observations.",
+          "link": "Open Merchant Insights"
+        },
+        "win": {
+          "q": "Give me one quick win.",
+          "a": "Pick one of your best sellers in Recommendation Preview and check that its partners look right. Pin a product to keep it near the top, or exclude one you don't want shown.",
+          "link": "Open Recommendation Preview"
+        },
+        "help": {
+          "q": "What can you help me with?",
+          "a": "I can check your setup and data, help you read your dashboard numbers, point out bundle opportunities and catalog health, and link you to the right screen. I don't change settings or answer open-ended questions.",
+          "link": ""
         }
-      }
+      },
+      "_fallback": true
     },
     "flows": {
       "order": {
@@ -1522,9 +1552,13 @@
       },
       "empty": "По запросу «{q}» вопросов не найдено. Попробуйте меньше слов или выберите тему."
     },
-    "fbtHeading": "Увидьте, что стоит за каждой рекомендацией.",
-    "fbtLead": "Покупатель видит короткий подходящий набор. Переключитесь на свою сторону, чтобы увидеть, почему здесь каждый товар, что вы можете изменить и что записывает ваша панель.",
-    "needsTranslation": []
+    "fbtHeading": "See what each recommendation is based on.",
+    "fbtLead": "A shopper sees a short, relevant bundle. Switch to your side to see what is recommended and how often it is bought together, what you can change and what your dashboard records.",
+    "needsTranslation": [
+      "ask",
+      "demo",
+      "home.demo"
+    ]
   },
   "replicaLabels": [
     "High Interest, Low Conversion",

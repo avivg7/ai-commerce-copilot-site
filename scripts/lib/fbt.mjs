@@ -81,7 +81,7 @@ export function scanFbt(enDict, faq) {
 export function classA(text) {
   if (/Frequently Bought Together/.test(text)) return "names the storefront widget (its real heading)";
   if (/bought together \{n\}|times bought together|bought together \{na\}/i.test(text)) return "the real evidence label / count of a learned partner";
-  return "describes the co-purchase signal or a relationship in context (one signal among several)";
+  return "describes the co-purchase signal or a relationship in context (the first step of a fixed ranking chain)";
 }
 
 /** Fails (returns messages) for FBT phrasing in positioning slots (all locales) and for any occurrence not in the reviewed allow-list. */
