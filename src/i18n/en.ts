@@ -17,7 +17,7 @@
 export const en = {
   meta: {
     siteName: "AI Commerce Copilot",
-    ogImageAlt: "AICC: product recommendations, merchant insight and merchandising control for WooCommerce, with Reco, the AICC guide.",
+    ogImageAlt: "AICC: product recommendations, merchant insight and merchandising control for WooCommerce. A simple sketch of a product page with a recommended bundle.",
     pages: {
       home: {
         title: "AICC: product recommendations and merchandising copilot",
@@ -27,7 +27,7 @@ export const en = {
       product: {
         title: "How AICC works: recommendations you can explain and control",
         description:
-          "See what shoppers see, how AICC decides what to recommend, what you can measure and control, and how it keeps your WooCommerce checkout safe.",
+          "See what shoppers see, how AICC decides what to recommend, what you can measure and control, and how it stays out of your checkout's way.",
       },
       pricing: {
         title: "Pricing: Solo, Studio and Agency plans for AICC",
@@ -136,7 +136,7 @@ export const en = {
       trustHeading: "Trust and legal",
       languageHeading: "Language",
       copyright: "© {year} {name}",
-      note: "AICC is available for WooCommerce. WooCommerce and WordPress are trademarks of their respective owners.",
+      note: "AICC is built for WooCommerce and is not affiliated with or endorsed by WooCommerce or WordPress. WooCommerce and WordPress are trademarks of their respective owners.",
     },
     breadcrumbs: { label: "Breadcrumb" },
     draft: {
@@ -204,11 +204,11 @@ export const en = {
       "Tick the products and watch the bundle total change. The products, prices and counts are invented sample data.",
     nudge: "Compare the two, then see it from your side.",
     result: {
-      without: "Plain related products pick from the same category: {names}. Nothing about them comes from what shoppers buy together.",
+      without: "WooCommerce related products pick from the same category: {names}. Nothing about them comes from what shoppers buy together.",
       withTwo: "Same product. With AICC the partners are {a} and {b}, bought together {na} and {nb} times.",
       withOne: "Same product. With AICC the first partner is {a}, bought together {na} times; your rules shape the rest.",
-      withNone: "Same product. Your rules have removed the learned partners here, so AICC fills the list from the same category.",
-      merchant: "The same bundle from your side: why each product is listed, and the rules that shape the list.",
+      withNone: "Same product. Your rules have removed the partners AICC learned from your orders, so the list is filled in from your catalog.",
+      merchant: "The same bundle from your side: how each product was ranked, and the rules that shape the list.",
     },
     plain: {
       title: "Related products",
@@ -228,13 +228,13 @@ export const en = {
     },
     mode: {
       legend: "Compare",
-      without: "Plain related products",
+      without: "WooCommerce related products",
       with: "With AICC",
-      captionWithout: "Plain related products: same category, not from orders.",
-      captionWith: "With AICC: bought together most often.",
+      captionWithout: "WooCommerce related products: same category, not from orders.",
+      captionWith: "With AICC: products bought together come first.",
       withoutCaption:
         "WooCommerce's own related products come from the same category or tags. They are not based on what shoppers buy together.",
-      withCaption: "AICC lists the products that appear in the same orders as the product being viewed.",
+      withCaption: "AICC lists the products that appear in the same orders as the product being viewed first, then fills the remaining spots from your catalog.",
     },
     view: {
       legend: "View",
@@ -246,15 +246,14 @@ export const en = {
       kit: "Pour-over coffee set",
       filters: "Paper filters, 100 pack",
       grinder: "Hand grinder",
-      kettle: "Gooseneck kettle",
       mug: "Ceramic mug",
       towel: "Linen tea towel",
       scale: "Travel mug",
     },
     anchorTag: "Viewing this product",
     merchant: {
-      heading: "Why each product is in the list",
-      intro: "The same sample bundle, as you would see it in your WordPress admin. In your store the counts come from your own orders.",
+      heading: "How each product was ranked",
+      intro: "A sample styled after the AICC dashboard; rules are set in the Merchant Controls form. The products and counts are invented.",
       sameBundle: "Same bundle as in the shopper view",
       forProduct: "Recommendations for",
       insightHeading: "An observation about this bundle",
@@ -262,27 +261,28 @@ export const en = {
       insightBody: "Pour-over coffee set and {product} are often bought together.",
       insightNone: "No strong bundle is left in the current list.",
       insightMetric: "Times bought together",
-      askHeading: "Ask Reco about this bundle",
-      askLabel: "Reco's answer",
-      askQuestion: "Which bundle is strongest?",
-      askAnswer: "{product} is the strongest partner for the pour-over set here: bought together {n} times, more than any other product in the list. Open Recommendation Preview to see every partner.",
-      askNone: "No bought-together partner is left in the list. AICC would fill the spots from the same category.",
+      askHeading: "Ask Reco",
+      askLabel: "Sample answer",
+      askQuestion: "What is my biggest opportunity?",
+      askAnswer: "{product} is your strongest bundle with the pour-over set in this sample: bought together {n} times. Open Recommendation Preview to see the partners and counts for any product.",
+      askNone: "No bought-together partner is left in this sample list. Open Recommendation Preview to see the partners for any product.",
       colProduct: "Product",
-      colWhy: "How AICC decided (illustration)",
+      colWhy: "Basis (illustration)",
       colRule: "Your rule",
       position: "Place {n}",
       boughtTogether: "Bought together {n} times",
-      fallback: "No count: filled from the same category",
-      byRule: { pin: "Pinned by you", prefer: "Preferred by you", deprioritize: "Moved down by you", exclude: "Excluded by you" },
-      inBundle: "In the shopper's bundle",
-      evidenceHeading: "How AICC decided (illustration).",
-      evidenceOrder: "It fills the list in this order: products bought together first, then the same category, then your newest in-stock products. Your rules apply last. Your dashboard shows a count for learned partners and only a price for fallbacks.",
-      previewNote: "In your dashboard's Recommendation Preview, learned partners show how many times they were bought together; products added as fallbacks show only a price.",
+      fallback: "No count: filled in from your catalog",
+      fallbackNewest: "No count: one of your newest in-stock products",
+      byRule: { pin: "Pinned by you", prefer: "Preferred by you", deprioritize: "Deprioritized by you", exclude: "Excluded by you" },
+      inBundle: "Ticked in the shopper view",
+      evidenceHeading: "How the list is built (illustration).",
+      evidenceOrder: "AICC fills the list in this order: products bought together first, then the same category, then your newest in-stock products. Your rules apply last. In your dashboard, a learned partner (bought together in your orders) shows a count; a fallback (filled in from your catalog) or a pinned product shows only a price.",
+      previewNote: "In your AICC dashboard, Recommendation Preview lets you pick any product and see its own list.",
       shopperNow: "The shopper sees now:",
       ruleLabel: "Rule for {product}",
       rules: { none: "No rule", pin: "Pin", prefer: "Prefer", deprioritize: "Deprioritize", exclude: "Exclude" },
       excluded: "Excluded: never shown to shoppers.",
-      ruleNote: "Rules are applied after the counting. Exclude always wins; prefer and deprioritize nudge one place.",
+      ruleNote: "Rules are applied after the ranking. Exclude wins over every other rule; prefer and deprioritize nudge one place.",
       tilesHeading: "What your dashboard records",
       tiles: { views: "Recommendation Views", clicks: "Recommendation Clicks", adds: "Bundle Add-To-Carts" },
       tileNote: "Sample numbers. Add the bundle to the cart in the shopper view and Bundle Add-To-Carts goes up by one.",
@@ -292,33 +292,23 @@ export const en = {
       listEmpty: "nothing",
     },
     why: {
-      heading: "Why AICC picked these",
-      recoIntro: "Reco is your guide inside AICC. Here it explains each choice.",
-      none: "Tick a product to see why AICC lists it for the pour-over set.",
-      filters:
-        "In this sample store's orders, paper filters appear with the pour-over set more often than anything else, and they are used up with every brew.",
-      grinder:
-        "A hand grinder was bought together fewer times than the filters: shoppers setting up a pour-over routine often add one, but not every time.",
-      kettle:
-        "A kettle was bought together less often still, so AICC lists it after the products above.",
-      mug:
-        "There is no purchase history for this pair yet, so this spot is filled from the same category. As orders come in, real co-purchases take over.",
+      heading: "Why this product (illustration)",
+      recoIntro: "Reco is your guide inside AICC.",
+      none: "Tick a product to see what this sample bases its place on.",
+      filters: "Paper filters: bought together with the pour-over set more often than any other product in this sample.",
+      grinder: "Hand grinder: bought together with the pour-over set less often than the filters, so it is listed next.",
+      mug: "Ceramic mug: no purchase history for this pair in the sample, so this spot is filled in from the same category.",
+      towel: "Linen tea towel: filled in from your newest in-stock products, after the bought-together partners and the same-category products.",
       without:
-        "Plain related products come from the same category, which is how WooCommerce related products work by default. Nothing about them comes from what your shoppers buy together.",
+        "WooCommerce related products come from the same category, which is how they work by default. Nothing about them comes from what your shoppers buy together.",
       merchant:
-        "This is the evidence behind the list: how many times each product was bought together with the pour-over set, and which spots are filled from the same category.",
+        "A sample of how the list is built: how many times each product was bought together with the pour-over set, and which spots are filled in from your catalog.",
     },
     reco: {
-      intro: "Reco: tick a product and I'll tell you why it is in the list.",
-      filters: "Reco: paper filters were bought together with the pour-over set most often, so they come first.",
-      grinder: "Reco: a grinder was bought together fewer times than the filters, so it comes next.",
-      kettle: "Reco: a kettle was bought together less often, so it is listed after the others.",
-      mug: "Reco: no purchase history for this pair yet, so this is a same-category fallback.",
-      without: "Reco: plain related products come from the category, not from orders.",
-      merchant: "Reco: this is what your dashboard would show. Change a rule and the shopper list below follows.",
+      preview: "Reco: for the real partners and counts of any product, open Recommendation Preview in your dashboard.",
     },
     keyboardHint: "Use Tab and Space to tick products. Arrow keys move between them.",
-    plainHint: "This is the plain related-products block: nothing to tick, no bundle total.",
+    plainHint: "This is the WooCommerce related-products block: nothing to tick, no bundle total.",
     sample: "Sample",
   },
 
@@ -417,18 +407,28 @@ export const en = {
     label: "Sample conversation",
     title: "Ask Reco",
     suggestionsLabel: "Choose a question for Reco",
-    answerLabel: "Reco's answer",
-    footnote: "Answers come from your own dashboard data. Reco gives information and links; it never changes your settings.",
+    answerLabel: "Sample answer",
+    footnote: "Answers come from your own dashboard data. Reco gives information and links; it never changes your settings. In your admin you can also type a short question, and Reco matches it to the topics it knows.",
     qa: {
-      next: {
-        q: "What should I do next?",
+      focus: {
+        q: "What should I focus on today?",
         a: "Optional next step: import up to 24 months of your WooCommerce order history so AICC can learn which products your customers already buy together. Past orders are never imported unless you choose to; without it, AICC starts with catalog fallbacks and learns from new orders.",
         link: "Go to Order History",
       },
-      perf: {
-        q: "How are my recommendations performing?",
-        a: "In the last 30 days your recommendations had 3,860 views and 241 clicks, and shoppers added the bundle to the cart 97 times.",
-        link: "Open the performance section",
+      opportunity: {
+        q: "What is my biggest opportunity?",
+        a: "Pour-over coffee set and Paper filters, 100 pack are bought together 9 times, your strongest bundle in this sample. Open Merchant Insights to see the other observations.",
+        link: "Open Merchant Insights",
+      },
+      win: {
+        q: "Give me one quick win.",
+        a: "Pick one of your best sellers in Recommendation Preview and check that its partners look right. Pin a product to keep it near the top, or exclude one you don't want shown.",
+        link: "Open Recommendation Preview",
+      },
+      help: {
+        q: "What can you help me with?",
+        a: "I can check your setup and data, help you read your dashboard numbers, point out bundle opportunities and catalog health, and link you to the right screen. I don't change settings or answer open-ended questions.",
+        link: "",
       },
     },
   },
@@ -475,7 +475,7 @@ export const en = {
       category: "Commerce recommendation and merchandising copilot",
       titleLead: "Make every product page",
       titleAccent: "a smarter selling opportunity.",
-      lead: "AICC turns your store data into better product recommendations, useful merchant insight, and practical merchandising control.",
+      lead: "AICC turns your store data into better product recommendations on your product and cart pages, with the merchant insight and practical control to steer them.",
       confidence: {
         price: "Plans from {priceSolo} a year",
         guarantee: "14-day money-back guarantee on your first purchase",
@@ -486,15 +486,15 @@ export const en = {
       label: "What AICC gives you",
       a: { title: "Better recommendations", body: "Suggestions drawn from your own store data: what customers buy together, your catalog and your stock.", link: "See an example" },
       b: { title: "Less manual merchandising", body: "AICC finds the pairs in your orders. You keep the last word with a few rules, instead of curating every product.", link: "See the controls" },
-      c: { title: "Visibility and control", body: "A dashboard, plain-English insights and a guide show what is recommended and why.", link: "See the workspace" },
+      c: { title: "Visibility and control", body: "A dashboard, plain-English insights and a guide show what is recommended and how often it is bought together.", link: "See the workspace" },
     },
     demo: {
-      title: "See the signal behind every recommendation.",
+      title: "See what each recommendation is based on.",
       lead:
-        "A shopper sees a short, relevant bundle. Switch to your side to see why each product is there, what you can change and what your dashboard records.",
+        "A shopper sees a short, relevant bundle. Switch to your side to see what is recommended and how often it is bought together, what you can change and what your dashboard records.",
     },
     why: {
-      title: "Related products match by category. AICC matches by basket.",
+      title: "Related products match by category. AICC starts from the basket.",
       lead:
         "WooCommerce's related products are a sensible default: they match products by category and tags. They can't tell you what people actually buy together.",
       points: {
@@ -508,16 +508,17 @@ export const en = {
         },
         fallback: {
           title: "Thin history gets a safe fallback.",
-          body: "When a product has few co-purchases, the remaining spots come from the same category, then your newest in-stock products. Nothing is invented, and your dashboard preview shows which partners were really bought together. Learned partners and fallbacks share the widget heading today; your dashboard preview shows which is which.",
+          body: "When a product has few co-purchases, the remaining spots are filled with fallbacks: in-stock products from the same category, then your newest in-stock products. Nothing is invented. Learned partners (products your orders show were bought together) and fallbacks share the widget heading today; your dashboard preview shows which is which.",
         },
       },
       link: "See how a recommendation is decided",
     },
+    // A one-key unit on purpose: it can be retranslated without touching the workspace tabs.
+    connectorNote: "A sample dashboard styled after the AICC admin",
     // One premium workspace replaces the standalone dashboard, Control and Meet Reco sections of the first deck (owner addendum F).
     workspace: {
       title: "More than a widget. A\u00a0merchandising workspace.",
       lead: "The storefront bundle is what shoppers see. Around it, AICC gives you a place in your WordPress admin to understand what is happening, steer it and decide what to do next.",
-      connector: "The same sample store as the demo above",
       connectorLink: "Back to the demo",
       tabsLabel: "What the AICC workspace gives you",
       understand: {
@@ -553,7 +554,7 @@ export const en = {
       steps: {
         connect: {
           title: "Connect",
-          body: "Create your AICC account and choose a plan, install the AICC plugin from your WordPress admin, then connect your store from the AICC screen. Normally there is no license key to paste and no code to write.",
+          body: "Create your AICC account and choose a plan, install and activate the AICC plugin on your WooCommerce site, then connect your store from the AICC screen. Normally there is no license key to paste and no code to write.",
         },
         learn: {
           title: "Learn",
@@ -654,9 +655,10 @@ export const en = {
           body: "Pin, exclude, prefer and deprioritize are applied afterwards. Out-of-stock and deleted products stay out.",
         },
       },
-      plain:
-        "Every recommendation can be explained, because it comes from counting your own orders rather than from a generative model or a profile of the shopper. The same data gives the same result.",
     },
+    // A one-key unit on purpose (product.learn keeps its translations): retranslate it alone.
+    learnPlain:
+      "Every recommendation can be explained: it comes from counting your own orders, from your catalog (same category, newest products) or from a rule you set, not from a generative model or a profile of the shopper. The same data gives the same result.",
     sparse: {
       title: "What happens when there isn't much history.",
       lead: "AICC fills the spots that purchase history can't.",

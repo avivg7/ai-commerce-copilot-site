@@ -106,7 +106,7 @@ export function HomePage({ locale, t }: { locale: Locale; t: Dictionary }) {
           <SectionHeading id="workspace-title" title={w.title} lead={w.lead} />
           <p className="aicc-connector">
             <span className="aicc-connector__thumb" aria-hidden="true"><Coffee size={18} /></span>
-            <span>{w.connector}</span>
+            <span {...tx("home.connectorNote")}>{h.connectorNote}</span>
             <a className="aicc-link" href="#demo">{w.connectorLink}</a>
           </p>
           <Tabs

@@ -92,7 +92,7 @@ export function ProductPage({ locale, t }: { locale: Locale; t: Dictionary }) {
         <Container>
           <SectionHeading id="learn-title" title={p.learn.title} lead={p.learn.lead} />
           <Track items={[p.learn.steps.learned, p.learn.steps.category, p.learn.steps.newest, p.learn.steps.rules]} locale={locale} />
-          <p className="aicc-note" style={{ marginBlockStart: "2.5rem", maxInlineSize: "52rem" }}>{p.learn.plain}</p>
+          <p className="aicc-note" style={{ marginBlockStart: "2.5rem", maxInlineSize: "52rem" }} {...tx("product.learnPlain")}>{p.learnPlain}</p>
         </Container>
       </Section>
 
