@@ -17,7 +17,16 @@ import type { DeepPartial } from "./merge";
 export const es: DeepPartial<Dictionary> = {
   meta: {
     siteName: "AI Commerce Copilot",
+    ogImageAlt: "AICC: recomendaciones de producto, información para el comerciante y control del merchandising para WooCommerce, con Reco, la guía de AICC.",
     pages: {
+      home: {
+        title: "AICC: copiloto de recomendaciones de producto y merchandising",
+        description: "AICC convierte los datos de su tienda en mejores recomendaciones de producto, información útil para el comerciante y control práctico del merchandising. Disponible para WooCommerce.",
+      },
+      product: {
+        title: "Cómo funciona AICC: recomendaciones que puede explicar y controlar",
+        description: "Vea lo que ven los compradores, cómo decide AICC qué recomendar, qué puede medir y controlar, y cómo protege el proceso de pago de su WooCommerce.",
+      },
       pricing: {
         title: "Precios: planes Solo, Studio y Agency de AICC",
         description: "Todos los planes incluyen el producto AICC completo. Plan Solo {priceSolo}, Studio {priceStudio}, Agency {priceAgency} al año, según el número de tiendas. Renovación manual y garantía de devolución del dinero de 14 días.",
@@ -112,10 +121,12 @@ export const es: DeepPartial<Dictionary> = {
       storage: "Los ajustes se guardan en este navegador (almacenamiento local).",
     },
     footer: {
+      tagline: "Recomendaciones de producto, información para el comerciante y control del merchandising para WooCommerce, a partir de sus propios pedidos.",
       productHeading: "AICC",
       trustHeading: "Confianza y legal",
       languageHeading: "Idioma",
       copyright: "© {year} {name}",
+      note: "AICC está disponible para WooCommerce. WooCommerce y WordPress son marcas de sus respectivos propietarios.",
     },
     breadcrumbs: {
       label: "Ruta de navegación",
@@ -243,11 +254,15 @@ export const es: DeepPartial<Dictionary> = {
       askAnswer: "{product} es el acompañante más fuerte del juego de café de filtro: comprados juntos {n} veces, más que cualquier otro producto de la lista. Abra Recommendation Preview para ver todos los acompañantes.",
       askNone: "Ya no queda en la lista ningún acompañante comprado junto. AICC completaría los puestos con productos de la misma categoría.",
       colProduct: "Producto",
-      colWhy: "Por qué está aquí",
+      colWhy: "Cómo decidió AICC (ilustración)",
       colRule: "Su regla",
       position: "Puesto {n}",
       boughtTogether: "Bought together {n} times",
       fallback: "Sin recuento: completado con la misma categoría",
+      byRule: { pin: "Fijado por usted", prefer: "Preferido por usted", deprioritize: "Bajado de puesto por usted", exclude: "Excluido por usted" },
+      inBundle: "En el paquete del comprador",
+      evidenceHeading: "Cómo decidió AICC (ilustración).",
+      evidenceOrder: "Rellena la lista en este orden: primero los productos comprados juntos, después la misma categoría y después sus productos con stock más recientes. Sus reglas se aplican al final. Su panel muestra un recuento para los acompañantes aprendidos y solo un precio para las alternativas.",
       previewNote: "En Recommendation Preview, en su panel, los acompañantes aprendidos muestran cuántas veces se compraron juntos; los productos añadidos como alternativa solo muestran un precio.",
       shopperNow: "El comprador ve ahora:",
       ruleLabel: "Regla para {product}",
@@ -363,7 +378,7 @@ export const es: DeepPartial<Dictionary> = {
     insightsBanner: "Top Recommendation",
     insightKinds: {
       hot: { title: "Top Performing Product", body: "«Filtros de papel, paquete de 100» es uno de sus productos más vendidos en este periodo.", metric: "Share of store purchases", value: "24%" },
-      bundle: { title: "Strong Bundle Opportunity", body: "«Juego de café de filtro» y «Filtros de papel, paquete de 100» suelen comprarse juntos.", metric: "Times bought together", value: "48" },
+      bundle: { title: "Strong Bundle Opportunity", body: "«Juego de café de filtro» y «Filtros de papel, paquete de 100» suelen comprarse juntos.", metric: "Times bought together", value: "9" },
       interest: { title: "High Interest, Low Conversion", body: "«Hervidor de cuello de cisne» se añade a menudo a los carritos, pero se compra menos.", metric: "Add-to-cart count", value: "22" },
       winner: { title: "Recommendation Winner", body: "«Molinillo manual» recibe una gran parte de los clics en los productos recomendados.", metric: "Recommendation clicks", value: "41" },
     },
@@ -383,7 +398,7 @@ export const es: DeepPartial<Dictionary> = {
   ask: {
     label: "Conversación de ejemplo",
     title: "Ask Reco",
-    suggestionsLabel: "Pruebe una pregunta de ejemplo",
+    suggestionsLabel: "Elija una pregunta para Reco",
     answerLabel: "Respuesta de Reco",
     footnote: "Las respuestas salen de los datos de su propio panel. Reco ofrece información y enlaces; nunca cambia sus ajustes. En su administración Reco responde en inglés y en hebreo; aquí la conversación aparece traducida.",
     qa: {
@@ -434,6 +449,46 @@ export const es: DeepPartial<Dictionary> = {
   },
 
   home: {
+    hero: {
+      eyebrow: "Disponible para WooCommerce",
+      category: "Copiloto de recomendaciones y merchandising",
+      titleLead: "Haga de cada página de producto",
+      titleAccent: "una oportunidad de venta más inteligente.",
+      lead: "AICC convierte los datos de su tienda en mejores recomendaciones de producto, información útil para el comerciante y control práctico del merchandising.",
+      confidence: {
+        price: "Planes desde {priceSolo} al año",
+        guarantee: "Garantía de devolución del dinero de 14 días en su primera compra",
+        renewal: "Renovación manual, sin cobros automáticos",
+      },
+    },
+    pillars: {
+      label: "Lo que le ofrece AICC",
+      a: { title: "Mejores recomendaciones", body: "Sugerencias basadas en los datos de su propia tienda: lo que compran juntos los clientes, su catálogo y su stock.", link: "Ver un ejemplo" },
+      b: { title: "Menos merchandising manual", body: "AICC encuentra los pares en sus pedidos. Usted conserva la última palabra con unas pocas reglas, en lugar de seleccionar cada producto.", link: "Ver los controles" },
+      c: { title: "Visibilidad y control", body: "Un panel, observaciones en lenguaje sencillo y una guía muestran qué se recomienda y por qué.", link: "Ver el espacio de trabajo" },
+    },
+    demo: {
+      title: "Vea la señal detrás de cada recomendación.",
+      lead: "Un comprador ve un paquete breve y relevante. Pase a su lado para ver por qué está cada producto, qué puede cambiar y qué registra su panel.",
+    },
+    how: {
+      title: "Conectar, aprender, recomendar.",
+      lead: "Usted da el primer paso. AICC hace el resto en segundo plano.",
+      steps: {
+        connect: {
+          title: "Conectar",
+          body: "Cree su cuenta de AICC y elija un plan, instale el plugin de AICC desde su administración de WordPress y conecte su tienda desde la pantalla de AICC. Normalmente no hay clave de licencia que pegar ni código que escribir.",
+        },
+        learn: {
+          title: "Aprender",
+          body: "AICC prepara su catálogo en segundo plano. Cuando su tienda está lista, las recomendaciones empiezan con productos de la misma categoría y los más recientes, y pasan a pares realmente comprados juntos a medida que se cuentan los pedidos. Importe sus pedidos anteriores (opcional) para empezar con pares ya aprendidos.",
+        },
+        recommend: {
+          title: "Recomendar",
+          body: "En las páginas de producto y de carrito, el widget «Comprados juntos con frecuencia» muestra lo que sus clientes compraron juntos. Los pedidos nuevos siguen enseñando a AICC, y sus reglas ajustan el resultado.",
+        },
+      },
+    },
     why: {
       title: "Los productos relacionados se eligen por categoría. AICC los elige por cesta de compra.",
       lead: "Los productos relacionados de WooCommerce son una opción por defecto razonable: emparejan productos por categoría y etiquetas. No pueden decirle qué productos compra la gente junta de verdad.",
@@ -455,7 +510,7 @@ export const es: DeepPartial<Dictionary> = {
     },
     workspace: {
       title: "Más que un widget. Un espacio de trabajo de merchandising.",
-      lead: "El widget es lo que ven los compradores. A su alrededor, AICC le da un lugar en su administración de WordPress para entender qué ocurre, orientarlo y decidir qué hacer a continuación.",
+      lead: "El paquete de la tienda online es lo que ven los compradores. A su alrededor, AICC le da un lugar en su administración de WordPress para entender qué ocurre, orientarlo y decidir qué hacer a continuación.",
       connector: "La misma tienda de ejemplo que en la demostración de arriba",
       connectorLink: "Volver a la demostración",
       tabsLabel: "Lo que le ofrece el espacio de trabajo de AICC",
@@ -501,7 +556,7 @@ export const es: DeepPartial<Dictionary> = {
     },
     pricing: {
       title: "Un producto completo. El precio depende de cuántas tiendas.",
-      lead: "Todos los planes incluyen el widget, el panel y las observaciones, sus reglas, Ask Reco y una importación opcional de pedidos anteriores. Usted solo elige cuántas tiendas conectar. Usted mantiene el control: AICC nunca renueva su plan automáticamente.",
+      lead: "Todos los planes incluyen las recomendaciones en la tienda online, el panel y las observaciones, sus reglas, Ask Reco y una importación opcional de pedidos anteriores. Usted solo elige cuántas tiendas conectar. Usted mantiene el control: AICC nunca renueva su plan automáticamente.",
       link: "Vea qué incluye cada plan",
     },
     questions: {
@@ -516,6 +571,10 @@ export const es: DeepPartial<Dictionary> = {
   },
 
   product: {
+    hero: {
+      title: "Recomendaciones que su tienda puede explicar.",
+      lead: "AICC convierte los datos de su tienda en las recomendaciones que ven los compradores, además del panel, las observaciones y las reglas que usted usa para entender y orientar cada una. Fije, excluya o desplace cualquier producto desde WordPress.",
+    },
     toc: {
       shopper: "Experiencia del comprador",
       learn: "Cómo aprende",
@@ -532,7 +591,7 @@ export const es: DeepPartial<Dictionary> = {
     },
     shopper: {
       title: "Qué ven los compradores",
-      lead: "Un widget «Comprados juntos con frecuencia» en sus páginas de producto y en la página del carrito.",
+      lead: "Hoy, las recomendaciones de AICC llegan a los compradores como un paquete «Comprados juntos con frecuencia» en sus páginas de producto y en la página del carrito.",
       page: {
         title: "En una página de producto",
         body: "El producto que se está viendo aparece ya marcado. Los compradores marcan los demás y añaden el paquete al carrito en un solo paso.",
@@ -705,7 +764,7 @@ export const es: DeepPartial<Dictionary> = {
       lead: "Límites claros, para que sepa qué esperar.",
       items: {
         a: "Las recomendaciones siguen al producto, no al comprador: no hay personalización por comprador.",
-        b: "AICC recomienda productos comprados juntos. No es un motor de ventas dirigidas (upsell).",
+        b: "AICC recomienda productos complementarios a partir de sus propios pedidos y de su catálogo. No es un motor de ventas dirigidas (upsell).",
         c: "El widget aparece en las páginas de producto y de carrito, no en la página de inicio, en las páginas de categoría ni en el proceso de pago.",
         d: "Ask Reco es para comerciantes y está construido con reglas fijas. Responde en inglés y en hebreo.",
         e: "El título del widget es el mismo para los productos alternativos que para los aprendidos.",
@@ -755,7 +814,7 @@ export const es: DeepPartial<Dictionary> = {
       lead: "Antes de mirar los precios, esto es lo que compra.",
       items: {
         a: "Recomendaciones aprendidas de sus propios pedidos",
-        b: "Un paquete «Comprados juntos con frecuencia» en las páginas de producto y de carrito",
+        b: "Recomendaciones en la tienda online, en las páginas de producto y de carrito (el paquete «Comprados juntos con frecuencia»)",
         c: "Un panel con vistas, clics, paquetes añadidos al carrito y pedidos asociados",
         d: "Reglas para fijar, excluir, preferir o restar prioridad a productos",
         e: "Observaciones en lenguaje sencillo a partir de los datos de su tienda",
@@ -949,6 +1008,11 @@ export const es: DeepPartial<Dictionary> = {
           h: "Entre quiénes se establecen estos términos",
           a: "Estos términos se establecen entre usted y la empresa que opera AICC. Al comprar un plan o conectar una tienda, los acepta. Datos de la empresa: {companyDetails}",
           b: "AICC es para uso empresarial. Si lo usa para una empresa o un cliente, confirma que puede aceptar estos términos en su nombre.",
+        },
+        service: {
+          h: "Qué es AICC",
+          a: "AICC es un copiloto de recomendaciones y merchandising para el comercio electrónico, disponible para WooCommerce como plugin con un servicio alojado. Añade recomendaciones de producto aprendidas de los pedidos de su tienda (que los compradores ven como un paquete «Comprados juntos con frecuencia»), un panel, observaciones basadas en reglas, controles para el comerciante y Ask Reco.",
+          b: "AICC no sustituye a WooCommerce. Sus productos, carrito, proceso de pago y pedidos siguen en WooCommerce.",
         },
         account: {
           h: "Su cuenta",
