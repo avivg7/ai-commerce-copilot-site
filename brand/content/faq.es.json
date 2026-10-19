@@ -21,6 +21,10 @@
     }
   },
   "items": {
+    "q01": {
+      "q": "¿Qué es AICC?",
+      "a": "AICC es un copiloto de recomendaciones y merchandising para el comercio electrónico, disponible para WooCommerce. Convierte los datos de su tienda en tres cosas.\n\n**Mejores recomendaciones.** Productos sugeridos a partir de lo que sus propios clientes compran juntos de verdad, con productos de la misma categoría y los más recientes con stock donde el historial es escaso.\n\n**Menos merchandising manual.** AICC cuenta los pares de sus pedidos, así que usted no tiene que seleccionar cada producto a mano, y unas pocas reglas (fijar, excluir, preferir, restar prioridad) cubren las excepciones.\n\n**Visibilidad y control.** Un panel en WordPress con vistas, clics, paquetes añadidos al carrito y pedidos asociados, observaciones en lenguaje sencillo a partir de sus propios datos, un Recommendation Preview y Reco, la guía de su administración.\n\nHoy los compradores lo encuentran como un paquete «Comprados juntos con frecuencia» en las páginas de producto y de carrito; el panel, las reglas, las observaciones y Reco que lo rodean son lo que lo convierte en algo más que un widget. Hacer un pedido nunca espera a AICC. [Vea cómo funciona](route:product)."
+    },
     "q41": {
       "q": "¿En qué se diferencia AICC de los productos relacionados de WooCommerce?",
       "a": "Los productos relacionados de WooCommerce le indican qué productos van juntos por categoría o etiqueta. AICC añade la señal que de otro modo tendría que adivinar: qué productos compran juntos de verdad sus clientes.\n\nCuenta los productos que aparecen en los mismos pedidos completados y en proceso, y lista primero los acompañantes más frecuentes. Además, aporta un panel, reglas que usted controla, observaciones en lenguaje sencillo y Ask Reco. Cuando un producto tiene poco historial, AICC recurre a su categoría y a sus productos con stock más recientes, de modo que el widget tenga algo que mostrar."
@@ -36,6 +40,10 @@
     "q42": {
       "q": "¿Es AICC un motor de recomendaciones con IA?",
       "a": "Las recomendaciones de AICC salen de lo que los clientes de su tienda compran juntos de verdad, contado y ordenado por reglas fijas y no por un modelo generativo. Puede ver, influir y anular el resultado, y los mismos datos de la tienda dan el mismo resultado.\n\nEso es lo que hace que cada recomendación se pueda explicar. Ask Reco, la guía de su administración, también sigue reglas fijas y los datos de su propio panel; no es un chatbot."
+    },
+    "q03": {
+      "q": "¿AICC sustituye a WooCommerce?",
+      "a": "No. AICC funciona junto a WooCommerce. Sus productos, carrito, proceso de pago y pedidos siguen en WooCommerce."
     },
     "q06": {
       "q": "¿Necesito un desarrollador?",
@@ -84,6 +92,26 @@
     "q59": {
       "q": "¿Cuántos pedidos necesita AICC?",
       "a": "No hay un volumen mínimo de pedidos, así que una tienda pequeña también puede usar AICC. Dos productos cualesquiera que aparecen en el mismo pedido completado o en proceso forman un par, y los acompañantes se ordenan según cuántos pedidos contenían ambos. Un producto con pocos acompañantes o ninguno completa los puestos restantes con productos de la misma categoría y los más recientes, y los acompañantes reales toman el relevo a medida que llegan pedidos. Importar sus pedidos anteriores (opcional, hasta 24 meses) da a AICC su historial desde el principio. Las observaciones del panel necesitan al menos 10 pedidos en el periodo."
+    },
+    "q60": {
+      "q": "¿AICC es solo «Comprados juntos con frecuencia»?",
+      "a": "No. «Comprados juntos con frecuencia» es el nombre del widget de la tienda online: hoy, la forma en que las recomendaciones de AICC llegan a los compradores en las páginas de producto y de carrito. AICC en sí es un copiloto de recomendaciones y merchandising para WooCommerce. Aprende de sus pedidos y de su catálogo, le muestra por qué se recomienda cada producto, le permite fijar, excluir, preferir o restar prioridad a productos, convierte sus datos en observaciones en lenguaje sencillo y le da a Reco, una guía en su administración de WordPress.\n\nEl paquete es una experiencia; la visibilidad y el control que lo rodean son el resto del producto. [Vea cómo funciona](route:product)."
+    },
+    "q61": {
+      "q": "¿Qué significa «Disponible para WooCommerce»?",
+      "a": "AICC está pensado para tiendas WooCommerce. Funciona como plugin en su administración de WordPress con un servicio alojado, lee su catálogo y sus pedidos de WooCommerce y muestra sus recomendaciones en sus páginas de producto y de carrito de WooCommerce. Declara como mínimos WordPress 6.0, WooCommerce 7.0 y PHP 7.4, y es compatible con el almacenamiento de pedidos de alto rendimiento (HPOS) de WooCommerce.\n\nDisponible hoy significa exactamente eso: está disponible para WooCommerce. Vea más abajo la pregunta sobre otras plataformas."
+    },
+    "q62": {
+      "q": "¿Qué ocurre después de comprar?",
+      "a": "Primero crea su cuenta de AICC y elige un plan; la garantía de devolución del dinero de 14 días empieza cuando se recibe el pago y se emite su plan, y la renovación es manual. Después instala el plugin de AICC desde su administración de WordPress y conecta su tienda desde la pantalla de AICC. Normalmente no hay clave de licencia que pegar ni código que escribir.\n\nA continuación, AICC prepara su catálogo en segundo plano. Cuando su tienda está lista, las recomendaciones empiezan con productos de la misma categoría y los más recientes, y pasan a pares realmente comprados juntos a medida que se cuentan los pedidos. Importar sus pedidos anteriores (hasta 24 meses) es opcional y solo ocurre si usted lo decide. Su panel, sus reglas y Reco quedan entonces disponibles en WordPress. [Planes y precios](route:pricing)."
+    },
+    "q63": {
+      "q": "¿Qué ocurre con un reembolso, una revocación, una suspensión o el vencimiento?",
+      "a": "En cada caso, AICC se detiene en la tienda online afectada y la tienda deja de enviar datos de negocio. Su tienda WooCommerce sigue vendiendo: sus productos, pedidos, clientes y proceso de pago no se ven afectados, y vuelven los productos relacionados propios de WooCommerce.\n\nSi su plan venció, renueve el mismo plan y sus tiendas vuelven sin reconectar. Tras un reembolso completo, el plan se revoca de forma permanente y no se reactiva; compre un plan nuevo y vuelva a conectar la tienda. Si un plan fue revocado o suspendido y cree que es un error, contacte con soporte. Una tienda desconectada deja de enviar datos y su cupo queda libre.\n\nEl historial de su tienda puede conservarse hasta 12 meses como objetivo de conservación, pero hoy no se elimina nada automáticamente, así que puede conservarse más tiempo hasta que se elimine a petición. [Datos y confianza](route:data-and-trust) tiene los detalles."
+    },
+    "q64": {
+      "q": "¿AICC funciona con plataformas distintas de WooCommerce?",
+      "a": "AICC está disponible hoy para WooCommerce. Lee sus pedidos y su catálogo de WooCommerce y funciona como plugin para WooCommerce con un servicio alojado. No hay ninguna otra plataforma disponible ni anunciada, así que le pedimos que no dé por hecho que se admite otra."
     },
     "q31": {
       "q": "¿Tengo que importar mi historial de pedidos?",
