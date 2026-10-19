@@ -1,5 +1,5 @@
 // npm run test:approved: builds the site the way production will be built (every owner value supplied, legal review approved,
-// domain-root base path) and asserts that NOTHING pending or drafted is published and that FAQPage JSON-LD then has all 40 answers.
+// domain-root base path) and asserts that NOTHING pending or drafted is published and that FAQPage JSON-LD then has every active answer.
 // It leaves out/ holding the approved build; rebuild normally afterwards.
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
@@ -32,7 +32,8 @@ const walk = (d) => { for (const e of fs.readdirSync(d, { withFileTypes: true })
 walk(path.join(ROOT, "out"));
 if (pending) errors.push(`${pending} pending lines in the approved build`);
 if (drafts) errors.push(`${drafts} draft notices in the approved build`);
-if (faq.length !== 40) errors.push(`FAQPage JSON-LD has ${faq.length} answers, expected 40 once approved`);
+const ACTIVE = Object.keys(JSON.parse(fs.readFileSync(path.join(ROOT, "brand/content/faq.en.json"), "utf8")).items).length;
+if (faq.length !== ACTIVE) errors.push(`FAQPage JSON-LD has ${faq.length} answers, expected all ${ACTIVE} active questions once approved`);
 const priv = fs.readFileSync(path.join(ROOT, "out/privacy/index.html"), "utf8");
 if (!priv.includes("support@example.test")) errors.push("support email value not rendered");
 const home = fs.readFileSync(path.join(ROOT, "out/index.html"), "utf8");
