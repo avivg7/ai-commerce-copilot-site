@@ -624,14 +624,11 @@ html.aicc-scroll-lock { overflow: hidden; scrollbar-gutter: stable; }
 .aicc-fbt-tile strong { font-size: 1.625rem; line-height: 1.15; font-variant-numeric: tabular-nums; }
 .aicc-fbt-tile__delta { font-size: var(--aicc-text-xs); font-weight: 650; color: var(--aicc-success); }
 
-/* "Why these": inline on phones, dark Reco panel from 62rem. */
-.aicc-fbt__whyinline { display: grid; gap: var(--aicc-space-2); padding: var(--aicc-space-4) var(--aicc-space-5); border-radius: var(--aicc-radius-lg); background: var(--aicc-surface); border: 1px solid var(--aicc-border); }
-.aicc-fbt__whyinline h3 { font-size: var(--aicc-text-lg); font-weight: 700; }
-.aicc-fbt__whyinline p { color: var(--aicc-text-muted); }
+/* "Why this product (illustration)": a neutral caption docked in the flow directly under the product list on phones and tablets, so a tap visibly changes something next to the finger without covering anything; the dark Reco panel only exists from 62rem. */
+.aicc-fbt__whyinline { display: grid; gap: var(--aicc-space-1); margin: 0; padding: var(--aicc-space-3) var(--aicc-space-4); border-radius: var(--aicc-radius-lg); border-inline-start: 3px solid var(--aicc-primary); background: var(--aicc-surface-sunken); }
+.aicc-fbt__whyinline h3 { font-size: var(--aicc-text-sm); font-weight: 700; margin: 0; }
+.aicc-fbt__whyinline p { margin: 0; color: var(--aicc-text); font-size: var(--aicc-text-sm); }
 .aicc-fbt__why { display: none; }
-/* Phones and tablets: Reco's live one-line reaction directly under the product list (the dark Reco panel only exists from 62rem), so a tap visibly changes something next to the finger (sticky to the bottom edge while the list is on screen). aria-hidden: the polite result line already announces the change. */
-.aicc-fbt__cue { display: block; margin: 0; padding: var(--aicc-space-3) var(--aicc-space-4); border-radius: var(--aicc-radius-lg); border-inline-start: 3px solid var(--aicc-primary); background: var(--aicc-surface-sunken); color: var(--aicc-text); font-size: var(--aicc-text-sm); font-weight: 600; position: sticky; inset-block-end: 0.75rem; z-index: 2; box-shadow: 0 6px 18px rgb(15 23 42 / 0.14); }
-@media (min-width: 62rem) { .aicc-fbt__cue { display: none; } }
 @media (min-width: 62rem) {
   .aicc-fbt__whyinline { display: none; }
   .aicc-fbt__why {
@@ -944,6 +941,13 @@ html.aicc-scroll-lock { overflow: hidden; scrollbar-gutter: stable; }
 .aicc-fbt__mode:disabled:hover { background: transparent; }
 .aicc-fbt__mode:disabled[aria-pressed="true"] { background: var(--aicc-surface); color: var(--aicc-text); box-shadow: inset 0 0 0 1.5px var(--aicc-border-strong); }
 .aicc-fbt__controls { justify-content: space-between; inline-size: 100%; }
+/* "WooCommerce related products" is a long label: the compare pills may wrap and stack on narrow screens or with Larger text, instead of widening the widget. */
+.aicc-fbt__modes { max-inline-size: 100%; }
+.aicc-fbt__mode { min-inline-size: 0; overflow-wrap: anywhere; }
+@media (max-width: 30rem) {
+  .aicc-fbt__modes { display: flex; flex-direction: column; inline-size: 100%; border-radius: var(--aicc-radius-xl); }
+  .aicc-fbt__mode { padding-block: 0.4rem; }
+}
 .aicc-fbt__result { margin: 0; font-weight: 600; font-size: var(--aicc-text-sm); color: var(--aicc-text); background: var(--aicc-info-bg); border-radius: var(--aicc-radius-md); padding: 0.6rem 0.85rem; min-block-size: 2.75rem; }
 .aicc-fbt__plain { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--aicc-space-3); }
 @media (min-width: 40rem) { .aicc-fbt__plain { grid-template-columns: repeat(3, minmax(0, 1fr)); } }

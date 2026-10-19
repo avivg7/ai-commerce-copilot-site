@@ -1,15 +1,17 @@
 // "Frequently-bought-together, actually learned." interactive demo (vanilla; used by the site and the Control Plane theme).
 // Honest by construction: invented sample goods and sample counts (labelled "Sample data: not from a real store"), no revenue/CTR/customer claims.
 // Two controls, same sample bundle:
-//   Compare:  Plain related products / With AICC   (what a shopper sees: WooCommerce's own related-products block vs. what was bought together)
-//   View:     What shoppers see / What you see      (the merchant side: why each product is listed, the rule controls, the dashboard tiles)
-// The demo OPENS on "With AICC" (the result first); the plain related-products block is one click away, and a live result line under the toggles says
+//   Compare:  WooCommerce related products / With AICC   (what a shopper sees: WooCommerce's own related-products block vs. the AICC bundle)
+//   View:     What shoppers see / What you see      (the merchant side: how the list is ranked, the rule controls, the dashboard tiles)
+// The demo OPENS on "With AICC" (the result first); the WooCommerce related-products block is one click away, and a live result line under the toggles says
 // in one sentence what the current state shows.
 // Shopper view, With AICC: base product -> partners (real checkboxes in a fieldset) -> bundle total -> "Add N products to cart" (adds nothing).
-// Shopper view, plain related products: WooCommerce's own block drawn plainly (a heading and product tiles: nothing to tick, no total, no button).
-// Merchant view: for each listed product "Bought together N times" (learned partners) or a no-count note (fallbacks), a rule select with the real
+// Shopper view, WooCommerce related products: WooCommerce's own block drawn plainly (a heading and product tiles: nothing to tick, no total, no button).
+// Merchant view: for each listed product "Bought together N times" (learned partners) or a no-count note (fallbacks: same category, newest in stock), a rule select with the real
 // ranking policy (rules-core.js), the list the shopper sees RIGHT NOW (updates live), the dashboard tiles that record the add-to-cart, one observation
-// and one Ask Reco line. Both are computed from the rules, so neither promotes a product you have excluded.
+// and one sample Ask Reco answer (a real starter question). Both are computed from the rules, so neither promotes a product you have excluded.
+// The sample list shows all three kinds of evidence the real ranking uses (bought together, same category, newest in stock) and, per product, only a NEUTRAL caption:
+// the real Reco cannot explain one specific pairing, so it appears once, pointing to the Recommendation Preview. The rule chips and the basis column are an illustration.
 // There are no Strong/Medium/Light tiers: they do not exist in the product.
 // Keyboard: Tab/Space; arrows follow reading direction and do not wrap. Reduced motion (OS or data-aicc-motion="reduce"): no count-up.
 import { icon } from "./icons.js";
@@ -17,19 +19,21 @@ import { esc, motionAllowed, setLang, labeler } from "./motion.js";
 import { applyRules } from "./rules-core.js";
 
 const ANCHOR = { id: "kit", price: 38, icon: "coffee" };
-// AICC's own order for the sample product. tier: learned (counted from orders) | category (same-category fallback).
+// AICC's own order for the sample product, one row per kind of evidence the real ranking uses.
+// tier: learned (counted from orders) | category (same-category fallback) | newest (newest-in-stock fallback).
 const WITH = [
   { id: "filters", price: 14, icon: "filter", tier: "learned", count: 9 },
   { id: "grinder", price: 46, icon: "cog", tier: "learned", count: 6 },
-  { id: "kettle", price: 52, icon: "flame", tier: "learned", count: 5 },
   { id: "mug", price: 16, icon: "cup-soda", tier: "category", count: 0 },
+  { id: "towel", price: 18, icon: "layers", tier: "newest", count: 0 },
 ];
 const WITHOUT = [
   { id: "mug", price: 16, icon: "cup-soda" },
   { id: "towel", price: 18, icon: "layers" },
   { id: "scale", price: 24, icon: "package" },
 ];
-const BASE_TILES = { views: 1240, clicks: 86, adds: 31 };
+// The same sample numbers as the dashboard replica (dash-preview.js), so the two modules never contradict each other.
+const BASE_TILES = { views: 3860, clicks: 241, adds: 97 };
 
 const money = (n) => "$" + new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(n);
 
@@ -75,7 +79,7 @@ export function mountFbt(el, opts) {
     `<div class="aicc-fbt__head"><h3 data-title></h3><p data-sub></p><p class="aicc-sr-only" data-subsr hidden>${T(s.mode.withCaption)}</p></div>` +
     `<div data-bundle>` +
     `<fieldset class="aicc-fbt__fieldset"><legend class="aicc-sr-only">${T(s.groupLabel)}</legend><div data-anchor></div><ul class="aicc-fbt__cands" data-cands></ul></fieldset>` +
-    `<p class="aicc-fbt__cue" data-cue aria-hidden="true"></p>` +
+    `<div class="aicc-fbt__whyinline"><h3>${T(s.why.heading)}</h3><p data-why-inline></p></div>` +
     `<p class="aicc-fbt__hint" data-kbd>${T(s.keyboardHint)}</p>` +
     `<div class="aicc-fbt__foot"><p class="aicc-fbt__total"><span>${T(s.widget.bundleTotal)}</span><strong><bdi data-total></bdi></strong></p>` +
     `<button type="button" class="aicc-btn aicc-btn--primary" data-add aria-disabled="false"><span data-add-icon></span><span data-add-text></span></button></div>` +
@@ -91,8 +95,8 @@ export function mountFbt(el, opts) {
     `<div class="aicc-fbt__extras" data-extras></div></div>` +
     `<p class="aicc-sr-only" role="status" data-announce></p>` +
     `</div>` +
-    `<div class="aicc-fbt__whyinline"><h3>${T(s.why.heading)}</h3><p data-why-inline></p></div></div>` +
-    `<aside class="aicc-fbt__why" aria-labelledby="fbt-why-h"><div class="aicc-fbt__reco"><img src="${esc(opts.assets?.reco || "")}" alt="" width="96" height="137" loading="lazy" decoding="async"><p class="aicc-fbt__bubble" data-bubble></p></div><h3 id="fbt-why-h">${T(s.why.heading)}</h3><p class="aicc-fbt__recointro">${T(s.why.recoIntro)}</p><p data-why></p></aside>`;
+    `</div>` +
+    `<aside class="aicc-fbt__why" aria-labelledby="fbt-why-h"><h3 id="fbt-why-h">${T(s.why.heading)}</h3><p data-why></p><p class="aicc-fbt__recointro">${T(s.why.recoIntro)}</p><div class="aicc-fbt__reco"><img src="${esc(opts.assets?.reco || "")}" alt="" width="96" height="137" loading="lazy" decoding="async"><p class="aicc-fbt__bubble" data-bubble></p></div></aside>`;
 
   const $ = (sel) => el.querySelector(sel);
   const boxes = [];
@@ -116,7 +120,7 @@ export function mountFbt(el, opts) {
     el.querySelectorAll('[data-bundle] input[type="checkbox"]').forEach((b) => boxes.push(b));
   }
 
-  const why = (it) => (it.tier === "category" ? s.merchant.fallback : s.merchant.boughtTogether.replace("{n}", num.format(it.count)));
+  const why = (it) => (it.tier === "category" ? s.merchant.fallback : it.tier === "newest" ? s.merchant.fallbackNewest : s.merchant.boughtTogether.replace("{n}", num.format(it.count)));
   /** The rule the merchant set is evidence too: "Pinned by you". */
   const byRule = (id) => { const r = ruleOf(id); return r && r !== "none" && r !== "exclude" ? `<span class="aicc-fbt-row__byrule">${T(s.merchant.byRule[r])}</span>` : ""; };
   /** The strongest learned partner that is still in the list (an excluded product is never promoted). */
@@ -190,10 +194,11 @@ export function mountFbt(el, opts) {
     const c = withShown();
     const lastItem = withMode ? c.find((x) => x.id === state.last && state.checked[x.id]) : undefined;
     const focus = lastItem || (withMode ? c.find((x) => state.checked[x.id]) : undefined);
-    let whyText, reco;
-    if (view === "merchant") { whyText = s.why.merchant; reco = s.reco.merchant; }
-    else if (!withMode) { whyText = s.why.without; reco = s.reco.without; }
-    else { whyText = focus ? s.why[focus.id] : s.why.none; reco = focus ? s.reco[focus.id] : s.reco.intro; }
+    // The per-product caption is NEUTRAL and about the sample list; Reco only points to the real Recommendation Preview (it cannot explain a single pairing).
+    let whyText;
+    if (view === "merchant") whyText = s.why.merchant;
+    else if (!withMode) whyText = s.why.without;
+    else whyText = focus ? s.why[focus.id] : s.why.none;
     $("[data-result]").innerHTML = T(resultText());
     $(".aicc-fbt__nudge").hidden = state.switched;
     $("[data-title]").textContent = withMode ? s.widget.title : s.plain.title;
@@ -201,8 +206,7 @@ export function mountFbt(el, opts) {
     $("[data-subsr]").hidden = !withMode;
     $("[data-why]").innerHTML = T(whyText);
     $("[data-why-inline]").innerHTML = T(whyText);
-    $("[data-bubble]").innerHTML = T(reco);
-    $("[data-cue]").innerHTML = T(reco); // phones: Reco's one-line reaction sits right under the list, where the tap happened
+    $("[data-bubble]").innerHTML = T(s.reco.preview);
     if (withMode) animateTotal(t);
     const addBtn = $("[data-add]");
     addBtn.setAttribute("aria-disabled", String(n === 0));

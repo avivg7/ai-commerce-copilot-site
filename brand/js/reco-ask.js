@@ -1,13 +1,15 @@
 // Ask Reco panel mockup: what the helper looks like inside the WordPress admin, with SAMPLE questions and answers.
 // Honest about what Reco is: answers come from your own dashboard data, are built from fixed rules, give information and links,
-// and never change settings. It is a labelled SAMPLE CONVERSATION: the two sample questions are real buttons that swap the answer;
-// there is deliberately no text input (a field that does nothing would look like a broken chat).
-// renderRecoAskHTML(strings, opts) -> markup (server-rendered by the site); initRecoAsk(el) wires the two sample-question buttons.
+// and never change settings. It is a labelled SAMPLE CONVERSATION: the four questions are the real starter questions of a set-up store
+// ("What should I focus on today?", "What is my biggest opportunity?", "Give me one quick win.", "What can you help me with?"); they are real
+// buttons that swap a clearly labelled SAMPLE answer. The real panel also has a text box (up to 300 characters, matched to fixed topics);
+// this mock leaves it out, because a field that does nothing would look like a broken chat, and the footnote says the real one has it.
+// renderRecoAskHTML(strings, opts) -> markup (server-rendered by the site); initRecoAsk(el) wires the sample-question buttons.
 // Strings: strings.json[locale].ask. opts: { assetsBase, locale, dir }
 import { icon } from "./icons.js";
 import { esc, langAttrs, labeler } from "./motion.js";
 
-const KEYS = ["next", "perf"];
+const KEYS = ["focus", "opportunity", "win", "help"];
 
 export function renderRecoAskHTML(s, o = {}) {
   const { T } = labeler(s, o);
@@ -21,7 +23,7 @@ export function renderRecoAskHTML(s, o = {}) {
     KEYS.map((k, i) => `<button type="button" class="aicc-ask__chip" data-qa="${k}" aria-pressed="${i === 0}">${T(s.qa[k].q)}</button>`).join("") +
     `</div><div class="aicc-ask__thread" aria-live="polite">` +
     KEYS.map((k, i) => `<div class="aicc-ask__pair" data-pair="${k}"${i ? " hidden" : ""}><p class="aicc-ask__q">${T(s.qa[k].q)}</p>` +
-      `<div class="aicc-ask__a"><span class="aicc-ask__who">${T(s.answerLabel)}</span><p>${T(s.qa[k].a)}</p><span class="aicc-ask__link">${T(s.qa[k].link)}${icon("arrow-right", 14)}</span></div></div>`).join("") +
+      `<div class="aicc-ask__a"><span class="aicc-ask__who">${T(s.answerLabel)}</span><p>${T(s.qa[k].a)}</p>${s.qa[k].link ? `<span class="aicc-ask__link">${T(s.qa[k].link)}${icon("arrow-right", 14)}</span>` : ""}</div></div>`).join("") +
     `</div></div>` +
     `<p class="aicc-ask__foot">${T(s.footnote)}</p></div>`
   );

@@ -269,7 +269,7 @@ for (const loc of ["en", "he", "es", "ru"]) {
   await boxes[3].focus(); await p.keyboard.press("Space");
   await p.waitForTimeout(40);
   const t = await p.$eval(".aicc-fbt__total strong", (e) => e.textContent.trim());
-  check(`demo[${loc}] @360 reduced motion: total updates immediately without counting animation (${t})`, t === "$90", t);
+  check(`demo[${loc}] @360 reduced motion: total updates immediately without counting animation (${t})`, t === "$54", t);
   await p.click(".aicc-fbt__mode[aria-pressed=false]");
   check(`demo[${loc}] @360: no Strong/Medium/Light strength bars exist (tiers are not in the product)`, await p.evaluate(() => !document.querySelector(".aicc-fbt__bar") && !/\b(strong|medium|light) link/i.test(document.querySelector(".aicc-fbt").textContent)));
   check(`demo[${loc}] @360: still fits after switching to With AICC`, await p.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
@@ -285,7 +285,7 @@ for (const loc of ["en", "he", "es", "ru"]) {
   await boxes[3].focus(); await p.keyboard.press("Space"); await p.waitForTimeout(40);
   const t = await p.$eval(".aicc-fbt__total strong", (e) => e.textContent.trim());
   await p.click(".aicc-fbt__mode[aria-pressed=false]");
-  check(`demo: data-aicc-motion="reduce" disables counters (${t})`, t === "$90", t);
+  check(`demo: data-aicc-motion="reduce" disables counters (${t})`, t === "$54", t);
   const heroAnim = await p.evaluate(() => getComputedStyle(document.querySelector(".aicc-hero__copy .aicc-fade-up")).animationName);
   check(`site: data-aicc-motion="reduce" removes the hero entrance animation (${heroAnim})`, heroAnim === "none", heroAnim);
   await ctx.close();
@@ -441,7 +441,7 @@ for (const loc of ["en", "es", "ru", "he"]) {
   await p.focus('button[data-view="merchant"]'); await p.keyboard.press("Enter");
   const m = await p.evaluate(() => ({ pressed: document.querySelector('button[data-view="merchant"]').getAttribute("aria-pressed"), shopperHidden: document.querySelector('[data-panel="shopper"]').hidden, merchantShown: !document.querySelector('[data-panel="merchant"]').hidden, modes: [...document.querySelectorAll("[data-modes] button")].every((b) => b.disabled), sample: /Sample data: not from a real store/.test(document.querySelector(".aicc-fbt").textContent), rows: [...document.querySelectorAll(".aicc-fbt-row[data-id]")].map((r) => r.dataset.id + ":" + r.querySelector(".aicc-fbt-row__why").textContent.trim()) }));
   check("view toggle: Enter switches to the merchant view (aria-pressed, panels; the compare group stays in place, disabled)", m.pressed === "true" && m.shopperHidden && m.merchantShown && m.modes, JSON.stringify(m));
-  check("merchant view: counts say \"Bought together N times\" for learned partners and the fallback row says it has no count (no invented plugin label, no tiers)", m.rows.some((r) => /^filters:Bought together 9 times/.test(r)) && m.rows.some((r) => /^mug:No count: filled from the same category/.test(r)) && !m.rows.some((r) => /strong|medium|light/i.test(r)), m.rows.join(" | "));
+  check("merchant view: counts say \"Bought together N times\" for learned partners and the fallback row says it has no count (no invented plugin label, no tiers)", m.rows.some((r) => /^filters:Bought together 9 times/.test(r)) && m.rows.some((r) => /^mug:No count: filled in from your catalog/.test(r)) && m.rows.some((r) => /^towel:No count: one of your newest in-stock products/.test(r)) && !m.rows.some((r) => /strong|medium|light/i.test(r)), m.rows.join(" | "));
   check("merchant view: labelled \"Sample data: not from a real store\"", m.sample);
   const adds0 = await p.$eval('[data-tile="adds"] strong', (e) => e.textContent.trim());
   await p.click('button[data-view="shopper"]');
@@ -453,12 +453,12 @@ for (const loc of ["en", "es", "ru", "he"]) {
   await p.selectOption('select[data-rule="grinder"]', "pin");
   const first = await p.$eval(".aicc-fbt-row[data-id]", (e) => e.dataset.id);
   check("merchant view: Pin moves the product to the first place", first === "grinder", first);
-  await p.selectOption('select[data-rule="kettle"]', "exclude");
+  await p.selectOption('select[data-rule="mug"]', "exclude");
   const ex = await p.evaluate(() => ({ shown: [...document.querySelectorAll(".aicc-fbt-row[data-id]:not([data-hidden])")].map((r) => r.dataset.id), hidden: [...document.querySelectorAll(".aicc-fbt-row[data-hidden]")].map((r) => r.dataset.id), live: document.querySelector("[data-announce]").textContent }));
-  check("merchant view: Exclude removes the product from the list; the change is announced in the one status region", !ex.shown.includes("kettle") && ex.hidden.includes("kettle") && /kettle/i.test(ex.live), JSON.stringify(ex));
+  check("merchant view: Exclude removes the product from the list; the change is announced in the one status region", !ex.shown.includes("mug") && ex.hidden.includes("mug") && /mug/i.test(ex.live), JSON.stringify(ex));
   await p.click('button[data-view="shopper"]'); await p.click('button[data-mode="with"]');
-  const shopperNames = await p.$$eval(".aicc-fbt-card__name", (e) => e.map((x) => x.textContent.trim()));
-  check("shopper view reflects the rules (grinder first, kettle gone)", /grinder/i.test(shopperNames[1]) && !shopperNames.some((n) => /kettle/i.test(n)), shopperNames.join(" | "));
+  const shopperNames = await p.$$eval("[data-bundle] .aicc-fbt-card__name", (e) => e.map((x) => x.textContent.trim()));
+  check("shopper view reflects the rules (grinder first, mug gone)", /grinder/i.test(shopperNames[1]) && !shopperNames.some((n) => /mug/i.test(n)), shopperNames.join(" | "));
   await ctx.close();
 }
 // 8b. Simulated translated Hebrew: a non-fallback RTL demo uses ArrowLeft for "next"
@@ -551,9 +551,9 @@ for (const route of ["", "product"]) {
   if (!route) await p.click("#ws-t-ask");
   await p.evaluate(() => document.querySelector(".aicc-ask").scrollIntoView());
   const a0 = await p.$$eval(".aicc-ask [data-pair]", (e) => e.map((x) => !x.hidden));
-  await p.click('.aicc-ask button[data-qa="perf"]');
+  await p.click('.aicc-ask button[data-qa="opportunity"]');
   const a1 = await p.evaluate(() => ({ pairs: [...document.querySelectorAll(".aicc-ask [data-pair]")].map((x) => !x.hidden), pressed: [...document.querySelectorAll(".aicc-ask button[data-qa]")].map((b) => b.getAttribute("aria-pressed")), sample: /Sample/.test(document.querySelector(".aicc-ask").textContent), claim: /changes? your settings|generative/i.test(document.querySelector(".aicc-ask__foot").textContent) }));
-  check(`Ask Reco panel[${tag}]: sample question buttons switch the answer (aria-pressed), labelled as a sample, footnote states the boundaries`, a0.join() === "true,false" && a1.pairs.join() === "false,true" && a1.pressed.join() === "false,true" && a1.sample, JSON.stringify([a0, a1]));
+  check(`Ask Reco panel[${tag}]: sample question buttons switch the answer (aria-pressed), labelled as a sample, footnote states the boundaries`, a0.join() === "true,false,false,false" && a1.pairs.join() === "false,true,false,false" && a1.pressed.join() === "false,true,false,false" && a1.sample, JSON.stringify([a0, a1]));
   const f = await p.$$eval(".aicc-flow", (e) => e.map((x) => ({ kind: x.dataset.kind, steps: x.querySelectorAll("li").length, ol: x.querySelector("ol") !== null })));
   check(`flow diagrams[${tag}]: ${route ? "order, outage" : "order, outage"} diagrams are ordered lists of three steps`, f.length >= 2 && f.every((x) => x.steps === 3 && x.ol) && f.some((x) => x.kind === "order") && f.some((x) => x.kind === "down"), JSON.stringify(f));
   await ctx.close();
@@ -1004,17 +1004,19 @@ for (const [route, contrast] of [["", false], ["", true], ["pricing", false], ["
   await p.evaluate(() => document.querySelector("#demo").scrollIntoView());
   await p.waitForSelector(".aicc-fbt input[type=checkbox]", { state: "attached", timeout: 8000 });
   await p.waitForTimeout(600);
-  const before = await p.$eval("[data-cue]", (e) => e.textContent.trim());
+  const before = await p.$eval("[data-why-inline]", (e) => e.textContent.trim());
   const second = (await p.$$(".aicc-fbt input[type=checkbox]"))[1];
   await second.evaluate((e) => e.closest("li, label, div").scrollIntoView({ block: "center" }));
   await second.check({ force: true });
   await p.waitForTimeout(500);
   const r = await p.evaluate(() => {
-    const cue = document.querySelector("[data-cue]"); const box = document.querySelectorAll(".aicc-fbt input[type=checkbox]")[1];
-    const c = cue.getBoundingClientRect(), b = box.getBoundingClientRect();
-    return { text: cue.textContent.trim(), shown: getComputedStyle(cue).display !== "none", gap: Math.round(c.top - b.bottom), inView: c.top >= 0 && c.bottom <= innerHeight, hidden: cue.getAttribute("aria-hidden") };
+    const box = document.querySelector(".aicc-fbt__whyinline"), txt = box.querySelector("[data-why-inline]");
+    const cards = [...document.querySelectorAll(".aicc-fbt [data-bundle] .aicc-fbt-card")], last = cards[cards.length - 1].getBoundingClientRect();
+    const total = document.querySelector(".aicc-fbt__foot").getBoundingClientRect(), c = box.getBoundingClientRect();
+    const pos = getComputedStyle(box).position;
+    return { text: txt.textContent.trim(), head: box.querySelector("h3").textContent.trim(), shown: getComputedStyle(box).display !== "none", pos, gap: Math.round(c.top - last.bottom), belowTotal: Math.round(total.top - c.bottom), fromBox: Math.round(c.top - document.querySelectorAll(".aicc-fbt input[type=checkbox]")[1].getBoundingClientRect().bottom), reco: /^Reco/.test(txt.textContent.trim()), cue: !!document.querySelector("[data-cue]") };
   });
-  check(`phone demo: Reco's one-line reaction sits right under the product list and changes on a tap (${r.gap}px below the ticked box, in view: ${r.inView}; "${before.slice(0, 24)}" -> "${r.text.slice(0, 40)}")`, r.shown && r.text && r.text !== before && r.gap >= 0 && r.gap < 420 && r.inView && r.hidden === "true", JSON.stringify(r));
+  check(`phone demo: a neutral caption ("${r.head}") is docked IN FLOW right under the product list (position ${r.pos}, ${r.gap}px below the last card, ${r.belowTotal}px above the total, ${r.fromBox}px from the ticked box) and changes on a tap ("${before.slice(0, 24)}" -> "${r.text.slice(0, 40)}"), with no overlay and no Reco voice`, r.shown && r.text && r.text !== before && r.pos === "static" && r.gap >= 0 && r.gap < 60 && r.belowTotal >= 0 && r.fromBox >= 0 && r.fromBox < 420 && !r.reco && !r.cue && r.head === "Why this product (illustration)", JSON.stringify(r));
   await p.goto(urlFor("en", ""));
   await p.waitForSelector("[data-aicc-header][data-aicc-ready]");
   await p.click("[data-aicc-menu-btn]");
@@ -1070,12 +1072,12 @@ for (const w of [1280, 390, 320]) {
     words: document.querySelector(".aicc-hero__copy").textContent.trim().split(/\s+/).length,
   }));
   check(`hero: category cue and "Available for WooCommerce", the new H1, ONE sentence, two CTAs, then the quiet purchase-confidence line, in that order (${h.words} words in the copy column)`,
-    h.eyebrow?.toLowerCase() === "available for woocommerce" && h.h1 === "Make every product page a smarter selling opportunity." && h.paras === 1 && h.lead === "AICC turns your store data into better product recommendations, useful merchant insight, and practical merchandising control." &&
+    h.eyebrow?.toLowerCase() === "available for woocommerce" && h.h1 === "Make every product page a smarter selling opportunity." && h.paras === 1 && h.lead === "AICC turns your store data into better product recommendations on your product and cart pages, with the merchant insight and practical control to steer them." &&
     h.ctas.join("|") === "Get started|Watch demo" && h.category === "Commerce recommendation and merchandising copilot" && h.conf.length === 3 && h.words <= 60 &&
     h.order.join(",") === "aicc-hero__kicker,aicc-hero-title,aicc-hero-lead,aicc-hero-actions,aicc-hero__confidence", JSON.stringify(h));
   check(`pillars strip: three pillars with one line each and anchor links, right after the hero and before the demo (${h.strip.join(" / ")}; ${h.stripLinks.join(" ")})`, h.strip.length === 3 && h.stripLinks.join() === "#demo,#workspace,#workspace" && h.stripBeforeDemo);
   await p.evaluate(() => document.querySelector("#demo").scrollIntoView()); await p.waitForSelector(".aicc-fbt input[type=checkbox]", { state: "attached", timeout: 8000 });
-  check(`demo section: titled "See the signal behind every recommendation." (not the Frequently Bought Together category line); the widget inside keeps its own heading`, h.demoTitle === "See the signal behind every recommendation." && /Frequently Bought Together/.test(await p.evaluate(() => document.querySelector(".aicc-fbt")?.textContent || "")), h.demoTitle);
+  check(`demo section: titled "See what each recommendation is based on." (not the Frequently Bought Together category line); the widget inside keeps its own heading`, h.demoTitle === "See what each recommendation is based on." && /Frequently Bought Together/.test(await p.evaluate(() => document.querySelector(".aicc-fbt")?.textContent || "")), h.demoTitle);
   check("hero: nothing about Frequently Bought Together in the eyebrow, headline or hero sentence", !/frequently[- ]bought/i.test(`${h.eyebrow} ${h.h1} ${h.lead}`));
   const tabbed = await p.evaluate(async () => { document.querySelector('.aicc-pillars__link[data-aicc-tab="ws-t-control"]')?.click(); await new Promise((r) => setTimeout(r, 600)); return document.getElementById("ws-t-control")?.getAttribute("aria-selected"); });
   check("pillars strip: the second pillar link opens the Control tab of the workspace", tabbed === "true", String(tabbed));
@@ -1100,7 +1102,17 @@ for (const w of [1280, 390, 320]) {
     whys: [...document.querySelectorAll(".aicc-fbt-row__why")].map((e) => e.textContent.trim()),
   }));
   check(`merchant view: the evidence layer is labelled an illustration and lists the order (bought together, same category, newest, then your rules); the product the shopper ticked is marked here too (${m.ticked.join(",")})`,
-    /How AICC decided \(illustration\)/.test(m.heading) && /bought together first, then the same category, then your newest in-stock products\. Your rules apply last/.test(m.heading) && /^How AICC decided \(illustration\)$/.test(m.colWhy) && m.ticked.join() === "grinder:In the shopper's bundle" && m.whys.some((w) => /^Bought together \d+ times$/.test(w)) && m.whys.some((w) => /same category/.test(w)), JSON.stringify(m));
+    /How the list is built \(illustration\)/.test(m.heading) && /bought together first, then the same category, then your newest in-stock products\. Your rules apply last/.test(m.heading) && /a pinned product shows only a price/.test(m.heading) && /^Basis \(illustration\)$/.test(m.colWhy) && m.ticked.join() === "grinder:Ticked in the shopper view" && m.whys.some((w) => /^Bought together \d+ times$/.test(w)), JSON.stringify(m));
+  check(`merchant view: the sample list shows ALL kinds of evidence the real ranking uses, including a real "newest in stock" fallback row (${m.whys.join(" | ")})`, m.whys.filter((w) => /^Bought together \d+ times$/.test(w)).length === 2 && m.whys.some((w) => /filled in from your catalog/.test(w)) && m.whys.some((w) => /newest in-stock/.test(w)), JSON.stringify(m.whys));
+  const tiles = await p.evaluate(() => [...document.querySelectorAll(".aicc-fbt-tile strong")].map((e) => e.textContent.trim()));
+  check(`merchant view: the sample dashboard numbers are the dashboard replica's numbers (${tiles.join(" / ")}), so the two samples never contradict each other`, tiles.join() === "3,860,241,97", tiles.join());
+  await p.selectOption('select[data-rule="mug"]', "deprioritize");
+  await p.waitForTimeout(200);
+  const depri = await p.$eval('.aicc-fbt-row[data-id="mug"] .aicc-fbt-row__byrule', (e) => e.textContent.trim());
+  check(`merchant view: the deprioritize chip names the rule, not a move ("${depri}", it can stay in place)`, depri === "Deprioritized by you", depri);
+  await p.selectOption('select[data-rule="mug"]', "none");
+  const ask = await p.evaluate(() => ({ q: document.querySelector(".aicc-fbt__aq")?.textContent.trim(), label: document.querySelector(".aicc-fbt__aa span")?.textContent.trim(), reco: document.querySelector(".aicc-fbt__why [data-bubble]")?.textContent.trim() }));
+  check(`merchant view: the Ask Reco line uses a real starter question and a "Sample answer" label (${ask.q})`, ask.q === "What is my biggest opportunity?" && ask.label === "Sample answer", JSON.stringify(ask));
   await p.selectOption('select[data-rule="filters"]', "pin");
   await p.waitForTimeout(300);
   const pinned = await p.$eval('.aicc-fbt-row[data-id="filters"] .aicc-fbt-row__why', (e) => e.textContent.trim());
@@ -1114,7 +1126,13 @@ for (const w of [1280, 390, 320]) {
   const [ctx, p] = await fresh({ viewport: { width: 1280, height: 900 } });
   await p.goto(urlFor("en", "product"));
   const a = await p.evaluate(() => ({ inputs: document.querySelectorAll(".aicc-ask input, .aicc-ask textarea").length, label: document.querySelector(".aicc-ask__try")?.textContent.trim(), chips: [...document.querySelectorAll(".aicc-ask__chip")].map((c) => c.textContent.trim()) }));
-  check(`Ask Reco mock: no text input, "Choose a question for Reco", only the real questions (${a.chips.join(" / ")})`, a.inputs === 0 && a.label === "Choose a question for Reco" && a.chips.length === 2, JSON.stringify(a));
+  check(`Ask Reco mock: no text input, "Choose a question for Reco", exactly the real starter questions of a set-up store (${a.chips.join(" / ")})`, a.inputs === 0 && a.label === "Choose a question for Reco" && a.chips.join("|") === "What should I focus on today?|What is my biggest opportunity?|Give me one quick win.|What can you help me with?", JSON.stringify(a));
+  const ans = await p.evaluate(async () => {
+    const out = [];
+    for (const c of document.querySelectorAll(".aicc-ask__chip")) { c.click(); await new Promise((r) => setTimeout(r, 50)); const pair = document.querySelector(".aicc-ask__pair:not([hidden])"); out.push({ q: c.textContent.trim(), shown: pair?.querySelector(".aicc-ask__q")?.textContent.trim(), who: pair?.querySelector(".aicc-ask__who")?.textContent.trim(), a: pair?.querySelector(".aicc-ask__a p")?.textContent.length > 40, pressed: c.getAttribute("aria-pressed") }); }
+    return { out, foot: document.querySelector(".aicc-ask__foot")?.textContent || "" };
+  });
+  check(`Ask Reco mock: each question swaps in its answer, every answer is labelled "Sample answer", and the footnote says the real panel also has a text box`, ans.out.every((o) => o.q === o.shown && o.who === "Sample answer" && o.a && o.pressed === "true") && /type a short question/.test(ans.foot), JSON.stringify(ans));
   await ctx.close();
 }
 await browser.close();
