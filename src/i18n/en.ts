@@ -1278,7 +1278,7 @@ export const en = {
             "Text and interface colors checked against WCAG contrast ratios by a script. Our targets are at least 44 pixels for buttons and controls and at least 24 pixels for links inside text.",
             "Reduced motion honored from your system setting and from our own control, including smooth scrolling.",
             "Right-to-left layout for Hebrew, built with logical properties, with mixed-direction text such as prices and brand names kept in order.",
-            "No audio and no third-party accessibility overlay. The one looping video at the top of the home page is muted, plays only while it is on screen, can be paused and does not play when you reduce motion. The accessibility settings (reduce motion, higher contrast, larger text) are stored only in your browser.",
+            "No third-party accessibility overlay. The looping video at the top of the home page is muted, plays only while it is on screen, can be paused and does not play when you reduce motion. The Watch demo is a separate narrated video: it starts only when you press its button, opens in a dialog with player controls and has English captions. The accessibility settings (reduce motion, higher contrast, larger text) are stored only in your browser.",
           ],
         },
         limits: {
@@ -1288,6 +1288,7 @@ export const en = {
             "Hebrew, Spanish and Russian texts have not yet been reviewed by native speakers, including for accessibility.",
             "Automated and manual checks cannot confirm everything, such as whether alternative text is the best description or whether the reading order feels natural with every screen reader. We have not tested with a screen reader or with every combination of browser and assistive technology.",
             "The Reco illustrations contain short words inside the pictures. They are decorative and the same information is in the page text.",
+            "The Watch demo has English narration and English captions on every language version of the site. The captions carry the full narration, so they serve as its transcript; there is no separate transcript page. The video has no audio description, and the text shown inside the video picture is part of the video, not live page text.",
           ],
         },
         report: {

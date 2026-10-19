@@ -99,8 +99,8 @@
       "bytes": 48499
     },
     "content/header-nav.json": {
-      "sha256": "47b0dc4befd3e9ca32e7581e63eb2c2d42d70e1a2ad771075e60da24b37ca09c",
-      "bytes": 1232
+      "sha256": "a31b9c29336087771731384c61ed17ac5950e3f4922ad9056a7b34c58ca1a0bb",
+      "bytes": 2670
     },
     "content/replica-labels.json": {
       "sha256": "a351cf318cbbef820742c1fe2478eacec1e34e40c3479a1f954d986af1679558",
@@ -111,8 +111,8 @@
       "bytes": 1339
     },
     "i18n/strings.json": {
-      "sha256": "0823b7e74a6a9d174d193f1391f216142fd8df1a2fbcf5aa4950029f2616c3e0",
-      "bytes": 89075
+      "sha256": "8b1a677243701652a83427488759d9c350c3abebfa4bf012077e60ed83df2bf4",
+      "bytes": 91318
     },
     "js/a11y-trigger.js": {
       "sha256": "b9c13ac552fa0bed063742b3830bc58ea9404184cac37d6f62ce215c3b7c496c",

@@ -1,18 +1,89 @@
 {
   "schema": 1,
-  "note": "The site header contract shared by the marketing site and the Control Plane theme: which links, in which order, and where each one goes. Labels are NOT repeated here: they are brand/i18n/strings.json -> <locale>.header (nav.product, nav.pricing, nav.questions, nav.account, signIn, getStarted), generated from the site dictionaries. Both surfaces' tests compare their rendered header with this file and that block, so the two headers cannot drift apart again.",
+  "note": "The site header AND footer contract shared by the marketing site and the Control Plane theme: which links, in which order, and where each one goes. Labels are NOT repeated here: they are brand/i18n/strings.json -> <locale>.header (nav.*, signIn, getStarted) and <locale>.footer (productHeading, trustHeading, links.*), generated from the site dictionaries. Both surfaces' tests compare their rendered header and footer with this file and those blocks, so the two cannot drift apart again.",
   "localePrefix": "English has no prefix. he, es and ru put /<locale> in front of every path below (the account area too: /he/my-account/).",
   "nav": [
-    { "id": "product", "path": "/product/" },
-    { "id": "pricing", "path": "/pricing/" },
-    { "id": "questions", "path": "/questions/" },
-    { "id": "account", "path": "/my-account/" }
+    {
+      "id": "product",
+      "path": "/product/"
+    },
+    {
+      "id": "pricing",
+      "path": "/pricing/"
+    },
+    {
+      "id": "questions",
+      "path": "/questions/"
+    },
+    {
+      "id": "account",
+      "path": "/my-account/"
+    }
   ],
   "actions": [
-    { "id": "signIn", "path": "/my-account/" },
-    { "id": "getStarted", "path": "/my-account/" }
+    {
+      "id": "signIn",
+      "path": "/my-account/"
+    },
+    {
+      "id": "getStarted",
+      "path": "/my-account/"
+    }
   ],
   "fallback": {
     "product": "A surface that does not sit behind the production edge (a QA or local Control Plane) has no /product/ page; there the Product link may point at the home page's #why section instead of a 404. The production host never uses the fallback."
+  },
+  "footer": {
+    "note": "Two link columns (the third column of each footer is the language menu). A column's heading is footer[heading]; a link's label is footer.links[id]. The Control Plane's footer may add a non-link support line after the last trust link.",
+    "columns": [
+      {
+        "id": "product",
+        "heading": "productHeading",
+        "links": [
+          {
+            "id": "product",
+            "path": "/product/"
+          },
+          {
+            "id": "pricing",
+            "path": "/pricing/"
+          },
+          {
+            "id": "questions",
+            "path": "/questions/"
+          }
+        ]
+      },
+      {
+        "id": "trust",
+        "heading": "trustHeading",
+        "links": [
+          {
+            "id": "dataTrust",
+            "path": "/data-and-trust/"
+          },
+          {
+            "id": "privacy",
+            "path": "/privacy/"
+          },
+          {
+            "id": "terms",
+            "path": "/terms/"
+          },
+          {
+            "id": "refund",
+            "path": "/refund-policy/"
+          },
+          {
+            "id": "dpa",
+            "path": "/data-processing-addendum/"
+          },
+          {
+            "id": "accessibility",
+            "path": "/accessibility/"
+          }
+        ]
+      }
+    ]
   }
 }

@@ -12,6 +12,8 @@ const basePath =
 
 const nextConfig: NextConfig = {
   output: "export",
+  // `npm run test:approved` builds with fake company values into its own directory (AICC_DIST_DIR) so the default out/ is never overwritten with them.
+  distDir: process.env.AICC_DIST_DIR || undefined,
   trailingSlash: true,
   basePath: basePath || undefined,
   images: {

@@ -27,6 +27,23 @@ for (const l of LOCALES) {
       getStarted: d.common.getStarted,
       accessibility: d.common.a11y.button,
     },
+    // The footer's headings and link labels (the shared header/footer contract is brand/content/header-nav.json: order and targets; these are its words).
+    footer: {
+      productHeading: d.common.footer.productHeading,
+      trustHeading: d.common.footer.trustHeading,
+      languageHeading: d.common.footer.languageHeading,
+      links: {
+        product: d.common.pageNames.product,
+        pricing: d.common.pageNames.pricing,
+        questions: d.common.pageNames.questions,
+        dataTrust: d.common.pageNames.dataTrust,
+        privacy: d.common.pageNames.privacy,
+        terms: d.common.pageNames.terms,
+        refund: d.common.pageNames.refund,
+        dpa: d.common.pageNames.dpa,
+        accessibility: d.common.pageNames.accessibility,
+      },
+    },
     watchDemo: d.brand.watchDemo,
     chips: [d.brand.chips.orders, d.brand.chips.clicks, d.brand.chips.recs, d.brand.chips.insights, d.brand.chips.bundles],
     modal: d.brand.modal,

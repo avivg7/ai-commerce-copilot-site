@@ -38,6 +38,22 @@
       "getStarted": "Get started",
       "accessibility": "Accessibility"
     },
+    "footer": {
+      "productHeading": "AICC",
+      "trustHeading": "Trust and legal",
+      "languageHeading": "Language",
+      "links": {
+        "product": "Product",
+        "pricing": "Pricing",
+        "questions": "Questions",
+        "dataTrust": "Data and trust",
+        "privacy": "Privacy policy",
+        "terms": "Terms of service",
+        "refund": "Refund policy",
+        "dpa": "Data Processing Addendum",
+        "accessibility": "Accessibility"
+      }
+    },
     "watchDemo": "Watch demo",
     "chips": [
       "Order history",
@@ -421,6 +437,22 @@
       "signIn": "כניסה",
       "getStarted": "להתחלה",
       "accessibility": "נגישות"
+    },
+    "footer": {
+      "productHeading": "AICC",
+      "trustHeading": "אמון ומסמכים משפטיים",
+      "languageHeading": "שפה",
+      "links": {
+        "product": "המוצר",
+        "pricing": "מחירים",
+        "questions": "שאלות",
+        "dataTrust": "נתונים ואמון",
+        "privacy": "מדיניות פרטיות",
+        "terms": "תנאי שימוש",
+        "refund": "מדיניות החזרים",
+        "dpa": "תוספת עיבוד נתונים",
+        "accessibility": "נגישות"
+      }
     },
     "watchDemo": "צפייה בהדגמה",
     "chips": [
@@ -806,6 +838,22 @@
       "getStarted": "Empezar",
       "accessibility": "Accesibilidad"
     },
+    "footer": {
+      "productHeading": "AICC",
+      "trustHeading": "Confianza y legal",
+      "languageHeading": "Idioma",
+      "links": {
+        "product": "Producto",
+        "pricing": "Precios",
+        "questions": "Preguntas",
+        "dataTrust": "Datos y confianza",
+        "privacy": "Política de privacidad",
+        "terms": "Términos del servicio",
+        "refund": "Política de reembolso",
+        "dpa": "Adenda de tratamiento de datos",
+        "accessibility": "Accesibilidad"
+      }
+    },
     "watchDemo": "Ver demostración",
     "chips": [
       "Historial de pedidos",
@@ -1189,6 +1237,22 @@
       "signIn": "Войти",
       "getStarted": "Начать",
       "accessibility": "Доступность"
+    },
+    "footer": {
+      "productHeading": "AICC",
+      "trustHeading": "Доверие и правовые документы",
+      "languageHeading": "Язык",
+      "links": {
+        "product": "Продукт",
+        "pricing": "Цены",
+        "questions": "Вопросы",
+        "dataTrust": "Данные и доверие",
+        "privacy": "Политика конфиденциальности",
+        "terms": "Условия использования",
+        "refund": "Политика возврата",
+        "dpa": "Дополнение об обработке данных",
+        "accessibility": "Доступность"
+      }
     },
     "watchDemo": "Смотреть демонстрацию",
     "chips": [

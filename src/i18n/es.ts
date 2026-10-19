@@ -1246,7 +1246,7 @@ export const es: DeepPartial<Dictionary> = {
             "Los colores del texto y de la interfaz se comprueban con un script frente a las relaciones de contraste de WCAG. Nuestros objetivos son al menos 44 píxeles para botones y controles y al menos 24 píxeles para los enlaces dentro del texto.",
             "Se respeta la reducción de movimiento según el ajuste de su sistema y según nuestro propio control, incluido el desplazamiento suave.",
             "Diseño de derecha a izquierda para el hebreo, construido con propiedades lógicas, y con el texto de dirección mixta, como los precios y los nombres de marca, mantenido en orden.",
-            "Sin audio y sin superposición de accesibilidad de terceros. El único video en bucle de la parte superior de la página de inicio no tiene sonido, se reproduce solo mientras está en pantalla, se puede pausar y no se reproduce si reduce el movimiento. Los ajustes de accesibilidad (reducir movimiento, mayor contraste, texto más grande) se guardan solo en su navegador.",
+            "Sin superposición de accesibilidad de terceros. El video en bucle de la parte superior de la página de inicio no tiene sonido, se reproduce solo mientras está en pantalla, se puede pausar y no se reproduce si reduce el movimiento. La demostración del producto es un video aparte con narración: solo empieza cuando pulsa su botón, se abre en un cuadro de diálogo con controles de reproducción y tiene subtítulos en inglés. Los ajustes de accesibilidad (reducir movimiento, mayor contraste, texto más grande) se guardan solo en su navegador.",
           ],
         },
         limits: {
@@ -1256,6 +1256,7 @@ export const es: DeepPartial<Dictionary> = {
             "Los textos en hebreo, español y ruso aún no han sido revisados por hablantes nativos, tampoco en cuanto a accesibilidad.",
             "Las comprobaciones automáticas y manuales no pueden confirmarlo todo, por ejemplo si el texto alternativo es la mejor descripción o si el orden de lectura resulta natural con cada lector de pantalla. No hemos probado con un lector de pantalla ni con todas las combinaciones de navegador y tecnología de asistencia.",
             "Las ilustraciones de Reco contienen palabras cortas dentro de las imágenes. Son decorativas y la misma información está en el texto de la página.",
+            "La narración de la demostración del producto y sus subtítulos están en inglés en todas las versiones de idioma del sitio. Los subtítulos contienen toda la narración, así que hacen de transcripción; no hay una página de transcripción aparte. El video no tiene audiodescripción, y el texto que aparece dentro de la imagen del video forma parte del video, no es texto vivo de la página.",
           ],
         },
         report: {

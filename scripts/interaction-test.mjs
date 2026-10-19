@@ -1163,6 +1163,11 @@ for (const w of [1280, 390, 320]) {
     check(`header contract (${l}): the mobile panel nav has the same links as the bar`, JSON.stringify(dom.panel) === JSON.stringify(dom.nav), JSON.stringify([dom.panel, dom.nav]));
     const dpa = await p.$$eval("footer a[href*='data-processing-addendum']", (as) => as.map((a) => [a.textContent.trim(), new URL(a.href).pathname, new URL(a.href).origin]));
     check(`footer (${l}): one Data Processing Addendum link, labelled "${DICTS[l].common.pageNames.dpa}", to ${pref(l)}/data-processing-addendum/ (WordPress-owned, same host as the sitemap entry)`, dpa.length === 1 && dpa[0][0] === DICTS[l].common.pageNames.dpa && dpa[0][1] === `${pref(l)}/data-processing-addendum/` && dpa[0][2] === "https://www.copilt.org", JSON.stringify(dpa));
+    const norm = (x) => x.replace(/\s+/g, " ").trim();
+    const ftr = await p.evaluate(() => [...document.querySelectorAll("footer nav[aria-labelledby]")].map((n) => ({ h: n.querySelector("h2").textContent, links: [...n.querySelectorAll("li a")].map((a) => [a.textContent, new URL(a.href).pathname]) })));
+    const ftrWant = NAV.footer.columns.map((c) => ({ h: norm(STR[l].footer[c.heading]), links: c.links.map((x) => [norm(STR[l].footer.links[x.id]), pref(l) + x.path]) }));
+    const ftrGot = ftr.map((c) => ({ h: norm(c.h), links: c.links.map(([t, pth]) => [norm(t), PREFIX && pth.startsWith(PREFIX + "/") ? pth.slice(PREFIX.length) : pth]) }));
+    check(`footer contract (${l}): two columns "${ftrWant.map((c) => c.h).join('" and "')}" with the contract labels, order and targets`, JSON.stringify(ftrGot) === JSON.stringify(ftrWant), JSON.stringify([ftrGot, ftrWant]));
     check(`header contract (${l}): Sign in and Get started go to ${pref(l)}/my-account/ (language prefix kept), in the bar and in the panel`, JSON.stringify(dom.actions) === JSON.stringify(wantAct) && JSON.stringify(dom.panelActions) === JSON.stringify(wantAct), JSON.stringify([dom.actions, dom.panelActions, wantAct]));
   }
   // Every account link on every page of every language carries the page language; plan buttons add ?plan=.
