@@ -1,7 +1,7 @@
 // npm run test:interaction: keyboard-only walks through the language switcher, accessibility control, mobile menu,
 // FAQ accordion and the demo, plus reduced-motion behaviour and the language-persistence rules. Needs the export served.
 import fs from "node:fs";
-import { launch, urlFor, BASE } from "./lib/browser.mjs";
+import { launch, urlFor, BASE, ROUTES as ROUTES_ALL } from "./lib/browser.mjs";
 import { loadFallbacks, loadDictionaries } from "./lib/load.mjs";
 
 const DICTS = await loadDictionaries(); // the strings each locale renders (translated, or English where a unit still falls back)
@@ -1133,6 +1133,53 @@ for (const w of [1280, 390, 320]) {
     return { out, foot: document.querySelector(".aicc-ask__foot")?.textContent || "" };
   });
   check(`Ask Reco mock: each question swaps in its answer, every answer is labelled "Sample answer", and the footnote says the real panel also has a text box`, ans.out.every((o) => o.q === o.shown && o.who === "Sample answer" && o.a && o.pressed === "true") && /type a short question/.test(ans.foot), JSON.stringify(ans));
+  await ctx.close();
+}
+// 31. Header contract (shared with the Control Plane): same labels, same order, same targets in all four languages, desktop bar and mobile panel.
+//     brand/content/header-nav.json (paths) + brand/i18n/strings.json header block (labels). The Control Plane test holds ITS header to the same two files.
+{
+  const NAV = JSON.parse(fs.readFileSync(new URL("../brand/content/header-nav.json", import.meta.url), "utf8"));
+  const STR = JSON.parse(fs.readFileSync(new URL("../brand/i18n/strings.json", import.meta.url), "utf8"));
+  const pref = (l) => (l === "en" ? "" : `/${l}`);
+  const [ctx, p] = await fresh({ viewport: { width: 1280, height: 900 } });
+  for (const l of ["en", "he", "es", "ru"]) {
+    const H = STR[l].header;
+    await p.goto(urlFor(l, ""));
+    const dom = await p.evaluate(() => {
+      const t = (e) => e.textContent.replace(/\s+/g, " ").trim();
+      const path = (e) => new URL(e.href).pathname;
+      return {
+        nav: [...document.querySelectorAll(".aicc-site-header__nav .aicc-site-header__links a")].map((a) => [t(a), path(a)]),
+        panel: [...document.querySelectorAll(".aicc-site-header__panel nav a")].map((a) => [t(a), path(a)]),
+        actions: [...document.querySelectorAll(".aicc-site-header__actions > a.aicc-btn")].map((a) => [t(a), path(a)]),
+        panelActions: [...document.querySelectorAll(".aicc-site-header__panel-inner > a.aicc-btn")].map((a) => [t(a), path(a)]),
+      };
+    });
+    const wantNav = NAV.nav.map((n) => [(n.id === "account" ? H.nav.account : H.nav[n.id]).replace(/\s+/g, " ").trim(), pref(l) + n.path]);
+    const wantAct = NAV.actions.map((a) => [H[a.id].replace(/\s+/g, " ").trim(), pref(l) + a.path]);
+    // The nav links of the site are relative to the base path (PREFIX); the account links are absolute on the commerce host (no base path).
+    const strip = (rows) => rows.map(([a, b]) => [a, b.startsWith(PREFIX + "/") && PREFIX ? b.slice(PREFIX.length) : b]);
+    check(`header contract (${l}): nav = ${wantNav.map((r) => r[0]).join(" | ")} with the contract targets, in order`, JSON.stringify(strip(dom.nav)) === JSON.stringify(wantNav), JSON.stringify([strip(dom.nav), wantNav]));
+    check(`header contract (${l}): the mobile panel nav has the same links as the bar`, JSON.stringify(dom.panel) === JSON.stringify(dom.nav), JSON.stringify([dom.panel, dom.nav]));
+    const dpa = await p.$$eval("footer a[href*='data-processing-addendum']", (as) => as.map((a) => [a.textContent.trim(), new URL(a.href).pathname, new URL(a.href).origin]));
+    check(`footer (${l}): one Data Processing Addendum link, labelled "${DICTS[l].common.pageNames.dpa}", to ${pref(l)}/data-processing-addendum/ (WordPress-owned, same host as the sitemap entry)`, dpa.length === 1 && dpa[0][0] === DICTS[l].common.pageNames.dpa && dpa[0][1] === `${pref(l)}/data-processing-addendum/` && dpa[0][2] === "https://www.copilt.org", JSON.stringify(dpa));
+    check(`header contract (${l}): Sign in and Get started go to ${pref(l)}/my-account/ (language prefix kept), in the bar and in the panel`, JSON.stringify(dom.actions) === JSON.stringify(wantAct) && JSON.stringify(dom.panelActions) === JSON.stringify(wantAct), JSON.stringify([dom.actions, dom.panelActions, wantAct]));
+  }
+  // Every account link on every page of every language carries the page language; plan buttons add ?plan=.
+  for (const l of ["en", "he", "es", "ru"]) {
+    const bad = [];
+    let n = 0, plans = [];
+    for (const r of ROUTES_ALL) {
+      await p.goto(urlFor(l, r));
+      const links = await p.$$eval("a[href*='my-account']", (as) => as.map((a) => { const u = new URL(a.href); return [u.pathname, u.search, a.closest("article.aicc-plan") ? a.closest("article.aicc-plan").getAttribute("aria-labelledby") : "", a.closest("form") ? "finder" : ""]; }));
+      for (const [path, search, plan, finder] of links) {
+        n++;
+        if (path !== `${pref(l)}/my-account/`) bad.push(`${r || "home"}: ${path}${search}`);
+        if (plan || finder) { plans.push(search); if (!/^\?plan=(solo|studio|agency)$/.test(search)) bad.push(`${r || "home"}: plan button ${path}${search}`); } else if (search) bad.push(`${r || "home"}: unexpected query ${path}${search}`);
+      }
+    }
+    check(`account links (${l}): all ${n} links go to ${pref(l)}/my-account/ (plan buttons with ?plan=solo|studio|agency: ${plans.length})`, n >= 20 && bad.length === 0 && plans.length >= 3, bad.slice(0, 5).join("; "));
+  }
   await ctx.close();
 }
 await browser.close();

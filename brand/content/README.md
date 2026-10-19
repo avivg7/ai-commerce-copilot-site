@@ -12,6 +12,7 @@ It travels with the brand kit: `brand/MANIFEST.json` lists every file here, `npm
 | `facts.json` | Plans, prices, term, refund window, import window, attribution window, minimum orders for observations, widget limits, ranking order, rule semantics, banned-claim regexes and the UK-spelling list. Tests compare every rendered figure with it. Changing a value needs owner approval. |
 | `faq.en.json` | The canonical English FAQ: layers, topics, per-page selections, the retired-id map and every question and answer. |
 | `replica-labels.json` | The real plugin-admin labels that stay English inside es/ru replicas and prose (`labels`) and the plugin's own Hebrew labels (`he`). The kit wraps each English occurrence as a `lang="en"` leaf; see `brand/README.md`. Generates `brand/js/replica-labels.js`. |
+| `header-nav.json` | The header contract: nav links (Product, Pricing, Questions, Account) in order, the Sign in and Get started actions, and where each goes (`/product/`, `/pricing/`, `/questions/`, `/my-account/`; `/<locale>` in front for he, es, ru). Labels live in `brand/i18n/strings.json` -> `<locale>.header`. The interaction test (site) and `run_content_consistency_tests.php` (Control Plane) hold each header to this file. |
 | `faq.he.json`, `faq.es.json`, `faq.ru.json` | Translations. They hold **only** `q` and `a` per id (plus `reviewStatus` and optional layer/topic titles). Anything missing falls back to English. |
 
 ## `faq.en.json`

@@ -84,6 +84,7 @@ export const ru: DeepPartial<Dictionary> = {
       refund: "Политика возврата",
       accessibility: "Доступность",
       questions: "Вопросы",
+      dpa: "Дополнение об обработке данных",
     },
     getStarted: "Начать",
     seeHow: "Посмотреть, как это работает",

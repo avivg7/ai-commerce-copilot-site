@@ -11,7 +11,7 @@ import { LocaleLink } from "@/components/ui/LocaleLink";
 import { Faq, JsonLd, PageHead } from "./shared";
 import { breadcrumbLd, faqLd, softwareLd } from "@/lib/jsonld";
 import { Button } from "@/components/ui/Button";
-import { GET_STARTED_URL } from "@/lib/site";
+import { getStartedUrl } from "@/lib/site";
 import { Fb, Pair, Ruled, SlotRows, Strip, Track } from "@/components/blocks/Blocks";
 import { DashPreview, Flow, Loop, RecoAskPanel, RulesDemo } from "@/components/blocks/KitMounts";
 import { PLANS } from "@/data/plans";
@@ -49,7 +49,7 @@ export function ProductPage({ locale, t }: { locale: Locale; t: Dictionary }) {
       <div>
         <PageHead locale={locale} t={t} pageName={t.common.pageNames.product} title={<span {...fb("product.hero")}>{p.hero.title}</span>} lead={<span {...fb("product.hero")}>{p.hero.lead}</span>}>
           <div className="aicc-hero-actions">
-            <Button href={GET_STARTED_URL} variant="primary" size="lg" {...tx("common.getStarted")} icon={<ArrowRight size={16} className="aicc-flip" aria-hidden="true" />}>{t.common.getStarted}</Button>
+            <Button href={getStartedUrl(locale)} variant="primary" size="lg" {...tx("common.getStarted")} icon={<ArrowRight size={16} className="aicc-flip" aria-hidden="true" />}>{t.common.getStarted}</Button>
             <WatchDemo locale={locale} t={t} />
           </div>
         </PageHead>
@@ -269,7 +269,7 @@ export function ProductPage({ locale, t }: { locale: Locale; t: Dictionary }) {
               <h2 id="safety-cta" className="aicc-h2">{p.safetyCta.title}</h2>
               <p className="aicc-lead">{p.safetyCta.body}</p>
               <div className="aicc-hero-actions">
-                <Button href={GET_STARTED_URL} variant="primary" size="lg" {...tx("common.getStarted")} icon={<ArrowRight size={16} className="aicc-flip" aria-hidden="true" />}>{t.common.getStarted}</Button>
+                <Button href={getStartedUrl(locale)} variant="primary" size="lg" {...tx("common.getStarted")} icon={<ArrowRight size={16} className="aicc-flip" aria-hidden="true" />}>{t.common.getStarted}</Button>
                 <Button href={localePath(locale, "pricing")} variant="ghost" size="lg" {...tx("common.seePricing")}>{t.common.seePricing}</Button>
               </div>
             </div>
@@ -357,7 +357,7 @@ export function ProductPage({ locale, t }: { locale: Locale; t: Dictionary }) {
               <h2 id="product-final" className="aicc-h2">{p.cta.title}</h2>
               <p className="aicc-lead">{p.cta.body}</p>
               <div className="aicc-hero-actions">
-                <Button href={GET_STARTED_URL} variant="primary" size="lg" {...tx("common.getStarted")} icon={<ArrowRight size={16} className="aicc-flip" aria-hidden="true" />}>{t.common.getStarted}</Button>
+                <Button href={getStartedUrl(locale)} variant="primary" size="lg" {...tx("common.getStarted")} icon={<ArrowRight size={16} className="aicc-flip" aria-hidden="true" />}>{t.common.getStarted}</Button>
                 <Button href={localePath(locale, "pricing")} variant="ghost" size="lg" {...tx("common.seePricing")}>{t.common.seePricing}</Button>
               </div>
             </div>

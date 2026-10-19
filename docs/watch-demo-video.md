@@ -34,6 +34,15 @@ The older names `NEXT_PUBLIC_AICC_DEMO_VIDEO`, `NEXT_PUBLIC_AICC_DEMO_VIDEO_POST
 
 * `npm run test:video` mounts the modal in both states (placeholder, and video with poster and captions) and checks the markup, the captions track, Escape and focus return.
 * `npm run test:approved` builds with the variables set and asserts the built pages carry `data-demo-video`, `data-demo-poster`, `data-demo-captions` and `data-demo-captions-lang`.
+* `npm run test:demo` also asserts the dialog-scoped `::cue` rule in the loaded CSS (CSSOM, since computed `::cue` is not readable everywhere) and its contrast.
 * `npm run launch:check` keeps the "demo video" blocker until `NEXT_PUBLIC_DEMO_VIDEO_SRC` (or the older name) is set, and fails the built output while any button still has an empty video.
 
-The modal is a kit module (`brand/js/video-modal.js`); the Control Plane theme uses the same markup, so a video enabled here needs its own variables or attributes there.
+The modal is a kit module (`brand/js/video-modal.js`); the Control Plane theme uses the same markup (see below).
+
+## Control Plane (same demo, no copy)
+
+The Control Plane's Home page has the same button. It does **not** carry its own copy of the 44 MB video: it references these same canonical paths, `/demo/aicc-demo.mp4`, `/demo/aicc-demo.vtt` and `/demo/aicc-demo-poster.jpg`, same-origin. In production (one host, `https://www.copilt.org/`) the **edge must send `/demo/*` to this static site** (`GET`/`HEAD`, `video/mp4` with byte ranges, `text/vtt`, `image/jpeg`). If the files do not answer on the Control Plane host, its button hides itself (a HEAD probe) rather than showing a placeholder or an empty player. So **these three paths and their file names are a contract: do not rename or move them without changing the Control Plane's defaults** (`inc/brand.php` there, `docs/unified-experience/page-parity.md` > Watch demo). The kit module also still has its placeholder state (for a build with no video); the Control Plane never renders it.
+
+## Captions styling
+
+The shared kit tones down the browser's native caption rendering for this video only: `.aicc-modal video::cue` is near-white (`#fff`) on `rgb(8 12 22 / 0.88)` (about 14:1 even over a white frame; 7:1 is the floor `npm run test:demo` asserts), and from 48 rem up the size is 70% of the native size (the native size is 5% of the video height, which on a wide player covers the dashboard UI; a phone keeps the native size, which is already small). It is plain CSS: no caption engine, no JS, native controls untouched, the viewer's own caption settings still win where the browser supports them. `::cue` accepts only a few properties and browsers differ: Chrome honors the rule (screenshots in the cutover evidence folder `captions/`); Safari/WebKit and Firefox support a subset and Safari may let system caption preferences override it. Those two were not installed in the test Playwright (only Chromium), so they are covered by this note, not by a run. If a browser ignores the rule it falls back to its own default, which is readable.

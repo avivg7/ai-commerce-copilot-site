@@ -93,6 +93,23 @@ for (const prof of profiles) {
       return { n: arr.length, mode: tt.mode, c: arr.find((c) => c.startTime > 19 && c.startTime < 22)?.text, last: arr.at(-1)?.text };
     });
     check(`${label}: captions load every cue of the VTT; the reveal line lands at ~20 s`, !!cues && cues.n === VTT_CUES && /shopper sees/.test(cues.c || "") && /Available for WooCommerce/.test(cues.last || ""), JSON.stringify(cues));
+    // Captions styling: the shared kit's restrained, dialog-scoped ::cue rule exists in the loaded stylesheets (computed ::cue is not readable from JS in every browser, so the
+    // rule is read from the CSSOM). Near-white text on a dark panel, >= 7:1 even over a white frame; the size cut applies only on a wide player; nothing else is hidden or restyled.
+    const cue = await p.evaluate(() => {
+      const found = [];
+      const walk = (rules, media) => { for (const r of rules) { if (r.cssRules && !r.selectorText) walk(r.cssRules, r.conditionText || r.media?.mediaText || ""); else if (r.selectorText && /::cue/.test(r.selectorText)) found.push({ sel: r.selectorText, css: r.style.cssText, media }); } };
+      for (const ss of document.styleSheets) { try { walk(ss.cssRules, ""); } catch {} }
+      return found;
+    });
+    const cueBase = cue.find((r) => !r.media), cueWide = cue.find((r) => /min-width/.test(r.media));
+    const lumOf = ([r, g, b]) => { const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }; return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b); };
+    const rgbaOf = (css, prop) => { const m = new RegExp(`${prop}:\\s*rgba?\\(([^)]+)\\)`).exec(css || ""); if (!m) return null; const q = m[1].split(/[,\s/]+/).filter(Boolean).map(Number); return [q[0], q[1], q[2], q[3] ?? 1]; };
+    const bg = rgbaOf(cueBase?.css, "background-color"), fg = rgbaOf(cueBase?.css, "color") || (/color:\s*(#fff|white)/.test(cueBase?.css || "") ? [255, 255, 255, 1] : null);
+    // worst case: the panel over a pure-white video pixel
+    const eff = bg && [0, 1, 2].map((i) => bg[i] * bg[3] + 255 * (1 - bg[3]));
+    const ratio = eff && fg ? (lumOf(fg) + 0.05) / (lumOf(eff) + 0.05) : 0;
+    check(`${label}: captions rule is scoped to the dialog's video (.aicc-modal video::cue), near-white on a dark panel, >= 7:1 even over a white frame (${ratio.toFixed(1)}:1)`, !!cueBase && /^\.aicc-modal video::cue$/.test(cueBase.sel) && ratio >= 7 && bg[3] >= 0.8, JSON.stringify(cue));
+    check(`${label}: the caption size cut applies only on a wide player (min-width media rule), never to the controls`, !!cueWide && /font-size:\s*70%/.test(cueWide.css) && !cue.some((r) => !/^\.aicc-modal video::cue$/.test(r.sel)) && !/display|visibility|opacity/.test(cueBase?.css || ""), JSON.stringify(cue));
     // Playback: keyboard (Space) plays, advances, then pauses; seeking works; stays unmuted unless the user mutes.
     await p.evaluate(() => document.querySelector("dialog[open] video").focus());
     await p.keyboard.press("Space");

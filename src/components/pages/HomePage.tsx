@@ -4,7 +4,7 @@ import type { Dictionary } from "@/i18n";
 import { fbProps, txProps } from "@/i18n";
 import { Lb, Rich, type RichCtx } from "@/lib/rich";
 import { PLANS } from "@/data/plans";
-import { GET_STARTED_URL } from "@/lib/site";
+import { getStartedUrl } from "@/lib/site";
 import { localePath } from "@/lib/routes";
 import { Button } from "@/components/ui/Button";
 import { Container, Section, SectionHeading } from "@/components/ui/Primitives";
@@ -47,7 +47,7 @@ export function HomePage({ locale, t }: { locale: Locale; t: Dictionary }) {
             </h1>
             <p className="aicc-hero-lead aicc-fade-up" style={{ ["--i" as string]: 2 }}>{h.hero.lead}</p>
             <div className="aicc-hero-actions aicc-fade-up" style={{ ["--i" as string]: 3 }}>
-              <Button href={GET_STARTED_URL} variant="primary" size="lg" {...tx("common.getStarted")} icon={<ArrowRight size={16} className="aicc-flip" aria-hidden="true" />}>
+              <Button href={getStartedUrl(locale)} variant="primary" size="lg" {...tx("common.getStarted")} icon={<ArrowRight size={16} className="aicc-flip" aria-hidden="true" />}>
                 {t.common.getStarted}
               </Button>
               <WatchDemo locale={locale} t={t} />
@@ -260,7 +260,7 @@ export function HomePage({ locale, t }: { locale: Locale; t: Dictionary }) {
               <p className="aicc-lead">{h.final.body}</p>
               <p className="aicc-lead aicc-lead--sub">{R(h.final.guarantee)}</p>
               <div className="aicc-hero-actions">
-                <Button href={GET_STARTED_URL} variant="primary" size="lg" {...tx("common.getStarted")}>
+                <Button href={getStartedUrl(locale)} variant="primary" size="lg" {...tx("common.getStarted")}>
                   {t.common.getStarted}
                   {arrow}
                 </Button>

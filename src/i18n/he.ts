@@ -86,6 +86,7 @@ export const he: DeepPartial<Dictionary> = {
       refund: "מדיניות החזרים",
       accessibility: "נגישות",
       questions: "שאלות",
+      dpa: "תוספת עיבוד נתונים",
     },
     getStarted: "להתחלה",
     seeHow: "איך זה עובד",

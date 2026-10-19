@@ -2,7 +2,7 @@ import type { NextConfig } from "next";
 
 /**
  * Static export. basePath rules:
- *  - AICC_BASE_PATH set (even to an empty string) wins. Use "" to build for a domain root (copilt.org).
+ *  - AICC_BASE_PATH set (even to an empty string) wins. Use "" to build for a domain root (www.copilt.org).
  *  - otherwise production builds use the GitHub Pages project path, dev builds use none.
  * SITE_URL (canonical / sitemap / hreflang origin) is independent of basePath; see docs/AUTHORITY.md.
  */

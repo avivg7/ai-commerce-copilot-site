@@ -26,6 +26,15 @@ export function isRouteId(value: string): value is RouteId {
   return Object.prototype.hasOwnProperty.call(ROUTES, value);
 }
 
+/**
+ * Public, indexable pages that exist ONLY on the commerce origin (WordPress, Control Plane) but belong in this site's sitemap, because at
+ * cutover the edge serves ONE /sitemap.xml for the whole host and it is this site's. They are not routes of this site: there is no page,
+ * no dictionary entry and no link to build. The Control Plane publishes them in four languages, indexable, with its own canonical and hreflang
+ * set and a link in its footer. Edge ownership: docs/cutover/redirect-matrix.md (WP_SITEMAP_PAGES in scripts/lib/redirect-matrix.mjs; `npm run test:redirects` keeps both lists equal).
+ */
+export const DPA_PATH = "/data-processing-addendum/";
+export const WORDPRESS_SITEMAP_PAGES: readonly string[] = [DPA_PATH];
+
 /** Path inside the site, WITHOUT basePath. English lives at the root, other locales under /<locale>/. */
 export function localePath(locale: Locale, route: RouteId = "home"): string {
   const prefix = locale === DEFAULT_LOCALE ? "" : `/${locale}`;

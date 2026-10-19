@@ -3,7 +3,7 @@ import { Menu, X } from "lucide-react";
 import type { Locale } from "@/i18n/config";
 import type { Dictionary } from "@/i18n";
 import { localePath, type RouteId } from "@/lib/routes";
-import { GET_STARTED_URL } from "@/lib/site";
+import { getStartedUrl } from "@/lib/site";
 import { LangMenu } from "@/components/brand/LangMenu";
 import { A11yTrigger } from "./A11yControl";
 import { kitAsset } from "@/lib/brand";
@@ -14,6 +14,7 @@ import { kitAsset } from "@/lib/brand";
  */
 export function SiteHeader({ locale, route, t }: { locale: Locale; route: RouteId; t: Dictionary }) {
   const c = t.common;
+  const account = getStartedUrl(locale);
   const nav: { route: RouteId | "account"; label: string }[] = [
     { route: "product", label: c.nav.product },
     { route: "pricing", label: c.nav.pricing },
@@ -22,7 +23,7 @@ export function SiteHeader({ locale, route, t }: { locale: Locale; route: RouteI
   ];
   const link = (n: { route: RouteId | "account"; label: string }) =>
     n.route === "account" ? (
-      <a key="account" className="aicc-navlink" href={GET_STARTED_URL}>{n.label}</a>
+      <a key="account" className="aicc-navlink" href={account}>{n.label}</a>
     ) : (
       <Link key={n.route} className="aicc-navlink" href={localePath(locale, n.route)} aria-current={n.route === route ? "page" : undefined}>{n.label}</Link>
     );
@@ -43,8 +44,8 @@ export function SiteHeader({ locale, route, t }: { locale: Locale; route: RouteI
         <div className="aicc-site-header__actions">
           <LangMenu locale={locale} route={route} label={c.language.label} currentWord={c.language.current} idSuffix="header" />
           <A11yTrigger label={c.a11y.title} iconOnly className="aicc-iconbtn aicc-a11y-trigger" />
-          <a href={GET_STARTED_URL} className="aicc-btn aicc-btn--quiet aicc-site-header__desktop-only">{t.brand.signIn}</a>
-          <a href={GET_STARTED_URL} className="aicc-btn aicc-btn--primary aicc-site-header__desktop-only">
+          <a href={account} className="aicc-btn aicc-btn--quiet aicc-site-header__desktop-only">{t.brand.signIn}</a>
+          <a href={account} className="aicc-btn aicc-btn--primary aicc-site-header__desktop-only">
             {c.getStarted}
           </a>
           <button type="button" className="aicc-iconbtn aicc-site-header__menu-btn" data-aicc-menu-btn aria-expanded="false" aria-controls="aicc-menu-panel" aria-label={c.nav.menu}>
@@ -60,8 +61,8 @@ export function SiteHeader({ locale, route, t }: { locale: Locale; route: RouteI
           </nav>
           <LangMenu locale={locale} route={route} label={c.language.label} currentWord={c.language.current} idSuffix="mobile" block />
           <div><A11yTrigger label={c.a11y.title} className="aicc-btn aicc-btn--quiet aicc-btn--sm" /></div>
-          <a href={GET_STARTED_URL} className="aicc-btn aicc-btn--quiet aicc-btn--block">{t.brand.signIn}</a>
-          <a href={GET_STARTED_URL} className="aicc-btn aicc-btn--primary aicc-btn--lg aicc-btn--block">{c.getStarted}</a>
+          <a href={account} className="aicc-btn aicc-btn--quiet aicc-btn--block">{t.brand.signIn}</a>
+          <a href={account} className="aicc-btn aicc-btn--primary aicc-btn--lg aicc-btn--block">{c.getStarted}</a>
         </div>
       </div>
     </header>

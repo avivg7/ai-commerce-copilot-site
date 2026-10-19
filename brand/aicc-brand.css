@@ -392,6 +392,12 @@ html.aicc-scroll-lock { overflow: hidden; scrollbar-gutter: stable; }
 .aicc-modal__close:hover { background: rgb(255 255 255 / 0.12); }
 .aicc-modal__player { position: relative; aspect-ratio: 16 / 9; inline-size: 100%; background: #000; }
 .aicc-modal__player video { inline-size: 100%; block-size: 100%; display: block; background: #000; }
+/* Captions of the demo video: the browser's own <track> cues, only toned down (no custom caption engine, native controls untouched).
+   Scoped to the dialog's video. Near-white on a dark 88% panel stays >= 7:1 even over a white frame (about 14:1). The size is cut only where
+   the player is wide: the native size (5% of the video height) covers the product UI on a large player, but is already small on a phone.
+   Only a few properties apply to ::cue; the viewer's own caption settings (OS or browser) still win where the browser supports them. */
+.aicc-modal video::cue { color: #fff; background-color: rgb(8 12 22 / 0.88); }
+@media (min-width: 48rem) { .aicc-modal video::cue { font-size: 70%; } }
 .aicc-modal__placeholder {
   position: absolute;
   inset: 0;

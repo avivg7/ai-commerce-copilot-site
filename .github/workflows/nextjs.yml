@@ -1,4 +1,10 @@
-name: Deploy Next.js site to Pages
+# BUILD AND TEST ONLY. This workflow no longer deploys anything.
+#
+# The Pages deploy job was removed on purpose (cutover review A12): the public site is served by the edge (docs/cutover/runbook.md), and a merge to `main`
+# that deployed to GitHub Pages would silently replace the old site, which is the rollback artifact until the owner retires it. Deployment of `out/` to the edge
+# is a manual, owner-approved runbook step (versioned release directory + atomic symlink swap). Do NOT re-add a Pages deploy job or the `pages: write` /
+# `id-token: write` permissions without the owner's explicit approval and a new rollback plan.
+name: Build and test the Next.js site (no deploy)
 
 on:
   push:
@@ -7,12 +13,10 @@ on:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 concurrency:
-  group: "pages"
-  cancel-in-progress: false
+  group: "build-${{ github.ref }}"
+  cancel-in-progress: true
 
 jobs:
   build:
@@ -25,8 +29,6 @@ jobs:
         with:
           node-version: "20"
           cache: npm
-      - name: Setup Pages
-        uses: actions/configure-pages@v5
       - name: Install dependencies
         run: npm ci
       - name: Checks
@@ -39,21 +41,19 @@ jobs:
           npm run contrast:check
           npm run brand:check
       - name: Build
+        # Domain-root build for the canonical host (owner decision 2026-10-19). Without these two variables a production build
+        # uses the old GitHub Pages sub-path /ai-commerce-copilot-site and the apex origin, which breaks every asset and canonical.
+        env:
+          AICC_BASE_PATH: ""
+          SITE_URL: https://www.copilt.org
         run: npm run build
+      - name: Origin and SEO check
+        run: npm run seo:check
       - name: Performance budget
         run: npm run perf:check
-      - name: Upload artifact
-        uses: actions/upload-pages-artifact@v3
+      - name: Keep the static export for 14 days (a build artifact for review only, not a deployment)
+        uses: actions/upload-artifact@v4
         with:
+          name: site-out
           path: ./out
-
-  deploy:
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    runs-on: ubuntu-latest
-    needs: build
-    steps:
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+          retention-days: 14

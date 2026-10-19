@@ -4,6 +4,7 @@ import { FormField, Badge } from "@/components/ui/Primitives";
 import { Button } from "@/components/ui/Button";
 import { PLANS } from "@/data/plans";
 import { planUrl } from "@/lib/site";
+import type { Locale } from "@/i18n/config";
 
 export interface PlanFinderStrings {
   label: string;
@@ -18,7 +19,7 @@ export interface PlanFinderStrings {
 }
 
 /** Tiny helper: how many stores -> which plan. Validates on blur/submit, error tied to the field with aria-describedby. */
-export function PlanFinder({ s, lang, dir }: { s: PlanFinderStrings; lang?: string; dir?: "ltr" | "rtl" }) {
+export function PlanFinder({ s, locale, lang, dir }: { s: PlanFinderStrings; locale: Locale; lang?: string; dir?: "ltr" | "rtl" }) {
   const [raw, setRaw] = useState("");
   const [touched, setTouched] = useState(false);
   const n = /^\d+$/.test(raw.trim()) ? Number(raw.trim()) : NaN;
@@ -59,7 +60,7 @@ export function PlanFinder({ s, lang, dir }: { s: PlanFinderStrings; lang?: stri
                 <Badge tone="success">{s.suggestion}</Badge>{" "}
                 <strong>{s.results[plan.id]}</strong>
               </p>
-              <Button href={planUrl(plan.id)} variant="primary">
+              <Button href={planUrl(plan.id, locale)} variant="primary">
                 {s.choose.replace("{plan}", s.names[plan.id])}
               </Button>
             </div>

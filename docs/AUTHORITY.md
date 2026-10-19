@@ -12,7 +12,7 @@ other side carries a **mirror**: the same facts and wording, flagged as a mirror
 |---|---|---|
 | `/`, `/product/`, `/data-and-trust/`, `/questions/` | **this site** (`src/i18n/*.ts`) | the Control Plane links to them |
 | `/pricing/`, `/privacy/`, `/terms/`, `/refund-policy/`, `/data-processing-addendum/`, `/accessibility/` | **Control Plane (WordPress)** | `/pricing/`, `/privacy/`, `/terms/`, `/refund-policy/`, `/accessibility/` here are MIRRORS (`MIRROR_ROUTES` in `src/lib/routes.ts`); the DPA is not mirrored |
-| Checkout, cart, account, connect, renew, Plans & Stores | **Control Plane** | this site only links (`GET_STARTED_URL`; plan buttons add `?plan=solo\|studio\|agency`) |
+| Checkout, cart, account, connect, renew, Plans & Stores | **Control Plane** | this site only links (`getStartedUrl(locale)` / `planUrl(plan, locale)` in `src/lib/site.ts`: language-prefixed, `/he/my-account/`; plan buttons add `?plan=solo\|studio\|agency`) |
 | The interactive Frequently Bought Together demo (`brand/js/fbt-demo.js`) | **this repo (brand kit)** | the Control Plane home page renders the same module; strings come from `brand/i18n/strings.json` |
 | **Brand kit** (tokens, button/header/language/hero/modal/FBT CSS and vanilla JS, Reco assets, shared strings) | **this repo** (`brand/`) | the Control Plane theme, delivered byte-for-byte by `node scripts/sync-brand-kit.mjs --to <theme dir>` and verified against `brand/MANIFEST.json` (`tokens:check`, `sync-brand-kit --verify`, `test:visual-contract`) |
 | Plan prices and store limits **as purchased** | **Control Plane** (WooCommerce products, `scripts/bootstrap-commercial-products.php`) | `src/data/plans.ts` (`npm run pricing:check`) |
@@ -40,6 +40,6 @@ other side carries a **mirror**: the same facts and wording, flagged as a mirror
 
 ## At cutover
 
-1. Point `NEXT_PUBLIC_AICC_ACCOUNT_URL` at the real account page (default `https://copilt.org/my-account/`).
-2. Remove the mirror routes here that WordPress owns, or keep them as redirects at the host; the sitemap and hreflang come from `src/lib/routes.ts`.
-3. Build with `AICC_BASE_PATH=""` and `SITE_URL=https://copilt.org` for a domain-root deployment.
+1. Point `NEXT_PUBLIC_AICC_ACCOUNT_URL` at the real account page (default `https://www.copilt.org/my-account/`; this is the ENGLISH URL, he/es/ru insert their prefix before the last path segment: `/he/my-account/`).
+2. Remove the mirror routes here that WordPress owns, or keep them as redirects at the host; the sitemap and hreflang come from `src/lib/routes.ts` (the sitemap also lists `WORDPRESS_SITEMAP_PAGES`: the Control Plane's public `/data-processing-addendum/`, because the edge serves this one sitemap for the whole host).
+3. Build with `AICC_BASE_PATH=""` and `SITE_URL=https://www.copilt.org` for a domain-root deployment. **The canonical public host is `www.copilt.org`** (owner decision 2026-10-19); `copilt.org` 301s to it at the edge and `api.copilt.org` stays API-only. Run `npm run seo:check` on the build; edge rules are in `docs/cutover/redirect-matrix.md`.

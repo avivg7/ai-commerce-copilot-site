@@ -1,14 +1,29 @@
 import type { MetadataRoute } from "next";
 import { LOCALES, LOCALE_META } from "@/i18n/config";
-import { ROUTE_IDS } from "@/lib/routes";
-import { absoluteUrl } from "@/lib/site";
+import { ROUTE_IDS, WORDPRESS_SITEMAP_PAGES } from "@/lib/routes";
+import { absoluteUrl, SITE_URL } from "@/lib/site";
 import { DRAFT_UPDATED_ON as REVIEWED_ON } from "@/lib/site";
 
 export const dynamic = "force-static";
 
-/** Every page in every language, each with hreflang alternates (including x-default = English). */
+/** Same prefix rule as localePath(): English unprefixed, the other languages under /<locale>/. */
+const wpUrl = (locale: (typeof LOCALES)[number], path: string) => `${SITE_URL}${locale === "en" ? "" : `/${locale}`}${path}`;
+
+/**
+ * Every page in every language, each with hreflang alternates (including x-default = English), plus the WordPress-only public documents
+ * (WORDPRESS_SITEMAP_PAGES: the Data Processing Addendum) that the edge's single sitemap must also list. Their lastmod stays the single
+ * legal-draft date, like every other page.
+ */
 export default function sitemap(): MetadataRoute.Sitemap {
-  return LOCALES.flatMap((locale) =>
+  const wordpress = LOCALES.flatMap((locale) =>
+    WORDPRESS_SITEMAP_PAGES.map((path) => {
+      const languages: Record<string, string> = {};
+      for (const l of LOCALES) languages[LOCALE_META[l].htmlLang] = wpUrl(l, path);
+      languages["x-default"] = wpUrl("en", path);
+      return { url: wpUrl(locale, path), lastModified: REVIEWED_ON, changeFrequency: "monthly" as const, priority: 0.5, alternates: { languages } };
+    }),
+  );
+  const pages = LOCALES.flatMap((locale) =>
     ROUTE_IDS.map((route) => {
       const languages: Record<string, string> = {};
       for (const l of LOCALES) languages[LOCALE_META[l].htmlLang] = absoluteUrl(l, route);
@@ -22,4 +37,5 @@ export default function sitemap(): MetadataRoute.Sitemap {
       };
     }),
   );
+  return [...pages, ...wordpress];
 }

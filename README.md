@@ -27,8 +27,8 @@ npm run serve:out -- --port 3011   # serve out/ locally (add --prefix /ai-commer
 | Variable | Default | Purpose |
 |---|---|---|
 | `AICC_BASE_PATH` | `/ai-commerce-copilot-site` in production, empty in dev | URL prefix of the deployment |
-| `SITE_URL` | `https://copilt.org` | origin for canonical, hreflang, sitemap and Open Graph URLs |
-| `NEXT_PUBLIC_AICC_ACCOUNT_URL` | `https://copilt.org/my-account/` | the single "Get started" destination (`?plan=solo|studio|agency` is added on plan buttons) |
+| `SITE_URL` | `https://www.copilt.org` | origin for canonical, hreflang, sitemap and Open Graph URLs (the canonical public host is `www`; the apex only redirects to it) |
+| `NEXT_PUBLIC_AICC_ACCOUNT_URL` | `https://www.copilt.org/my-account/` | the English "Get started" / "Sign in" destination; he, es and ru insert `/he/`, `/es/`, `/ru/` before the last path segment (`https://www.copilt.org/he/my-account/`); `?plan=solo|studio|agency` is added on plan buttons |
 | `NEXT_PUBLIC_DEMO_VIDEO_SRC`, `..._POSTER`, `..._CAPTIONS`, `..._CAPTIONS_LANG` | unset | the Watch demo video (prepared, not enabled): unset shows a labelled placeholder (a `launch:check` blocker); set renders an accessible `<video controls>` with poster and captions. No fake footage. How to enable: `docs/watch-demo-video.md` (the older `NEXT_PUBLIC_AICC_DEMO_VIDEO`, `_POSTER`, `_CAPTIONS` names still work) |
 | `NEXT_PUBLIC_LEGAL_REVIEW_APPROVED` | unset | `true` only after a lawyer approves the legal text: removes the draft notices and lets flagged FAQ answers into JSON-LD |
 | `NEXT_PUBLIC_LEGAL_DRAFT_NOTICE` | on | `off` hides the draft pills (screenshots only); `launch:check` still fails without approval |
@@ -58,6 +58,8 @@ npm run serve:out -- --port 3011   # serve out/ locally (add --prefix /ai-commer
 | `npm run perf:check` | gzip first-load JS per route against the budgets (needs a build) |
 | `npm run audit` | axe-core + structure + overflow on every page, locale and width (needs `serve:out`) |
 | `npm run test:interaction` | keyboard walks, reduced motion, language persistence (needs `serve:out`) |
+| `npm run seo:check` | static audit of the BUILT `out/`: exactly one canonical per page on the `www` origin with a trailing slash, hreflang clusters (en/he/es/ru/x-default, reciprocal), sitemap and robots.txt origin, Open Graph/Twitter images present in `out/`, icons, html lang/dir, no accidental noindex, truthful JSON-LD, and no apex, `http://`, localhost, staging or GitHub Pages (`/ai-commerce-copilot-site`, `github.io`) string anywhere in the output. Needs a root-path build: `AICC_BASE_PATH="" SITE_URL=https://www.copilt.org npm run build` |
+| `npm run test:redirects` | the edge redirect matrix (`docs/cutover/redirect-matrix.md`, data in `scripts/lib/redirect-matrix.mjs`) against a local stand-in server and against the Caddyfile text (offline; applies nothing) |
 | `npm run launch:check` | what would be published pending, drafted or unapproved (`--strict` fails) |
 | `npm run og:build` / `npm run shots` / `npm run shots:brand` | regenerate Open Graph images / visual evidence screenshots |
 

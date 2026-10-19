@@ -6,7 +6,8 @@ import { Logo } from "@/components/ui/Logo";
 import { LocaleLink } from "@/components/ui/LocaleLink";
 import { LangMenu } from "@/components/brand/LangMenu";
 import { A11yTrigger } from "./A11yControl";
-import { COMPANY } from "@/lib/site";
+import { COMPANY, wordpressUrl } from "@/lib/site";
+import { DPA_PATH } from "@/lib/routes";
 import { fbProps } from "@/i18n";
 
 export function Footer({ locale, route, t }: { locale: Locale; route: RouteId; t: Dictionary }) {
@@ -17,11 +18,13 @@ export function Footer({ locale, route, t }: { locale: Locale; route: RouteId; t
     ["pricing", c.pageNames.pricing],
     ["questions", c.pageNames.questions],
   ];
-  const trust: [RouteId, string][] = [
+  // Same list and order as the Control Plane footer. The Data Processing Addendum is a WordPress-owned document (no page in this site): a plain link to the canonical host.
+  const trust: [RouteId | "dpa", string][] = [
     ["data-and-trust", c.pageNames.dataTrust],
     ["privacy", c.pageNames.privacy],
     ["terms", c.pageNames.terms],
     ["refund-policy", c.pageNames.refund],
+    ["dpa", c.pageNames.dpa],
     ["accessibility", c.pageNames.accessibility],
   ];
   return (
@@ -49,9 +52,13 @@ export function Footer({ locale, route, t }: { locale: Locale; route: RouteId; t
             <ul>
               {trust.map(([r, label]) => (
                 <li key={r}>
-                  <LocaleLink locale={locale} route={r} aria-current={r === route ? "page" : undefined}>
-                    {label}
-                  </LocaleLink>
+                  {r === "dpa" ? (
+                    <a href={wordpressUrl(locale, DPA_PATH)}>{label}</a>
+                  ) : (
+                    <LocaleLink locale={locale} route={r} aria-current={r === route ? "page" : undefined}>
+                      {label}
+                    </LocaleLink>
+                  )}
                 </li>
               ))}
             </ul>

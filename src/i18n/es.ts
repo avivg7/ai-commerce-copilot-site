@@ -85,6 +85,7 @@ export const es: DeepPartial<Dictionary> = {
       refund: "Política de reembolso",
       accessibility: "Accesibilidad",
       questions: "Preguntas",
+      dpa: "Adenda de tratamiento de datos",
     },
     getStarted: "Empezar",
     seeHow: "Ver cómo funciona",

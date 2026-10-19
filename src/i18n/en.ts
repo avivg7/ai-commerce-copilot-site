@@ -95,6 +95,7 @@ export const en = {
       refund: "Refund policy",
       accessibility: "Accessibility",
       questions: "Questions",
+      dpa: "Data Processing Addendum",
     },
     getStarted: "Get started",
     seeHow: "See how it works",

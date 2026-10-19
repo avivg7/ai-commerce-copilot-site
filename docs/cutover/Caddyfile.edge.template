@@ -1,0 +1,503 @@
+# =====================================================================================================================================
+# NOT APPLIED. TEMPLATE. Nothing here is installed, validated by a real Caddy, or live. Review, then `caddy validate` and rehearse on staging.
+# =====================================================================================================================================
+#
+# AICC public edge for the www-canonical model (owner decision 2026-10-19):
+#   https://www.copilt.org/       the ONLY customer-visible host. One origin per path: static site (Next export) or WordPress (Control Plane).
+#   https://copilt.org/*          301 to https://www.copilt.org/* (path and query kept; one hop; 308 for non-GET so a POST keeps its method).
+#   http://*                      same, straight to https://www (no http -> https -> www chain).
+#   https://api.copilt.org        NOT in this file. It stays its own Caddy site block on the API host (139.59.157.231) and is never proxied here.
+#
+# Why Caddy (recommendation): the API host already runs Caddy, so it is the one edge tool the operator already runs; it issues and renews the
+# certificates for BOTH copilt.org and www.copilt.org (the apex needs a valid cert or its https redirect fails before it can redirect); its
+# config is short enough to review line by line; reverse_proxy passes Host, Cookie and Set-Cookie untouched. nginx would also satisfy
+# docs/unified-experience/domain-migration.md (A11.4); the rules are edge-agnostic, see docs/cutover/redirect-matrix.md.
+# Where it runs (the API droplet, a separate small host, or in front of the WordPress host) is an owner/ops decision. Do not share a Caddyfile
+# or a process with the API if you want the API's trust boundary and TRUST_PROXY_HEADERS assumption (Caddy is its only proxy) left untouched.
+#
+# SOURCE OF TRUTH for the redirect/routing blocks: scripts/lib/redirect-matrix.mjs. The blocks between BEGIN GENERATED / END GENERATED are
+# written by `node scripts/test-redirects.mjs --write` and checked by `npm run test:redirects`. Do not edit them by hand.
+#
+# What was reviewed and what was not: this file has NEVER been parsed by a real Caddy (none is installed here). `npm run test:redirects` checks the generated blocks
+# and a MODEL of this file (site blocks, imports, matcher order); it cannot see a syntax or semantics error. `caddy validate` plus a `curl --resolve` replay of the
+# same cases on staging is a hard gate (docs/cutover/runbook.md section 1).
+#
+# Environment (set in the systemd unit, not in this file):
+#   AICC_STATIC_ROOT   directory holding the static export, built with  AICC_BASE_PATH="" SITE_URL=https://www.copilt.org npm run build  (the out/ folder)
+#   (the static root must also contain 50x.html: copy docs/cutover/50x.html into every release directory, see the runbook's release procedure)
+#   AICC_WP_UPSTREAM   WordPress origin, e.g. 10.0.0.12:8080 (plain http on a private network) or https://wp.internal.example (then add `transport http { tls }`)
+#
+# WordPress prerequisites (otherwise cookies, redirects and absolute URLs break; see docs/cutover/redirect-matrix.md "Hidden dependencies"):
+#   * options `home` and `siteurl` = https://www.copilt.org  (set BEFORE the first customer; WordPress cookie names embed a hash of siteurl)
+#   * wp-config.php:  if ( ( $_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '' ) === 'https' ) { $_SERVER['HTTPS'] = 'on'; }   (the plugin sets Secure cookies from is_ssl())
+#   * no COOKIE_DOMAIN: cookies stay host-only on www.copilt.org (never share them with api.copilt.org)
+#   * real client address: the edge OVERWRITES X-Forwarded-For with the address Caddy saw (header_up below; a client-supplied value is never passed through, and
+#     do NOT add `trusted_proxies` to the public edge). WordPress must believe that header only from the edge: wp-config.php  define( 'AICC_LM_TRUSTED_PROXIES', array( '<edge private ip>' ) );
+#     (class AICC_LM_Client_IP in the license-manager plugin; empty = REMOTE_ADDR as before). Without it every per-IP rate limit (REST 30/min, Connect AICC) is one global limit.
+#   * WP-Cron: DISABLE_WP_CRON true plus a system cron `* * * * * wp cron event run --due-now` (the entitlement outbox delivery and the daily expiry sweep run on WP-Cron).
+#   * TLS: pre-issue certificates for www.copilt.org and copilt.org BEFORE the DNS flip (DNS-01, or `tls /path/cert.pem /path/key.pem` from a CA you control), or start this
+#     file only after DNS moves and reload immediately. For every rehearsal use `tls internal` or the ACME staging CA (acme_ca https://acme-staging-v02.api.letsencrypt.org/directory
+#     in the global options block). Ports 80/443 (TCP, and UDP 443 for HTTP/3) must be reachable over IPv4 and IPv6. See runbook section 3.
+#   * .well-known: only ACME is handled by Caddy itself. Search Console HTML verification, security.txt and a future Apple Pay domain-association file must ship in the
+#     static site (public/.well-known/, then rebuild) or get an explicit route here.
+#   * X-Frame-Options SAMEORIGIN is set on everything below. A hosted-iframe payment flow can render OUR order-received page inside the gateway's frame: when a gateway is chosen,
+#     drop X-Frame-Options (and use a per-gateway CSP frame-ancestors) for /checkout/* only. Not needed while no gateway is configured.
+
+# ---------------------------------------------------------------------------------------------------------------------------------
+# Snippets
+# ---------------------------------------------------------------------------------------------------------------------------------
+# Access log. Contains no cookies, no Authorization header and no Set-Cookie; query parameters that carry tokens are redacted (add the Connect AICC / license parameter
+# names the plugin really uses). UNVERIFIED syntax: check with `caddy validate`. Rotate with logrotate or `roll_size`.
+(edge_log) {
+	log {
+		output file /var/log/caddy/aicc-edge.log {
+			roll_size 50MiB
+			roll_keep 10
+		}
+		format filter {
+			wrap json
+			fields {
+				request>headers>Cookie delete
+				request>headers>Authorization delete
+				resp_headers>Set-Cookie delete
+				request>uri query {
+					replace token REDACTED
+					replace key REDACTED
+					replace license_key REDACTED
+				}
+			}
+		}
+	}
+}
+
+(security_headers) {
+	header {
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+		X-Frame-Options SAMEORIGIN
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		-Server
+	}
+}
+
+# HSTS ramp: start at 300 seconds, raise to 86400, then 31536000 only after the staging pass and a clean week.
+# No includeSubDomains and no preload on purpose: api.copilt.org and any staging host manage their own TLS policy, and a preload entry cannot be undone quickly.
+(hsts) {
+	header Strict-Transport-Security "max-age=300"
+}
+
+# Static pages only. Report-Only first: the Next export inlines scripts (self.__next_f.push) so 'unsafe-inline' is needed until nonces/hashes exist.
+# WordPress paths get NO CSP here: WooCommerce inlines scripts and the payment provider's origins are not known yet (undecided gateway).
+(static_csp) {
+	header Content-Security-Policy-Report-Only "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; media-src 'self'; connect-src 'self'; frame-ancestors 'self'; base-uri 'self'; form-action 'self'"
+}
+
+# WordPress upstream. Caddy keeps the original Host and sets X-Forwarded-For/-Proto/-Host; Cookie and Set-Cookie pass through unchanged.
+(to_wordpress) {
+	reverse_proxy {$AICC_WP_UPSTREAM} {
+		# Overwrite, never append: WordPress trusts this header only from this edge (AICC_LM_TRUSTED_PROXIES). Caddy already replaces client-supplied X-Forwarded-* when
+		# `trusted_proxies` is not configured; stating it here keeps that true if someone adds a global option later.
+		header_up X-Forwarded-For {remote_host}
+		header_up X-Forwarded-Proto {scheme}
+		# transport http { tls }   # uncomment when the upstream is https
+	}
+}
+
+# Commerce, account and machine paths (cart, checkout, my-account, wp-json, wp-admin, wp-login, wc-ajax, wc-api, wp-cron): the edge forces "never cache" even if WordPress
+# forgets (WooCommerce already sends nocache headers). /wp-content/ and /wp-includes/ are deliberately NOT here: they use to_wordpress, so WordPress / the hosting stack decide.
+(to_wordpress_nocache) {
+	reverse_proxy {$AICC_WP_UPSTREAM} {
+		header_up X-Forwarded-For {remote_host}
+		header_up X-Forwarded-Proto {scheme}
+		header_down Cache-Control "private, no-store, max-age=0"
+		# transport http { tls }
+	}
+}
+
+(to_static) {
+	root * {$AICC_STATIC_ROOT}
+	file_server
+}
+
+# ---------------------------------------------------------------------------------------------------------------------------------
+# Path redirects: applied on EVERY host (apex, www, http, https). Targets are absolute https://www.copilt.org URLs so each request reaches
+# its final URL in one hop. A query string is always kept (the "_q" twin of each rule).
+# ---------------------------------------------------------------------------------------------------------------------------------
+(aicc_redirects) {
+	# BEGIN GENERATED: path redirects
+	# base_index: old GitHub Pages sub-path, index.html (strip both in one hop) (cutover-only)
+	@base_index_q {
+		path_regexp base_index_q ^/ai-commerce-copilot-site(/(?:.*/)?)index\.html$
+		expression {http.request.uri.query} != ''
+		method GET HEAD
+	}
+	redir @base_index_q https://www.copilt.org{re.base_index_q.1}?{http.request.uri.query} 301
+	@base_index_qx {
+		path_regexp base_index_qx ^/ai-commerce-copilot-site(/(?:.*/)?)index\.html$
+		expression {http.request.uri.query} != ''
+		not method GET HEAD
+	}
+	redir @base_index_qx https://www.copilt.org{re.base_index_qx.1}?{http.request.uri.query} 308
+	@base_index {
+		path_regexp base_index ^/ai-commerce-copilot-site(/(?:.*/)?)index\.html$
+		method GET HEAD
+	}
+	redir @base_index https://www.copilt.org{re.base_index.1} 301
+	@base_index_x {
+		path_regexp base_index_x ^/ai-commerce-copilot-site(/(?:.*/)?)index\.html$
+		not method GET HEAD
+	}
+	redir @base_index_x https://www.copilt.org{re.base_index_x.1} 308
+	# base_root: old GitHub Pages sub-path, site root (cutover-only)
+	@base_root_q {
+		path_regexp base_root_q ^/ai-commerce-copilot-site/?$
+		expression {http.request.uri.query} != ''
+		method GET HEAD
+	}
+	redir @base_root_q https://www.copilt.org/?{http.request.uri.query} 301
+	@base_root_qx {
+		path_regexp base_root_qx ^/ai-commerce-copilot-site/?$
+		expression {http.request.uri.query} != ''
+		not method GET HEAD
+	}
+	redir @base_root_qx https://www.copilt.org/?{http.request.uri.query} 308
+	@base_root {
+		path_regexp base_root ^/ai-commerce-copilot-site/?$
+		method GET HEAD
+	}
+	redir @base_root https://www.copilt.org/ 301
+	@base_root_x {
+		path_regexp base_root_x ^/ai-commerce-copilot-site/?$
+		not method GET HEAD
+	}
+	redir @base_root_x https://www.copilt.org/ 308
+	# base_slash: old GitHub Pages sub-path, directory URL (cutover-only)
+	@base_slash_q {
+		path_regexp base_slash_q ^/ai-commerce-copilot-site(/.*/)$
+		expression {http.request.uri.query} != ''
+		method GET HEAD
+	}
+	redir @base_slash_q https://www.copilt.org{re.base_slash_q.1}?{http.request.uri.query} 301
+	@base_slash_qx {
+		path_regexp base_slash_qx ^/ai-commerce-copilot-site(/.*/)$
+		expression {http.request.uri.query} != ''
+		not method GET HEAD
+	}
+	redir @base_slash_qx https://www.copilt.org{re.base_slash_qx.1}?{http.request.uri.query} 308
+	@base_slash {
+		path_regexp base_slash ^/ai-commerce-copilot-site(/.*/)$
+		method GET HEAD
+	}
+	redir @base_slash https://www.copilt.org{re.base_slash.1} 301
+	@base_slash_x {
+		path_regexp base_slash_x ^/ai-commerce-copilot-site(/.*/)$
+		not method GET HEAD
+	}
+	redir @base_slash_x https://www.copilt.org{re.base_slash_x.1} 308
+	# base_file: old GitHub Pages sub-path, file URL (cutover-only)
+	@base_file_q {
+		path_regexp base_file_q ^/ai-commerce-copilot-site(/.*\.[A-Za-z0-9]+)$
+		expression {http.request.uri.query} != ''
+		method GET HEAD
+	}
+	redir @base_file_q https://www.copilt.org{re.base_file_q.1}?{http.request.uri.query} 301
+	@base_file_qx {
+		path_regexp base_file_qx ^/ai-commerce-copilot-site(/.*\.[A-Za-z0-9]+)$
+		expression {http.request.uri.query} != ''
+		not method GET HEAD
+	}
+	redir @base_file_qx https://www.copilt.org{re.base_file_qx.1}?{http.request.uri.query} 308
+	@base_file {
+		path_regexp base_file ^/ai-commerce-copilot-site(/.*\.[A-Za-z0-9]+)$
+		method GET HEAD
+	}
+	redir @base_file https://www.copilt.org{re.base_file.1} 301
+	@base_file_x {
+		path_regexp base_file_x ^/ai-commerce-copilot-site(/.*\.[A-Za-z0-9]+)$
+		not method GET HEAD
+	}
+	redir @base_file_x https://www.copilt.org{re.base_file_x.1} 308
+	# base_bare: old GitHub Pages sub-path, bare page URL (slash added in the same hop) (cutover-only)
+	@base_bare_q {
+		path_regexp base_bare_q ^/ai-commerce-copilot-site(/[^.]*[^/])$
+		expression {http.request.uri.query} != ''
+		method GET HEAD
+	}
+	redir @base_bare_q https://www.copilt.org{re.base_bare_q.1}/?{http.request.uri.query} 301
+	@base_bare_qx {
+		path_regexp base_bare_qx ^/ai-commerce-copilot-site(/[^.]*[^/])$
+		expression {http.request.uri.query} != ''
+		not method GET HEAD
+	}
+	redir @base_bare_qx https://www.copilt.org{re.base_bare_qx.1}/?{http.request.uri.query} 308
+	@base_bare {
+		path_regexp base_bare ^/ai-commerce-copilot-site(/[^.]*[^/])$
+		method GET HEAD
+	}
+	redir @base_bare https://www.copilt.org{re.base_bare.1}/ 301
+	@base_bare_x {
+		path_regexp base_bare_x ^/ai-commerce-copilot-site(/[^.]*[^/])$
+		not method GET HEAD
+	}
+	redir @base_bare_x https://www.copilt.org{re.base_bare_x.1}/ 308
+	# index_html: duplicate of the directory URL (static hosts serve /x/index.html as a second copy)
+	@index_html_q {
+		path_regexp index_html_q ^((?:/[^/]+)*/)index\.html$
+		expression {http.request.uri.query} != ''
+		method GET HEAD
+	}
+	redir @index_html_q https://www.copilt.org{re.index_html_q.1}?{http.request.uri.query} 301
+	@index_html_qx {
+		path_regexp index_html_qx ^((?:/[^/]+)*/)index\.html$
+		expression {http.request.uri.query} != ''
+		not method GET HEAD
+	}
+	redir @index_html_qx https://www.copilt.org{re.index_html_qx.1}?{http.request.uri.query} 308
+	@index_html {
+		path_regexp index_html ^((?:/[^/]+)*/)index\.html$
+		method GET HEAD
+	}
+	redir @index_html https://www.copilt.org{re.index_html.1} 301
+	@index_html_x {
+		path_regexp index_html_x ^((?:/[^/]+)*/)index\.html$
+		not method GET HEAD
+	}
+	redir @index_html_x https://www.copilt.org{re.index_html_x.1} 308
+	# alias_account: friendly names for the account page; ?plan= kept
+	@alias_account_q {
+		path_regexp alias_account_q ^(/(?:he|es|ru))?/(?:account|login|register)/?$
+		expression {http.request.uri.query} != ''
+		method GET HEAD
+	}
+	redir @alias_account_q https://www.copilt.org{re.alias_account_q.1}/my-account/?{http.request.uri.query} 301
+	@alias_account_qx {
+		path_regexp alias_account_qx ^(/(?:he|es|ru))?/(?:account|login|register)/?$
+		expression {http.request.uri.query} != ''
+		not method GET HEAD
+	}
+	redir @alias_account_qx https://www.copilt.org{re.alias_account_qx.1}/my-account/?{http.request.uri.query} 308
+	@alias_account {
+		path_regexp alias_account ^(/(?:he|es|ru))?/(?:account|login|register)/?$
+		method GET HEAD
+	}
+	redir @alias_account https://www.copilt.org{re.alias_account.1}/my-account/ 301
+	@alias_account_x {
+		path_regexp alias_account_x ^(/(?:he|es|ru))?/(?:account|login|register)/?$
+		not method GET HEAD
+	}
+	redir @alias_account_x https://www.copilt.org{re.alias_account_x.1}/my-account/ 308
+	# alias_store: WooCommerce's shop page is not a storefront here
+	@alias_store_q {
+		path_regexp alias_store_q ^(/(?:he|es|ru))?/(?:store|shop)/?$
+		expression {http.request.uri.query} != ''
+		method GET HEAD
+	}
+	redir @alias_store_q https://www.copilt.org{re.alias_store_q.1}/pricing/?{http.request.uri.query} 301
+	@alias_store_qx {
+		path_regexp alias_store_qx ^(/(?:he|es|ru))?/(?:store|shop)/?$
+		expression {http.request.uri.query} != ''
+		not method GET HEAD
+	}
+	redir @alias_store_qx https://www.copilt.org{re.alias_store_qx.1}/pricing/?{http.request.uri.query} 308
+	@alias_store {
+		path_regexp alias_store ^(/(?:he|es|ru))?/(?:store|shop)/?$
+		method GET HEAD
+	}
+	redir @alias_store https://www.copilt.org{re.alias_store.1}/pricing/ 301
+	@alias_store_x {
+		path_regexp alias_store_x ^(/(?:he|es|ru))?/(?:store|shop)/?$
+		not method GET HEAD
+	}
+	redir @alias_store_x https://www.copilt.org{re.alias_store_x.1}/pricing/ 308
+	# DISABLED alias_install: BLOCKED: /get-started/ is not built in the site yet (docs promise it); enabling now would redirect to a 404
+	# path_regexp alias_install ^(/(?:he|es|ru))?/(?:install|download)/?$  ->  https://www.copilt.org{1}/get-started/
+	# slash_pages: bare page URL gets its trailing slash in the same hop
+	@slash_pages_q {
+		path_regexp slash_pages_q ^(/(?:he|es|ru))?/(product|pricing|questions|data-and-trust|privacy|terms|refund-policy|accessibility|data-processing-addendum|my-account|cart|checkout)$
+		expression {http.request.uri.query} != ''
+		method GET HEAD
+	}
+	redir @slash_pages_q https://www.copilt.org{re.slash_pages_q.1}/{re.slash_pages_q.2}/?{http.request.uri.query} 301
+	@slash_pages_qx {
+		path_regexp slash_pages_qx ^(/(?:he|es|ru))?/(product|pricing|questions|data-and-trust|privacy|terms|refund-policy|accessibility|data-processing-addendum|my-account|cart|checkout)$
+		expression {http.request.uri.query} != ''
+		not method GET HEAD
+	}
+	redir @slash_pages_qx https://www.copilt.org{re.slash_pages_qx.1}/{re.slash_pages_qx.2}/?{http.request.uri.query} 308
+	@slash_pages {
+		path_regexp slash_pages ^(/(?:he|es|ru))?/(product|pricing|questions|data-and-trust|privacy|terms|refund-policy|accessibility|data-processing-addendum|my-account|cart|checkout)$
+		method GET HEAD
+	}
+	redir @slash_pages https://www.copilt.org{re.slash_pages.1}/{re.slash_pages.2}/ 301
+	@slash_pages_x {
+		path_regexp slash_pages_x ^(/(?:he|es|ru))?/(product|pricing|questions|data-and-trust|privacy|terms|refund-policy|accessibility|data-processing-addendum|my-account|cart|checkout)$
+		not method GET HEAD
+	}
+	redir @slash_pages_x https://www.copilt.org{re.slash_pages_x.1}/{re.slash_pages_x.2}/ 308
+	# slash_locale: bare language root
+	@slash_locale_q {
+		path_regexp slash_locale_q ^/(he|es|ru)$
+		expression {http.request.uri.query} != ''
+		method GET HEAD
+	}
+	redir @slash_locale_q https://www.copilt.org/{re.slash_locale_q.1}/?{http.request.uri.query} 301
+	@slash_locale_qx {
+		path_regexp slash_locale_qx ^/(he|es|ru)$
+		expression {http.request.uri.query} != ''
+		not method GET HEAD
+	}
+	redir @slash_locale_qx https://www.copilt.org/{re.slash_locale_qx.1}/?{http.request.uri.query} 308
+	@slash_locale {
+		path_regexp slash_locale ^/(he|es|ru)$
+		method GET HEAD
+	}
+	redir @slash_locale https://www.copilt.org/{re.slash_locale.1}/ 301
+	@slash_locale_x {
+		path_regexp slash_locale_x ^/(he|es|ru)$
+		not method GET HEAD
+	}
+	redir @slash_locale_x https://www.copilt.org/{re.slash_locale_x.1}/ 308
+	# slash_wp_deep: bare account / checkout endpoint URL
+	@slash_wp_deep_q {
+		path_regexp slash_wp_deep_q ^(/(?:he|es|ru))?/((?:my-account|checkout)(?:/[A-Za-z0-9_-]+)+)$
+		expression {http.request.uri.query} != ''
+		method GET HEAD
+	}
+	redir @slash_wp_deep_q https://www.copilt.org{re.slash_wp_deep_q.1}/{re.slash_wp_deep_q.2}/?{http.request.uri.query} 301
+	@slash_wp_deep_qx {
+		path_regexp slash_wp_deep_qx ^(/(?:he|es|ru))?/((?:my-account|checkout)(?:/[A-Za-z0-9_-]+)+)$
+		expression {http.request.uri.query} != ''
+		not method GET HEAD
+	}
+	redir @slash_wp_deep_qx https://www.copilt.org{re.slash_wp_deep_qx.1}/{re.slash_wp_deep_qx.2}/?{http.request.uri.query} 308
+	@slash_wp_deep {
+		path_regexp slash_wp_deep ^(/(?:he|es|ru))?/((?:my-account|checkout)(?:/[A-Za-z0-9_-]+)+)$
+		method GET HEAD
+	}
+	redir @slash_wp_deep https://www.copilt.org{re.slash_wp_deep.1}/{re.slash_wp_deep.2}/ 301
+	@slash_wp_deep_x {
+		path_regexp slash_wp_deep_x ^(/(?:he|es|ru))?/((?:my-account|checkout)(?:/[A-Za-z0-9_-]+)+)$
+		not method GET HEAD
+	}
+	redir @slash_wp_deep_x https://www.copilt.org{re.slash_wp_deep_x.1}/{re.slash_wp_deep_x.2}/ 308
+	# END GENERATED: path redirects
+}
+
+# ---------------------------------------------------------------------------------------------------------------------------------
+# Apex and plain-http hosts: everything not already redirected above goes to the same path and query on https://www.copilt.org
+# ---------------------------------------------------------------------------------------------------------------------------------
+http://copilt.org, https://copilt.org, http://www.copilt.org {
+	import edge_log
+	import security_headers
+	import hsts
+	import aicc_redirects
+	# BEGIN GENERATED: host redirect
+	@safe_method method GET HEAD
+	redir @safe_method https://www.copilt.org{uri} 301
+	redir https://www.copilt.org{uri} 308
+	# END GENERATED: host redirect
+}
+
+# ---------------------------------------------------------------------------------------------------------------------------------
+# The canonical host
+# ---------------------------------------------------------------------------------------------------------------------------------
+www.copilt.org {
+	encode zstd gzip
+	import edge_log
+	import security_headers
+	import hsts
+	import aicc_redirects
+
+	# [OWNER] decision, OFF in v1: restrict the WordPress admin and block XML-RPC. Uncomment ONE or both after the owner names the admin IPs / SSO.
+	# Keep /wp-admin/admin-ajax.php open: front-end code calls it. xmlrpc.php is unused by the plugin and the theme (verify with the Backend/plugin owners first).
+	# @xmlrpc path /xmlrpc.php
+	# respond @xmlrpc 403
+	# @wp_admin_locked {
+	#	path /wp-admin/* /wp-login.php
+	#	not path /wp-admin/admin-ajax.php
+	#	not remote_ip {$AICC_ADMIN_IPS}
+	# }
+	# respond @wp_admin_locked 403
+
+	# BEGIN GENERATED: routing
+	@dup_error path_regexp dup_error ^/(?:404|_not-found)(?:/|\.html)?$
+	handle @dup_error {
+		error 404
+	}
+	@static_immutable path_regexp static_immutable ^/_next/static/.*$
+	handle @static_immutable {
+		header Cache-Control "public, max-age=31536000, immutable"
+		import to_static
+	}
+	@static_assets path_regexp static_assets ^(?:/(?:_next|brand-kit|fonts|og|demo)/.*|/(?:favicon\.ico|robots\.txt|sitemap\.xml|index\.txt)|/__next[^/]*\.txt)$
+	handle @static_assets {
+		header Cache-Control "public, max-age=86400"
+		import static_csp
+		import to_static
+	}
+	@wp_machine path_regexp wp_machine ^/(?:wp-json|wp-admin|wc-api|wc-ajax)(?:/.*)?$|^/(?:wp-login\.php|wp-cron\.php|xmlrpc\.php|wp-activate\.php|wp-signup\.php)$
+	handle @wp_machine {
+		import to_wordpress_nocache
+	}
+	@wp_assets path_regexp wp_assets ^/(?:wp-content|wp-includes)(?:/.*)?$
+	handle @wp_assets {
+		import to_wordpress
+	}
+	@wp_root_query {
+		path_regexp wp_root ^(/(?:he|es|ru))?/$
+		expression {http.request.uri.query}.matches('(^|&)(wc-ajax|wc-api|rest_route)=')
+	}
+	handle @wp_root_query {
+		import to_wordpress_nocache
+	}
+	@rsc_under_wp path_regexp rsc_under_wp ^(/(?:he|es|ru))?/(?:pricing|privacy|terms|refund-policy|accessibility)/(?:__next[^/]*|index)\.txt$
+	handle @rsc_under_wp {
+		error 404
+	}
+	@static_rsc path_regexp static_rsc ^(/(?:he|es|ru))?(?:/(?:product|questions|data-and-trust))?/(?:__next[^/]*|index)\.txt$
+	handle @static_rsc {
+		header Cache-Control "public, max-age=0, must-revalidate"
+		import to_static
+	}
+	@wp_nocache path_regexp wp_nocache ^(/(?:he|es|ru))?/(?:cart|checkout|my-account)(?:/.*)?$|^/wp-(?:json|admin|login\.php)(?:/.*)?$|^/wc-(?:ajax|api)(?:/.*)?$
+	handle @wp_nocache {
+		import to_wordpress_nocache
+	}
+	@wp_pages path_regexp wp_pages ^(/(?:he|es|ru))?/(?:pricing|privacy|terms|refund-policy|data-processing-addendum|accessibility|cart|checkout|my-account|product-category|shop)(?:/.*)?$|^(/(?:he|es|ru))?/product/.+$
+	handle @wp_pages {
+		import to_wordpress
+	}
+	handle {
+		header Cache-Control "public, max-age=0, must-revalidate"
+		import static_csp
+		import to_static
+	}
+	# END GENERATED: routing
+
+	# Branded 404 and 5xx for the edge (file not found, `error 404`, the duplicate-error-page paths). WordPress paths are proxied, so WordPress
+	# renders its own 404 and its status and body pass through untouched. The status stays 404 (a soft 404 would be indexed).
+	handle_errors {
+		# 5xx (WordPress down, upstream timeout): a plain page from the static root instead of Caddy's empty body. Copy docs/cutover/50x.html into every release directory.
+		# It carries no secrets and no upstream detail. Status codes pass through (502/503/504 stay what they are).
+		@servererror expression {http.error.status_code} >= 500
+		handle @servererror {
+			root * {$AICC_STATIC_ROOT}
+			rewrite * /50x.html
+			header Cache-Control "no-store"
+			file_server {
+				status {http.error.status_code}
+			}
+		}
+		@notfound expression {http.error.status_code} == 404
+		handle @notfound {
+			root * {$AICC_STATIC_ROOT}
+			rewrite * /404.html
+			header Cache-Control "no-store"
+			file_server {
+				status {http.error.status_code}
+			}
+		}
+	}
+}
+
+# api.copilt.org is intentionally absent. Do not add it here.

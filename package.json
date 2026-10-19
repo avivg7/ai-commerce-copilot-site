@@ -31,6 +31,8 @@
     "shots": "node scripts/shots.mjs",
     "vitals": "node scripts/vitals.mjs",
     "test:links": "node scripts/link-check.mjs",
+    "seo:check": "node scripts/seo-check.mjs",
+    "test:redirects": "node scripts/test-redirects.mjs",
     "launch:check": "node scripts/launch-check.mjs",
     "test:approved": "node scripts/test-approved-build.mjs",
     "brand:icons": "node scripts/build-brand-icons.mjs",

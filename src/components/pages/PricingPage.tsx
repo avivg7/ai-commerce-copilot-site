@@ -4,7 +4,7 @@ import type { Dictionary } from "@/i18n";
 import { fbProps, txProps } from "@/i18n";
 import { Rich, type RichCtx } from "@/lib/rich";
 import { PLANS } from "@/data/plans";
-import { GET_STARTED_URL } from "@/lib/site";
+import { getStartedUrl } from "@/lib/site";
 import { Container, Section, SectionHeading } from "@/components/ui/Primitives";
 import { PricingCard } from "@/components/ui/PricingCard";
 import { LocaleLink } from "@/components/ui/LocaleLink";
@@ -94,6 +94,7 @@ export function PricingPage({ locale, t }: { locale: Locale; t: Dictionary }) {
           </div>
           <p className="aicc-prose" style={{ marginBlock: "1.5rem" }}>{R(p.which.outro)}</p>
           <PlanFinder
+            locale={locale}
             {...tx("pricing.finder")}
             s={{
               label: p.finder.label,
@@ -162,7 +163,7 @@ export function PricingPage({ locale, t }: { locale: Locale; t: Dictionary }) {
               <h2 id="pricing-final" className="aicc-h2">{p.final.title}</h2>
               <p className="aicc-lead">{p.final.body}</p>
               <div className="aicc-hero-actions">
-                <Button href={GET_STARTED_URL} variant="primary" size="lg" {...tx("common.getStarted")} icon={<ArrowRight size={16} className="aicc-flip" aria-hidden="true" />}>
+                <Button href={getStartedUrl(locale)} variant="primary" size="lg" {...tx("common.getStarted")} icon={<ArrowRight size={16} className="aicc-flip" aria-hidden="true" />}>
                   {t.common.getStarted}
                 </Button>
               </div>

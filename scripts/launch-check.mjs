@@ -4,6 +4,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { loadTs, ROOT } from "./lib/load.mjs";
+import { auditBuild, DEFAULT_ORIGIN } from "./lib/seo-audit.mjs";
 
 const strict = process.argv.includes("--strict") || process.env.AICC_PRODUCTION === "1";
 const env = process.env;
@@ -56,6 +57,14 @@ if (fs.existsSync(out)) {
   walk2(out);
   if (ph) problems.push(`built output has ${ph} Watch demo button(s) without a video (placeholder modal)`);
   if (drafts) problems.push(`built output contains ${drafts} draft notices`);
+  // Origin / SEO gate (same audit as `npm run seo:check`): canonical host, sitemap, robots, hreflang, no apex / http / localhost / GitHub Pages.
+  const seo = auditBuild({ outDir: out });
+  const seoErrors = seo.issues.filter((i) => i.level === "error");
+  console.log(`seo audit (${seo.stats.origin || DEFAULT_ORIGIN}): ${seo.stats.pages ?? 0} pages, ${seoErrors.length} error(s)`);
+  if (seoErrors.length) {
+    const head = seoErrors.slice(0, 5).map((i) => `${i.where}: ${i.msg}`).join(" | ");
+    problems.push(`seo:check fails on the built output (${seoErrors.length} error(s); run \`npm run seo:check\`; a build for the www root needs AICC_BASE_PATH="" SITE_URL=${DEFAULT_ORIGIN}): ${head}`);
+  }
 } else console.log("no out/ build found; run `npm run build` first to also scan the built pages");
 
 if (!problems.length) { console.log("PASS: nothing pending, drafted or unapproved would be published."); process.exit(0); }

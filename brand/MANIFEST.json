@@ -7,8 +7,8 @@
       "bytes": 22909
     },
     "aicc-brand.css": {
-      "sha256": "4bb03b081f4ed9cdb62d17335f14b3e2da9f940641521cee9a208fab0e2a3e3d",
-      "bytes": 69971
+      "sha256": "0e9c661bd7709ac0ac9d1be2d43b0487915d0c2f1629454101c429a234b2850e",
+      "bytes": 70674
     },
     "aicc-tokens.css": {
       "sha256": "bcf951af272e0adb914b154a811047c3d5224ff6d33179b7e9f9fcc792592955",
@@ -75,8 +75,8 @@
       "bytes": 49776
     },
     "content/README.md": {
-      "sha256": "54197b064867047e26c7205c620088af98ae2b1e25c9d6736ce8dd03afeea39e",
-      "bytes": 6725
+      "sha256": "24e54a37a950354798cab59fbc1e81294f456a560aa7cc56c0111f8dda52f0fc",
+      "bytes": 7160
     },
     "content/facts.json": {
       "sha256": "de2b12b1b46101899e9341336bfd24888f9c04abe5e763fca1b1c37d59201dd0",
@@ -97,6 +97,10 @@
     "content/faq.ru.json": {
       "sha256": "6c45b38e85bbc9071054a15497893861dc71ceb1e51b73417cf3866353d62fb7",
       "bytes": 48499
+    },
+    "content/header-nav.json": {
+      "sha256": "47b0dc4befd3e9ca32e7581e63eb2c2d42d70e1a2ad771075e60da24b37ca09c",
+      "bytes": 1232
     },
     "content/replica-labels.json": {
       "sha256": "a351cf318cbbef820742c1fe2478eacec1e34e40c3479a1f954d986af1679558",

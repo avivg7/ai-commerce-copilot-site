@@ -21,19 +21,19 @@ export interface PricingCardProps {
   featurePaths?: string[];
   cta: string;
   compact?: boolean;
-  locale?: string;
+  locale: string;
   headingLevel?: 2 | 3;
   extra?: ReactNode;
 }
 
 /**
- * One plan. The price and limits come from src/data/plans.ts. The CTA goes to the single GET_STARTED_URL with ?plan=.
+ * One plan. The price and limits come from src/data/plans.ts. The CTA goes to the account page of the page language (getStartedUrl/planUrl) with ?plan=.
  * Studio carries a neutral "Built for multiple stores" badge (a purpose label, not a recommendation: two Solo plans cost less than one Studio); nothing here says "most popular" and there is no urgency.
  */
 export function PricingCard(p: PricingCardProps) {
   const H = `h${p.headingLevel ?? 3}` as "h2" | "h3";
   // Each string says which language it is in: the card often sits inside a block that is still English fallback while these strings are translated.
-  const loc = (p.locale ?? "en") as Locale;
+  const loc = p.locale as Locale;
   const A = (path: string) => { const { lang, dir } = txProps(loc, path); return { lang, dir }; };
   const storesPath = p.id === "solo" ? "common.plan.oneStore" : "common.plan.upToStores";
   return (
@@ -61,7 +61,7 @@ export function PricingCard(p: PricingCardProps) {
         </ul>
       ) : null}
       {p.extra}
-      <Button href={planUrl(p.id)} variant={p.featuredLabel ? "primary" : "outline"} block size="lg" {...A("common.plan.choose")}>
+      <Button href={planUrl(p.id, loc)} variant={p.featuredLabel ? "primary" : "outline"} block size="lg" {...A("common.plan.choose")}>
         {p.cta}
       </Button>
     </article>
