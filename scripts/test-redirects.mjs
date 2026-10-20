@@ -436,6 +436,8 @@ for (const rule of M.PATH_RULES.filter((x) => x.enabled === false)) ok(!redirect
 ok(!/includeSubDomains|preload/i.test(regenerated.replace(/#.*$/gm, "")), "HSTS must not use includeSubDomains/preload in the template");
 ok(!/api\.copilt\.org\s*\{/.test(regenerated), "api.copilt.org must not have a site block in this file");
 ok(/Strict-Transport-Security "max-age=300"/.test(regenerated), "HSTS ramp must start at max-age=300");
+for (const h of ["Forwarded", "X-Real-IP", "X-Client-IP", "True-Client-IP", "Client-IP", "CF-Connecting-IP", "X-Cluster-Client-IP", "X-Originating-IP", "Fastly-Client-IP", "Forwarded-For", "X-Forwarded", "X-Forwarded-Port", "X-Forwarded-Scheme", "X-Forwarded-Ssl", "Front-End-Https", "X-Url-Scheme", "X-Forwarded-Server", "X-Original-URL", "X-Rewrite-URL"]) ok(new RegExp(`header_up\\s+-${h}\\s*$`, "m").test(regenerated), `the WordPress proxy must strip the client-supplied ${h} header (header_up -${h}); the browser rehearsal showed it reaching the Control Plane`);
+ok(/header_up X-Forwarded-For \{remote_host\}/.test(regenerated) && /header_up X-Forwarded-Proto \{scheme\}/.test(regenerated) && /header_up X-Forwarded-Host \{host\}/.test(regenerated), "X-Forwarded-For/-Proto/-Host must be OVERWRITTEN with edge-made values");
 ok(!/header_up\s+(-?Cookie|-?Set-Cookie)/i.test(regenerated) && !/header_down\s+-?Set-Cookie/i.test(regenerated), "Cookie / Set-Cookie must pass through untouched");
 
 server.close();

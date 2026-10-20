@@ -173,6 +173,20 @@
 		header_up -X-Forwarded-Server
 		header_up -X-Original-URL
 		header_up -X-Rewrite-URL
+		# More client-identity / scheme headers that code on the origin may read as if they were trusted (WooCommerce's Store API rate limiter reads Client-IP;
+		# phase-2 browser rehearsal showed a page-script-supplied value of each of these reached WordPress unchanged). Edge-made values only.
+		header_up -Client-IP
+		header_up -CF-Connecting-IP
+		header_up -X-Cluster-Client-IP
+		header_up -X-Originating-IP
+		header_up -Fastly-Client-IP
+		header_up -Forwarded-For
+		header_up -X-Forwarded
+		header_up -X-Forwarded-Port
+		header_up -X-Forwarded-Scheme
+		header_up -X-Forwarded-Ssl
+		header_up -Front-End-Https
+		header_up -X-Url-Scheme
 		header_down -X-Powered-By
 		header_down -Server
 		transport http {
