@@ -47,6 +47,6 @@ r 'systemctl is-active fail2ban' | grep -q '^active$' && ok "fail2ban active" ||
 r 'sudo -n fail2ban-client status sshd' | grep -q 'Currently banned' && ok "fail2ban sshd jail enabled" || bad "fail2ban sshd jail missing"
 r 'systemctl is-active chrony' | grep -q '^active$' && ok "time sync (chrony) active" || bad "chrony not active"
 r 'systemctl is-enabled unattended-upgrades' | grep -q enabled && ok "unattended-upgrades enabled" || bad "unattended-upgrades not enabled"
-r 'ss -H -ltn' | awk '{print $4}' | grep -Ev '^(127\.0\.0\.1|\[::1\]|127\.0\.0\.53%lo|\[::\]:22|0\.0\.0\.0:22|\*:22)' | grep -q . && bad "unexpected public listeners: $(r 'ss -H -ltn' | awk '{print $4}' | tr '\n' ' ')" || ok "only sshd listens publicly (nothing else installed yet)"
+r 'ss -H -ltn' | awk '{print $4}' | grep -Ev '^(127\.|\[::1\]|\[::\]:22$|0\.0\.0\.0:22$|\*:22$)' | grep -q . && bad "unexpected public listeners: $(r 'ss -H -ltn' | awk '{print $4}' | tr '\n' ' ')" || ok "only sshd listens publicly (nothing else installed yet)"
 echo
 [ "$fail" = "0" ] && echo "ALL CHECKS PASSED: record Droplet ID, IPv4, IPv6, Reserved IPv4 and tell me." || { echo "$fail CHECK(S) FAILED: do not proceed; send me this output."; exit 1; }
