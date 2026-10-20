@@ -1,0 +1,133 @@
+#cloud-config
+# AICC Control Plane STAGING host: stage-1 provisioning (Ubuntu 24.04 LTS, DigitalOcean FRA1, 1 vCPU / 2 GiB).
+# Rendered by infra/provision/render-cloud-init.sh, which substitutes __OPERATOR_SSH_PUBLIC_KEY__.
+# Deliberately minimal and reviewable: base hardening only. Caddy, PHP-FPM, MySQL, AICC Ops are installed AFTER creation over SSH,
+# from reviewed scripts, so every step is visible and repeatable.
+#
+# Lockout safety: root SSH stays key-only (prohibit-password) in this stage. Disabling root SSH is a separate, explicit step
+# (infra/provision/harden-stage2.sh) that runs only after a SECOND SSH session as the operator user has been verified.
+# Recovery path if SSH ever fails: the DigitalOcean web console (Droplet -> Access -> Launch Droplet Console).
+
+hostname: aicc-cp-stage
+fqdn: aicc-cp-stage.stage.copilt.org
+manage_etc_hosts: true
+timezone: UTC
+locale: en_US.UTF-8
+
+package_update: true
+package_upgrade: true
+packages:
+  - ufw
+  - fail2ban
+  - unattended-upgrades
+  - chrony
+  - needrestart
+  - ca-certificates
+  - curl
+  - gnupg
+  - rsync
+  - jq
+  - sqlite3
+  - python3
+  - logrotate
+  - acl
+
+users:
+  - name: aicc
+    gecos: AICC operator
+    groups: [sudo]
+    shell: /bin/bash
+    lock_passwd: true
+    # Key-only account: no password exists, so sudo cannot ask for one. Accepted for a single-operator staging host.
+    sudo: ["ALL=(ALL) NOPASSWD:ALL"]
+    ssh_authorized_keys:
+      - __OPERATOR_SSH_PUBLIC_KEY__
+
+ssh_pwauth: false
+disable_root: false
+
+write_files:
+  # Staging identity marker. The fail-closed rehearsal tooling refuses to run unless this identity is verified.
+  - path: /etc/aicc-stage-identity
+    permissions: "0644"
+    owner: root:root
+    content: |
+      AICC_ENV=staging
+      AICC_HOSTNAME=stage.copilt.org
+      AICC_HOST_ROLE=control-plane-edge
+      # NOT production. Never point www.copilt.org or api.copilt.org traffic at this host without the cutover runbook.
+
+  - path: /etc/ssh/sshd_config.d/10-aicc-hardening.conf
+    permissions: "0644"
+    owner: root:root
+    content: |
+      PasswordAuthentication no
+      KbdInteractiveAuthentication no
+      PubkeyAuthentication yes
+      PermitRootLogin prohibit-password
+      PermitEmptyPasswords no
+      X11Forwarding no
+      MaxAuthTries 3
+      LoginGraceTime 30
+      ClientAliveInterval 300
+      ClientAliveCountMax 2
+      AllowAgentForwarding no
+
+  - path: /etc/fail2ban/jail.d/aicc-sshd.local
+    permissions: "0644"
+    owner: root:root
+    content: |
+      [DEFAULT]
+      bantime  = 1h
+      findtime = 10m
+      maxretry = 5
+      [sshd]
+      enabled = true
+      mode    = aggressive
+
+  - path: /etc/apt/apt.conf.d/20auto-upgrades
+    permissions: "0644"
+    owner: root:root
+    content: |
+      APT::Periodic::Update-Package-Lists "1";
+      APT::Periodic::Unattended-Upgrade "1";
+      APT::Periodic::AutocleanInterval "7";
+
+  - path: /etc/apt/apt.conf.d/52aicc-unattended-upgrades
+    permissions: "0644"
+    owner: root:root
+    content: |
+      // Security updates install automatically; reboots are a manual, planned action (see runbook).
+      Unattended-Upgrade::Automatic-Reboot "false";
+      Unattended-Upgrade::Remove-Unused-Kernel-Packages "true";
+      Unattended-Upgrade::Remove-Unused-Dependencies "true";
+
+  - path: /etc/sysctl.d/99-aicc.conf
+    permissions: "0644"
+    owner: root:root
+    content: |
+      # 2 GiB host: swap is a safety net, not capacity.
+      vm.swappiness = 10
+      vm.vfs_cache_pressure = 50
+      net.ipv4.tcp_syncookies = 1
+      net.ipv4.conf.all.rp_filter = 1
+
+runcmd:
+  # 2 GiB swapfile (idempotent).
+  - [ bash, -c, 'if ! swapon --show | grep -q /swapfile; then fallocate -l 2G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile && grep -q "^/swapfile" /etc/fstab || echo "/swapfile none swap sw 0 0" >> /etc/fstab; fi' ]
+  - [ sysctl, --system ]
+  # Host firewall (a DigitalOcean Cloud Firewall with the same rules is the outer layer). HTTP/3 (udp/443) stays closed.
+  - [ ufw, --force, reset ]
+  - [ ufw, default, deny, incoming ]
+  - [ ufw, default, allow, outgoing ]
+  - [ ufw, allow, 22/tcp ]
+  - [ ufw, allow, 80/tcp ]
+  - [ ufw, allow, 443/tcp ]
+  - [ ufw, --force, enable ]
+  - [ systemctl, enable, --now, chrony ]
+  - [ systemctl, enable, --now, fail2ban ]
+  - [ systemctl, enable, --now, unattended-upgrades ]
+  - [ systemctl, reload, ssh ]
+  - [ bash, -c, 'touch /var/lib/aicc-init-stage1-done' ]
+
+final_message: "AICC stage-1 provisioning finished after $UPTIME seconds"
