@@ -477,8 +477,9 @@ www.copilt.org {
 	# Branded 404 and 5xx for the edge (file not found, `error 404`, the duplicate-error-page paths). WordPress paths are proxied, so WordPress
 	# renders its own 404 and its status and body pass through untouched. The status stays 404 (a soft 404 would be indexed).
 	handle_errors {
-		# 5xx (WordPress down, upstream timeout): a plain page from the static root instead of Caddy's empty body. Copy docs/cutover/50x.html into every release directory.
-		# It carries no secrets and no upstream detail. Status codes pass through (502/503/504 stay what they are).
+		# 5xx (WordPress down, upstream timeout): the standalone branded page from the static root instead of Caddy's empty body (owner direction: "AI Commerce Copilot is temporarily
+		# unavailable. Please try again shortly."; inline CSS, no external request, no script; `npm run test:error-page` checks it). Copy docs/cutover/50x.html into every release directory.
+		# It carries no secrets and no upstream detail and does not say which part is affected. Status codes pass through (502/503/504 stay what they are).
 		@servererror expression {http.error.status_code} >= 500
 		handle @servererror {
 			root * {$AICC_STATIC_ROOT}

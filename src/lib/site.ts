@@ -72,6 +72,15 @@ export function planUrl(plan: PlanId, locale: Locale): string {
 }
 
 /**
+ * Purchasable-price structured data switch (OWNER DECISION, final). schema.org Offer / AggregateOffer / price / priceCurrency / `offers` on
+ * SoftwareApplication must NOT be published until real public checkout and a real payment gateway are live. Default OFF: JSON-LD carries no
+ * plan prices (the visible pricing is untouched). Turn on at build time ONLY when checkout is live: NEXT_PUBLIC_AICC_STRUCTURED_OFFERS=on.
+ * `npm run seo:check` fails on any Offer/price schema in a built page while this is off; `npm run launch:check` prints the state.
+ * The Control Plane has the matching switch (constant AICC_STRUCTURED_DATA_OFFERS, theme inc/seo.php). Documented in docs/cutover/runbook.md.
+ */
+export const STRUCTURED_OFFERS = process.env.NEXT_PUBLIC_AICC_STRUCTURED_OFFERS === "on";
+
+/**
  * Legal review gate. Draft notices on the legal pages stay visible until a person with legal authority has approved the
  * text AND the build sets NEXT_PUBLIC_LEGAL_REVIEW_APPROVED=true. Supplying the company values does NOT hide them.
  * NEXT_PUBLIC_LEGAL_DRAFT_NOTICE=off only hides the pills (for screenshots); `npm run launch:check` still fails without approval.

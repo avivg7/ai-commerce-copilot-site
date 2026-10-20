@@ -34,6 +34,8 @@
     "seo:check": "node scripts/seo-check.mjs",
     "test:redirects": "node scripts/test-redirects.mjs",
     "launch:check": "node scripts/launch-check.mjs",
+    "test:payment-gate": "node scripts/test-payment-gate.mjs",
+    "test:error-page": "node scripts/test-error-page.mjs",
     "test:approved": "node scripts/test-approved-build.mjs",
     "brand:icons": "node scripts/build-brand-icons.mjs",
     "brand:strings": "node scripts/build-brand-strings.mjs",

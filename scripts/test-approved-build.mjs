@@ -41,9 +41,9 @@ process.stdout.write(l.stdout);
 const errors = [];
 // Everything an owner can supply must clear launch:check --strict. Allowed to remain, by name: (1) there is no plugin distribution path yet (no /get-started/ or
 // download route): a business fact, gone when the route is built; (2) the sentinel gates themselves, which MUST fire on this build because it carries the fake values
-// ("Example Ltd", "support@example.test"): that is the positive control proving a fake-value out/ can never pass launch:check unnoticed.
+// ("Example Ltd", "support@example.test"): that is the positive control proving a fake-value out/ can never pass launch:check unnoticed. (3) the real-gateway allowlist (scripts/lib/payment-gate.mjs) is EMPTY by owner decision, so the fake processor "Example Pay" is rejected too.
 const blockers = l.stdout.split("\n").filter((x) => x.startsWith("  - "));
-const ALLOWED = [/plugin distribution path not available/, /not a real address/, /test sentinel value/];
+const ALLOWED = [/plugin distribution path not available/, /not a real address/, /test sentinel value/, /not on the real-gateway allowlist/];
 const unexpected = blockers.filter((x) => !ALLOWED.some((re) => re.test(x)));
 if (unexpected.length) errors.push("launch:check --strict failed on the approved build: " + unexpected.join(" | "));
 for (const re of ALLOWED) if (!blockers.some((x) => re.test(x))) errors.push(`expected launch:check blocker ${re} did not fire on the approved build`);

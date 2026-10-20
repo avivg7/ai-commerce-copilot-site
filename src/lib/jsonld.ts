@@ -5,7 +5,7 @@ import { SITE_URL, absoluteUrl } from "@/lib/site";
 import type { RouteId } from "@/lib/routes";
 import { formatPlain, type RichCtx } from "@/lib/rich";
 import { faqById, faqSelection, faqText, type FaqPageKey } from "@/data/faq";
-import { LEGAL_REVIEW_APPROVED } from "@/lib/site";
+import { LEGAL_REVIEW_APPROVED, STRUCTURED_OFFERS } from "@/lib/site";
 
 /** Truthful structured data only: no aggregateRating, no reviews, no invented address, phone or sameAs. */
 export function organizationLd(t: Dictionary) {
@@ -33,14 +33,19 @@ export function softwareLd(locale: Locale, t: Dictionary) {
     url: absoluteUrl(locale, "home"),
     inLanguage: locale,
     publisher: { "@id": `${SITE_URL}/#organization` },
-    offers: PLANS.map((p) => ({
-      "@type": "Offer",
-      name: t.pricing.plans[p.id].name,
-      price: String(p.price),
-      priceCurrency: CURRENCY,
-      url: absoluteUrl(locale, "pricing"),
-      description: `${t.common.plan.sameFeatures}. ${p.stores === 1 ? t.common.plan.oneStore : t.common.plan.upToStores.replace("{n}", String(p.stores))}.`,
-    })),
+    // Purchasable-price schema only when the owner switch is on (checkout live). Default OFF: no `offers` at all. See STRUCTURED_OFFERS in site.ts.
+    ...(STRUCTURED_OFFERS
+      ? {
+          offers: PLANS.map((p) => ({
+            "@type": "Offer",
+            name: t.pricing.plans[p.id].name,
+            price: String(p.price),
+            priceCurrency: CURRENCY,
+            url: absoluteUrl(locale, "pricing"),
+            description: `${t.common.plan.sameFeatures}. ${p.stores === 1 ? t.common.plan.oneStore : t.common.plan.upToStores.replace("{n}", String(p.stores))}.`,
+          })),
+        }
+      : {}),
   };
 }
 

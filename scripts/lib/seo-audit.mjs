@@ -5,6 +5,8 @@
 //   - missing or duplicated canonical, missing title / description / Open Graph / Twitter tags, image files that are not in out/
 //   - hreflang sets that are incomplete or not reciprocal, accidental noindex, html lang/dir that do not match the locale
 //   - structured data that names ratings or reviews, or points at another origin
+//   - purchasable-price structured data (Offer / AggregateOffer / offers / price / priceCurrency) while the owner switch is off (OWNER DECISION: not until
+//     real public checkout is live; switch = NEXT_PUBLIC_AICC_STRUCTURED_OFFERS=on at build time, see src/lib/site.ts)
 // The canonical origin is the owner's decision (www.copilt.org); override only for rehearsal with SEO_EXPECTED_ORIGIN.
 import fs from "node:fs";
 import path from "node:path";
@@ -17,6 +19,43 @@ const HREFLANGS = ["en", "he", "es", "ru", "x-default"];
 const WORDPRESS_PREFIXES = ["/my-account/", "/cart/", "/checkout/", "/wp-login.php", "/wp-admin/", "/data-processing-addendum/"];
 const TEXT_EXT = new Set([".html", ".txt", ".xml", ".js", ".css", ".json", ".svg", ".webmanifest", ".vtt", ".map"]);
 const ERROR_PAGES = new Set(["404.html", "404/index.html", "_not-found/index.html"]);
+
+/** The owner switch for purchasable-price JSON-LD (same name and meaning as src/lib/site.ts STRUCTURED_OFFERS). Default OFF. */
+export const structuredOffersOn = (env = process.env) => env.NEXT_PUBLIC_AICC_STRUCTURED_OFFERS === "on";
+
+/** Raw patterns that must never appear inside an application/ld+json block while the switch is off. */
+const PRICE_SCHEMA_RAW = [
+  [/"offers"/, '"offers"'],
+  [/"@type"\s*:\s*"(?:Aggregate)?Offer"/, '@type Offer / AggregateOffer'],
+  [/AggregateOffer/, "AggregateOffer"],
+  [/priceCurrency/, "priceCurrency"],
+  [/"(?:price|lowPrice|highPrice|priceSpecification)"/, '"price" / lowPrice / highPrice / priceSpecification'],
+];
+const PRICE_SCHEMA_KEYS = /^(offers|price|lowPrice|highPrice|priceCurrency|priceSpecification|priceValidUntil)$/i;
+
+/**
+ * Purchasable-price schema in the JSON-LD blocks of one HTML document. Returns a list of human-readable findings (empty = clean).
+ * Two independent detectors: raw text of each block (the quoted markers) and a walk of the parsed JSON (keys and @type values), so neither
+ * a re-ordering nor a different spacing hides it. Text VALUES (an FAQ answer that says "$99") are not findings: visible pricing is allowed.
+ */
+export function scanPriceSchema(html) {
+  const found = [];
+  for (const m of html.matchAll(/<script\b[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)) {
+    const raw = m[1];
+    for (const [re, label] of PRICE_SCHEMA_RAW) if (re.test(raw)) found.push(`raw ${label}`);
+    try {
+      (function visit(v) {
+        if (Array.isArray(v)) return v.forEach(visit);
+        if (v && typeof v === "object") {
+          const types = [].concat(v["@type"] || []);
+          if (types.some((t) => /^(Offer|AggregateOffer|ItemList|Product)$/.test(String(t)) && (t !== "ItemList" || JSON.stringify(v).includes("Offer")))) found.push(`@type ${types.join(",")}`);
+          for (const [k, x] of Object.entries(v)) { if (PRICE_SCHEMA_KEYS.test(k)) found.push(`key ${k}`); visit(x); }
+        }
+      })(JSON.parse(raw));
+    } catch { /* a block that does not parse is reported by the structured-data check itself */ }
+  }
+  return [...new Set(found)];
+}
 
 const decode = (s) => s.replace(/&amp;/g, "&").replace(/&quot;/g, '"').replace(/&#x27;|&#39;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">");
 
@@ -69,6 +108,8 @@ export function auditBuild({ outDir, origin = process.env.SEO_EXPECTED_ORIGIN ||
     const route = routeOf(f);
     const where = f;
     const isError = ERROR_PAGES.has(f);
+    // every built page, error pages included: no purchasable-price schema until checkout is live (owner decision), unless the build switch is on
+    if (!structuredOffersOn()) for (const f2 of scanPriceSchema(html)) err(where, `JSON-LD carries purchasable-price schema (${f2}); NEXT_PUBLIC_AICC_STRUCTURED_OFFERS is not "on", so no Offer/price data may be published until checkout is live`);
     const locale = localeOf(route);
     const links = tagsOf(html, "link");
     const metas = tagsOf(html, "meta");
@@ -297,6 +338,6 @@ export function auditBuild({ outDir, origin = process.env.SEO_EXPECTED_ORIGIN ||
   for (const i of issues) uniq.set(`${i.level}|${i.where}|${i.msg}`, i);
   return {
     issues: [...uniq.values()],
-    stats: { origin, pages: indexable.length, errorPages: pages.size - indexable.length, textFilesScanned: scanned, internalRefs: internal, handedToWordPress: handed, handedPaths: [...handedTo].sort() },
+    stats: { origin, structuredOffers: structuredOffersOn() ? "on" : "off", pages: indexable.length, errorPages: pages.size - indexable.length, textFilesScanned: scanned, internalRefs: internal, handedToWordPress: handed, handedPaths: [...handedTo].sort() },
   };
 }

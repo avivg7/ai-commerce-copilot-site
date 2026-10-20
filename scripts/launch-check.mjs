@@ -4,7 +4,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import { loadTs, ROOT } from "./lib/load.mjs";
-import { auditBuild, DEFAULT_ORIGIN } from "./lib/seo-audit.mjs";
+import { auditBuild, DEFAULT_ORIGIN, structuredOffersOn } from "./lib/seo-audit.mjs";
+import { processorProblems, placeholderMarkup, REAL_GATEWAY_ALLOWLIST } from "./lib/payment-gate.mjs";
 
 const strict = process.argv.includes("--strict") || process.env.AICC_PRODUCTION === "1";
 const env = process.env;
@@ -26,7 +27,13 @@ for (const [k, label] of VALUES) if (!env[k]) problems.push(`pending value: ${la
 if (env.NEXT_PUBLIC_AICC_SUPPORT_EMAIL && (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(env.NEXT_PUBLIC_AICC_SUPPORT_EMAIL) || /@(example|test|invalid|localhost)\b|\.(test|invalid|example|local)$/i.test(env.NEXT_PUBLIC_AICC_SUPPORT_EMAIL)))
   problems.push(`support email: NEXT_PUBLIC_AICC_SUPPORT_EMAIL is "${env.NEXT_PUBLIC_AICC_SUPPORT_EMAIL}", which is not a real address`);
 if (!env.NEXT_PUBLIC_AICC_SUPPORT_EMAIL) problems.push("support email unset: the footer, the 404 page and every \"contact support\" sentence show the pending line; merchants have nobody to write to");
-if (!env.NEXT_PUBLIC_AICC_PAYMENT_PROCESSOR) problems.push("no payment gateway configured (NEXT_PUBLIC_AICC_PAYMENT_PROCESSOR unset): the plans cannot be paid for yet (the Control Plane checkout only offers its test gateway, \"Direct bank transfer\"); `npm run launch:check` in the Control Plane (scripts/check-launch-blockers.php) checks the real gateway");
+// Payment gate (owner decision): a configured processor must be on the explicit real-gateway allowlist (EMPTY today); bacs / cheque / cod and any unlisted gateway fail.
+for (const p of processorProblems(env.NEXT_PUBLIC_AICC_PAYMENT_PROCESSOR)) problems.push(p);
+// Purchasable-price structured data switch (owner decision): Offer/price JSON-LD stays OFF until real public checkout is live.
+const offersOn = structuredOffersOn();
+console.log(`structured-data offers switch (NEXT_PUBLIC_AICC_STRUCTURED_OFFERS): ${offersOn ? "ON: Offer/price JSON-LD is allowed in this build" : "OFF: no Offer/price JSON-LD is published (default; owner decision until checkout is live)"}`);
+console.log(`payment gateway allowlist: ${REAL_GATEWAY_ALLOWLIST.length ? REAL_GATEWAY_ALLOWLIST.join(", ") : "(empty: no gateway counts as real yet)"}; configured processor: ${env.NEXT_PUBLIC_AICC_PAYMENT_PROCESSOR || "(none)"}`);
+if (offersOn && processorProblems(env.NEXT_PUBLIC_AICC_PAYMENT_PROCESSOR).length) problems.push("NEXT_PUBLIC_AICC_STRUCTURED_OFFERS=on while no real payment gateway is configured: the pages would publish purchasable prices in structured data before checkout is live");
 {
   // The plugin can only be installed if there is a route that tells the merchant where to get it. docs promise /get-started/; until it is built there is no
   // distribution path (no WordPress.org listing, no download route in the account area): "Get started" sells a journey that cannot be finished.
@@ -56,7 +63,7 @@ if (!approved) {
 if (env.NEXT_PUBLIC_LEGAL_DRAFT_NOTICE === "off" && !approved) problems.push("NEXT_PUBLIC_LEGAL_DRAFT_NOTICE=off hides the draft pills without approval");
 
 // If a build exists, look at what it really contains.
-const out = path.join(ROOT, process.env.AICC_OUT_DIR || "out");
+const out = path.resolve(ROOT, process.env.AICC_OUT_DIR || "out");
 if (fs.existsSync(out)) {
   let pend = 0, drafts = 0, pages = 0;
   const walk = (d) => { for (const e of fs.readdirSync(d, { withFileTypes: true })) { const p = path.join(d, e.name); if (e.isDirectory()) { if (!["_next", "brand-kit", "og", "fonts"].includes(e.name)) walk(p); } else if (e.name.endsWith(".html")) { const h = fs.readFileSync(p, "utf8"); pages++; pend += (h.match(/data-pending="true"/g) || []).length; drafts += (h.match(/data-legal-draft="true"/g) || []).length; } } };
@@ -80,6 +87,13 @@ if (fs.existsSync(out)) {
   const walk2 = (d) => { for (const e of fs.readdirSync(d, { withFileTypes: true })) { const p = path.join(d, e.name); if (e.isDirectory()) { if (!["_next", "brand-kit", "og", "fonts"].includes(e.name)) walk2(p); } else if (e.name.endsWith(".html")) ph += (fs.readFileSync(p, "utf8").match(/data-demo-video=""/g) || []).length; } };
   walk2(out);
   if (ph) problems.push(`built output has ${ph} Watch demo button(s) without a video (placeholder modal)`);
+  {
+    // No checkout page, and no bank-transfer placeholder, may be part of the static output (checkout lives on the WordPress origin and must not be public before a real gateway is configured).
+    const hits = new Map();
+    const walk5 = (d) => { for (const e of fs.readdirSync(d, { withFileTypes: true })) { const p = path.join(d, e.name); if (e.isDirectory()) { if (!["_next", "brand-kit", "og", "fonts"].includes(e.name)) walk5(p); } else if (/\.(html|txt)$/.test(e.name)) for (const f of placeholderMarkup(fs.readFileSync(p, "utf8"))) hits.set(f, [...(hits.get(f) || []), path.relative(out, p)]); } };
+    walk5(out);
+    for (const [f, files] of hits) problems.push(`built output contains a payment placeholder (${f}) in ${files.slice(0, 3).join(", ")}${files.length > 3 ? ` and ${files.length - 3} more` : ""}: the QA checkout's "Direct bank transfer" must never be published`);
+  }
   if (drafts) problems.push(`built output contains ${drafts} draft notices`);
   // Origin / SEO gate (same audit as `npm run seo:check`): canonical host, sitemap, robots, hreflang, no apex / http / localhost / GitHub Pages.
   const seo = auditBuild({ outDir: out });
@@ -90,6 +104,22 @@ if (fs.existsSync(out)) {
     problems.push(`seo:check fails on the built output (${seoErrors.length} error(s); run \`npm run seo:check\`; a build for the www root needs AICC_BASE_PATH="" SITE_URL=${DEFAULT_ORIGIN}): ${head}`);
   }
 } else console.log("no out/ build found; run `npm run build` first to also scan the built pages");
+
+// Optional live check of a deployed/served checkout page (AICC_CHECKOUT_URL=https://www.copilt.org/checkout/ or --checkout-url=...): its markup must not offer the placeholder.
+{
+  const arg = process.argv.find((a) => a.startsWith("--checkout-url="));
+  const url = arg ? arg.slice("--checkout-url=".length) : env.AICC_CHECKOUT_URL;
+  if (url) {
+    try {
+      const res = await fetch(url, { redirect: "follow" });
+      const body = await res.text();
+      const f = placeholderMarkup(body);
+      console.log(`checkout markup ${url}: HTTP ${res.status}, ${f.length ? "placeholder found" : "no placeholder"}`);
+      for (const x of f) problems.push(`checkout page ${url} offers a payment placeholder (${x}): not acceptable for public launch`);
+      if (res.status === 200 && !f.length && !REAL_GATEWAY_ALLOWLIST.length) problems.push(`checkout page ${url} is publicly reachable (HTTP 200) while the real-gateway allowlist is empty: it must not be public until a real gateway is configured and this gate passes`);
+    } catch (e) { problems.push(`checkout page ${url} could not be fetched (${e.message}); the markup gate could not run`); }
+  }
+}
 
 if (!problems.length) { console.log("PASS: nothing pending, drafted or unapproved would be published."); process.exit(0); }
 console.log(`${strict ? "FAIL" : "REPORT"}: ${problems.length} launch blocker(s)`);
