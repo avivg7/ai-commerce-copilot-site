@@ -48,6 +48,20 @@ export const HOST_RULE = { safeMethods: ["GET", "HEAD"], safeCode: 301, otherCod
 /** Origin routing on the canonical host for requests no redirect rule took. First match wins; the last entry is the default. */
 export const STATIC_ASSET_RE = "^(?:/(?:_next|brand-kit|fonts|og|demo)/.*|/(?:favicon\\.ico|robots\\.txt|sitemap\\.xml|index\\.txt)|/__next[^/]*\\.txt)$";
 export const IMMUTABLE_RE = "^/_next/static/.*$";
+/** The Watch demo files are NOT immutable (same URL, replaceable master): revalidatable (ETag/Last-Modified, 304) instead of the one-day cache of the other static assets. */
+export const STATIC_DEMO_RE = "^/demo/.*$";
+/**
+ * Admin-surface rules (owner decision 2026-10-20; proven by the real-Caddy rehearsal). `(?i)` = case-insensitive (the model strips it into a JS flag).
+ * BAD_PATH: dot-segments, backslash, control characters, tested on the path AS SENT (`vars_regexp {http.request.uri.path}`): Caddy's path matchers see a cleaned path but reverse_proxy forwards the raw one, so a request that needs cleaning is refused instead of being matched on one form and served on another.
+ * Operator-only rules use the AICC_OPERATOR_CIDRS environment variable (the model replays them with a header that says the peer is / is not an operator).
+ */
+export const BAD_PATH_RE = "(?:^|/)\\.{1,2}(?:/|$)|\\\\|[\\x00-\\x1f\\x7f]";
+export const XMLRPC_RE = "(?i)^/xmlrpc\\.php(?:/.*)?$";
+export const WP_CRON_RE = "(?i)^/wp-cron\\.php(?:/.*)?$";
+export const WP_ADMIN_RE = "(?i)^/wp-admin(?:/|$)";
+export const WP_ADMIN_PUBLIC_RE = "(?i)^/wp-admin/(?:admin-ajax|admin-post)\\.php$";
+export const WP_LOGIN_RE = "(?i)^/wp-login\\.php(?:/.*)?$";
+export const WP_LOGIN_PUBLIC_QUERY = "(?i)(^|&)(action=logout|loggedout=true)(&|$)";
 export const DUPLICATE_ERROR_RE = "^/(?:404|_not-found)(?:/|\\.html)?$";
 export const WP_MACHINE_RE = "^/(?:wp-json|wp-admin|wc-api|wc-ajax)(?:/.*)?$|^/(?:wp-login\\.php|wp-cron\\.php|xmlrpc\\.php|wp-activate\\.php|wp-signup\\.php)$";
 /** WordPress's own static files: routed to WordPress but NOT forced to no-store (WordPress / the hosting stack send validators and decide caching; forcing no-store made every theme asset uncacheable). */
@@ -86,6 +100,10 @@ export const UNOWNED = ["/get-started/", "/docs/", "/install/", "/download/"];
 const W = ORIGIN;
 const r = (from, status, location, extra = {}) => ({ from, status, location, ...extra });
 const o = (from, origin, status = 200, extra = {}) => ({ from, origin, status, ...extra });
+/** d(...) = denied by the edge with a 403 and no-store; b(...) = refused as a malformed path with a 400. */
+const d = (from, extra = {}) => o(from, "edge-deny", 403, { cache: "no-store", ...extra });
+const b = (from, extra = {}) => o(from, "edge-deny", 400, { cache: "no-store", ...extra });
+const m405 = (from, method, extra = {}) => o(from, "edge-deny", 405, { cache: "no-store", method, ...extra });
 /** What the edge forces on commerce, account and machine paths. `cache: ""` in a case means "the edge sets no Cache-Control". */
 export const NOCACHE = "private, no-store, max-age=0";
 
@@ -180,7 +198,10 @@ export const CASES = [
   o("https://www.copilt.org/brand-kit/aicc-logomark.svg", "static"),
   o("https://www.copilt.org/fonts/heebo-hebrew.woff2", "static"),
   o("https://www.copilt.org/og/en-home.jpg", "static"),
-  o("https://www.copilt.org/demo/aicc-demo.mp4", "static", 200, { note: "the CP's Watch demo uses these canonical same-origin paths" }),
+  o("https://www.copilt.org/demo/aicc-demo.mp4", "static", 200, { cache: "public, max-age=0, must-revalidate", note: "the CP's Watch demo uses these canonical same-origin paths; revalidatable, not a day-long cache, because the master can be replaced under the same URL" }),
+  o("https://www.copilt.org/demo/aicc-demo.vtt", "static", 200, { cache: "public, max-age=0, must-revalidate" }),
+  o("https://www.copilt.org/demo/aicc-demo-poster.jpg", "static", 200, { cache: "public, max-age=0, must-revalidate" }),
+  o("https://www.copilt.org/brand-kit/aicc-logomark.svg", "static", 200, { cache: "public, max-age=86400" }),
   o("https://www.copilt.org/favicon.ico", "static"),
   o("https://www.copilt.org/robots.txt", "static"),
   o("https://www.copilt.org/sitemap.xml", "static"),
@@ -218,14 +239,11 @@ export const CASES = [
   o("https://www.copilt.org/wp-json/aicc-license/v1/plans", "wordpress"),
   o("https://www.copilt.org/wp-json/wc/store/v1/cart", "wordpress"),
   o("https://www.copilt.org/wp-admin/admin-ajax.php", "wordpress"),
-  o("https://www.copilt.org/wp-login.php", "wordpress"),
   o("https://www.copilt.org/wp-content/themes/aicc-admin/assets/css/aicc-public.css", "wordpress", 200, { cache: "", note: "theme/plugin assets: NOT forced to no-store (WordPress sends validators)" }),
   o("https://www.copilt.org/wp-content/uploads/2026/10/a.png", "wordpress", 200, { cache: "" }),
   o("https://www.copilt.org/wp-includes/js/jquery/jquery.min.js", "wordpress", 200, { cache: "" }),
   o("https://www.copilt.org/wp-json/aicc-license/v1/activate", "wordpress", 200, { cache: NOCACHE }),
-  o("https://www.copilt.org/wp-login.php", "wordpress", 200, { cache: NOCACHE }),
   o("https://www.copilt.org/wp-admin/admin-ajax.php", "wordpress", 200, { cache: NOCACHE }),
-  o("https://www.copilt.org/wp-cron.php", "wordpress", 200, { cache: NOCACHE }),
   o("https://www.copilt.org/cart/", "wordpress", 200, { cache: NOCACHE }),
   o("https://www.copilt.org/he/checkout/", "wordpress", 200, { cache: NOCACHE }),
   o("https://www.copilt.org/ru/my-account/aicc-licenses/", "wordpress", 200, { cache: NOCACHE }),
@@ -245,6 +263,54 @@ export const CASES = [
   o("https://www.copilt.org/?awc-ajax=x", "static", 200, { note: "negative control: the key must match whole" }),
   o("https://www.copilt.org/pricing/__next._tree.txt", "404", 404, { note: "Next prefetch payload of a WordPress-owned route: cheap 404 at the edge, never a PHP request" }),
   o("https://www.copilt.org/he/terms/index.txt", "404", 404),
+  // ---- admin surface (owner decision 2026-10-20). `peer: "operator"` = the connection comes from AICC_OPERATOR_CIDRS; the default is a public visitor. ----
+  o("https://www.copilt.org/wp-admin/admin-ajax.php", "wordpress", 200, { cache: NOCACHE, note: "public: Action Scheduler's async runner, gateway plugins and WordPress itself call it for visitors" }),
+  o("https://www.copilt.org/wp-admin/admin-post.php", "wordpress", 200, { cache: NOCACHE }),
+  o("https://www.copilt.org/wp-admin/admin-ajax.php?action=heartbeat", "wordpress", 200, { cache: NOCACHE }),
+  d("https://www.copilt.org/wp-admin/", { note: "operators only" }),
+  d("https://www.copilt.org/wp-admin"),
+  d("https://www.copilt.org/wp-admin/post.php?post=1&action=edit"),
+  d("https://www.copilt.org/wp-admin/plugins.php"),
+  d("https://www.copilt.org/wp-admin/admin-ajax.php/x", { note: "path-info after admin-ajax.php is not the public file" }),
+  o("https://www.copilt.org/wp-admin//admin-ajax.php", "wordpress", 200, { cache: NOCACHE, note: "REAL-CADDY FINDING: path matchers see the cleaned path (// merged), so this IS the public file; nginx/Apache merge slashes too, so both agree" }),
+  d("https://www.copilt.org/WP-ADMIN/plugins.php", { note: "case-insensitive: macOS/Windows filesystems serve it" }),
+  d("https://www.copilt.org/wp-admin/load-scripts.php"),
+  o("https://www.copilt.org/wp-admin/", "wordpress", 200, { peer: "operator", cache: NOCACHE }),
+  o("https://www.copilt.org/wp-admin/plugins.php", "wordpress", 200, { peer: "operator", cache: NOCACHE }),
+  d("https://www.copilt.org/xmlrpc.php", { note: "no dependency in the Control Plane, plugin, theme or Backend (searched)" }),
+  d("https://www.copilt.org/xmlrpc.php/"),
+  d("https://www.copilt.org/xmlrpc.php/x"),
+  d("https://www.copilt.org/XMLRPC.php"),
+  d("https://www.copilt.org/%78mlrpc.php", { note: "Caddy matches the decoded path" }),
+  d("https://www.copilt.org/%58mlrpc.PHP"),
+  d("https://www.copilt.org/xmlrpc.php?rsd"),
+  d("https://www.copilt.org/xmlrpc.php", { peer: "operator", note: "denied even for operators: nothing uses it" }),
+  d("https://www.copilt.org/wp-login.php", { note: "staff sign-in: operators only" }),
+  d("https://www.copilt.org/wp-login.php?action=lostpassword"),
+  d("https://www.copilt.org/wp-login.php?action=register"),
+  d("https://www.copilt.org/WP-LOGIN.php"),
+  d("https://www.copilt.org/wp-login.php?redirect_to=x&action=logout2", { note: "negative control: the query value must match whole" }),
+  o("https://www.copilt.org/wp-login.php?action=logout&_wpnonce=abc", "wordpress", 200, { cache: NOCACHE, note: "CUSTOMER flow: wp_logout_url() in the Connect page and plan-intent code" }),
+  o("https://www.copilt.org/wp-login.php?loggedout=true&wp_lang=en_US", "wordpress", 200, { cache: NOCACHE }),
+  o("https://www.copilt.org/wp-login.php?redirect_to=https%3A%2F%2Fwww.copilt.org%2F&action=logout", "wordpress", 200, { cache: NOCACHE }),
+  o("https://www.copilt.org/wp-login.php", "wordpress", 200, { peer: "operator", cache: NOCACHE }),
+  o("https://www.copilt.org/wp-login.php?action=lostpassword", "wordpress", 200, { peer: "operator", cache: NOCACHE }),
+  d("https://www.copilt.org/wp-cron.php", { note: "DISABLE_WP_CRON + system cron; the entitlement outbox runs from the system cron" }),
+  d("https://www.copilt.org/wp-cron.php?doing_wp_cron=1"),
+  o("https://www.copilt.org/wp-cron.php", "wordpress", 200, { peer: "operator", cache: NOCACHE }),
+  m405("https://www.copilt.org/pricing/", "TRACE", { note: "REAL-CADDY FINDING: TRACE to a proxied path reached PHP and got the page; the edge refuses TRACE/TRACK/CONNECT everywhere" }),
+  m405("https://www.copilt.org/", "TRACE"),
+  // ---- path ambiguity: refused before anything is proxied (nginx/Apache would normalise these; Caddy does not) ----
+  b("https://www.copilt.org/pricing/../wp-admin/post.php", { note: "would reach a rule that only looks at the prefix" }),
+  b("https://www.copilt.org/product/../pricing/"),
+  b("https://www.copilt.org/pricing/%2e%2e/product/"),
+  b("https://www.copilt.org/wp-admin/../xmlrpc.php"),
+  b("https://www.copilt.org/pricing/./"),
+  b("https://www.copilt.org/pricing/..%2fwp-admin/"),
+  b("https://www.copilt.org/pricing/..%5cwp-admin/"),
+  b("https://www.copilt.org/pricing/%00"),
+  b("https://www.copilt.org/pricing/%0d%0aSet-Cookie:x=1"),
+  o("https://www.copilt.org/..;/wp-admin/", "404", 404, { note: "`..;` is not a dot-segment for nginx/Apache/PHP and is not under any WordPress prefix: static 404, never proxied" }),
   // ---- 404s: never owned -------------------------------------------------------------------------------------------
   o("https://www.copilt.org/get-started/", "404", 404, { note: "UNOWNED: promised by the docs, not built in the site" }),
   o("https://www.copilt.org/install/", "404", 404, { note: "blocked alias (target not built)" }),

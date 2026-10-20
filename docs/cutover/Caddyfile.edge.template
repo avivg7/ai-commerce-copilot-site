@@ -1,5 +1,5 @@
 # =====================================================================================================================================
-# NOT APPLIED. TEMPLATE. Nothing here is installed, validated by a real Caddy, or live. Review, then `caddy validate` and rehearse on staging.
+# NOT APPLIED. TEMPLATE. Nothing here is live. REHEARSED with a real Caddy 2.11.7 on loopback (docs/cutover/rehearsal.md); still needs `caddy validate` on the production host.
 # =====================================================================================================================================
 #
 # AICC public edge for the www-canonical model (owner decision 2026-10-19):
@@ -18,14 +18,19 @@
 # SOURCE OF TRUTH for the redirect/routing blocks: scripts/lib/redirect-matrix.mjs. The blocks between BEGIN GENERATED / END GENERATED are
 # written by `node scripts/test-redirects.mjs --write` and checked by `npm run test:redirects`. Do not edit them by hand.
 #
-# What was reviewed and what was not: this file has NEVER been parsed by a real Caddy (none is installed here). `npm run test:redirects` checks the generated blocks
-# and a MODEL of this file (site blocks, imports, matcher order); it cannot see a syntax or semantics error. `caddy validate` plus a `curl --resolve` replay of the
-# same cases on staging is a hard gate (docs/cutover/runbook.md section 1).
+# What was reviewed and what was not: `npm run test:redirects` checks the generated blocks and a MODEL of this file (site blocks, imports, matcher order).
+# `node scripts/rehearsal/rehearsal.mjs run-tests` replays the same cases through a REAL Caddy (docs/cutover/rehearsal.md). What no rehearsal can prove is
+# listed there (public-CA certificate issuance, public DNS). `caddy validate` on the production host stays a gate (docs/cutover/runbook.md section 1).
 #
-# Environment (set in the systemd unit, not in this file):
-#   AICC_STATIC_ROOT   directory holding the static export, built with  AICC_BASE_PATH="" SITE_URL=https://www.copilt.org npm run build  (the out/ folder)
-#   (the static root must also contain 50x.html: copy docs/cutover/50x.html into every release directory, see the runbook's release procedure)
-#   AICC_WP_UPSTREAM   WordPress origin, e.g. 10.0.0.12:8080 (plain http on a private network) or https://wp.internal.example (then add `transport http { tls }`)
+# Environment (set in the systemd unit, not in this file; docs/cutover/runbook.md section 9 has the unit):
+#   AICC_STATIC_ROOT       directory holding the static export, built with  AICC_BASE_PATH="" SITE_URL=https://www.copilt.org npm run build  (the out/ folder)
+#                          (the static root must also contain 50x.html: copy docs/cutover/50x.html into every release directory, see the runbook's release procedure)
+#   AICC_WP_UPSTREAM       WordPress origin, e.g. 10.0.0.12:8080 (plain http on a private network) or https://wp.internal.example (then add `transport http { tls }`)
+#   AICC_OPERATOR_CIDRS    [OWNER INPUT] space-separated CIDRs/IPs allowed to reach /wp-admin/ (except admin-ajax.php/admin-post.php), /wp-login.php (staff sign-in) and /wp-cron.php,
+#                          e.g. "203.0.113.7/32 2001:db8::/48". The rehearsal uses "127.0.0.1/32 ::1/128". Empty or unset is a startup error, never "allow all".
+#   AICC_ACME_EMAIL        [OWNER INPUT] contact address for the ACME account (certificate expiry notices)
+#   AICC_LOG_DIR           optional, default /var/log/caddy (must be writable by the caddy user)
+#   AICC_WP_TIMEOUT        optional, default 60s: how long the edge waits for WordPress response headers before answering 504
 #
 # WordPress prerequisites (otherwise cookies, redirects and absolute URLs break; see docs/cutover/redirect-matrix.md "Hidden dependencies"):
 #   * options `home` and `siteurl` = https://www.copilt.org  (set BEFORE the first customer; WordPress cookie names embed a hash of siteurl)
@@ -44,46 +49,106 @@
 #     drop X-Frame-Options (and use a per-gateway CSP frame-ancestors) for /checkout/* only. Not needed while no gateway is configured.
 
 # ---------------------------------------------------------------------------------------------------------------------------------
+# Global options. The rehearsal generator (scripts/rehearsal/rehearsal.mjs) replaces the region between the BEGIN/END markers with `local_certs`, loopback ports,
+# a rehearsal storage directory and `skip_install_trust`; everything else in this file is used unchanged. Production keeps this block.
+# ---------------------------------------------------------------------------------------------------------------------------------
+{
+	# BEGIN GLOBAL OPTIONS
+	email {$AICC_ACME_EMAIL}
+	# [OWNER] certificate method: default is automatic ACME (HTTP-01/TLS-ALPN-01) for www.copilt.org and copilt.org, which needs public DNS pointing here and ports 80/443 open.
+	# Pre-issuing before the DNS flip (DNS-01, or `tls /path/cert.pem /path/key.pem` in the aicc_tls snippet below) is runbook section 1.10. Never point this file at a public CA
+	# from a rehearsal host: the rehearsal generator refuses any acme_ca/email line.
+	# REAL-CADDY FINDING: with no explicit setting Caddy answers ANY Host on port 80 with a 308 to https://<that Host>/... (an attacker-chosen host). Every name this edge serves
+	# has an explicit http:// address below, so the implicit redirects are switched off and unknown hosts get the catch-all 421 block.
+	auto_https disable_redirects
+	servers {
+		timeouts {
+			read_header 10s
+			read_body 60s
+			idle 2m
+		}
+		max_header_size 16KB
+	}
+	log {
+		output file {$AICC_LOG_DIR:/var/log/caddy}/error.log {
+			roll_size 20MiB
+			roll_keep 5
+			roll_keep_for 720h
+		}
+		format json
+		level INFO
+	}
+	# END GLOBAL OPTIONS
+}
+
+# ---------------------------------------------------------------------------------------------------------------------------------
 # Snippets
 # ---------------------------------------------------------------------------------------------------------------------------------
-# Access log. Contains no cookies, no Authorization header and no Set-Cookie; query parameters that carry tokens are redacted (add the Connect AICC / license parameter
-# names the plugin really uses). UNVERIFIED syntax: check with `caddy validate`. Rotate with logrotate or `roll_size`.
+# Per-site TLS. Empty in production = automatic ACME. Replaced by `tls internal` in the rehearsal. To use certificates you pre-issued (runbook 1.10 i), write here:
+#   tls /etc/caddy/certs/fullchain.pem /etc/caddy/certs/privkey.pem
+(aicc_tls) {
+	# production: automatic HTTPS
+}
+
+# Hook for rehearsal-only rules (the generator fills it with a "loopback peers only" guard because the rehearsal binds the wildcard address; production leaves it empty).
+(aicc_site_hook) {
+}
+
+# Access log. JSON, rotated (20 MiB x 5 kept, 30 days: a hard cap of about 100 MiB), and REDACTED: no Cookie / Set-Cookie / Authorization values, and no secret-bearing query
+# parameter in any logged URI (WooCommerce password-reset links carry ?key=...&id=..., order links ?key=wc_order_..., the Connect flow ?token=...). The Referer and Location
+# headers are filtered the same way because a page opened from a reset link sends it as the Referer of every sub-request. Also logged: the real peer address
+# (request.remote_ip), status, duration, a per-request id (the same X-Request-Id sent upstream and back to the client) and the upstream that answered (empty = served by Caddy itself).
+# Verified by a real run: docs/cutover/rehearsal.md "Logging".
 (edge_log) {
 	log {
-		output file /var/log/caddy/aicc-edge.log {
-			roll_size 50MiB
-			roll_keep 10
+		output file {$AICC_LOG_DIR:/var/log/caddy}/aicc-edge.log {
+			roll_size 20MiB
+			roll_keep 5
+			roll_keep_for 720h
 		}
 		format filter {
 			wrap json
 			fields {
 				request>headers>Cookie delete
 				request>headers>Authorization delete
+				request>headers>Proxy-Authorization delete
+				request>headers>X-Wp-Nonce delete
+				request>headers>X-Api-Key delete
+				request>headers>Referer regexp "(?i)([?&](?:key|login|user_login|pass|password|pwd|pass1|pass2|token|code|nonce|_wpnonce|reset|license_key|license|secret|auth|signature|sig)=)[^&#]*" "${1}REDACTED"
 				resp_headers>Set-Cookie delete
-				request>uri query {
-					replace token REDACTED
-					replace key REDACTED
-					replace license_key REDACTED
-				}
+				resp_headers>Location regexp "(?i)([?&](?:key|login|user_login|pass|password|pwd|pass1|pass2|token|code|nonce|_wpnonce|reset|license_key|license|secret|auth|signature|sig)=)[^&#]*" "${1}REDACTED"
+				request>uri regexp "(?i)([?&](?:key|login|user_login|pass|password|pwd|pass1|pass2|token|code|nonce|_wpnonce|reset|license_key|license|secret|auth|signature|sig)=)[^&#]*" "${1}REDACTED"
 			}
 		}
 	}
+	log_append request_id {http.request.uuid}
+	log_append upstream {http.reverse_proxy.upstream.hostport}
 }
 
+# Every response, whichever handler produced it (`defer`: applied after the upstream answered, so a header WordPress also sends is REPLACED, never duplicated).
 (security_headers) {
 	header {
+		defer
 		X-Content-Type-Options nosniff
 		Referrer-Policy strict-origin-when-cross-origin
 		X-Frame-Options SAMEORIGIN
 		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		X-Request-Id {http.request.uuid}
 		-Server
+		-X-Powered-By
+		-Via
 	}
+	# The edge decides the request id; a client-supplied one is overwritten and the upstream receives this one.
+	request_header X-Request-Id {http.request.uuid}
 }
 
 # HSTS ramp: start at 300 seconds, raise to 86400, then 31536000 only after the staging pass and a clean week.
 # No includeSubDomains and no preload on purpose: api.copilt.org and any staging host manage their own TLS policy, and a preload entry cannot be undone quickly.
 (hsts) {
-	header Strict-Transport-Security "max-age=300"
+	header {
+		defer
+		Strict-Transport-Security "max-age=300"
+	}
 }
 
 # Static pages only. Report-Only first: the Next export inlines scripts (self.__next_f.push) so 'unsafe-inline' is needed until nonces/hashes exist.
@@ -92,26 +157,66 @@
 	header Content-Security-Policy-Report-Only "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; media-src 'self'; connect-src 'self'; frame-ancestors 'self'; base-uri 'self'; form-action 'self'"
 }
 
-# WordPress upstream. Caddy keeps the original Host and sets X-Forwarded-For/-Proto/-Host; Cookie and Set-Cookie pass through unchanged.
-(to_wordpress) {
+# The one place that talks to WordPress. The edge OVERWRITES what the client may have sent about itself (X-Forwarded-For / -Proto / -Host are set from the connection;
+# Forwarded, X-Real-IP and friends are removed), so WordPress sees only edge-made values: it trusts X-Forwarded-For solely from the edge (AICC_LM_TRUSTED_PROXIES).
+# An upstream 5xx (PHP fatal, WordPress critical error page) is NOT shown to the visitor: it becomes the edge's own 5xx page with the same status (handle_errors below).
+# Upstream leaks (X-Powered-By, Server) are removed. Do NOT add `trusted_proxies` to the public edge.
+(wp_proxy) {
 	reverse_proxy {$AICC_WP_UPSTREAM} {
-		# Overwrite, never append: WordPress trusts this header only from this edge (AICC_LM_TRUSTED_PROXIES). Caddy already replaces client-supplied X-Forwarded-* when
-		# `trusted_proxies` is not configured; stating it here keeps that true if someone adds a global option later.
 		header_up X-Forwarded-For {remote_host}
 		header_up X-Forwarded-Proto {scheme}
-		# transport http { tls }   # uncomment when the upstream is https
+		header_up X-Forwarded-Host {host}
+		header_up -Forwarded
+		header_up -X-Real-IP
+		header_up -X-Client-IP
+		header_up -True-Client-IP
+		header_up -X-Forwarded-Server
+		header_up -X-Original-URL
+		header_up -X-Rewrite-URL
+		header_down -X-Powered-By
+		header_down -Server
+		transport http {
+			dial_timeout 3s
+			response_header_timeout {$AICC_WP_TIMEOUT:60s}
+			# tls   # uncomment when the upstream is https
+		}
+		# REAL-CADDY FINDING: `error {rp.status_code}` does not take the placeholder (every upstream 5xx became a 500), so one handle_response per status keeps 502/503/504 as they are.
+		@up500 status 500
+		handle_response @up500 {
+			error 500
+		}
+		@up501 status 501
+		handle_response @up501 {
+			error 501
+		}
+		@up502 status 502
+		handle_response @up502 {
+			error 502
+		}
+		@up503 status 503
+		handle_response @up503 {
+			error 503
+		}
+		@up504 status 504
+		handle_response @up504 {
+			error 504
+		}
 	}
+}
+
+# WordPress upstream for pages and WordPress's own static files: Cache-Control is whatever WordPress sends (it sends no-store/private for personalised pages and validators for files).
+(to_wordpress) {
+	import wp_proxy
 }
 
 # Commerce, account and machine paths (cart, checkout, my-account, wp-json, wp-admin, wp-login, wc-ajax, wc-api, wp-cron): the edge forces "never cache" even if WordPress
 # forgets (WooCommerce already sends nocache headers). /wp-content/ and /wp-includes/ are deliberately NOT here: they use to_wordpress, so WordPress / the hosting stack decide.
 (to_wordpress_nocache) {
-	reverse_proxy {$AICC_WP_UPSTREAM} {
-		header_up X-Forwarded-For {remote_host}
-		header_up X-Forwarded-Proto {scheme}
-		header_down Cache-Control "private, no-store, max-age=0"
-		# transport http { tls }
+	header {
+		defer
+		Cache-Control "private, no-store, max-age=0"
 	}
+	import wp_proxy
 }
 
 (to_static) {
@@ -387,6 +492,8 @@
 # Apex and plain-http hosts: everything not already redirected above goes to the same path and query on https://www.copilt.org
 # ---------------------------------------------------------------------------------------------------------------------------------
 http://copilt.org, https://copilt.org, http://www.copilt.org {
+	import aicc_site_hook
+	import aicc_tls
 	import edge_log
 	import security_headers
 	import hsts
@@ -399,27 +506,84 @@ http://copilt.org, https://copilt.org, http://www.copilt.org {
 }
 
 # ---------------------------------------------------------------------------------------------------------------------------------
+# Any other Host on port 80: no redirect (see auto_https disable_redirects above), no site, no content.
+# ---------------------------------------------------------------------------------------------------------------------------------
+http:// {
+	import aicc_site_hook
+	import edge_log
+	import security_headers
+	respond "Misdirected request" 421
+}
+
+# ---------------------------------------------------------------------------------------------------------------------------------
 # The canonical host
 # ---------------------------------------------------------------------------------------------------------------------------------
 www.copilt.org {
-	encode zstd gzip
+	import aicc_site_hook
+	import aicc_tls
+	# REAL-CADDY FINDING: with the default minimum_length (512) a chunked WordPress response whose first write is small was never compressed (php -S; PHP-FPM + nginx may behave
+	# differently). minimum_length 1 compresses it. Only compressible content types are encoded (mp4/jpg/woff2 are not).
+	encode {
+		zstd
+		gzip
+		minimum_length 1
+	}
 	import edge_log
 	import security_headers
 	import hsts
 	import aicc_redirects
 
-	# [OWNER] decision, OFF in v1: restrict the WordPress admin and block XML-RPC. Uncomment ONE or both after the owner names the admin IPs / SSO.
-	# Keep /wp-admin/admin-ajax.php open: front-end code calls it. xmlrpc.php is unused by the plugin and the theme (verify with the Backend/plugin owners first).
-	# @xmlrpc path /xmlrpc.php
-	# respond @xmlrpc 403
-	# @wp_admin_locked {
-	#	path /wp-admin/* /wp-login.php
-	#	not path /wp-admin/admin-ajax.php
-	#	not remote_ip {$AICC_ADMIN_IPS}
-	# }
-	# respond @wp_admin_locked 403
+	# WordPress admin surface (OWNER DECISION 2026-10-20, implemented in the GENERATED routing below and proven by a real run, docs/cutover/rehearsal.md "wp-admin"):
+	#   /xmlrpc.php          denied for everyone (403, any case/encoding/path-info form). No dependency exists in the Control Plane, plugin, theme or Backend (searched).
+	#   /wp-admin/*          operators only (AICC_OPERATOR_CIDRS), EXCEPT /wp-admin/admin-ajax.php and /wp-admin/admin-post.php, which stay public (WordPress core, Action Scheduler's
+	#                        async runner and any future payment-gateway plugin use them for visitors; WordPress does its own capability/nonce checks).
+	#   /wp-login.php        operators only, EXCEPT the logout flow (?action=logout, ?loggedout=true): the plugin's Connect page and plan-intent code use wp_logout_url(),
+	#                        which is /wp-login.php?action=logout for CUSTOMERS. Customer sign-in, registration and password reset are /my-account/ (WooCommerce), not wp-login.php.
+	#   /wp-cron.php         operators only (DISABLE_WP_CRON is true and a system cron runs `wp cron event run --due-now`).
+	#   dot-segments (/../, /./), backslashes and control characters in the path: 400 before anything is proxied (otherwise /pricing/../wp-admin/ would pass a rule that only looks at the prefix).
 
 	# BEGIN GENERATED: routing
+	@bad_path vars_regexp bad_path {http.request.uri.path} (?:^|/)\.{1,2}(?:/|$)|\\|[\x00-\x1f\x7f]
+	handle @bad_path {
+		header Cache-Control "no-store"
+		respond "Bad request" 400
+	}
+	@bad_method method TRACE TRACK CONNECT
+	handle @bad_method {
+		header Cache-Control "no-store"
+		respond "Method not allowed" 405
+	}
+	@xmlrpc_deny path_regexp xmlrpc_deny (?i)^/xmlrpc\.php(?:/.*)?$
+	handle @xmlrpc_deny {
+		header Cache-Control "no-store"
+		respond "Forbidden" 403
+	}
+	@wp_cron_deny {
+		path_regexp wp_cron_deny (?i)^/wp-cron\.php(?:/.*)?$
+		not remote_ip {$AICC_OPERATOR_CIDRS}
+	}
+	handle @wp_cron_deny {
+		header Cache-Control "no-store"
+		respond "Forbidden" 403
+	}
+	@wp_admin_deny {
+		path_regexp wp_admin_deny (?i)^/wp-admin(?:/|$)
+		not path_regexp wp_admin_public (?i)^/wp-admin/(?:admin-ajax|admin-post)\.php$
+		not remote_ip {$AICC_OPERATOR_CIDRS}
+	}
+	handle @wp_admin_deny {
+		header Cache-Control "no-store"
+		respond "Forbidden" 403
+	}
+	@wp_login_deny {
+		path_regexp wp_login_deny (?i)^/wp-login\.php(?:/.*)?$
+		not expression {http.request.uri.query}.matches('(?i)(^|&)(action=logout|loggedout=true)(&|$)')
+		not remote_ip {$AICC_OPERATOR_CIDRS}
+	}
+	handle @wp_login_deny {
+		header Cache-Control "no-store"
+		respond "Forbidden" 403
+	}
 	@dup_error path_regexp dup_error ^/(?:404|_not-found)(?:/|\.html)?$
 	handle @dup_error {
 		error 404
@@ -427,6 +591,12 @@ www.copilt.org {
 	@static_immutable path_regexp static_immutable ^/_next/static/.*$
 	handle @static_immutable {
 		header Cache-Control "public, max-age=31536000, immutable"
+		import to_static
+	}
+	@static_demo path_regexp static_demo ^/demo/.*$
+	handle @static_demo {
+		header Cache-Control "public, max-age=0, must-revalidate"
+		import static_csp
 		import to_static
 	}
 	@static_assets path_regexp static_assets ^(?:/(?:_next|brand-kit|fonts|og|demo)/.*|/(?:favicon\.ico|robots\.txt|sitemap\.xml|index\.txt)|/__next[^/]*\.txt)$
@@ -477,14 +647,20 @@ www.copilt.org {
 	# Branded 404 and 5xx for the edge (file not found, `error 404`, the duplicate-error-page paths). WordPress paths are proxied, so WordPress
 	# renders its own 404 and its status and body pass through untouched. The status stays 404 (a soft 404 would be indexed).
 	handle_errors {
-		# 5xx (WordPress down, upstream timeout): the standalone branded page from the static root instead of Caddy's empty body (owner direction: "AI Commerce Copilot is temporarily
-		# unavailable. Please try again shortly."; inline CSS, no external request, no script; `npm run test:error-page` checks it). Copy docs/cutover/50x.html into every release directory.
-		# It carries no secrets and no upstream detail and does not say which part is affected. Status codes pass through (502/503/504 stay what they are).
+		# REAL-CADDY FINDING: a response produced here does NOT inherit the site block's `header` directives, so without these two imports every branded 404/5xx page
+		# went out without HSTS, nosniff, X-Request-Id etc. and with `Server: Caddy`.
+		import security_headers
+		import hsts
+		# 5xx (WordPress down, upstream timeout, an upstream 5xx converted by wp_proxy): the standalone branded page from the static root instead of Caddy's empty body (owner direction:
+		# "AI Commerce Copilot is temporarily unavailable. Please try again shortly."; inline CSS, no external request, no script; `npm run test:error-page` checks it). Copy docs/cutover/50x.html
+		# into every release directory. It carries no secrets and no upstream detail and does not say which part is affected. The status stays 502/503/504 (never 200). Never cached.
 		@servererror expression {http.error.status_code} >= 500
 		handle @servererror {
 			root * {$AICC_STATIC_ROOT}
 			rewrite * /50x.html
 			header Cache-Control "no-store"
+			header Retry-After "30"
+			header -Server
 			file_server {
 				status {http.error.status_code}
 			}

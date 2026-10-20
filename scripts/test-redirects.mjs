@@ -20,7 +20,8 @@
 //            `handle_errors` behave as modelled (they are modelled from the documentation), or that the hand-written CASES are right (their author wrote the rules too).
 //            The CASES are the oracle only as far as a reviewer agrees with them. Real-Caddy `validate` + a `curl --resolve` replay of the same CASES stay a hard gate.
 // What this is NOT: a run of a real Caddy. The semantics of Caddy's path_regexp / redir / handle / expression are modelled, not executed.
-// Rehearse the real file with `caddy validate` and `curl --resolve` on staging before cutover (docs/cutover/redirect-matrix.md).
+// The real binary has now been run against this file (2026-10-20): `node scripts/rehearsal/rehearsal.mjs run-tests` replays the same CASES through Caddy 2.11.7
+// (docs/cutover/rehearsal.md lists every place the model disagreed with the real thing and what changed). Keep both: this one is the fast offline gate, that one the truth.
 import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
@@ -70,10 +71,27 @@ function genHost() {
 function genRouting() {
   const L = [];
   const named = (id, re) => L.push(`\t@${id} path_regexp ${id} ${re}`);
+  const deny = (id, code, text) => L.push(`\thandle @${id} {`, `\t\theader Cache-Control "no-store"`, `\t\trespond "${text}" ${code}`, `\t}`);
+  const OPS = "{$AICC_OPERATOR_CIDRS}";
+  // `vars_regexp` on {http.request.uri.path} sees the path AS SENT (decoded, not cleaned); Caddy's path/path_regexp matchers see a CLEANED path (real-run finding, see rehearsal.md)
+  L.push(`\t@bad_path vars_regexp bad_path {http.request.uri.path} ${M.BAD_PATH_RE}`);
+  deny("bad_path", 400, "Bad request");
+  L.push(`\t@bad_method method TRACE TRACK CONNECT`);
+  deny("bad_method", 405, "Method not allowed");
+  named("xmlrpc_deny", M.XMLRPC_RE);
+  deny("xmlrpc_deny", 403, "Forbidden");
+  L.push(`\t@wp_cron_deny {`, `\t\tpath_regexp wp_cron_deny ${M.WP_CRON_RE}`, `\t\tnot remote_ip ${OPS}`, `\t}`);
+  deny("wp_cron_deny", 403, "Forbidden");
+  L.push(`\t@wp_admin_deny {`, `\t\tpath_regexp wp_admin_deny ${M.WP_ADMIN_RE}`, `\t\tnot path_regexp wp_admin_public ${M.WP_ADMIN_PUBLIC_RE}`, `\t\tnot remote_ip ${OPS}`, `\t}`);
+  deny("wp_admin_deny", 403, "Forbidden");
+  L.push(`\t@wp_login_deny {`, `\t\tpath_regexp wp_login_deny ${M.WP_LOGIN_RE}`, `\t\tnot expression {http.request.uri.query}.matches('${M.WP_LOGIN_PUBLIC_QUERY}')`, `\t\tnot remote_ip ${OPS}`, `\t}`);
+  deny("wp_login_deny", 403, "Forbidden");
   named("dup_error", M.DUPLICATE_ERROR_RE);
   L.push(`\thandle @dup_error {`, `\t\terror 404`, `\t}`);
   named("static_immutable", M.IMMUTABLE_RE);
   L.push(`\thandle @static_immutable {`, `\t\theader Cache-Control "public, max-age=31536000, immutable"`, `\t\timport to_static`, `\t}`);
+  named("static_demo", M.STATIC_DEMO_RE);
+  L.push(`\thandle @static_demo {`, `\t\theader Cache-Control "public, max-age=0, must-revalidate"`, `\t\timport static_csp`, `\t\timport to_static`, `\t}`);
   named("static_assets", M.STATIC_ASSET_RE);
   L.push(`\thandle @static_assets {`, `\t\theader Cache-Control "public, max-age=86400"`, `\t\timport static_csp`, `\t\timport to_static`, `\t}`);
   named("wp_machine", M.WP_MACHINE_RE);
@@ -117,23 +135,30 @@ function blockText(text, name) {
   const m = new RegExp(`# BEGIN GENERATED: ${name}\\n([\\s\\S]*?)\\t# END GENERATED: ${name}`).exec(text);
   return m ? m[1].split("\n").map((l) => l.replace(/^\t+/, "")).filter((l) => l && !l.startsWith("#")) : [];
 }
+// Caddy's path / path_regexp matchers see a CLEANED path: dot-segments resolved and slashes merged (observed with the real binary; the first model assumed otherwise)
+const cleanPath = (p) => { const n = path.posix.normalize(p); return p.endsWith("/") && !n.endsWith("/") ? n + "/" : n; };
+const mkRe = (src) => (src.startsWith("(?i)") ? new RegExp(src.slice(4), "i") : new RegExp(src));
 function parseMatchers(lines) {
   // returns { matchers: Map(name -> [{type, ...}]), items: [{kind: "redir"|"handle", ...}] } in file order
   const matchers = new Map(), items = [];
   for (let i = 0; i < lines.length; i++) {
     const l = lines[i];
     let m;
-    if ((m = /^@(\S+) path_regexp (\S+) (.+)$/.exec(l))) matchers.set(m[1], [{ t: "path_regexp", re: new RegExp(m[3]) }]);
+    if ((m = /^@(\S+) vars_regexp (\S+) \{http\.request\.uri\.path\} (.+)$/.exec(l))) matchers.set(m[1], [{ t: "raw_path_regexp", re: mkRe(m[3]) }]);
+    else if ((m = /^@(\S+) path_regexp (\S+) (.+)$/.exec(l))) matchers.set(m[1], [{ t: "path_regexp", re: mkRe(m[3]) }]);
     else if ((m = /^@(\S+) method (.+)$/.exec(l))) matchers.set(m[1], [{ t: "method", list: m[2].split(/\s+/) }]);
     else if ((m = /^@(\S+) \{$/.exec(l))) {
       const body = [];
       for (i++; lines[i] !== "}"; i++) {
         let n;
-        if ((n = /^path_regexp (\S+) (.+)$/.exec(lines[i]))) body.push({ t: "path_regexp", re: new RegExp(n[2]) });
+        if ((n = /^path_regexp (\S+) (.+)$/.exec(lines[i]))) body.push({ t: "path_regexp", re: mkRe(n[2]) });
+        else if ((n = /^not path_regexp (\S+) (.+)$/.exec(lines[i]))) body.push({ t: "not_path_regexp", re: mkRe(n[2]) });
+        else if (lines[i] === "not remote_ip {$AICC_OPERATOR_CIDRS}") body.push({ t: "not_operator" });
+        else if ((n = /^not expression \{http\.request\.uri\.query\}\.matches\('(.+)'\)$/.exec(lines[i]))) body.push({ t: "not_query_matches", re: mkRe(n[1]) });
         else if (lines[i] === `expression ${qph} != ''`) body.push({ t: "query_nonempty" });
         else if ((n = /^method (.+)$/.exec(lines[i]))) body.push({ t: "method", list: n[1].split(/\s+/) });
         else if ((n = /^not method (.+)$/.exec(lines[i]))) body.push({ t: "not_method", list: n[1].split(/\s+/) });
-        else if ((n = /^expression \{http\.request\.uri\.query\}\.matches\('(.+)'\)$/.exec(lines[i]))) body.push({ t: "query_matches", re: new RegExp(n[1]) });
+        else if ((n = /^expression \{http\.request\.uri\.query\}\.matches\('(.+)'\)$/.exec(lines[i]))) body.push({ t: "query_matches", re: mkRe(n[1]) });
         else throw new Error(`unparsed matcher line: ${lines[i]}`);
       }
       matchers.set(m[1], body);
@@ -148,6 +173,7 @@ function parseMatchers(lines) {
         else if (lines[i] === "import to_static") act.origin = "static";
         else if (lines[i] === "import static_csp") act.csp = true;
         else if (lines[i] === "error 404") act.origin = "404";
+        else if ((n = /^respond "([^"]*)" (\d{3})$/.exec(lines[i]))) { act.origin = "deny"; act.status = Number(n[2]); }
         else if ((n = /^header Cache-Control "(.+)"$/.exec(lines[i]))) act.cache = n[1];
         else throw new Error(`unparsed handle line: ${lines[i]}`);
       }
@@ -165,9 +191,13 @@ function matches(set, name, req) {
   if (!body) throw new Error(`unknown matcher @${name}`);
   const caps = {};
   for (const mm of body) {
-    if (mm.t === "path_regexp") { const x = mm.re.exec(req.path); if (!x) return null; caps.groups = x; }
+    if (mm.t === "raw_path_regexp") { if (!mm.re.test(req.path)) return null; }
+    else if (mm.t === "path_regexp") { const x = mm.re.exec(req.cleanPath ?? req.path); if (!x) return null; caps.groups = x; }
     else if (mm.t === "query_nonempty") { if (!req.query) return null; }
     else if (mm.t === "query_matches") { if (!mm.re.test(req.query)) return null; }
+    else if (mm.t === "not_path_regexp") { if (mm.re.test(req.cleanPath ?? req.path)) return null; }
+    else if (mm.t === "not_query_matches") { if (mm.re.test(req.query)) return null; }
+    else if (mm.t === "not_operator") { if (req.operator) return null; }
     else if (mm.t === "method") { if (!mm.list.includes(req.method)) return null; }
     else if (mm.t === "not_method") { if (mm.list.includes(req.method)) return null; }
   }
@@ -175,7 +205,7 @@ function matches(set, name, req) {
 }
 const expand = (tpl, caps, req) => tpl
   .replace(/\{re\.[^.}]+\.(\d)\}/g, (_, n) => caps?.groups?.[Number(n)] ?? "")
-  .replace(/\{uri\}/g, req.path + (req.query ? `?${req.query}` : ""))
+  .replace(/\{uri\}/g, (req.rawPath ?? req.path) + (req.query ? `?${req.query}` : ""))
   .replace(/\{http\.request\.uri\.query\}/g, req.query);
 
 
@@ -270,6 +300,7 @@ function resolve(req) {
       if (!staticExists(req.path)) return { status: 404, origin: "404", by: it.matcher || "default", hdr };
       return { status: 200, origin: "static", cache: a.cache, csp: !!a.csp, by: it.matcher || "default", hdr };
     }
+    if (a.origin === "deny") return { status: a.status, origin: "edge-deny", cache: a.cache, by: it.matcher, hdr };
     if (a.origin === "wordpress") return { status: 200, origin: "wordpress", cache: a.cache, by: it.matcher, hdr };
     return { status: 404, origin: "404", by: it.matcher, hdr };
   }
@@ -278,8 +309,9 @@ function resolve(req) {
 
 /* ------------------------------------------------------------------ 3. stand-in edge over real HTTP */
 const server = http.createServer((q, s) => {
-  const u = new URL(q.url, "http://x");
-  const res = resolve({ scheme: q.headers["x-test-scheme"] || "https", host: (q.headers.host || "").split(":")[0], method: q.method, path: u.pathname, query: u.search.replace(/^\?/, "") });
+  const [rawPath, ...qs] = q.url.split("?");
+  const dec = (x) => { try { return decodeURIComponent(x); } catch { return x; } };
+  const res = resolve({ scheme: q.headers["x-test-scheme"] || "https", host: (q.headers.host || "").split(":")[0], method: q.method, path: dec(rawPath), cleanPath: cleanPath(dec(rawPath)), rawPath, query: qs.join("?"), operator: q.headers["x-test-peer"] === "operator" });
   const h = { "X-Origin": res.origin || "", "X-Matched": res.by || "" };
   if (res.location) h.Location = res.location;
   if (res.cache) h["Cache-Control"] = res.cache;
@@ -288,9 +320,10 @@ const server = http.createServer((q, s) => {
 });
 await new Promise((r) => server.listen(0, "127.0.0.1", r));
 const PORT = server.address().port;
-const hit = (url, method = "GET") => new Promise((resolveP, reject) => {
-  const u = new URL(url);
-  const rq = http.request({ host: "127.0.0.1", port: PORT, method, path: u.pathname + u.search, headers: { Host: u.host, "X-Test-Scheme": u.protocol.replace(":", "") } }, (rs) => { rs.resume(); resolveP({ status: rs.statusCode, headers: rs.headers }); });
+const hit = (url, method = "GET", peer = "public") => new Promise((resolveP, reject) => {
+  // NOT `new URL(url)`: the WHATWG parser would normalise dot-segments (`/a/../b`) before they are sent, and the edge must see them as written.
+  const m = /^(https?):\/\/([^/?#]+)([^?#]*)(\?[^#]*)?/.exec(url);
+  const rq = http.request({ host: "127.0.0.1", port: PORT, method, path: (m[3] || "/") + (m[4] || ""), headers: { Host: m[2], "X-Test-Scheme": m[1], "X-Test-Peer": peer } }, (rs) => { rs.resume(); resolveP({ status: rs.statusCode, headers: rs.headers }); });
   rq.on("error", reject); rq.end();
 });
 
@@ -298,7 +331,10 @@ if (!QUIET) console.log(`test-redirects: ${M.CASES.length} cases, stand-in edge 
 /* structure of the site blocks (explicit, on top of the behavioural model) */
 {
   const sameSet = (a, b) => JSON.stringify([...a].sort()) === JSON.stringify([...b].sort());
-  ok(structure.sites.length === 2, `the Caddyfile should have exactly two site blocks (apex+http and www), found ${structure.sites.length}`);
+  ok(structure.sites.length === 3, `the Caddyfile should have exactly three site blocks (apex+http, the catch-all http:// that answers unknown Hosts with 421, and www), found ${structure.sites.length}`);
+  ok(structure.sites.some((x) => x.addresses.length === 1 && x.addresses[0] === "http://" && /respond "Misdirected request" 421/.test(x.text)), "the catch-all http:// block (421) is missing: unknown Hosts on port 80 would be redirected to https://<attacker host>");
+  ok(/^\s*auto_https disable_redirects\s*$/m.test(regenerated), "global option `auto_https disable_redirects` is missing (Caddy would 308 any Host on port 80 to https://<that Host>)");
+  ok(/handle_errors \{\s*(?:#[^\n]*\n\s*)*import security_headers\s*\n\s*import hsts/.test(regenerated), "handle_errors must import security_headers and hsts (error pages do not inherit the site block's header directives)");
   ok(!!apexSite && !!wwwSite && apexSite !== wwwSite, "could not find the apex block (host redirect) and the www block (routing) in the template");
   if (apexSite && wwwSite) {
     ok(sameSet(apexSite.addresses, ["http://copilt.org", "https://copilt.org", "http://www.copilt.org"]), `the apex block must answer http://copilt.org, https://copilt.org and http://www.copilt.org; it has: ${apexSite.addresses.join(", ")}`);
@@ -310,7 +346,7 @@ if (!QUIET) console.log(`test-redirects: ${M.CASES.length} cases, stand-in edge 
 }
 for (const c of M.CASES) {
   const url = c.from.replace(/#.*$/, "");
-  const r = await hit(url, c.method || "GET");
+  const r = await hit(url, c.method || "GET", c.peer || "public");
   if (c.location !== undefined) {
     const want = c.location.replace(/#.*$/, "");
     ok(r.status === c.status && r.headers.location === want, `${c.method || "GET"} ${c.from}\n         expected ${c.status} -> ${want}\n         got      ${r.status} -> ${r.headers.location ?? "(no Location)"}  [${r.headers["x-matched"]}]`);
@@ -427,6 +463,11 @@ async function selfTest() {
     ["tamper with a generated routing line (drift)", (t) => t.replace("\thandle @wp_pages {\n\t\timport to_wordpress\n", "\thandle @wp_pages {\n\t\timport to_static\n")],
     ["turn the host redirect for other methods into a 301", (t) => t.replace("redir https://www.copilt.org{uri} 308", "redir https://www.copilt.org{uri} 301")],
     ["add an api.copilt.org site block", (t) => t + "\napi.copilt.org {\n\treverse_proxy 127.0.0.1:8000\n}\n"],
+    // added after the real-Caddy rehearsal (each is a defect the real binary showed or would show)
+    ["delete `import security_headers` from handle_errors (error pages lost HSTS/nosniff/X-Request-Id and leaked Server)", (t) => afterHead(t, "\thandle_errors {", "\t\timport security_headers\n", "")],
+    ["remove `auto_https disable_redirects` (any Host on :80 would be 308'd to https://<attacker host>)", (t) => t.replace("\tauto_https disable_redirects\n", "")],
+    ["delete the catch-all http:// block (unknown Hosts on :80)", (t) => t.replace(/http:\/\/ \{\n[\s\S]*?\n\}\n/, "")],
+    ["let public visitors into /wp-admin/ (drop the operator condition; generated drift)", (t) => t.replace("\t\tpath_regexp wp_admin_deny (?i)^/wp-admin(?:/|$)\n\t\tnot path_regexp wp_admin_public (?i)^/wp-admin/(?:admin-ajax|admin-post)\\.php$\n\t\tnot remote_ip {$AICC_OPERATOR_CIDRS}\n", "\t\tpath_regexp wp_admin_deny (?i)^/wp-admin(?:/|$)\n\t\tnot path_regexp wp_admin_public (?i)^/wp-admin/(?:admin-ajax|admin-post)\\.php$\n")],
   ];
   const tmp = fs.mkdtempSync(path.join(process.env.TMPDIR || "/tmp", "aicc-redirect-mutants-"));
   let survived = 0;

@@ -1,0 +1,58 @@
+# NOT APPLIED. TEMPLATE for the production edge host (Linux, systemd). Never executed by the rehearsal (which supervised Caddy with launchd on a Mac:
+# docs/cutover/rehearsal.md "Restart and failure"). Copy to /etc/systemd/system/caddy-aicc-edge.service, then `systemctl daemon-reload && systemctl enable --now caddy-aicc-edge`.
+#
+# Its own unit and its own Caddy process, separate from the API host's Caddy (never share a process or a Caddyfile with api.copilt.org).
+# /etc/caddy/aicc-edge.env holds the environment the Caddyfile reads (docs/cutover/Caddyfile.edge.template header), for example:
+#   AICC_STATIC_ROOT=/srv/aicc/current
+#   AICC_WP_UPSTREAM=10.0.0.12:8080
+#   AICC_OPERATOR_CIDRS=203.0.113.7/32 2001:db8::/48        # [OWNER INPUT] who may reach /wp-admin/, staff /wp-login.php and /wp-cron.php
+#   AICC_ACME_EMAIL=ops@example.invalid                       # [OWNER INPUT] ACME account contact
+#   AICC_LOG_DIR=/var/log/caddy
+#   AICC_WP_TIMEOUT=60s
+# (systemd EnvironmentFile does not accept spaces in unquoted values: quote AICC_OPERATOR_CIDRS="a b" or use one Environment= line.)
+# Measured in the rehearsal on a Mac: graceful reload 82 ms with zero failed requests under load; kill -9 + supervised restart about 2.2 s with a 2 s throttle.
+
+[Unit]
+Description=AICC public edge (Caddy: www.copilt.org static site + WordPress Control Plane)
+Documentation=https://caddyserver.com/docs/ file:docs/cutover/runbook.md
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=120
+StartLimitBurst=10
+
+[Service]
+Type=notify
+User=caddy
+Group=caddy
+EnvironmentFile=/etc/caddy/aicc-edge.env
+Environment=XDG_DATA_HOME=/var/lib/caddy XDG_CONFIG_HOME=/var/lib/caddy/config
+ExecStartPre=/usr/bin/caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+ExecStart=/usr/bin/caddy run --environ --config /etc/caddy/Caddyfile --adapter caddyfile
+ExecReload=/usr/bin/caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile --force
+TimeoutStopSec=10s
+# supervision: kill -9, crash or OOM -> restarted after 2 s (the launchd rehearsal used KeepAlive + ThrottleInterval 2)
+Restart=always
+RestartSec=2s
+LimitNOFILE=1048576
+# ports 80/443 as an unprivileged user
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+NoNewPrivileges=true
+# certificate storage and logs: owned by the service user, 0700 (the rehearsal verified Caddy creates the data dir 0700 and keys 0600)
+StateDirectory=caddy
+StateDirectoryMode=0700
+LogsDirectory=caddy
+LogsDirectoryMode=0750
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ReadOnlyPaths=/srv/aicc /etc/caddy
+ReadWritePaths=/var/lib/caddy /var/log/caddy
+
+[Install]
+WantedBy=multi-user.target
+
+# --- system cron for WordPress (DISABLE_WP_CRON is true; /wp-cron.php is closed to the public by the edge). On the WordPress host, as the PHP user: ---
+#   * * * * * cd /var/www/cp && /usr/local/bin/wp cron event run --due-now >/dev/null 2>&1
+# --- certificate pre-issuance before the DNS flip (runbook 1.10): see docs/cutover/rehearsal.md "Certificate gate". ---
