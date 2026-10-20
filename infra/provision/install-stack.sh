@@ -227,7 +227,7 @@ step_wpcli() {
     local pub; pub="$(awk '{print $1}' "$d/wp-cli.phar.sha512" | head -1)"
     [ "$pub" = "$WPCLI_SHA512" ] || die "the published .sha512 differs from the pin in pins.env: refusing"
     info "sha256 + sha512 match the pins and the published checksum"
-    php "$d/wp-cli.phar" --version 2>/dev/null | grep -q "^WP-CLI ${WPCLI_VERSION}\$" || die "phar does not report WP-CLI ${WPCLI_VERSION}"
+    php "$d/wp-cli.phar" --allow-root --version 2>/dev/null | grep -q "^WP-CLI ${WPCLI_VERSION}\$" || die "phar does not report WP-CLI ${WPCLI_VERSION}"
     install -m 0755 -o root -g root "$d/wp-cli.phar" "$WP_BIN.new"; mv -f "$WP_BIN.new" "$WP_BIN"
     AICC_CHANGED=1; info "installed $WP_BIN"
   fi
@@ -374,10 +374,13 @@ step_services() {
   [ -z "$AICC_PREFIX" ] || { info "harness: skipped"; return 0; }
   systemctl enable mysql "php${PHP_VER}-fpm" >/dev/null 2>&1
   case " $CHANGED_SERVICES " in *" mysql "*) systemctl restart mysql ;; *) systemctl is-active --quiet mysql || systemctl start mysql ;; esac
+  # --only splits the install over several runs, so CHANGED_SERVICES is empty in a later run: also restart when the RUNNING server does not carry our drop-in.
+  if systemctl is-active --quiet mysql && [ "$(mysql --protocol=socket -N -e 'SELECT @@skip_networking, @@innodb_buffer_pool_size' 2>/dev/null | tr '\t' ' ')" != "1 201326592" ]; then info "running mysql does not carry the AICC drop-in: restarting"; systemctl restart mysql; fi
   # wait for the socket (restart of a 2 GiB MySQL takes a few seconds)
   local i; for i in $(seq 1 30); do [ -S /run/mysqld/mysqld.sock ] && break; sleep 1; done
   [ -S /run/mysqld/mysqld.sock ] || die "mysql socket did not appear: journalctl -u mysql"
   case " $CHANGED_SERVICES " in *" php "*) systemctl restart "php${PHP_VER}-fpm" ;; *) systemctl is-active --quiet "php${PHP_VER}-fpm" || systemctl start "php${PHP_VER}-fpm" ;; esac
+  sock_ok || { info "the aicc pool socket is missing: restarting php-fpm to load the pool"; systemctl restart "php${PHP_VER}-fpm"; sleep 1; }
   sleep 1
   sock_ok || die "PHP socket $SOCK_PATH missing or not aicc-cp:aicc-edge 0660 after start"
   info "mysql and php-fpm are up"

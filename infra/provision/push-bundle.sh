@@ -30,6 +30,7 @@ echo "$ident" | grep -q "^AICC_HOSTNAME=${STAGE_HOST}\$" || refuse "host identit
 RS=(rsync -a --delete --delete-excluded -e "$SSHO" --exclude node_modules --exclude .git --exclude __pycache__ --exclude '*.pyc' --exclude '.env*' --exclude '*.pem' --exclude '*.key'
     --exclude 'aicc-ops/tests' --exclude 'sentinel/tests' --exclude '.DS_Store')
 [ "$DRY" = 1 ] && RS+=(-n -v)
+if [ "$DRY" != 1 ]; then $SSHO "$USER_NAME@$STAGE_IP" 'mkdir -p ~/aicc-infra-bundle/infra ~/aicc-infra-bundle/scripts/ops' || { echo "cannot create the bundle directory" >&2; exit 1; }; fi
 "${RS[@]}" "$REPO/infra/" "$USER_NAME@$STAGE_IP:aicc-infra-bundle/infra/"
 "${RS[@]}" "$REPO/scripts/ops/" "$USER_NAME@$STAGE_IP:aicc-infra-bundle/scripts/ops/"
-echo "bundle pushed to ~$USER_NAME/aicc-infra-bundle on $STAGE_HOST"
+if [ "$DRY" = 1 ]; then echo "DRY RUN: nothing was copied"; else echo "bundle pushed to ~$USER_NAME/aicc-infra-bundle on $STAGE_HOST"; fi
