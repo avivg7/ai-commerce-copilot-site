@@ -41,10 +41,11 @@ fi
 if [ "$DRY" = 1 ]; then echo "DRY-RUN: would build a $TARGET site release from $SITE_REPO ${EXPORT:+(existing export $EXPORT) }into $OUT"; exit 0; fi
 WORK="$(mktemp -d)"; trap 'rm -rf "$WORK"' EXIT
 if [ -z "$EXPORT" ]; then
-  EXPORT="$WORK/export"
+  # Next resolves distDir RELATIVE to the repo (an absolute path is re-rooted under it), so build into a relative, git-ignored directory and copy out
+  REL_EXPORT=".release-build-$$"; EXPORT="$SITE_REPO/$REL_EXPORT"; trap 'rm -rf "$WORK" "$SITE_REPO/$REL_EXPORT"' EXIT
   SITE_URL="https://www.copilt.org"; [ "$TARGET" = stage ] && SITE_URL="https://$STAGE_HOST"
   rl_log "building the static export for $SITE_URL (AICC_BASE_PATH=\"\", AICC_DIST_DIR=$EXPORT) ..."
-  ( cd "$SITE_REPO" && AICC_DIST_DIR="$EXPORT" AICC_BASE_PATH="" SITE_URL="$SITE_URL" npm run build )
+  ( cd "$SITE_REPO" && AICC_DIST_DIR="$REL_EXPORT" AICC_BASE_PATH="" SITE_URL="$SITE_URL" npm run build )
 fi
 [ -f "$EXPORT/index.html" ] || rl_die "no index.html in the export $EXPORT" 1
 TREE="$WORK/tree"; mkdir -p "$TREE"

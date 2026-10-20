@@ -50,3 +50,6 @@ next-env.d.ts
 .audit/
 .gstack/
 /public/brand-kit/
+
+# throwaway release builds (infra/release/build-site-release.sh)
+/.release-build-*/
