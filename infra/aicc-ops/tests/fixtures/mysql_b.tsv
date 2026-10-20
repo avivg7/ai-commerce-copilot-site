@@ -1,0 +1,10 @@
+Threads_connected	9
+Threads_running	3
+Max_used_connections	19
+Slow_queries	13
+Aborted_connects	3
+Uptime	86430
+Questions	500600
+Connections	9004
+max_connections	100
+db_size_bytes	73400320

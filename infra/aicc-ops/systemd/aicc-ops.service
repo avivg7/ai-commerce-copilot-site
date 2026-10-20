@@ -1,0 +1,57 @@
+[Unit]
+Description=AICC Ops (operator-only observability, loopback UI)
+Documentation=file:///opt/aicc-ops/README.md
+After=network.target
+StartLimitIntervalSec=600
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=aicc-ops
+Group=aicc-ops
+# The only listener is 127.0.0.1:9190 (the process refuses any other bind; this unit never passes --unsafe-bind).
+ExecStart=/usr/bin/python3 /opt/aicc-ops/bin/aicc-ops --config /etc/aicc-ops/aicc-ops.toml run
+Restart=on-failure
+RestartSec=10
+Nice=10
+CPUQuota=15%
+MemoryMax=64M
+MemoryHigh=48M
+TasksMax=32
+LimitNOFILE=256
+# Telegram credentials (optional; absent = alerts stay local and the adapter logs "disabled" once).
+# Default: the service reads /etc/aicc-ops/secrets.env itself (mode 0640 root:aicc-ops; the file is NOT created by install.sh).
+# Stricter alternative (keeps the file 0600 root:root): create the file first, then uncomment the next line. Unlike the default,
+# systemd refuses to start the unit if the file is missing, which is why it is not enabled out of the box.
+#LoadCredential=secrets.env:/etc/aicc-ops/secrets.env
+# --- sandboxing ---
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+UMask=0077
+ReadWritePaths=/var/lib/aicc-ops
+ReadOnlyPaths=-/var/backups/aicc
+StateDirectory=aicc-ops
+StateDirectoryMode=0750
+
+[Install]
+WantedBy=multi-user.target

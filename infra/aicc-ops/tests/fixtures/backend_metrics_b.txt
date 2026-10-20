@@ -1,0 +1,35 @@
+# HELP aicc_http_requests_total Requests.
+# TYPE aicc_http_requests_total counter
+aicc_http_requests_total{method="GET",route="/v1/recommendations",status_class="2xx"} 1300
+aicc_http_requests_total{method="POST",route="/v1/events",status_class="2xx"} 560
+aicc_http_requests_total{method="GET",route="__unmatched__",status_class="4xx"} 40
+aicc_http_requests_total{method="GET",route="/v1/recommendations",status_class="5xx"} 12
+# TYPE aicc_http_request_duration_seconds histogram
+aicc_http_request_duration_seconds_bucket{route="/v1/recommendations",status_class="2xx",le="0.05"} 700
+aicc_http_request_duration_seconds_bucket{route="/v1/recommendations",status_class="2xx",le="0.25"} 1100
+aicc_http_request_duration_seconds_bucket{route="/v1/recommendations",status_class="2xx",le="1"} 1300
+aicc_http_request_duration_seconds_bucket{route="/v1/recommendations",status_class="2xx",le="+Inf"} 1300
+aicc_http_request_duration_seconds_bucket{route="/v1/events",status_class="2xx",le="0.05"} 480
+aicc_http_request_duration_seconds_bucket{route="/v1/events",status_class="2xx",le="0.25"} 500
+aicc_http_request_duration_seconds_bucket{route="/v1/events",status_class="2xx",le="1"} 500
+aicc_http_request_duration_seconds_bucket{route="/v1/events",status_class="2xx",le="+Inf"} 500
+# TYPE aicc_http_requests_in_flight gauge
+aicc_http_requests_in_flight 2
+aicc_recommendation_requests_total{surface="v2"} 900
+aicc_recommendation_success_total{surface="v2"} 880
+aicc_recommendation_failures_total{surface="v2",reason="not_found"} 18
+aicc_recommendation_failures_total{surface="v2",reason="server_error"} 2
+aicc_ingest_requests_total{kind="event_ingest",outcome="success"} 500
+aicc_ingest_requests_total{kind="catalog_sync",outcome="server_error"} 1
+aicc_db_pool_size 5
+aicc_db_pool_max_overflow 10
+aicc_db_pool_checked_out 7
+aicc_db_pool_overflow 2
+aicc_postgres_up 1
+aicc_health_ok 1
+aicc_job_queue_depth 3
+aicc_job_runner_last_run_timestamp_seconds 1999990
+aicc_background_task_failures_total{task="job_runner"} 3
+aicc_metrics_scrapes_total{result="ok"} 100
+aicc_metrics_scrapes_total{result="forbidden"} 3
+aicc_build_info{version="1.0",sha="abcdef1"} 1

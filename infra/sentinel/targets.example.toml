@@ -1,0 +1,34 @@
+# AICC Sentinel targets (example). No secrets here. Telegram credentials come from the secrets file only.
+[sentinel]
+interval_s = 60            # minimum 60: be polite to the hosts we watch
+fail_n = 3                 # DOWN when 3 of the last 5 checks failed
+window_m = 5
+recover_k = 2              # RECOVERED after 2 consecutive good checks
+cooldown_s = 1800          # min gap between DOWN notices for one target
+remind_s = 21600           # reminder while still down (0 = never)
+state_file = "sentinel-state.json"
+secrets_file = "~/.config/aicc-sentinel/secrets.env"   # mode 0600; TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID; absent = log only
+host_label = "mac-launchd"  # where this sentinel runs (shown in messages)
+
+[[target]]
+name = "stage.copilt.org"
+url = "https://stage.copilt.org/healthz"   # the edge must serve a cheap 200 text answer here (confirm in the Caddyfile)
+expect_status = 200
+expect_body = "ok"
+latency_ms = 2000
+tls_warn_days = 14
+
+[[target]]
+name = "www.copilt.org"
+enabled = false            # enable after cutover
+url = "https://www.copilt.org/"
+expect_status = 200
+expect_body = "<title"
+latency_ms = 3000
+
+[[target]]
+name = "api.copilt.org"
+url = "https://api.copilt.org/health"   # read-only, already public; one GET per interval
+expect_status = 200
+expect_body = "ok"
+latency_ms = 2000

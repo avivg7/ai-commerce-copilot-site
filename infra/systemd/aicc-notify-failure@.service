@@ -1,0 +1,23 @@
+# Template unit started by OnFailure= of the AICC units: OnFailure=aicc-notify-failure@%n.service passes the failed unit's full name
+# (for example "aicc-backup.service") as the instance %i.
+# It only WRITES A STATUS FILE (no Telegram, no mail, no network): /var/lib/aicc/status/unit-<name>.json, which AICC Ops reads and alerts on.
+# A later successful start of the same unit removes/overwrites the file via ExecStartPost=aicc-unit-status ok.
+[Unit]
+Description=Record failure of %i for AICC Ops
+
+[Service]
+Type=oneshot
+User=root
+ExecStart=/usr/local/sbin/aicc-unit-status failed %i
+Nice=10
+MemoryMax=32M
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_UNIX
+ReadWritePaths=/var/lib/aicc/status

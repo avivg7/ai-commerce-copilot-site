@@ -1,0 +1,12 @@
+# AICC Ops logs to journald by default (size/rate capped by journald). This config only covers optional file output
+# such as /var/log/aicc-ops/overhead-*.json and any log file the owner chooses to redirect to.
+/var/log/aicc-ops/*.log /var/log/aicc-ops/*.json {
+    weekly
+    rotate 8
+    maxsize 5M
+    missingok
+    notifempty
+    compress
+    delaycompress
+    create 0640 aicc-ops aicc-ops
+}

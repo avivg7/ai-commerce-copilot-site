@@ -1,0 +1,80 @@
+# AICC edge (Caddy 2.11.x) for the Linux STAGING host (stage.copilt.org); the same unit serves production later (www.copilt.org) with another edge.env.
+# Installed to /etc/systemd/system/aicc-edge.service by infra/provision/install-stack.sh. ALIGNED WITH docs/cutover/caddy-edge.service.template
+# (same names: aicc-edge user, /etc/aicc-edge/Caddyfile + edge.env, /var/lib/aicc-edge, /var/log/aicc-edge, admin API 127.0.0.1:12019, edge preflight).
+# Differences from that template, each deliberate:
+#   * PHP is reached through the FastCGI unix socket /run/php/aicc-cp.sock (group aicc-edge, mode 0660), not an HTTP upstream. The operator listener (127.0.0.1:8443,
+#     `bind 127.0.0.1`) is part of the Caddyfile rendered by scripts/ops/render-edge.mjs --mode stage; the SSH tunnel (infra/provision/operator-tunnel.sh) targets it.
+#   * ordering: mysql -> php8.3-fpm -> aicc-edge after a reboot (php8.3-fpm has After=mysql via its drop-in; this unit is After=php8.3-fpm).
+#   * memory limits sized for 2 GiB (Caddy's steady state is ~40-80 MiB): GOMEMLIMIT 160MiB, MemoryHigh 200M, MemoryMax 320M.
+#   * LimitNOFILE 65536 instead of 1048576: a 2 GiB host will never hold more than a few thousand sockets; a huge limit only hides leaks.
+#   * the preflight runs in stage mode (`aicc-edge-preflight --mode stage`, scripts/ops/edge-preflight.sh): fastcgi socket, stage identity, automatic ACME, empty operator CIDRs,
+#     loopback-only operator listener, HTTP/3 off, metrics private. The production host later gets `--mode production` through a drop-in (and AICC_ALLOW_PRODUCTION_MODE=1 on cutover day only).
+# `systemd-analyze verify` was NOT run (no systemd on the authoring Mac). Run it on the host: `systemd-analyze verify /etc/systemd/system/aicc-edge.service`
+# and `systemd-analyze security aicc-edge.service`; install-stack.sh's `verify` step does the first one.
+[Unit]
+Description=AICC public edge (Caddy: static site + WordPress Control Plane over PHP-FPM)
+Documentation=https://caddyserver.com/docs/
+After=network-online.target php8.3-fpm.service mysql.service
+Wants=network-online.target php8.3-fpm.service
+StartLimitIntervalSec=120
+StartLimitBurst=10
+OnFailure=aicc-notify-failure@%n.service
+
+[Service]
+Type=notify
+User=aicc-edge
+Group=aicc-edge
+EnvironmentFile=/etc/aicc-edge/edge.env
+Environment=XDG_DATA_HOME=/var/lib/aicc-edge XDG_CONFIG_HOME=/var/lib/aicc-edge/config GOMEMLIMIT=160MiB
+# Fail closed: refuses a missing static root or PHP socket, a production host name, a missing stage id, a non-loopback operator listener, an unwritable log dir, a bad Caddyfile.
+ExecStartPre=/usr/local/sbin/aicc-edge-preflight --mode stage --caddyfile /etc/aicc-edge/Caddyfile --env-file /etc/aicc-edge/edge.env --caddy /usr/local/bin/caddy
+ExecStart=/usr/local/bin/caddy run --config /etc/aicc-edge/Caddyfile --adapter caddyfile
+ExecStartPost=-+/usr/local/sbin/aicc-unit-status ok %n
+# A reload re-runs the preflight first (bad config never reaches the running edge); the second ExecReload fails the reload if Caddy refuses.
+ExecReload=/usr/local/sbin/aicc-edge-preflight --mode stage --caddyfile /etc/aicc-edge/Caddyfile --env-file /etc/aicc-edge/edge.env --caddy /usr/local/bin/caddy --quiet
+ExecReload=/usr/local/bin/caddy reload --config /etc/aicc-edge/Caddyfile --adapter caddyfile --address 127.0.0.1:12019 --force
+TimeoutStartSec=90s
+TimeoutStopSec=10s
+# A crash, kill -9 or OOM kill ends in "failed" and restarts after 2 s; a clean `systemctl stop` does not restart. After StartLimitBurst failures
+# in 120 s the unit stays failed and OnFailure= writes the status file AICC Ops reads.
+Restart=on-failure
+RestartSec=2s
+LimitNOFILE=65536
+TasksMax=512
+MemoryHigh=200M
+MemoryMax=320M
+# ports 80/443 as an unprivileged user
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+NoNewPrivileges=true
+UMask=0027
+# private state (certificate keys): 0700 owned by the service user
+StateDirectory=aicc-edge
+StateDirectoryMode=0700
+LogsDirectory=aicc-edge
+LogsDirectoryMode=0750
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+ProtectProc=invisible
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+SystemCallArchitectures=native
+# No SystemCallFilter on purpose: an untested filter makes systemd kill the process with SIGSYS on the first denied call (Go's runtime calls setrlimit/
+# capset-adjacent syscalls). After the first successful start run `systemd-analyze security aicc-edge` and add a filter only after testing it on the host.
+# release trees, config, uploads and the PHP socket directory are read-only for the edge; only its state and logs are writable
+ReadOnlyPaths=-/srv/aicc -/etc/aicc-edge
+ReadWritePaths=/var/lib/aicc-edge /var/log/aicc-edge
+
+[Install]
+WantedBy=multi-user.target

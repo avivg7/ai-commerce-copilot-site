@@ -1,0 +1,12 @@
+# DISABLED BY DEFAULT: install.sh copies this file but never enables it.
+# To opt in: set telegram.digest_enabled = true, then `systemctl enable --now aicc-ops-digest.timer`.
+[Unit]
+Description=AICC Ops daily digest timer
+
+[Timer]
+OnCalendar=*-*-* 07:30:00 UTC
+RandomizedDelaySec=300
+Persistent=false
+
+[Install]
+WantedBy=timers.target

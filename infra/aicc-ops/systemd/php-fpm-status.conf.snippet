@@ -1,0 +1,14 @@
+; PHP-FPM pool notes for AICC Ops. UNVERIFIED until applied on the real host.
+; infra/php/aicc-pool.conf already sets `pm.status_path = /fpm-status` and `ping.path = /fpm-ping` for the pool socket
+; /run/php/aicc-cp.sock (owner aicc-cp, group aicc-edge, mode 0660, pm.max_children = 3). Nothing more is needed in the pool
+; itself; the status page is answered by the FPM master over FastCGI and is NOT a web URL. Caddy must never route it.
+;
+; The aicc-ops user needs connect permission on that socket. Two ways (OWNER DECISION, see README "Security self-review"):
+;   (a) ACL on the pool socket (preferred, no group membership):   listen.acl_users = aicc-ops      (needs POSIX ACL support)
+;   (b) group membership:                                           usermod -aG aicc-edge aicc-ops   (what infra/provision/install-stack.sh
+;                                                                    does with --ops-fpm-access; also grants whatever else group aicc-edge may read)
+; CAVEAT either way: anything that can connect to an FPM socket can ask it to execute a .php file as the pool user. AICC Ops
+; only ever sends the fixed status path, but a compromised aicc-ops account could do more. If that trade-off is not acceptable,
+; set [collectors.phpfpm] enabled = false and rely on the loopback edge probe + 5xx rate instead.
+;
+; In aicc-ops.toml:  [collectors.phpfpm] socket = "/run/php/aicc-cp.sock"  status_path = "/fpm-status"  max_children = 3

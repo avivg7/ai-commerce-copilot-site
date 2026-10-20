@@ -1,0 +1,34 @@
+# EXAMPLE ONLY, not installed and NOT to be committed to a private repository without checking the minutes quota.
+# Free only for PUBLIC repositories. Minimum schedule resolution is 5 minutes; runs may be delayed or skipped by GitHub.
+# State (the N-of-M window) is kept between runs with the cache action; if the cache is evicted the window restarts empty.
+name: aicc-sentinel
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch: {}
+permissions:
+  contents: read
+concurrency:
+  group: aicc-sentinel
+  cancel-in-progress: false
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: state.json
+          key: sentinel-state-${{ github.run_id }}
+          restore-keys: sentinel-state-
+      - name: Probe
+        env:
+          # create TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID as repository secrets; never echo them
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          umask 077
+          printf 'TELEGRAM_BOT_TOKEN=%s\nTELEGRAM_CHAT_ID=%s\n' "$TELEGRAM_BOT_TOKEN" "$TELEGRAM_CHAT_ID" > "$RUNNER_TEMP/secrets.env"
+          export CREDENTIALS_DIRECTORY="$RUNNER_TEMP"   # the sentinel reads $CREDENTIALS_DIRECTORY/secrets.env
+          python3 infra/sentinel/sentinel.py --config infra/sentinel/targets.example.toml --state state.json --once

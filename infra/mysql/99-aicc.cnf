@@ -1,0 +1,71 @@
+# AICC MySQL 8.0 drop-in  ->  /etc/mysql/mysql.conf.d/99-aicc.cnf  (read after Ubuntu's mysqld.cnf: the later file wins)
+# Host: 1 vCPU / 2 GiB RAM shared with PHP-FPM (<= ~600 MiB) and Caddy (<= ~150 MiB). Data size: a WooCommerce store with hundreds of
+# rows, not millions. Every number is deliberately small; MySQL's own defaults assume a dedicated server.
+# Target resident size of mysqld: ~330-400 MiB. The systemd drop-in (infra/systemd/overrides/mysql.service.d/aicc.conf) caps it at 720 MiB.
+[mysqld]
+# --- reachability: NOTHING on the network -------------------------------------------------------------------------------------------
+# skip-networking: no TCP listener at all (not even 127.0.0.1). PHP-FPM, WP-CLI and the backup use /run/mysqld/mysqld.sock only.
+# Consequence: the MySQL X protocol and any TCP client (including tools that assume 127.0.0.1:3306) are unavailable by design.
+skip-networking
+mysqlx = OFF
+skip-name-resolve
+local_infile = OFF
+
+# --- memory ---------------------------------------------------------------------------------------------------------------------------
+# performance_schema OFF: on 8.0 it pre-allocates and keeps tens to hundreds of MiB of instrumentation structures; this host uses
+# `mysqladmin`, the slow log and AICC Ops counters (SHOW GLOBAL STATUS still works) instead. Re-enable only for a one-off investigation.
+performance_schema = OFF
+# 192 MiB buffer pool (~10% of RAM): holds the whole working set of a small store several times over; larger values only
+# compete with PHP workers and the page cache for RAM that does not exist. Resize online if the data grows (SET GLOBAL).
+innodb_buffer_pool_size = 192M
+innodb_buffer_pool_instances = 1
+# chunk size 64M: MySQL rounds the pool UP to a multiple of chunk_size x instances, and the default chunk is 128M, so "192M" would silently become 256M
+# (found by infra/stack-tests against a real mysqld). 192M = 3 x 64M keeps the number we budgeted for.
+innodb_buffer_pool_chunk_size = 64M
+innodb_log_buffer_size = 8M
+# redo log capacity (8.0.30+): 128 MiB; the default 100 MiB would also work, 128 absorbs a catalogue import without checkpoint stalls.
+innodb_redo_log_capacity = 128M
+# O_DIRECT: do not cache InnoDB data twice (buffer pool + page cache) on a 2 GiB machine.
+innodb_flush_method = O_DIRECT
+# full durability is kept (1): the data set is tiny and orders/licences are the product.
+innodb_flush_log_at_trx_commit = 1
+innodb_file_per_table = ON
+# Per-connection buffers stay at their small defaults (sort 256K, join 256K, read 128K); tmp tables capped at 32M:
+tmp_table_size = 32M
+max_heap_table_size = 32M
+# Table caches: default 4000 is far above the ~200 tables WordPress+WooCommerce use and each open table costs memory.
+table_open_cache = 800
+table_definition_cache = 800
+thread_cache_size = 8
+# max_allowed_packet 32M: big serialized options / imports; the edge limits public bodies to 2 MB, operator uploads to 64 MB (stored as files, not rows).
+max_allowed_packet = 32M
+
+# --- connections ------------------------------------------------------------------------------------------------------------------------
+# PHP-FPM has 3 workers, WP-CLI cron 1, backup 1, restore check 1, AICC Ops 1, admin shell 1: 30 is generous. A runaway plugin fails fast
+# with "too many connections" instead of eating RAM. (3 workers cannot hold more than 3 connections unless persistent connections are used: they are not.)
+max_connections = 30
+# one slot is always kept for SUPER so an operator can still log in when the limit is hit
+connect_timeout = 5
+wait_timeout = 120
+interactive_timeout = 300
+
+# --- logging (conservative) -----------------------------------------------------------------------------------------------------------
+log_error = /var/log/mysql/error.log
+log_error_verbosity = 2
+general_log = OFF
+# slow log: queries over 2 s, no "not using indexes" flood, admin statements excluded. Rotated weekly by infra/logrotate/aicc-mysql.
+slow_query_log = ON
+slow_query_log_file = /var/log/mysql/slow.log
+long_query_time = 2
+log_queries_not_using_indexes = OFF
+log_slow_admin_statements = OFF
+
+# --- binary logging OFF -----------------------------------------------------------------------------------------------------------------
+# MySQL 8.0 enables the binary log by default (it grows by GiB and doubles write IO). There is no replica and no point-in-time recovery yet:
+# the recovery model is the daily mysqldump (RPO 24 h, hourly optional; infra/backup/README-backup.md). Turning this on later is a deliberate step.
+disable_log_bin
+
+# --- character set / SQL mode -------------------------------------------------------------------------------------------------------------
+character_set_server = utf8mb4
+collation_server = utf8mb4_unicode_520_ci
+# sql_mode: server default (strict) is kept; WordPress 7.x and WooCommerce 10.x support it.

@@ -1,0 +1,30 @@
+# Daily check that the TLS certificate Caddy actually SERVES is not close to expiry (a real handshake to the loopback listener with the public SNI).
+# Caddy renews automatically about 30 days before expiry; this is the independent alarm for "renewal silently broke" (rate limit, DNS, port 80 blocked).
+# Exit codes of scripts/ops/cert-expiry-check.sh: 0 ok, 1 < 21 days (WARN), 2 < 7 days or expired (CRITICAL), 3 unknown. Any non-zero fails the unit,
+# which fires OnFailure= and writes the status file AICC Ops reads. An off-host check (the same script run from the Mac) is still recommended.
+[Unit]
+Description=AICC TLS certificate expiry check (stage.copilt.org)
+After=aicc-edge.service
+OnFailure=aicc-notify-failure@%n.service
+
+[Service]
+Type=oneshot
+DynamicUser=yes
+ExecStart=/usr/local/sbin/aicc-cert-expiry-check --host stage.copilt.org --connect 127.0.0.1:443 --warn-days 21 --crit-days 7
+ExecStartPost=-+/usr/local/sbin/aicc-unit-status ok %n
+TimeoutStartSec=60s
+Nice=10
+MemoryMax=64M
+TasksMax=16
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6
+RestrictSUIDSGID=true
+LockPersonality=true
+SystemCallArchitectures=native

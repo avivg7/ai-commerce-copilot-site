@@ -1,0 +1,37 @@
+# fail2ban jails for the AICC edge  ->  /etc/fail2ban/jail.d/aicc-edge.local   (the sshd jail is already enabled by cloud-init in jail.d/aicc-sshd.local)
+# Both jails read the Caddy access log. The log file is created (empty, aicc-edge:adm 0640) by install-stack.sh so the jails can start before Caddy does.
+# 127.0.0.1/8 and ::1 are NEVER banned: the operator reaches wp-admin through an SSH tunnel and appears as 127.0.0.1.
+# Ban action: the distro default (iptables/nft multiport through the system action); UFW keeps its own rules, fail2ban adds a separate chain.
+# Increment: repeat offenders are banned for longer (bantime.increment), capped at one week.
+
+[aicc-wp-login]
+enabled   = true
+filter    = aicc-wp-login
+logpath   = /var/log/aicc-edge/aicc-edge.log
+backend   = auto
+port      = http,https
+protocol  = tcp
+ignoreip  = 127.0.0.1/8 ::1
+# 10 hits in 10 minutes -> 1 hour. A customer needs at most a few POSTs (sign-in, mistakes, lost-password); a guessing bot exceeds this in seconds.
+maxretry  = 10
+findtime  = 10m
+bantime   = 1h
+bantime.increment = true
+bantime.factor    = 2
+bantime.maxtime   = 1w
+
+[caddy-4xx-flood]
+enabled   = true
+filter    = caddy-4xx-flood
+logpath   = /var/log/aicc-edge/aicc-edge.log
+backend   = auto
+port      = http,https
+protocol  = tcp
+ignoreip  = 127.0.0.1/8 ::1
+# 60 client errors in 60 seconds from one address -> 30 minutes. Moderate: it only stops obvious scanners.
+maxretry  = 60
+findtime  = 60s
+bantime   = 30m
+bantime.increment = true
+bantime.factor    = 2
+bantime.maxtime   = 1d

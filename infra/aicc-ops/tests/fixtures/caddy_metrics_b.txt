@@ -1,0 +1,26 @@
+# TYPE caddy_http_request_duration_seconds histogram
+caddy_http_request_duration_seconds_bucket{code="200",handler="file_server",method="GET",server="srv0",le="0.005"} 700
+caddy_http_request_duration_seconds_bucket{code="200",handler="file_server",method="GET",server="srv0",le="0.025"} 780
+caddy_http_request_duration_seconds_bucket{code="200",handler="file_server",method="GET",server="srv0",le="0.1"} 800
+caddy_http_request_duration_seconds_bucket{code="200",handler="file_server",method="GET",server="srv0",le="1"} 800
+caddy_http_request_duration_seconds_bucket{code="200",handler="file_server",method="GET",server="srv0",le="+Inf"} 800
+caddy_http_request_duration_seconds_sum{code="200",handler="file_server",method="GET",server="srv0"} 2.0
+caddy_http_request_duration_seconds_count{code="200",handler="file_server",method="GET",server="srv0"} 800
+caddy_http_request_duration_seconds_bucket{code="200",handler="reverse_proxy",method="GET",server="srv0",le="0.005"} 0
+caddy_http_request_duration_seconds_bucket{code="200",handler="reverse_proxy",method="GET",server="srv0",le="0.025"} 10
+caddy_http_request_duration_seconds_bucket{code="200",handler="reverse_proxy",method="GET",server="srv0",le="0.1"} 80
+caddy_http_request_duration_seconds_bucket{code="200",handler="reverse_proxy",method="GET",server="srv0",le="1"} 145
+caddy_http_request_duration_seconds_bucket{code="200",handler="reverse_proxy",method="GET",server="srv0",le="+Inf"} 150
+caddy_http_request_duration_seconds_sum{code="200",handler="reverse_proxy",method="GET",server="srv0"} 50
+caddy_http_request_duration_seconds_count{code="200",handler="reverse_proxy",method="GET",server="srv0"} 150
+caddy_http_request_duration_seconds_bucket{code="502",handler="reverse_proxy",method="POST",server="srv0",le="0.005"} 0
+caddy_http_request_duration_seconds_bucket{code="502",handler="reverse_proxy",method="POST",server="srv0",le="0.025"} 0
+caddy_http_request_duration_seconds_bucket{code="502",handler="reverse_proxy",method="POST",server="srv0",le="0.1"} 0
+caddy_http_request_duration_seconds_bucket{code="502",handler="reverse_proxy",method="POST",server="srv0",le="1"} 5
+caddy_http_request_duration_seconds_bucket{code="502",handler="reverse_proxy",method="POST",server="srv0",le="+Inf"} 5
+caddy_http_request_duration_seconds_count{code="502",handler="reverse_proxy",method="POST",server="srv0"} 5
+# TYPE caddy_http_request_size_bytes histogram
+caddy_http_request_size_bytes_sum{code="200",handler="file_server",method="GET",server="srv0"} 160000
+caddy_http_response_size_bytes_sum{code="200",handler="file_server",method="GET",server="srv0"} 8000000
+caddy_http_requests_in_flight{handler="file_server",server="srv0"} 0
+caddy_reverse_proxy_upstreams_healthy{upstream="unix//run/php/php8.3-fpm.sock"} 1

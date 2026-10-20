@@ -1,0 +1,1 @@
+{"schema":1,"status":"failed","label":"scheduled","finished_epoch":1792640000,"reason":"disk guard","disk_free_pct":9,"db_dump":{"bytes":0,"restore_check":"failed"},"last_success":{"finished_epoch":1792553470,"label":"scheduled"}}

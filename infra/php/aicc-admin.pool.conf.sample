@@ -1,0 +1,29 @@
+; OPTIONAL, NOT INSTALLED: a second, on-demand pool for operator-only /wp-admin/ work (large imports) so that heavy admin requests cannot
+; occupy the three customer workers. It is a SAMPLE on purpose: using it needs a second php_fastcgi route in the Caddyfile (operator CIDR +
+; /wp-admin/ -> unix//run/php/aicc-admin.sock), which is the Caddyfile owner's decision, and it adds a second set of workers to the RAM budget.
+;
+; DECISION RECORDED (single pool, limit rationale): with 2 GiB RAM, one pool of 3 workers at memory_limit 192M is the conservative default.
+; WordPress is told the same ceiling (WP_MEMORY_LIMIT 128M, WP_MAX_MEMORY_LIMIT 192M in wp-config.stage.template.php), so wp-admin never asks PHP
+; for the 256M its default tries to raise to (the pool's php_admin_value would silently clamp it anyway). Operators who must import a large
+; catalogue should use WP-CLI on the host (`aicc-wp wc product_csv_importer` etc., 192M cli ceiling, MemoryMax 256M under systemd-run) instead of a browser request.
+; Enable this sample only if the owner accepts about +100-250 MiB of worst-case RAM while an admin request is running.
+[aicc-admin]
+user = aicc-cp
+group = aicc-cp
+listen = /run/php/aicc-admin.sock
+listen.owner = aicc-cp
+listen.group = aicc-edge
+listen.mode = 0660
+pm = ondemand
+pm.max_children = 1
+pm.process_idle_timeout = 20s
+pm.max_requests = 100
+request_terminate_timeout = 120s
+clear_env = yes
+security.limit_extensions = .php
+php_admin_value[memory_limit] = 256M
+php_admin_value[max_execution_time] = 110
+php_admin_value[upload_tmp_dir] = /var/lib/aicc-cp/tmp
+php_admin_value[error_log] = /var/log/aicc-cp/php-error.log
+php_admin_flag[log_errors] = on
+php_admin_flag[display_errors] = off

@@ -1,0 +1,35 @@
+# Daily backup of the Control Plane: database dump (+ gzip test + sha256 + restore smoke into a throwaway DB), persistent files archive (0600),
+# status JSON for AICC Ops. Runs as root because the archive of wp-config.php/uploads must read 0640/0750 files; the unit is hardened accordingly.
+# Script: infra/backup/aicc-backup.sh, installed as /usr/local/sbin/aicc-backup. Manual run (e.g. before a release): sudo systemctl start aicc-backup.service
+[Unit]
+Description=AICC backup (database dump, files archive, restore smoke check)
+After=mysql.service
+Wants=mysql.service
+OnFailure=aicc-notify-failure@%n.service
+
+[Service]
+Type=oneshot
+User=root
+ExecStart=/usr/local/sbin/aicc-backup --label scheduled
+ExecStartPost=-+/usr/local/sbin/aicc-unit-status ok %n
+TimeoutStartSec=30min
+# never compete with customers: lowest CPU weight and idle IO class
+Nice=19
+IOSchedulingClass=idle
+CPUSchedulingPolicy=idle
+MemoryMax=256M
+TasksMax=64
+NoNewPrivileges=true
+UMask=0077
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+SystemCallArchitectures=native
+ReadOnlyPaths=/srv/aicc/shared /etc/aicc-edge /srv/aicc/site /srv/aicc/cp
+ReadWritePaths=/srv/aicc/backups /var/lib/aicc/status

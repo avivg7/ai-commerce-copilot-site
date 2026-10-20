@@ -1,0 +1,43 @@
+# WordPress cron for the Control Plane. DISABLE_WP_CRON is true in wp-config.php and /wp-cron.php is closed to the public by the edge, so
+# this one-shot (started every minute by aicc-wp-cron.timer) is the ONLY thing that runs scheduled events (WooCommerce Action Scheduler, licence jobs).
+# Runs as the PHP user aicc-cp against whatever release `current` points to (a swap between two runs is harmless: each run resolves the link once).
+[Unit]
+Description=AICC WordPress cron (wp cron event run --due-now)
+After=mysql.service php8.3-fpm.service
+Wants=mysql.service
+# do nothing (and do not fail) before the first Control Plane release exists
+ConditionPathExists=/srv/aicc/cp/current/wp-load.php
+OnFailure=aicc-notify-failure@%n.service
+
+[Service]
+Type=oneshot
+User=aicc-cp
+Group=aicc-cp
+WorkingDirectory=/srv/aicc/cp
+Environment=WP_CLI_CACHE_DIR=/var/lib/aicc-cp/wp-cli WP_CLI_CONFIG_PATH=/var/lib/aicc-cp/wp-cli/config.yml HOME=/var/lib/aicc-cp
+# php-cli reads /etc/php/8.3/cli/conf.d/90-aicc.ini (memory_limit 192M, opcache off). The 55 s timeout keeps a stuck run from overlapping the next minute.
+ExecStart=/usr/bin/php /usr/local/bin/wp --path=/srv/aicc/cp/current cron event run --due-now --quiet
+ExecStartPost=-+/usr/local/sbin/aicc-unit-status ok %n
+TimeoutStartSec=55s
+# lowest CPU priority among AICC jobs: customers' PHP-FPM requests win on the single vCPU
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=6
+MemoryMax=256M
+TasksMax=64
+# (ConditionACPower is a laptop concept and is intentionally not used.)
+NoNewPrivileges=true
+UMask=0027
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+LockPersonality=true
+SystemCallArchitectures=native
+# WordPress writes uploads/cache under shared storage, logs and temp files under /var/lib/aicc-cp and /var/log/aicc-cp
+ReadWritePaths=/srv/aicc/shared /var/lib/aicc-cp /var/log/aicc-cp

@@ -1,0 +1,13 @@
+pool:                 www
+process manager:      dynamic
+start time:           20/Oct/2026:10:00:00 +0000
+accepted conn:        12345
+listen queue:         0
+max listen queue:     3
+listen queue len:     128
+idle processes:       3
+active processes:     2
+total processes:      5
+max active processes: 5
+max children reached: 1
+slow requests:        4

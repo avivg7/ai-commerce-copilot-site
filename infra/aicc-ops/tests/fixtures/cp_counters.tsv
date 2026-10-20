@@ -1,0 +1,11 @@
+registrations	checkout	2
+registrations	account	1
+login_success		40
+login_failure	bad_password	5
+login_failure	locked	2
+license_lifecycle_failure	issue	3
+license_lifecycle_failure	provider_down	1
+login_failure	user@example.com	9
+order_completed	processing	4
+checkout_start		40
+evil_metric		99

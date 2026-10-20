@@ -1,0 +1,13 @@
+[Unit]
+Description=Run AICC WordPress cron every minute
+
+[Timer]
+# every minute at second 00 (+/- 5 s so it does not line up with the minute's other work)
+OnCalendar=*-*-* *:*:00
+AccuracySec=5s
+# if the host was down, do not replay missed minutes
+Persistent=false
+Unit=aicc-wp-cron.service
+
+[Install]
+WantedBy=timers.target

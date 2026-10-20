@@ -1,0 +1,14 @@
+[Unit]
+Description=Daily AICC backup at 03:30 UTC
+
+[Timer]
+OnCalendar=*-*-* 03:30:00 UTC
+# up to 2 minutes of jitter is harmless and keeps the unit from starting in the same second as other 03:30 jobs
+RandomizedDelaySec=120
+AccuracySec=1s
+# a missed run (host was down at 03:30) executes shortly after boot: RPO stays <= 24 h
+Persistent=true
+Unit=aicc-backup.service
+
+[Install]
+WantedBy=timers.target

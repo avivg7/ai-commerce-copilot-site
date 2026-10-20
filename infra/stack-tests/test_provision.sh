@@ -1,0 +1,297 @@
+#!/usr/bin/env bash
+# Tests of the provisioning scripts that can run on the Mac: dry-run behaviour, idempotent installation into a temp prefix, the stage-2 SSH hardening logic with a
+# stubbed sshd/systemctl, database creation + grants against a THROWAWAY mysqld (socket only, in a temp dir; never an owner or fixture server), wp-config rendering,
+# PHP-FPM / MySQL configuration syntax, and the fail2ban regexes against the real Caddy 2.11.7 access log format.
+# Run: bash infra/stack-tests/test_provision.sh
+set -uo pipefail
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"; REPO="$(cd "$HERE/../.." && pwd)"; INFRA="$REPO/infra"; PROV="$INFRA/provision"
+T_SUITE="provision"; . "$HERE/lib/t.sh"
+mode() { stat -c '%a' "$1" 2>/dev/null || stat -f '%Lp' "$1"; }; export -f mode
+TMP="$(mktemp -d "${TMPDIR:-/tmp}/aprov.XXXX")"
+LOCALMY="$HOME/Library/Application Support/Local/lightning-services/mysql-8.4.0+2/bin/darwin-arm64/bin"
+MYSQLD_PID=""
+cleanup() { [ -n "$MYSQLD_PID" ] && kill "$MYSQLD_PID" 2>/dev/null && sleep 1; rm -rf "$TMP"; }
+trap cleanup EXIT
+
+echo "== install-stack.sh: argument handling and dry-run =="
+t_rc "unknown step is refused" 1 bash "$PROV/install-stack.sh" --dry-run --only nonsense
+t_rc "unknown option is refused" 1 bash "$PROV/install-stack.sh" --frobnicate
+t_contains "--list-steps shows the default order" "$(bash "$PROV/install-stack.sh" --list-steps)" "preflight identity packages users-dirs caddy wpcli php mysql sysctl scripts systemd logrotate fail2ban services verify"
+if [ "$(id -u)" != 0 ]; then t_rc "a real run without root is refused" 1 bash "$PROV/install-stack.sh" --only sysctl; fi
+OUT="$(bash "$PROV/install-stack.sh" --dry-run 2>&1)"; rc=$?
+t_eq "full --dry-run exits 0" "$rc" "0"
+t_contains "dry-run says nothing changed" "$OUT" "dry-run: nothing changed"
+t_contains "dry-run lists the pinned Caddy tarball" "$OUT" "caddy_2.11.7_linux_amd64.tar.gz"
+t_contains "dry-run lists php 8.3 packages" "$OUT" "php8.3-fpm"
+t_not_contains "dry-run: no imagick" "$OUT" "imagick"
+t_contains "dry-run installs the pool config" "$OUT" "/etc/php/8.3/fpm/pool.d/aicc.conf"
+t_contains "dry-run installs the MySQL drop-in" "$OUT" "/etc/mysql/mysql.conf.d/99-aicc.cnf"
+t_contains "dry-run creates the three system users" "$OUT" "useradd --system --gid aicc-ops"
+t_not_contains "dry-run does not touch the cloud-init unattended-upgrades files" "$OUT" "52aicc-unattended-upgrades"
+t_not_contains "dry-run does not re-create the swap file" "$OUT" "fallocate"
+t_not_contains "dry-run does not touch UFW" "$OUT" "ufw"
+OUT_ONLY="$(bash "$PROV/install-stack.sh" --dry-run --only sysctl,logrotate 2>&1)"
+t_not_contains "--only runs only the named steps" "$OUT_ONLY" "step: caddy"
+t_rc "enable-edge in dry-run does not start anything" 0 bash "$PROV/install-stack.sh" --dry-run --only enable-edge
+t_rc "edge-env without a valid e-mail is refused" 1 env AICC_TEST_HARNESS=1 AICC_ROOT_PREFIX="$TMP/rootx" bash "$PROV/install-stack.sh" --only edge-env --acme-email 'not an address'
+
+echo "== install-stack.sh: idempotent installation into a temp prefix =="
+PFX="$TMP/root"; mkdir -p "$PFX"
+H() { env AICC_TEST_HARNESS=1 AICC_ROOT_PREFIX="$PFX" bash "$PROV/install-stack.sh" "$@"; }
+mkdir -p "$PFX/etc"; printf 'AICC_ENV=staging\nAICC_HOSTNAME=stage.copilt.org\nAICC_STAGE_ID=0123456789abcdef0123456789abcdef\n' > "$PFX/etc/aicc-stage-identity"
+FIRST="$(H --only users-dirs,php,mysql,sysctl,scripts,systemd,logrotate,fail2ban,edge-env --acme-email ops@example.org 2>&1)"; rc=$?
+t_eq "first run succeeds" "$rc" "0"
+t_ok "pool config installed" cmp "$INFRA/php/aicc-pool.conf" "$PFX/etc/php/8.3/fpm/pool.d/aicc.conf"
+t_ok "FPM ini installed" cmp "$INFRA/php/90-aicc-fpm.ini" "$PFX/etc/php/8.3/fpm/conf.d/90-aicc.ini"
+t_ok "MySQL drop-in installed" cmp "$INFRA/mysql/99-aicc.cnf" "$PFX/etc/mysql/mysql.conf.d/99-aicc.cnf"
+t_ok "aicc-edge.service installed" cmp "$INFRA/systemd/aicc-edge.service" "$PFX/etc/systemd/system/aicc-edge.service"
+t_ok "php-fpm drop-in installed" cmp "$INFRA/systemd/overrides/php8.3-fpm.service.d/aicc.conf" "$PFX/etc/systemd/system/php8.3-fpm.service.d/aicc.conf"
+t_ok "fail2ban jail installed" cmp "$INFRA/fail2ban/jail.d-aicc-edge.local" "$PFX/etc/fail2ban/jail.d/aicc-edge.local"
+t_eq "uploads dir mode (setgid 2750)" "$(stat -c '%a' "$PFX/srv/aicc/shared/uploads" 2>/dev/null || stat -f '%Mp%Lp' "$PFX/srv/aicc/shared/uploads" | sed 's/^0*//')" "2750"
+t_eq "/etc/aicc/secrets is 0700" "$(mode "$PFX/etc/aicc/secrets")" "700"
+t_eq "backups dir is 0751 (status.json readable by name, dumps are 0600)" "$(mode "$PFX/srv/aicc/backups")" "751"
+t_eq "edge.env mode 0640" "$(mode "$PFX/etc/aicc-edge/edge.env")" "640"
+t_contains "edge.env: stage mode, stage host, stage id from the identity file" "$(cat "$PFX/etc/aicc-edge/edge.env")" "AICC_STAGE_ID=0123456789abcdef0123456789abcdef"
+t_contains "edge.env: fastcgi socket in the form the Caddyfile and preflight expect" "$(cat "$PFX/etc/aicc-edge/edge.env")" "AICC_PHP_FPM_SOCKET=unix//run/php/aicc-cp.sock"
+t_contains "edge.env: first start uses the Let's Encrypt STAGING directory" "$(cat "$PFX/etc/aicc-edge/edge.env")" "AICC_ACME_CA=https://acme-staging-v02.api.letsencrypt.org/directory"
+t_eq "edge.env: no public operator allowlist is set (stage/production have none)" "$(grep -c '^AICC_OPERATOR_CIDRS=' "$PFX/etc/aicc-edge/edge.env" || true)" "0"
+t_contains "edge.env: loopback operator listener port" "$(cat "$PFX/etc/aicc-edge/edge.env")" "AICC_OPERATOR_PORT=8443"
+t_contains "edge.env: ACME e-mail rendered" "$(cat "$PFX/etc/aicc-edge/edge.env")" "AICC_ACME_EMAIL=ops@example.org"
+t_not_contains "edge.env has no placeholder left" "$(cat "$PFX/etc/aicc-edge/edge.env")" "__"
+t_ok "backup scripts installed with their library" test -f "$PFX/usr/local/lib/aicc/backup/lib/backup-common.sh"
+t_ok "sbin symlink for aicc-backup" test -L "$PFX/usr/local/sbin/aicc-backup"
+t_ok "sbin symlink for aicc-activate-release" test -L "$PFX/usr/local/sbin/aicc-activate-release"
+t_ok "fail2ban log file pre-created" test -f "$PFX/var/log/aicc-edge/aicc-edge.log"
+SECOND="$(H --only users-dirs,php,mysql,sysctl,scripts,systemd,logrotate,fail2ban,edge-env --acme-email ops@example.org 2>&1)"; rc=$?
+t_eq "second run succeeds" "$rc" "0"
+t_eq "IDEMPOTENT: the second run changes nothing (no 'installed:'/'created'/'chmod'/'chown')" "$(printf '%s\n' "$SECOND" | grep -v '^====' | grep -cE 'installed:|created |chmod |chown |symlink /' || true)" "0"
+t_contains "second run reports unchanged files" "$SECOND" "unchanged: /etc/mysql/mysql.conf.d/99-aicc.cnf"
+echo "# local edit" >> "$PFX/etc/mysql/mysql.conf.d/99-aicc.cnf"
+THIRD="$(H --only mysql 2>&1)"
+t_contains "a drifted config file is replaced" "$THIRD" "installed: /etc/mysql/mysql.conf.d/99-aicc.cnf"
+t_ok "...and the previous version is kept in /var/backups/aicc-config" bash -c "find '$PFX/var/backups/aicc-config' -name '99-aicc.cnf' | grep -q ."
+t_ok "...and the file equals the repo version again" cmp "$INFRA/mysql/99-aicc.cnf" "$PFX/etc/mysql/mysql.conf.d/99-aicc.cnf"
+DRYP="$(env AICC_TEST_HARNESS=1 AICC_ROOT_PREFIX="$PFX" bash "$PROV/install-stack.sh" --dry-run --only php 2>&1)"
+t_contains "dry-run on an installed prefix reports unchanged" "$DRYP" "unchanged: /etc/php/8.3/fpm/pool.d/aicc.conf"
+
+echo "== stage 2: two-session SSH hardening =="
+SB="$TMP/sb"; mkdir -p "$SB/bin" "$SB/sshd.d" "$SB/home/.ssh"; CALLS="$SB/calls.log"; : > "$CALLS"
+cat > "$SB/bin/sshd" <<EOS
+#!/usr/bin/env bash
+echo "sshd \$*" >> "$CALLS"
+case "\$1" in
+  -t) exit "\${STUB_SSHD_T_RC:-0}" ;;
+  -T) echo "pubkeyauthentication yes"; echo "passwordauthentication no"
+      if [ "\${STUB_SSHD_IGNORE:-0}" != 1 ] && [ -f "$SB/sshd.d/05-aicc-stage2.conf" ]; then grep -q '^PermitRootLogin no' "$SB/sshd.d/05-aicc-stage2.conf" && echo "permitrootlogin no"; grep -q '^AllowUsers aicc' "$SB/sshd.d/05-aicc-stage2.conf" && echo "allowusers aicc"; else echo "permitrootlogin without-password"; fi ;;
+esac
+EOS
+cat > "$SB/bin/systemctl" <<EOS
+#!/usr/bin/env bash
+echo "systemctl \$*" >> "$CALLS"; exit "\${STUB_SYSTEMCTL_RC:-0}"
+EOS
+chmod +x "$SB/bin"/*
+echo "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDUMMYDUMMYDUMMYDUMMYDUMMYDUMMYDUMMYDUMMYDUMMY test" > "$SB/home/.ssh/authorized_keys"; chmod 600 "$SB/home/.ssh/authorized_keys"
+echo "11111111-2222-3333-4444-555555555555" > "$SB/boot_id"
+HX() { env AICC_TEST_HARNESS=1 AICC_MARKER_PATH="$SB/marker" AICC_BOOT_ID_FILE="$SB/boot_id" AICC_SSHD_BIN="$SB/bin/sshd" AICC_SSHD_DIR="$SB/sshd.d" AICC_SYSTEMCTL_BIN="$SB/bin/systemctl" AICC_TEST_AICC_HOME="$SB/home" "$@"; }
+rm -f "$SB/marker"
+t_rc "no marker: harden-stage2 refuses" 1 HX AICC_TEST_SSH_ANCESTOR=100:root bash "$PROV/harden-stage2.sh"
+t_fail "...and wrote no drop-in" test -e "$SB/sshd.d/05-aicc-stage2.conf"
+t_rc "verify step run as root session (not aicc) fails and writes no marker" 1 HX AICC_TEST_SSH_ANCESTOR=200:root bash "$PROV/stage2-verify-second-session.sh" --skip-auth-log-check
+t_fail "...no marker was written" test -e "$SB/marker"
+t_rc "verify step outside any SSH session (console) fails" 1 HX AICC_TEST_SSH_ANCESTOR=none bash "$PROV/stage2-verify-second-session.sh" --skip-auth-log-check
+t_ok "verify step in an aicc SSH session passes" HX AICC_TEST_SSH_ANCESTOR=300:aicc bash "$PROV/stage2-verify-second-session.sh"
+t_ok "...and writes the marker (mode 0600)" bash -c "[ -f '$SB/marker' ] && [ \"\$(mode '$SB/marker')\" = 600 ]"
+t_contains "marker carries the boot id" "$(cat "$SB/marker")" "BOOT_ID=11111111-2222-3333-4444-555555555555"
+t_rc "harden from the SAME session that wrote the marker is refused" 1 HX AICC_TEST_SSH_ANCESTOR=300:aicc bash "$PROV/harden-stage2.sh"
+echo "99999999-0000-0000-0000-000000000000" > "$SB/boot_id.other"
+t_rc "marker from another boot is refused" 1 env AICC_TEST_HARNESS=1 AICC_MARKER_PATH="$SB/marker" AICC_BOOT_ID_FILE="$SB/boot_id.other" AICC_SSHD_BIN="$SB/bin/sshd" AICC_SSHD_DIR="$SB/sshd.d" AICC_SYSTEMCTL_BIN="$SB/bin/systemctl" AICC_TEST_SSH_ANCESTOR=100:root bash "$PROV/harden-stage2.sh"
+cp "$SB/marker" "$SB/marker.good"; sed -i.bak "s/^EPOCH=.*/EPOCH=$(( $(date -u +%s) - 4000 ))/" "$SB/marker"; rm -f "$SB/marker.bak"
+t_rc "marker older than 60 minutes is refused" 1 HX AICC_TEST_SSH_ANCESTOR=100:root bash "$PROV/harden-stage2.sh"
+cp "$SB/marker.good" "$SB/marker"
+: > "$CALLS"
+t_rc "--dry-run changes nothing" 0 HX AICC_TEST_SSH_ANCESTOR=100:root bash "$PROV/harden-stage2.sh" --dry-run
+t_fail "...no drop-in after a dry run" test -e "$SB/sshd.d/05-aicc-stage2.conf"
+t_eq "...no reload after a dry run" "$(grep -c reload "$CALLS" || true)" "0"
+OUTH="$(HX AICC_TEST_SSH_ANCESTOR=100:root bash "$PROV/harden-stage2.sh" 2>&1)"; rc=$?
+t_eq "harden from the first session with a valid marker succeeds" "$rc" "0"
+t_contains "drop-in has PermitRootLogin no" "$(cat "$SB/sshd.d/05-aicc-stage2.conf")" "PermitRootLogin no"
+t_contains "drop-in has AllowUsers aicc" "$(cat "$SB/sshd.d/05-aicc-stage2.conf")" "AllowUsers aicc"
+t_contains "the file name sorts before cloud-init's 10-aicc-hardening.conf" "$(ls "$SB/sshd.d"; echo 10-aicc-hardening.conf | cat)" "05-aicc-stage2.conf"
+t_eq "sshd -t ran BEFORE the reload" "$(grep -nE '^sshd -t|reload' "$CALLS" | head -2 | cut -d: -f2 | tr '\n' ' ' | cut -c1-8)" "sshd -t "
+t_contains "reload (not restart) of ssh" "$(cat "$CALLS")" "systemctl reload ssh"
+t_not_contains "NEVER a restart/stop of ssh" "$(cat "$CALLS")" "restart"
+t_contains "rollback command is printed" "$OUTH" "05-aicc-stage2.conf && sudo sshd -t && sudo systemctl reload ssh"
+t_contains "tells the operator to keep the sessions and test a third login" "$OUTH" "THIRD login"
+: > "$CALLS"
+OUT2="$(HX AICC_TEST_SSH_ANCESTOR=100:root bash "$PROV/harden-stage2.sh" 2>&1)"
+t_contains "second run: unchanged" "$OUT2" "unchanged:"
+t_eq "second run: no reload" "$(grep -c reload "$CALLS" || true)" "0"
+rm -f "$SB/sshd.d/05-aicc-stage2.conf"; : > "$CALLS"
+t_rc "sshd -t failure: refused" 1 HX STUB_SSHD_T_RC=1 AICC_TEST_SSH_ANCESTOR=100:root bash "$PROV/harden-stage2.sh"
+t_fail "...drop-in was reverted" test -e "$SB/sshd.d/05-aicc-stage2.conf"
+t_eq "...and sshd was NOT reloaded" "$(grep -c reload "$CALLS" || true)" "0"
+t_rc "effective config unchanged by the drop-in (earlier file wins): refused" 1 HX STUB_SSHD_IGNORE=1 AICC_TEST_SSH_ANCESTOR=100:root bash "$PROV/harden-stage2.sh"
+t_fail "...drop-in was reverted again" test -e "$SB/sshd.d/05-aicc-stage2.conf"
+t_eq "...and sshd was NOT reloaded either" "$(grep -c reload "$CALLS" || true)" "0"
+t_rc "a failing reload removes the drop-in and fails" 1 HX STUB_SYSTEMCTL_RC=1 AICC_TEST_SSH_ANCESTOR=100:root bash "$PROV/harden-stage2.sh"
+t_fail "...no drop-in left after a failed reload" test -e "$SB/sshd.d/05-aicc-stage2.conf"
+if [ "$(id -u)" != 0 ]; then t_rc "without the harness, non-root is refused" 1 bash "$PROV/harden-stage2.sh"; fi
+
+echo "== PHP-FPM / PHP ini configuration syntax (local php-fpm, user/paths substituted) =="
+if command -v php-fpm >/dev/null 2>&1; then
+  FD="$TMP/fpm"; mkdir -p "$FD/log" "$FD/run" "$FD/tmp" "$FD/sess"
+  sed -e "s#^user = aicc-cp#user = $(id -un)#" -e "s#^group = aicc-cp#group = $(id -gn)#" -e "s#^listen.owner = aicc-cp#listen.owner = $(id -un)#" -e "s#^listen.group = aicc-edge#listen.group = $(id -gn)#" \
+      -e "s#/run/php/aicc-cp.sock#$FD/run/s.sock#" -e "s#/var/log/aicc-cp#$FD/log#g" -e "s#/var/lib/aicc-cp/tmp#$FD/tmp#g" -e "s#/var/lib/aicc-cp/sessions#$FD/sess#" \
+      -e "s#^php_admin_value\[sendmail_path\].*#php_admin_value[sendmail_path] = /bin/true#" "$INFRA/php/aicc-pool.conf" > "$FD/pool.conf"
+  printf '[global]\nerror_log = %s/log/fpm.log\ndaemonize = no\ninclude = %s/pool.conf\n' "$FD" "$FD" > "$FD/fpm.conf"
+  t_ok "php-fpm -t accepts the pool file" php-fpm -t -y "$FD/fpm.conf" -n
+  DUMP="$(php-fpm -tt -y "$FD/fpm.conf" -n 2>&1)"
+  for kv in "pm = dynamic" "pm.max_children = 3" "pm.start_servers = 1" "pm.min_spare_servers = 1" "pm.max_spare_servers = 2" "pm.max_requests = 300" "pm.status_path = /fpm-status" "ping.path = /fpm-ping" "request_slowlog_timeout = 5" "listen.mode = 0660" "request_terminate_timeout = 55"; do
+    t_contains "pool value: $kv" "$DUMP" "$kv"
+  done
+  t_contains "pool: memory_limit 192M for the pool" "$DUMP" "php_admin_value[memory_limit] = 192M"
+  t_contains "pool: sendmail goes to the sink (substituted here)" "$(cat "$INFRA/php/aicc-pool.conf")" "sendmail_path] = /usr/local/sbin/aicc-mail-sink"
+  t_contains "pool: expose_php is off in the ini" "$(cat "$INFRA/php/90-aicc-fpm.ini")" "expose_php = Off"
+  OPC="$(php -n -d zend_extension=opcache -c "$INFRA/php/90-aicc-fpm.ini" -i 2>/dev/null | grep -E '^opcache\.(validate_timestamps|memory_consumption|max_accelerated_files|interned_strings_buffer|save_comments) ')"
+  t_contains "ini: opcache.validate_timestamps Off" "$OPC" "opcache.validate_timestamps => Off"
+  t_contains "ini: opcache.memory_consumption 128" "$OPC" "opcache.memory_consumption => 128"
+  t_contains "ini: opcache.save_comments On" "$OPC" "opcache.save_comments => On"
+  t_ok "mail sink writes a file and sends nothing" bash -c "echo 'Subject: t' | AICC_MAIL_SINK_DIR='$TMP/mail' bash '$INFRA/php/aicc-mail-sink.sh' && ls '$TMP/mail'/*.eml >/dev/null && [ \"\$(stat -c %a '$TMP/mail'/*.eml 2>/dev/null || stat -f %Lp '$TMP/mail'/*.eml)\" = 600 ]"
+  t_ok "the disabled-functions list does not contain functions WordPress needs (mail, curl_exec, file_put_contents)" bash -c "! grep -E 'disable_functions' '$INFRA/php/aicc-pool.conf' | grep -Eq 'mail|curl_exec|file_put_contents|fsockopen|proc_nice'"
+else t_skip "php-fpm syntax tests" "php-fpm not installed"; fi
+
+echo "== MySQL configuration against a throwaway mysqld (8.4 here; production is 8.0) =="
+if [ -x "$LOCALMY/mysqld" ]; then
+  M="$TMP/m"; mkdir -p "$M/data" "$M/log"
+  { printf '[mysqld]\ndatadir=%s/data\nbasedir=%s\nsocket=%s/s.sock\npid-file=%s/p.pid\nmysqlx-socket=%s/x.sock\n' "$M" "$(dirname "$LOCALMY")" "$M" "$M" "$M"; sed "s#/var/log/mysql#$M/log#g" "$INFRA/mysql/99-aicc.cnf"; } > "$M/my.cnf"
+  t_ok "mysqld --validate-config accepts the drop-in" "$LOCALMY/mysqld" --defaults-file="$M/my.cnf" --validate-config
+  "$LOCALMY/mysqld" --defaults-file="$M/my.cnf" --initialize-insecure >"$M/init.out" 2>&1 || true
+  "$LOCALMY/mysqld" --defaults-file="$M/my.cnf" >"$M/run.out" 2>&1 &
+  MYSQLD_PID=$!
+  for i in $(seq 1 60); do [ -S "$M/s.sock" ] && break; sleep 1; done
+  if [ -S "$M/s.sock" ]; then
+    MY=("$LOCALMY/mysql" --protocol=socket --socket="$M/s.sock" -uroot -N)
+    t_eq "effective settings: skip_networking=1 performance_schema=0 buffer_pool=192M max_connections=30 log_bin=0" "$("${MY[@]}" -e 'SELECT @@skip_networking, @@performance_schema, @@innodb_buffer_pool_size, @@max_connections, @@log_bin' | tr '\t' ' ')" "1 0 201326592 30 0"
+    t_eq "effective: slow log on, 2 s threshold, general log off" "$("${MY[@]}" -e 'SELECT @@slow_query_log, @@long_query_time, @@general_log' | tr '\t' ' ')" "1 2.000000 0"
+    t_eq "effective: utf8mb4 server charset" "$("${MY[@]}" -e 'SELECT @@character_set_server')" "utf8mb4"
+    t_eq "effective: table caches 800" "$("${MY[@]}" -e 'SELECT @@table_open_cache, @@table_definition_cache' | tr '\t' ' ')" "800 800"
+    t_eq "the server has NO TCP listener at all (socket only)" "$("${MY[@]}" -e 'SELECT @@port > 0 AND @@skip_networking = 0')" "0"
+
+    echo "== create-staging-db.sh (grants verified against the throwaway server) =="
+    SEC="$TMP/secrets"; BKCNF="$TMP/backup.cnf"
+    CDB() { env AICC_TEST_HARNESS=1 bash "$PROV/create-staging-db.sh" --socket "$M/s.sock" --secrets-dir "$SEC" --backup-cnf "$BKCNF" --mysql-bin "$LOCALMY/mysql" "$@"; }
+    OUTDB="$(CDB 2>&1)"; rc=$?
+    t_eq "create-staging-db succeeds" "$rc" "0"
+    t_ok "app password file is 0600" bash -c "[ \"\$(mode '$SEC/db-cp.pass')\" = 600 ]"
+    t_ok "backup.cnf is 0600" bash -c "[ \"\$(mode '$BKCNF')\" = 600 ]"
+    t_not_contains "the app password is never printed" "$OUTDB" "$(cat "$SEC/db-cp.pass")"
+    t_not_contains "the backup password is never printed" "$OUTDB" "$(cat "$SEC/db-backup.pass")"
+    P1="$(cat "$SEC/db-cp.pass")"; CDB >/dev/null 2>&1
+    t_eq "IDEMPOTENT: a re-run keeps the same password" "$(cat "$SEC/db-cp.pass")" "$P1"
+    APPC="$TMP/app.cnf"; printf '[client]\nuser=aicc_cp\npassword=%s\nsocket=%s/s.sock\n' "$P1" "$M" > "$APPC"; chmod 600 "$APPC"
+    APP=("$LOCALMY/mysql" --defaults-extra-file="$APPC" -N); BK=("$LOCALMY/mysql" --defaults-extra-file="$BKCNF" -N)
+    t_ok "app user can create tables in aicc_cp" "${APP[@]}" aicc_cp -e "CREATE TABLE wp_options (option_id INT PRIMARY KEY AUTO_INCREMENT, option_name VARCHAR(191), option_value LONGTEXT); INSERT INTO wp_options (option_name, option_value) VALUES ('siteurl','https://stage.copilt.org'),('blogname','AICC'); CREATE TABLE wp_posts (ID INT PRIMARY KEY, post_title TEXT); CREATE VIEW v_opts AS SELECT option_name FROM wp_options; CREATE TRIGGER trg_ins BEFORE INSERT ON wp_posts FOR EACH ROW SET NEW.post_title = UPPER(NEW.post_title); CREATE FUNCTION f_one() RETURNS INT DETERMINISTIC RETURN 1; CREATE EVENT ev_noop ON SCHEDULE EVERY 1 DAY DO SELECT 1;"
+    t_fail "app user cannot create another database" "${APP[@]}" -e "CREATE DATABASE other"
+    t_fail "app user cannot read mysql.user" "${APP[@]}" -e "SELECT * FROM mysql.user"
+    t_ok "backup user can SELECT in aicc_cp" "${BK[@]}" -e "SELECT COUNT(*) FROM aicc_cp.wp_options"
+    t_fail "backup user cannot INSERT in aicc_cp" "${BK[@]}" -e "INSERT INTO aicc_cp.wp_options (option_name) VALUES ('x')"
+    t_fail "backup user cannot DROP in aicc_cp" "${BK[@]}" -e "DROP TABLE aicc_cp.wp_posts"
+    t_ok "backup user can create and drop aicc_restore_check" "${BK[@]}" -e "CREATE DATABASE aicc_restore_check; DROP DATABASE aicc_restore_check"
+    t_fail "backup user cannot create any other database" "${BK[@]}" -e "CREATE DATABASE aicc_restore_checkX"
+    t_fail "backup user cannot create a differently named lookalike (underscore escaped in the GRANT)" "${BK[@]}" -e "CREATE DATABASE aiccXrestoreXcheck"
+    t_rc "--db with a non-aicc name is refused" 1 env AICC_TEST_HARNESS=1 bash "$PROV/create-staging-db.sh" --db mysql --socket "$M/s.sock" --secrets-dir "$SEC" --backup-cnf "$BKCNF" --mysql-bin "$LOCALMY/mysql"
+    t_rc "--db aicc_restore_check is refused" 1 env AICC_TEST_HARNESS=1 bash "$PROV/create-staging-db.sh" --db aicc_restore_check --socket "$M/s.sock" --secrets-dir "$SEC" --backup-cnf "$BKCNF" --mysql-bin "$LOCALMY/mysql"
+    t_ok "--dry-run touches nothing" bash "$PROV/create-staging-db.sh" --dry-run
+
+    echo "== wp-config rendering =="
+    WC="$TMP/wpcfg"; mkdir -p "$WC/shared"
+    RWC() { env AICC_TEST_HARNESS=1 bash "$PROV/render-wp-config.sh" --out "$WC/shared/wp-config.php" --secrets-dir "$SEC" --owner "$(id -un):$(id -gn)" "$@"; }
+    OUTW="$(RWC 2>&1)"; rc=$?
+    t_eq "render-wp-config succeeds" "$rc" "0"
+    t_ok "rendered file passes php -l" php -l "$WC/shared/wp-config.php"
+    t_eq "rendered file is mode 0640" "$(mode "$WC/shared/wp-config.php")" "640"
+    t_eq "no placeholder is left in the rendered file" "$(grep -c '@@' "$WC/shared/wp-config.php" || true)" "0"
+    t_not_contains "no secret in the script's output" "$OUTW" "$(sed -n 's/^AUTH_KEY=//p' "$SEC/wp-secrets.env")"
+    mkdir -p "$WC/abs"; echo '<?php echo json_encode(array("home"=>WP_HOME,"siteurl"=>WP_SITEURL,"env"=>WP_ENVIRONMENT_TYPE,"dbhost"=>DB_HOST,"fmods"=>DISALLOW_FILE_MODS,"cron"=>DISABLE_WP_CRON,"debug"=>WP_DEBUG,"proxies"=>AICC_LM_TRUSTED_PROXIES,"ops"=>AICC_LM_OPERATOR_CIDRS,"charset"=>DB_CHARSET,"dbuser"=>DB_USER,"dbname"=>DB_NAME,"mem"=>WP_MEMORY_LIMIT,"maxmem"=>WP_MAX_MEMORY_LIMIT,"autoupd"=>AUTOMATIC_UPDATER_DISABLED,"ssladmin"=>FORCE_SSL_ADMIN,"devboot"=>defined("AICC_LM_ALLOW_DEV_SECRET_BOOTSTRAP"),"fixture"=>defined("AICC_LM_TEST_FIXTURE")));' > "$WC/abs/wp-settings.php"
+    CONF="$(php -r 'define("ABSPATH", $argv[2]); require $argv[1];' "$WC/shared/wp-config.php" "$WC/abs/" 2>&1)"
+    t_eq "WP_HOME and WP_SITEURL are https://stage.copilt.org" "$(echo "$CONF" | jq -r '.home + " " + .siteurl')" "https://stage.copilt.org https://stage.copilt.org"
+    t_eq "WP_ENVIRONMENT_TYPE staging" "$(echo "$CONF" | jq -r .env)" "staging"
+    t_eq "DB_HOST is the MySQL unix socket" "$(echo "$CONF" | jq -r .dbhost)" "localhost:/run/mysqld/mysqld.sock"
+    t_eq "DISALLOW_FILE_MODS true, DISABLE_WP_CRON true, WP_DEBUG false" "$(echo "$CONF" | jq -r '[.fmods,.cron,.debug]|join(" ")')" "true true false"
+    t_eq "AICC_LM_TRUSTED_PROXIES is empty" "$(echo "$CONF" | jq -c .proxies)" "[]"
+    t_eq "AICC_LM_OPERATOR_CIDRS is loopback only" "$(echo "$CONF" | jq -c .ops)" '["127.0.0.1/32","::1/128"]'
+    t_eq "auto updates off, admin over SSL" "$(echo "$CONF" | jq -r '[.autoupd,.ssladmin]|join(" ")')" "true true"
+    t_eq "memory ceilings 128M/192M match the pool" "$(echo "$CONF" | jq -r '[.mem,.maxmem]|join(" ")')" "128M 192M"
+    t_eq "the dev secret bootstrap and test-fixture constants are NOT defined" "$(echo "$CONF" | jq -r '[.devboot,.fixture]|join(" ")')" "false false"
+    t_eq "DB_USER/DB_NAME as created" "$(echo "$CONF" | jq -r '.dbuser + " " + .dbname')" "aicc_cp aicc_cp"
+    SUM1="$(shasum -a 256 "$WC/shared/wp-config.php" | cut -d' ' -f1)"; RWC >/dev/null 2>&1
+    t_eq "IDEMPOTENT: re-render gives an identical file (salts reused)" "$(shasum -a 256 "$WC/shared/wp-config.php" | cut -d' ' -f1)" "$SUM1"
+    RWC --force-salts >/dev/null 2>&1
+    t_fail "--force-salts changes the keys" bash -c "[ \"\$(shasum -a 256 '$WC/shared/wp-config.php' | cut -d' ' -f1)\" = '$SUM1' ]"
+    t_fail "the template in git has no secret-looking define with a value" grep -Eq "define\( '(AUTH|SECURE_AUTH|LOGGED_IN|NONCE)_(KEY|SALT)', '[A-Za-z0-9]{16,}'" "$PROV/wp-config.stage.template.php"
+    t_rc "rendering without the DB password file is refused" 1 env AICC_TEST_HARNESS=1 bash "$PROV/render-wp-config.sh" --out "$WC/x.php" --secrets-dir "$TMP/emptysecrets"
+    t_rc "--dry-run prints nothing secret" 0 bash "$PROV/render-wp-config.sh" --dry-run
+
+    echo "== backup / restore as the REAL backup account against the throwaway server =="
+    BKDIR="$TMP/bk"; SH="$TMP/shared"; EC="$TMP/edgeconf"; mkdir -p "$SH/uploads/2026" "$EC" "$TMP/rel/site" "$TMP/rel/cp"; echo img > "$SH/uploads/2026/a.jpg"; echo "<?php // x" > "$SH/wp-config.php"; echo cfg > "$EC/Caddyfile"
+    ln -s "$TMP/rel/site/releases/R1" "$TMP/rel/site/current"
+    BKP() { env AICC_TEST_HARNESS=1 MYSQL_BIN="$LOCALMY/mysql" MYSQLDUMP_BIN="$LOCALMY/mysqldump" bash "$INFRA/backup/aicc-backup.sh" --backup-dir "$BKDIR" --shared-dir "$SH" --edge-conf-dir "$EC" --release-root "$TMP/rel" --mysql-defaults-file "$BKCNF" "$@"; }
+    OUTB="$(BKP --label scheduled 2>&1)"; rc=$?
+    [ "$rc" = 0 ] || echo "$OUTB" | tail -8
+    t_eq "aicc-backup (real backup account, production names) succeeds" "$rc" "0"
+    t_eq "status.json says ok" "$(jq -r .status "$BKDIR/status.json")" "ok"
+    t_eq "restore smoke check ran and passed" "$(jq -r .db_dump.restore_check "$BKDIR/status.json")" "ok"
+    DUMPF="$BKDIR/$(jq -r .last_success.db_dump_file "$BKDIR/status.json")"; FILESF="$BKDIR/$(jq -r .last_success.files_archive_file "$BKDIR/status.json")"
+    t_eq "dump file mode 0600" "$(mode "$DUMPF")" "600"
+    t_eq "files archive mode 0600" "$(mode "$FILESF")" "600"
+    t_eq "status.json mode 0644 (readable by AICC Ops)" "$(mode "$BKDIR/status.json")" "644"
+    t_ok "sha256 sidecar verifies" bash -c "cd '$BKDIR' && (shasum -a 256 -c '$(basename "$DUMPF").sha256' || sha256sum -c '$(basename "$DUMPF").sha256')"
+    DUMPTXT="$(gzip -dc "$DUMPF")"
+    t_contains "dump contains the trigger" "$DUMPTXT" "trg_ins"
+    t_contains "dump contains the stored function (--routines)" "$DUMPTXT" "f_one"
+    t_contains "dump contains the event (--events)" "$DUMPTXT" "ev_noop"
+    t_contains "dump contains the view" "$DUMPTXT" "v_opts"
+    t_not_contains "dump holds no tablespace statements (--no-tablespaces)" "$DUMPTXT" "CREATE LOGFILE GROUP"
+    t_ok "files archive contains uploads, wp-config.php, edge config and release pointers" bash -c "tar tzf '$FILESF' | grep -q 'uploads/2026/a.jpg' && tar tzf '$FILESF' | grep -q 'wp-config.php' && tar tzf '$FILESF' | grep -q 'Caddyfile' && tar tzf '$FILESF' | grep -q 'pointers.txt'"
+    t_not_contains "the DB dump does not contain wp-config content" "$DUMPTXT" "<?php // x"
+    t_fail "the database password never appears in the log or status" grep -q "$(cat "$SEC/db-backup.pass")" "$BKDIR/backup.log" "$BKDIR/status.json"
+    t_eq "the throwaway restore database is gone" "$("${MY[@]}" -e "SHOW DATABASES LIKE 'aicc_restore_check'")" ""
+    t_ok "aicc-restore-test succeeds on the latest dump" env AICC_TEST_HARNESS=1 MYSQL_BIN="$LOCALMY/mysql" bash "$INFRA/backup/aicc-restore-test.sh" --backup-dir "$BKDIR" --mysql-defaults-file "$BKCNF"
+    t_eq "restore-test.json records the result" "$(jq -r .status "$BKDIR/restore-test.json")" "ok"
+    # corrupt dumps must FAIL the restore test
+    cp "$DUMPF" "$TMP/good.sql.gz"; cp "$DUMPF.sha256" "$TMP/good.sha256"
+    head -c 300 "$TMP/good.sql.gz" > "$DUMPF"
+    t_rc "a truncated dump fails the restore test" 1 env AICC_TEST_HARNESS=1 MYSQL_BIN="$LOCALMY/mysql" bash "$INFRA/backup/aicc-restore-test.sh" --backup-dir "$BKDIR" --mysql-defaults-file "$BKCNF"
+    t_eq "...restore-test.json says failed" "$(jq -r .status "$BKDIR/restore-test.json")" "failed"
+    cp "$TMP/good.sql.gz" "$DUMPF"; echo "00ff  $(basename "$DUMPF")" > "$DUMPF.sha256"
+    t_rc "a checksum mismatch fails the restore test" 1 env AICC_TEST_HARNESS=1 MYSQL_BIN="$LOCALMY/mysql" bash "$INFRA/backup/aicc-restore-test.sh" --backup-dir "$BKDIR" --mysql-defaults-file "$BKCNF"
+    cp "$TMP/good.sha256" "$DUMPF.sha256"
+    t_eq "...the throwaway database is dropped even after failures" "$("${MY[@]}" -e "SHOW DATABASES LIKE 'aicc_restore_check'")" ""
+    # lock, retention, guards
+    mkdir -p "$BKDIR/.lock"; sleep 30 & SLP=$!; echo $SLP > "$BKDIR/.lock/pid"
+    t_rc "a second concurrent run exits 3 (lock held by a live pid)" 3 BKP --label manual
+    kill $SLP 2>/dev/null; rm -rf "$BKDIR/.lock"
+    for n in 1 2 3 4 5; do for k in "aicc_cp-2026010${n}T030000Z-scheduled.sql.gz" "aicc-files-2026010${n}T030000Z-scheduled.tar.gz"; do echo old > "$BKDIR/$k"; echo x > "$BKDIR/$k.sha256"; touch -t 2601010300 "$BKDIR/$k"; done; done
+    BKP --label manual >/dev/null 2>&1
+    t_eq "retention: old sets beyond the newest three are pruned" "$(ls "$BKDIR"/aicc_cp-*.sql.gz | wc -l | tr -d ' ')" "3"
+    t_ok "retention: the fresh dump is still there" test -f "$DUMPF"
+    t_ok "retention never touches other files" test -f "$BKDIR/status.json"
+    t_rc "disk guard: refuses with exit 4 when free space is below the limit" 4 BKP --min-free-pct 100
+    t_eq "...and status.json says failed with the reason" "$(jq -r '.status + ":" + (.reason|startswith("disk guard")|tostring)' "$BKDIR/status.json")" "failed:true"
+    t_eq "...but last_success survives the failure" "$(jq -r '.last_success.label' "$BKDIR/status.json")" "manual"
+    t_rc "--dry-run changes nothing" 0 BKP --dry-run
+    t_rc "bad label is a usage error" 2 BKP --label evil
+    t_rc "the fixture database names are refused outside --fixture-test" 1 env AICC_TEST_HARNESS=1 MYSQL_BIN="$LOCALMY/mysql" bash "$INFRA/backup/aicc-backup.sh" --backup-dir "$BKDIR" --mysql-defaults-file "$BKCNF" --db aicc_rehearsal_cp
+    t_rc "in --fixture-test mode a non-rehearsal database is refused" 1 bash "$INFRA/backup/aicc-backup.sh" --fixture-test --backup-dir "$BKDIR" --mysql-defaults-file "$BKCNF" --db aicc_cp --restore-db aicc_rehearsal_x
+    chmod 644 "$BKCNF"; t_rc "an option file readable by others is refused" 2 BKP; chmod 600 "$BKCNF"
+    kill "$MYSQLD_PID" 2>/dev/null; wait "$MYSQLD_PID" 2>/dev/null; MYSQLD_PID=""
+    t_rc "MySQL down: backup fails (exit 1)" 1 BKP --label manual
+    t_eq "...status.json says failed" "$(jq -r .status "$BKDIR/status.json")" "failed"
+    t_eq "...and the last good backup is still referenced" "$(jq -r '.last_success.label' "$BKDIR/status.json")" "manual"
+  else t_bad "throwaway mysqld did not start" "$(tail -3 "$M/run.out" | tr '\n' '|')"; fi
+else t_skip "MySQL / backup / grants tests" "Local's mysql 8.4 binaries not found"; fi
+
+echo "== fail2ban filters (regexes executed with Python re against the REAL Caddy 2.11.7 log format) =="
+t_ok "filter regexes vs. real access-log lines (ground truth from JSON parsing)" python3 "$HERE/test_fail2ban_regex.py"
+
+t_summary

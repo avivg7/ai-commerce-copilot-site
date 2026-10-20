@@ -1,0 +1,6 @@
+Id=php8.3-fpm.service
+LoadState=loaded
+ActiveState=active
+SubState=running
+ActiveEnterTimestamp=Tue 2026-10-20 10:00:00 UTC
+NRestarts=2

@@ -1,0 +1,5 @@
+nr_free_pages 53583
+pgpgin 1840222
+pswpin 1000
+pswpout 5000
+pgfault 9988212

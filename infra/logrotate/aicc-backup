@@ -1,0 +1,10 @@
+# /etc/logrotate.d/aicc-backup  -  the backup job's own log (dumps and archives are pruned by aicc-backup itself, never by logrotate).
+/srv/aicc/backups/backup.log {
+    monthly
+    rotate 6
+    missingok
+    notifempty
+    compress
+    delaycompress
+    create 0600 root root
+}
