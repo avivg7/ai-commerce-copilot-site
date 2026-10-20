@@ -294,7 +294,7 @@ export const en = {
     },
     why: {
       heading: "Why this product (illustration)",
-      recoIntro: "Reco is your guide inside AICC.",
+      recoIntro: "Meet Reco, AICC's built-in guide in your WordPress dashboard.",
       none: "Tick a product to see what this sample bases its place on.",
       filters: "Paper filters: bought together with the pour-over set more often than any other product in this sample.",
       grinder: "Hand grinder: bought together with the pour-over set less often than the filters, so it is listed next.",

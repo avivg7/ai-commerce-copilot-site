@@ -83,8 +83,8 @@
       "bytes": 4393
     },
     "content/faq.en.json": {
-      "sha256": "9db9fa701e1b17b566cd16e685bf52d88a58bdae18b6499848ea339dae34f69d",
-      "bytes": 30104
+      "sha256": "fed1de1705c1ef4e512bbeb9975087182c9199a6676eaf36083829d36e3f0f51",
+      "bytes": 30097
     },
     "content/faq.es.json": {
       "sha256": "6475a81fde4b84bc9663d027e186d35192eba1a1f39ebd81f3f445de7bd57f4f",
@@ -111,8 +111,8 @@
       "bytes": 1339
     },
     "i18n/strings.json": {
-      "sha256": "8b1a677243701652a83427488759d9c350c3abebfa4bf012077e60ed83df2bf4",
-      "bytes": 91318
+      "sha256": "a6ca41305a267f9432729c729267bbb3f76ead5d107cd5f8483e66f0c1dd7167",
+      "bytes": 91486
     },
     "js/a11y-trigger.js": {
       "sha256": "b9c13ac552fa0bed063742b3830bc58ea9404184cac37d6f62ce215c3b7c496c",

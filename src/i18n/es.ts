@@ -280,7 +280,7 @@ export const es: DeepPartial<Dictionary> = {
     },
     why: {
       heading: "Por qué este producto (ilustración)",
-      recoIntro: "Reco es su guía dentro de AICC.",
+      recoIntro: "Conozca a Reco, la guía integrada de AICC en el panel de WordPress.",
       none: "Marque un producto para ver en qué se basa su puesto en este ejemplo.",
       filters: "Filtros de papel: comprados juntos con el juego de café de filtro más veces que cualquier otro producto de este ejemplo.",
       grinder: "Molinillo manual: comprado junto con el juego de café de filtro menos veces que los filtros, así que se lista a continuación.",

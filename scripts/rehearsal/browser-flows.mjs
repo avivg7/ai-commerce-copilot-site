@@ -6,7 +6,7 @@
 // Sections (one results .json + .md each, plus 00-summary, in ~/Downloads/AICC-cutover-evidence/rehearsal/phase2/, screenshots in phase2/screenshots/):
 //   1 cookies+session (EN, HE)      2 csrf/nonces/no-store/back-button     3 password reset (EN, HE, ES, RU)       4 locale routing + link crawl
 //   5 Watch demo (desktop, mobile, reduced motion, product, he/es/ru)      6 checkout infra (no payment)          7 structured data / SEO
-//   8 performance (lightweight)     9 client IP in the browser path
+//   8 performance (lightweight)     9 client IP in the browser path     10 round-4a public surface (CORS, users, feeds, footer, lang/dir, legal link, copy)
 //
 // Prerequisites (this script checks them and stops): the stack is running (`node scripts/rehearsal/rehearsal.mjs status`): real Caddy on :80/:443,
 // the CP fixture on 127.0.0.1:18982 (`bash scripts/rehearsal/cp-fixture.sh status`). Names www.copilt.org and copilt.org map to 127.0.0.1 ONLY inside the
@@ -1388,6 +1388,137 @@ async function s9() {
   return R;
 }
 
+/* ================================================================== 10. ROUND 4a: public surface, footer, lang/dir, legal links, copy (through the edge) */
+async function s10() {
+  const R = new Result("10-round4a-public-surface", "Phase 2 / 10: CORS, user enumeration, feeds, footer year, html lang/dir, privacy link, registration wording, Reco intro and home FAQ (real HTTP + browser through the edge)");
+  const plans = `${BASE}/wp-json/aicc-license/v1/plans`;
+  const h1 = (r, k) => [].concat(r.headers[k] || []).join(",");
+  // --- CORS (real HTTP through the edge)
+  const evil = await req(EDGE, plans, { headers: { Origin: "https://evil.example" } });
+  const own = await req(EDGE, plans, { headers: { Origin: BASE } });
+  const none = await req(EDGE, plans);
+  const nul = await req(EDGE, plans, { headers: { Origin: "null" } });
+  const pfEvil = await req(EDGE, plans, { method: "OPTIONS", headers: { Origin: "https://evil.example", "Access-Control-Request-Method": "POST" } });
+  const pfOwn = await req(EDGE, plans, { method: "OPTIONS", headers: { Origin: BASE, "Access-Control-Request-Method": "POST" } });
+  R.check("CORS through the edge: a foreign Origin (https://evil.example) gets NO Access-Control-Allow-Origin and NO Allow-Credentials on a REST route", evil.status === 200 && !h1(evil, "access-control-allow-origin") && !h1(evil, "access-control-allow-credentials"), `${evil.status} acao="${h1(evil, "access-control-allow-origin")}" acac="${h1(evil, "access-control-allow-credentials")}"`);
+  R.check("CORS: the own origin (https://www.copilt.org) is allowed with credentials", own.status === 200 && h1(own, "access-control-allow-origin") === BASE && h1(own, "access-control-allow-credentials") === "true", `acao="${h1(own, "access-control-allow-origin")}" acac="${h1(own, "access-control-allow-credentials")}"`);
+  R.check("CORS: no Origin header (the plugin calling the CP server to server) is unchanged: 200, no CORS headers", none.status === 200 && !h1(none, "access-control-allow-origin"), `${none.status}`);
+  R.check("CORS: Origin: null gets nothing; Vary: Origin present on cross-origin answers", !h1(nul, "access-control-allow-origin") && /origin/i.test(h1(evil, "vary")), `vary="${h1(evil, "vary")}"`);
+  R.check("CORS preflight (OPTIONS): foreign origin answered but granted nothing; own origin granted with the method list", pfEvil.status === 200 && !h1(pfEvil, "access-control-allow-origin") && pfOwn.status === 200 && h1(pfOwn, "access-control-allow-origin") === BASE && /POST/.test(h1(pfOwn, "access-control-allow-methods")), `foreign ${pfEvil.status} acao="${h1(pfEvil, "access-control-allow-origin")}"; own ${pfOwn.status} acao="${h1(pfOwn, "access-control-allow-origin")}"`);
+  // a real browser page on www reading REST with credentials works (same origin) and the browser cannot read it cross-origin from the apex-hosted evil page analogue
+  const ctx = await newCtx("desktop");
+  const page = await ctx.newPage();
+  await goto(page, `${BASE}/`);
+  const same = await page.evaluate(async () => { const r = await fetch("/wp-json/aicc-license/v1/plans", { credentials: "include" }); return { status: r.status, ok: r.ok }; });
+  R.check("a page on www.copilt.org still reads the CP REST route (same origin)", same.status === 200, JSON.stringify(same));
+  const cross = await page.evaluate(async () => { try { const r = await fetch("https://copilt.org/wp-json/aicc-license/v1/plans", { credentials: "include", mode: "cors" }); return { status: r.status }; } catch (e) { return { blocked: true, error: String(e).slice(0, 60) }; } });
+  R.check("the browser BLOCKS a credentialed cross-origin read from www to the apex origin (apex answers a redirect without CORS grants)", cross.blocked === true, JSON.stringify(cross));
+
+  // --- user enumeration
+  for (const u of ["/wp-json/wp/v2/users", "/wp-json/wp/v2/users/1", "/he/wp-json/wp/v2/users"]) {
+    const r = await req(EDGE, `${BASE}${u}`);
+    R.check(`anonymous GET ${u}: no user listing (404 or no login names in the body)`, r.status === 404 || !/"slug"|"name"/.test(r.body), `${r.status} ${r.body.slice(0, 60)}`);
+  }
+  const au = await req(EDGE, `${BASE}/author/rehearsal-admin/`);
+  R.check("/author/<login>/ through the edge answers 404 and no login is echoed", au.status === 404 && !/rehearsal-admin/.test(au.body), `${au.status}`);
+  const direct = (p) => sh("bash", ["-c", `curl -s -o /dev/null -D - -H 'Host: www.copilt.org' -H 'X-Forwarded-Proto: https' 'http://127.0.0.1:18982${p}' | head -1; curl -s -D - -o /dev/null -H 'Host: www.copilt.org' -H 'X-Forwarded-Proto: https' 'http://127.0.0.1:18982${p}' | grep -i '^location' || true`]).stdout.replace(/\r/g, "").trim().split("\n").join(" | ");
+  const a1 = direct("/?author=1"), f1 = direct("/?feed=rss2"), f2 = direct("/feed/");
+  R.check("(CP upstream, bypassing the edge, which owns / for the static site) /?author=1 is 404 with no Location header leaking the login", /404/.test(a1) && !/location/i.test(a1), a1);
+  R.check("(CP upstream) /?feed=rss2 and /feed/ are 404", /404/.test(f1) && /404/.test(f2), `${f1} || ${f2}`);
+
+  // --- feeds and discovery links on CP pages (browser DOM + headers), four languages
+  const feedBad = [];
+  for (const loc of LOCALES) for (const pth of ["/pricing/", "/my-account/", "/cart/", "/terms/"]) {
+    const resp = await goto(page, `${BASE}${pre(loc)}${pth}`);
+    const hdr = await resp.allHeaders();
+    const bad = await page.evaluate(() => [...document.querySelectorAll('link[rel="alternate"][type*="rss"], link[rel="alternate"][type*="atom"], link[rel="shortlink"], link[rel="https://api.w.org/"], link[rel="EditURI"], link[rel="wlwmanifest"], link[type="application/json+oembed"], link[type="text/xml+oembed"], meta[name="generator"]')].map((l) => l.getAttribute("rel") || l.getAttribute("name")));
+    if (bad.length || hdr.link) feedBad.push(`${pre(loc)}${pth}: ${bad.join(",")}${hdr.link ? " Link-header" : ""}`);
+  }
+  R.check("no feed / shortlink / REST-discovery / EditURI / WLW / oEmbed link or generator meta, and no Link HTTP header, on CP pages in 4 languages", feedBad.length === 0, JSON.stringify(feedBad));
+  for (const u of ["/feed/", "/comments/feed/", "/he/feed/", "/es/comments/feed/"]) { const r = await req(EDGE, `${BASE}${u}`); R.check(`${u}: 404 through the edge`, r.status === 404, `${r.status}`); }
+  const stat = await req(EDGE, `${BASE}/`);
+  R.check("static home does not emit a feed link either", !/type="application\/(rss|atom)\+xml"/.test(stat.body));
+
+  // --- html lang/dir on every CP page type in four languages (incl. checkout with a plan and the 404 page), and the footer year
+  const user = createUser("r4a");
+  const yr = String(new Date().getFullYear());
+  const staticFooter = [];
+  const langBad = [], footBad = [];
+  for (const loc of LOCALES) {
+    const p = pre(loc);
+    await goto(page, `${BASE}${p}/`);
+    const sf = (await text(page, "footer")).replace(/\s+/g, " ");
+    const m = /©\s*(\d{4})\s*AICC/.exec(sf);
+    staticFooter.push(m ? m[1] : "none");
+    for (const pth of ["/pricing/", "/terms/", "/privacy/", "/cart/", "/my-account/", "/my-account/lost-password/", "/pricing/no-such-page/"]) {
+      const resp = await goto(page, `${BASE}${p}${pth}`);
+      const f = await facts(page);
+      const attrs = await page.evaluate(() => ({ lang: document.documentElement.getAttribute("lang"), dir: document.documentElement.getAttribute("dir") }));
+      if (attrs.lang !== loc || attrs.dir !== (loc === "he" ? "rtl" : "ltr")) langBad.push(`${p}${pth} (${resp.status()}): ${attrs.lang}/${attrs.dir}`);
+      const ft = (await text(page, "footer")).replace(/\s+/g, " ");
+      const fm = /©\s*(\d{4})\s*AICC/.exec(ft);
+      if (!fm || fm[1] !== yr) footBad.push(`${p}${pth}: ${fm ? fm[0] : "no © line"}`);
+      void f;
+    }
+  }
+  await login(page, user);
+  await goto(page, `${BASE}/pricing/`);
+  await Promise.all([page.waitForNavigation({ waitUntil: "load" }), page.locator('a[href*="add-to-cart=10"]').first().click()]);
+  await page.waitForSelector(".wc-block-checkout", { timeout: 25000 }).catch(() => {});
+  const ck = await page.evaluate(() => ({ lang: document.documentElement.getAttribute("lang"), dir: document.documentElement.getAttribute("dir"), foot: (document.querySelector("footer")?.innerText || "").replace(/\s+/g, " ") }));
+  if (ck.lang !== "en" || ck.dir !== "ltr") langBad.push(`/checkout/: ${ck.lang}/${ck.dir}`);
+  if (!new RegExp(`©\\s*${yr}\\s*AICC`).test(ck.foot)) footBad.push(`/checkout/: ${/©[^A]*AICC/.exec(ck.foot)?.[0]}`);
+  await goto(page, `${BASE}/he/checkout/`);
+  await page.waitForSelector(".wc-block-checkout", { timeout: 25000 }).catch(() => {});
+  const ckh = await page.evaluate(() => ({ lang: document.documentElement.getAttribute("lang"), dir: document.documentElement.getAttribute("dir") }));
+  if (ckh.lang !== "he" || ckh.dir !== "rtl") langBad.push(`/he/checkout/: ${ckh.lang}/${ckh.dir}`);
+  R.check("html lang and dir are exactly the language contract (en|he|es|ru, ltr|rtl) on pricing, legal x2, cart, my-account, lost-password, the 404 page and checkout, in all four languages (no en-US, no missing dir)", langBad.length === 0, JSON.stringify(langBad));
+  R.check(`the CP footer reads "© ${yr} AICC" (year computed at render time) on every one of those pages, like the static site (${staticFooter.join("/")})`, footBad.length === 0 && staticFooter.every((y) => y === yr), JSON.stringify({ footBad, staticFooter }));
+
+  // --- legal links and registration wording (EN + HE), through the real form
+  for (const loc of ["en", "he"]) {
+    const p = pre(loc);
+    const c2 = await newCtx("desktop", { locale: loc === "he" ? "he-IL" : "en-US" });
+    const pg = await c2.newPage();
+    await goto(pg, `${BASE}${p}/my-account/`);
+    const href = await pg.locator("form.register a.woocommerce-privacy-policy-link, .woocommerce-privacy-policy-text a").first().getAttribute("href");
+    R.check(`[${loc}] the register form's privacy-policy link is ${BASE}${p}/privacy/ (not /?page_id=N)`, href === `${BASE}${p}/privacy/`, String(href));
+    const landed = await goto(pg, href);
+    const ff = await facts(pg);
+    R.check(`[${loc}] ... and it opens the real policy (200, ${loc} lang, a privacy heading)`, landed.status() === 200 && ff.lang.startsWith(loc) && /\S/.test(ff.h1), `${landed.status()} ${ff.lang} "${ff.h1}"`);
+    await goto(pg, `${BASE}${p}/my-account/`);
+    await pg.fill("#reg_email", `bf-r4a-${loc}-${RUN_ID}@example.test`);
+    await Promise.all([pg.waitForNavigation({ waitUntil: "load" }), pg.click("form.register button[type=submit]")]);
+    const uid = wpOut("user", "get", `bf-r4a-${loc}-${RUN_ID}@example.test`, "--field=ID"); if (/^\d+$/.test(uid)) createdUsers.push(uid);
+    const note = (await text(pg, "main")).replace(/\s+/g, " ");
+    const old = { en: /temporary password/i, he: /סיסמה זמנית/ }[loc];
+    const fresh = { en: /signed in with a password we generated\. We emailed you a link to set your own/, he: /סיסמה שנוצרה אוטומטית/ }[loc];
+    R.check(`[${loc}] after registering, the notice no longer says "temporary password" and says what is true (a generated password and an emailed link to set your own); the register form says the same link is sent`, !old.test(note) && fresh.test(note), (note.match(/Your account with[^.]*\.[^.]*\.|החשבון שלכם[^.]*\.[^.]*\./) || [note.slice(0, 120)])[0]);
+    await c2.close();
+  }
+
+  // --- copy: Reco intro in the home demo panel, home FAQ list
+  await goto(page, `${BASE}/`);
+  await page.waitForSelector(".aicc-fbt__recointro", { state: "attached", timeout: 15000 }).catch(() => {});
+  const demoText = (await page.locator("#demo").innerText().catch(() => "")).replace(/\s+/g, " ");
+  R.check("home demo panel introduces Reco before relying on it: 'Meet Reco, AICC's built-in guide in your WordPress dashboard.' (and no bare 'Reco is your guide')", /Meet Reco, AICC['’]s built-in guide in your WordPress dashboard\./.test(demoText) && !/Reco is your guide inside AICC/.test(demoText), (demoText.match(/Meet Reco[^.]*\./) || ["not found"])[0]);
+  for (const loc of ["he", "es", "ru"]) {
+    await goto(page, `${BASE}/${loc}/`);
+    await page.waitForSelector(".aicc-fbt__recointro", { state: "attached", timeout: 15000 }).catch(() => {});
+    const t = (await page.locator("#demo").innerText().catch(() => "")).replace(/\s+/g, " ");
+    R.check(`[${loc}] the Reco intro was updated in the same panel (old "guide inside AICC" sentence gone)`, !/המדריך שלכם בתוך AICC|es su guía dentro de AICC|ваш гид внутри AICC/.test(t) && /Reco/.test(t), (t.match(/(הכירו את Reco|Conozca a Reco|Знакомьтесь)[^.]*\./) || ["not found"])[0]);
+  }
+  const faqOn = async (u) => { await goto(page, `${BASE}${u}`); const vis = await page.evaluate(() => [...document.querySelectorAll("#faq summary, [data-faq] summary, details summary")].map((s) => (s.textContent || "").trim())); const ld = await page.evaluate(() => [...document.querySelectorAll('script[type="application/ld+json"]')].flatMap((s) => { try { const j = JSON.parse(s.textContent || ""); return (Array.isArray(j) ? j : [j]).filter((x) => x["@type"] === "FAQPage").flatMap((x) => (x.mainEntity || []).map((q) => q.name)); } catch { return []; } })); return { vis, ld }; };
+  const homeFaq = await faqOn("/");
+  const qs = await faqOn("/questions/");
+  const fbt = "Is AICC just Frequently Bought Together?";
+  R.check("home FAQ list no longer features 'Is AICC just Frequently Bought Together?' (visible list and FAQPage JSON-LD), and the visible and structured lists are the same set", !homeFaq.vis.includes(fbt) && !homeFaq.ld.includes(fbt) && homeFaq.vis.length >= 5 && homeFaq.ld.every((q) => homeFaq.vis.includes(q)), `visible ${homeFaq.vis.length}, ld ${homeFaq.ld.length}`);
+  R.check("/questions/ still lists it (visible; JSON-LD per the legal-review switch)", qs.vis.includes(fbt), `visible ${qs.vis.length}`);
+  await ctx.close();
+  R.save();
+  return R;
+}
+
 /* ==== MAIN ==== */
 async function preflight() {
   const problems = [];
@@ -1398,7 +1529,7 @@ async function preflight() {
   if (!problems.length) { const r = await req(EDGE, `${BASE}/`); if (r.status !== 200) problems.push(`edge answered ${r.status} for /`); }
   if (problems.length) { console.error("PRE-FLIGHT FAILED:\n - " + problems.join("\n - ")); process.exit(2); }
 }
-const SECTION_FNS = () => ({ 1: typeof s1 === "function" && s1, 2: typeof s2 === "function" && s2, 3: typeof s3 === "function" && s3, 4: typeof s4 === "function" && s4, 5: typeof s5 === "function" && s5, 6: typeof s6 === "function" && s6, 7: typeof s7 === "function" && s7, 8: typeof s8 === "function" && s8, 9: typeof s9 === "function" && s9 });
+const SECTION_FNS = () => ({ 1: typeof s1 === "function" && s1, 2: typeof s2 === "function" && s2, 3: typeof s3 === "function" && s3, 4: typeof s4 === "function" && s4, 5: typeof s5 === "function" && s5, 6: typeof s6 === "function" && s6, 7: typeof s7 === "function" && s7, 8: typeof s8 === "function" && s8, 9: typeof s9 === "function" && s9, 10: typeof s10 === "function" && s10 });
 async function main() {
   await preflight();
   fs.mkdirSync(SHOTS, { recursive: true });
