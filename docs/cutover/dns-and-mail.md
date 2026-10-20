@@ -36,7 +36,7 @@ All three public resolvers and both authoritative servers returned the same RRse
 | Wildcard (`*.copilt.org`) | A | none (random label returned NXDOMAIN-style SOA) | - | |
 | Other | ANY on apex | `HINFO "RFC8482"` (server minimal-ANY) | 3600 | |
 
-Related live state seen while checking (not DNS): `https://copilt.org/` answers `301 https://www.copilt.org/` from GitHub.com; Pages certificate for `www.copilt.org`/`copilt.org` is Let's Encrypt YR2, **notAfter 2026-11-19 09:36:54 GMT, still not renewed as of this morning** (`gh api .../pages`: `https_enforced: true`, certificate `approved`, expires 2026-11-19, no pending domain verification); `api.copilt.org` certificate Let's Encrypt YE2, notAfter 2026-11-21. Authoritative A/CNAME TTLs read **1799** and MX/TXT/NS read **1800**, constant across repeated queries (so the runbook's "1800 s" is right to within one second).
+Related live state seen while checking (not DNS): `https://copilt.org/` answers `301 https://www.copilt.org/` from GitHub.com; Pages certificate for `www.copilt.org`/`copilt.org` was Let's Encrypt YR2 with notAfter 2026-11-19 until the morning of 2026-10-20, and **GitHub renewed it at 12:41 UTC that day (Let's Encrypt YR1, notAfter 2027-01-18 12:41:22 GMT; re-verified 16:41 UTC with `openssl s_client`, `live-facts-2026-10-20.txt`)**; earlier the same morning `gh api .../pages` showed `https_enforced: true`, certificate `approved`, expires 2026-11-19, no pending domain verification; `api.copilt.org` certificate Let's Encrypt YE2, notAfter 2026-11-21. Authoritative A/CNAME TTLs read **1799** and MX/TXT/NS read **1800**, constant across repeated queries (so the runbook's "1800 s" is right to within one second).
 
 ---
 
@@ -44,18 +44,20 @@ Related live state seen while checking (not DNS): `https://copilt.org/` answers 
 
 Placeholders: `<EDGE_IPV4>` and `<EDGE_IPV6>` are the public addresses of the future Caddy edge (**none exists yet**; runbook section 0). Where the owner is to be the one acting it is marked **[OWNER ACTION]**. All changes are made in **Namecheap -> Domain List -> Manage -> Advanced DNS** (the zone is served by Namecheap's own nameservers, so that is the only place; no other panel hosts it). The Namecheap API (`namecheap.domains.dns.setHosts`) is an alternative, but it **replaces the entire host list in one call** (documented behaviour, UNVERIFIED in this session); a wrong call would delete MX/SPF. Prefer the UI, or pre-build the full record list from the table below before any API use; API access also needs enabling, an IP allow-list and an API key (requirements UNVERIFIED).
 
-### 2.1 Records that CHANGE at cutover
+### 2.1 Records that CHANGE at cutover (rewritten after the architecture review F4/F5: no record is ever absent)
 
 | # | Name | Type | BEFORE (today) | AFTER | TTL | Step / gate |
 |---|---|---|---|---|---|---|
-| 1 | `www` | CNAME | `avivg7.github.io.` | **delete the CNAME** and add `A <EDGE_IPV4>` (+ `AAAA <EDGE_IPV6>` if the edge serves IPv6). Alternative (owner choice): `CNAME` to a single edge hostname that the owner would create, which adds a new subdomain | 300 | runbook 3.3a **[OWNER ACTION]**; verify at 3.3b before touching the apex |
-| 2 | `@` (apex) | A x4 | `185.199.108.153`, `.109.153`, `.110.153`, `.111.153` | `A <EDGE_IPV4>` (replace all four; do not leave a mix) | 300 | runbook 3.3c **[OWNER ACTION]** (only after 3.3b passes) |
+| 0 | `edge` (name TBD by the owner, e.g. `edge.copilt.org`) | A (+ AAAA) | does not exist | **ADD in advance, at least 24 h before the flip:** `A <EDGE_IPV4>` (+ `AAAA <EDGE_IPV6>` if the edge serves IPv6). It carries no traffic until row 1 points at it | 300 | runbook 2.5 **[OWNER ACTION]** |
+| 1 | `www` | CNAME | `avivg7.github.io.` | **EDIT the target of the same record** to `edge.copilt.org.` (CNAME to CNAME; the record is never deleted, so no empty answer exists to be cached; **rollback is the same edit back**) | 300 | runbook 3.3a **[OWNER ACTION]**; verify at 3.3b before touching the apex |
+| 2 | `@` (apex) | A x4 | `185.199.108.153`, `.109.153`, `.110.153`, `.111.153` | **EDIT in place** to `A <EDGE_IPV4>` (edit the first record's value, then remove the other three, or edit all four to the same address). The apex cannot be a CNAME (MX and SPF live there). Optional alternative if Namecheap offers it: an ALIAS/ANAME at the apex to `edge.copilt.org.` (UNVERIFIED) | 300 | runbook 3.3c **[OWNER ACTION]** (only after 3.3b passes) |
 | 3 | `@` (apex) | AAAA | none | optional `AAAA <EDGE_IPV6>`; add **only** if the edge answers port 443/80 over IPv6 (runbook precondition 1.2) | 300 | **[OWNER ACTION]**, optional |
 
 Notes on the two flips:
-* `www` becomes dual-stack only if row 1 includes an AAAA. Today the IPv6 addresses come from GitHub through the CNAME; after the flip IPv6 clients simply use IPv4 when no AAAA exists. A stale or wrong AAAA is worse than none.
-* A CNAME cannot coexist with another record at the same name, so in the UI the order is "delete CNAME, then add A" and each row saves immediately. Between the two saves `www` has no data; **resolvers that ask in that gap may cache the empty answer for up to the SOA minimum (3601 s, about 1 hour)** (INFERRED from the SOA, standard negative caching). Do the delete and the add back-to-back (prepare the values first). This is a reason to lower the TTLs and to run the flip at a quiet hour; it also means the partial rollback of 3.3b is not instantaneous for those resolvers.
-* For the apex, add the new A first, then delete the four GitHub A rows. During the overlap a client may reach either side; both answer with the same `301 -> https://www.copilt.org/`, so the overlap is harmless, but it should be short.
+* **Why not "delete the CNAME, then add an A":** the SOA minimum is **3601 s**, so a resolver that asks while a name has NO record caches the EMPTY answer for up to an hour (standard negative caching; INFERRED from the SOA, not observed). The delete-then-add plan has such a window in BOTH directions (flip and rollback), and the earlier "back-to-back, it only lasts a moment" mitigation cannot make the UI save atomic. Editing the CNAME target keeps the name answerable at every instant. Whether the Namecheap UI implements "edit" as an atomic change or as delete+add behind the scenes is **UNVERIFIED**; the runbook's optional dry run on a throwaway name (poll `dig @dns1.registrar-servers.com` every second during an edit) answers it before the real change.
+* `www` becomes dual-stack only if row 0 includes an AAAA. Today the IPv6 addresses come from GitHub through the CNAME; after the flip IPv6 clients simply use IPv4 when the edge has no AAAA. A stale or wrong AAAA is worse than none.
+* Apex: during the edit some clients get GitHub (which answers `301 -> https://www.copilt.org/`) and some the edge (which answers the same 301), so a mixed answer set is harmless provided the edge already has a valid certificate for `copilt.org` (runbook 1.10). Keep the mixed window short.
+* The extra `edge` record is permanent unless the owner removes it after the rollback window; it exposes the edge IP, which is public anyway once the flip is done.
 
 ### 2.2 Records that MUST NOT change or be removed
 
@@ -76,36 +78,38 @@ Notes on the two flips:
 | `_github-pages-challenge-avivg7` | TXT | value shown by GitHub's "Verify domain" page | **after** DNS leaves GitHub, before removing the Pages custom domain (runbook section 6; closes the takeover gap) | new TXT alongside the SPF; **[OWNER ACTION]** |
 | `@` | TXT | Search Console / Bing verification string | only if the DNS method is chosen (runbook 1.8) | a separate TXT row; never merge into the SPF row |
 | `_dmarc`, DKIM, SPF edit | TXT/CNAME | see Part 3 | only after the sender decision (runbook 1.11) | separate owner-approved DNS change |
-| `edge`/staging hostname | A | rehearsal host | optional, if a real DNS name is wanted for the rehearsal | runbook rehearsals use `curl --resolve`/host-resolver rules and need no DNS |
+| staging hostname | A | rehearsal host | optional, if a real DNS name is wanted for the rehearsal | runbook rehearsals use `curl --resolve`/host-resolver rules and need no DNS (the production `edge` record is row 0 in 2.1) |
 
 ### 2.4 TTL lowering plan
 
 | When | What | **[OWNER ACTION]** |
 |---|---|---|
-| T-24 h (at least T-30 min, the current TTL must expire first) | set TTL **300** on `www` CNAME and the four apex A records (Namecheap "Automatic" is 1800/1799; choose 5 min). Leave MX/TXT/NS/api at their current TTL | yes (runbook 2.5) |
-| T-0 (rows 1 and 2) | create the new records with TTL 300 | yes |
+| T-24 h or earlier | add the `edge` A (row 0) at TTL 300; set TTL **300** on the `www` CNAME and the four apex A records (Namecheap "Automatic" is 1800/1799; choose 5 min). **Why 24 h and not 30 minutes:** the authoritative TTL today is **1799-1800 s**, so resolvers that cached the old record just before your edit may keep it for up to 30 minutes after the edit AND a TTL change only takes effect for them after their cached copy expires: lower it a day ahead so that every resolver is on 300 s by the flip. Leave MX/TXT/NS/api at their current TTL | yes (runbook 2.5) |
+| T-0 (rows 1 and 2) | EDIT the existing records (their TTL stays 300) | yes |
 | T+7 to T+14 days, stable, Pages retired or window closed | raise `www`/apex to 1800 or 3600 | yes |
-| Rollback window | keep 300 until the owner closes the window (rollback restores GitHub records at TTL 300) | yes |
+| Rollback window | keep 300 until the owner closes the window (rollback edits the records back at TTL 300) | yes |
 
-Note that the parent NS delegation at `.org` has TTL 3600 and is unrelated to these edits.
+Honest arithmetic of a flip or a rollback with TTL 300 lowered 24 h earlier: authoritative servers answer the new value immediately (Namecheap's propagation to its two nameservers is UNVERIFIED but they showed identical data in every check); a recursive resolver switches within **300 s**; browsers and OS caches add their own (Chrome up to 1 minute for DNS, indefinitely for cached 301 responses of the apex and of the new alias redirects; an HTTP/3 hint `Alt-Svc` lives `ma=3600` after the edge's change, GitHub sends none). With TTL NOT lowered: up to 1800 s. "About five minutes" is therefore the BEST case with every precondition met, not a promise, and any gap in a name's records adds up to 3601 s on top. Note that the parent NS delegation at `.org` has TTL 3600 and is unrelated to these edits.
 
 ### 2.5 Certificate-related summary
 
-* Today: GitHub Pages certificate (Let's Encrypt) valid to **2026-11-19**, not yet renewed. GitHub renews while DNS still points at it; once DNS leaves GitHub it cannot renew (runbook section 5).
-* The edge needs its own certificates for `www.copilt.org` and `copilt.org` before or immediately after the flip: HTTP-01 / TLS-ALPN needs ports 80/443 reachable and DNS already pointing at the edge (no DNS record needed); DNS-01 needs `_acme-challenge` TXT rows (section 2.3) and works before the flip.
-* No CAA exists; none is required.
+* Today: GitHub Pages certificate (Let's Encrypt) **renewed on 2026-10-20, valid to 2027-01-18 12:41:22 GMT** (previously 2026-11-19). GitHub renews roughly 30 days before expiry and only while DNS still points at it; once DNS leaves GitHub it cannot renew (runbook section 5). The GitHub-side rollback is therefore good until the notAfter in force on the day of the flip.
+* The edge needs its own certificate covering `www.copilt.org` and `copilt.org` before or immediately after the flip. Option A (pre-issue with DNS-01 and load the files; manual renewal every 60-90 days unless the owner approves a DNS-provider API token, which this plan never requests) and Option B (let Caddy obtain it by HTTP-01/TLS-ALPN once DNS points at the edge) are in runbook 1.10. A DNS-01 challenge needs `_acme-challenge` TXT rows (section 2.3); HTTP-01 needs port 80/443 reachable and DNS already pointing at the edge, and needs no DNS record.
+* `www` as a CNAME to `edge.copilt.org`: the CAA lookup for `www` follows the alias to `edge.copilt.org` (no CAA) and then `copilt.org` (none): no CA is excluded. HTTP-01 validation of `www.copilt.org` follows the same chain to the edge IP.
+* No CAA exists; none is required. `AICC_ACME_EMAIL` is the ACME account contact; do not count on the CA to send expiry notices (not verified): monitor with `scripts/ops/cert-expiry-check.sh`.
 
-### 2.6 Rollback table (restore exactly these records)
+### 2.6 Rollback table (restore exactly these values, by EDITING)
 
 | Name | Type | Restore to | TTL | When |
 |---|---|---|---|---|
-| `www` | CNAME | `avivg7.github.io.` (delete the `A`/`AAAA` rows for the edge first, then add the CNAME; same negative-cache gap warning as 2.1) | 300 (was 1799) | any rollback; partial rollback of 3.3b is this row only |
-| `@` | A x4 | `185.199.108.153`, `185.199.109.153`, `185.199.110.153`, `185.199.111.153` | 300 (was 1799) | rollback after 3.3c |
+| `www` | CNAME | **edit the target back** to `avivg7.github.io.` (the record is never deleted: no empty answer) | 300 (was 1799) | any rollback; partial rollback of 3.3b is this row only |
+| `@` | A | edit the value(s) back to `185.199.108.153`, `185.199.109.153`, `185.199.110.153`, `185.199.111.153` (edit one record, then add the others; remove the edge address last) | 300 (was 1799) | rollback after 3.3c |
 | `@` | AAAA | delete the edge AAAA if one was added (none existed before) | - | |
+| `edge` | A | leave (harmless) or remove after the rollback window | - | |
 | `_acme-challenge*` | TXT | delete (none existed before) | - | |
 | (nothing else) | MX x5, SPF TXT, NS, api A | **untouched, leave as is** | - | |
 
-Limit: the GitHub-side rollback only works while the Pages certificate in force at the time of the flip is valid (2026-11-19 today). Re-verify the certificate right before the flip (runbook 2.3/3.1).
+Limits: (1) the GitHub-side rollback only works while the Pages certificate in force at the time of the flip is valid (2027-01-18 today); re-verify right before the flip (runbook 2.3/3.1). (2) **Rollback makes the Control Plane unreachable** (accounts, license validate/activate POSTs from plugins in the field, cart, checkout all become Pages 404s) and the customer and owner consequences are written down in runbook section 5, including the owner decision (rollback only before the first customer, or a separate stable hostname for plugin traffic). (3) Time: one TTL plus caches; never "five minutes".
 
 Recording for the evidence folder: the section 1 table is the "before" record; the runbook asks for `dns-before-YYYYMMDD/` plus a Namecheap Advanced DNS screenshot on the day before.
 
@@ -113,7 +117,7 @@ Recording for the evidence folder: the section 1 table is the "before" record; t
 
 ## PART 3. Mail readiness inventory (code and config read only; no mail sent)
 
-Sources read: Control Plane `.../aicc-control-plane-worktrees/cp2a-14-readiness-independence` (HEAD `757a091`), Backend `.../aicc-backend-worktrees/cp2a-6-prelaunch-commercialization` (HEAD `7b45923`), Plugin `/Users/avivgerman/Projects/ai-commerce-copilot-worktrees/cp2a-14-readiness-independence` (HEAD `d53002f`), the QA Control Plane install `~/aicc-qa-acceptance/control-plane/wp` (read-only SELECT on its options table, port 8981) and its bundled WooCommerce 10.9.4.
+Sources read: Control Plane `.../aicc-control-plane-worktrees/cp2a-14-readiness-independence` (HEAD `054b5d9` when this section was re-checked on 2026-10-20; `757a091` when the mail inventory was written), Backend `.../aicc-backend-worktrees/cp2a-6-prelaunch-commercialization` (HEAD `7b45923`), Plugin `/Users/avivgerman/Projects/ai-commerce-copilot-worktrees/cp2a-14-readiness-independence` (HEAD `d53002f`), the QA Control Plane install `~/aicc-qa-acceptance/control-plane/wp` (read-only SELECT on its options table, port 8981) and its bundled WooCommerce 10.9.4.
 
 ### 3.1 What actually sends mail today
 
@@ -203,8 +207,8 @@ Hostnames that exist in DNS today (SPF content seen 2026-10-20; the provider's o
 ## Surprises and open items
 
 1. **No DMARC, no DKIM, no CAA, no DNSSEC, no domain verification of any kind exists**; the zone has only apex A/MX/TXT/NS, `www` CNAME and `api` A. Today the domain cannot pass DMARC for any sender other than Namecheap forwarding.
-2. **The Pages certificate has not been renewed as of 2026-10-20 (notAfter 2026-11-19)**; the whole GitHub-side rollback window depends on it (runbook 2.3, section 5).
-3. **`www` loses IPv6 and the empty-answer cache risk** when the CNAME is replaced by an A record: one hour of negative caching (SOA minimum 3601) can bite if the delete and add are not back-to-back.
+2. **The Pages certificate was renewed on 2026-10-20 (notAfter now 2027-01-18)**; the whole GitHub-side rollback window depends on the certificate in force at the flip (runbook 2.3, section 5).
+3. **`www` can lose IPv6, and replacing a record by delete+add risks an empty-answer cache** (one hour of negative caching, SOA minimum 3601): the plan therefore EDITS records in place (CNAME target for `www`, apex A values) and adds an `edge` A record first (section 2.1).
 4. **The code that the Control Plane docs say sends a "license issued" email does not exist**; the key is only injected into stock WooCommerce order emails and only within 15 minutes of issuance.
 5. **No lifecycle email exists** (activation, suspension, expiry, revocation); the Backend and the Plugin send no mail at all.
 6. **The QA stack has no mail sink**, and tests suppress mail entirely, so email content, headers and deliverability have never been exercised.

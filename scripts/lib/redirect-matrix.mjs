@@ -61,9 +61,20 @@ export const WP_CRON_RE = "(?i)^/wp-cron\\.php(?:/.*)?$";
 export const WP_ADMIN_RE = "(?i)^/wp-admin(?:/|$)";
 export const WP_ADMIN_PUBLIC_RE = "(?i)^/wp-admin/(?:admin-ajax|admin-post)\\.php$";
 export const WP_LOGIN_RE = "(?i)^/wp-login\\.php(?:/.*)?$";
-export const WP_LOGIN_PUBLIC_QUERY = "(?i)(^|&)(action=logout|loggedout=true)(&|$)";
-export const DUPLICATE_ERROR_RE = "^/(?:404|_not-found)(?:/|\\.html)?$";
-export const WP_MACHINE_RE = "^/(?:wp-json|wp-admin|wc-api|wc-ajax)(?:/.*)?$|^/(?:wp-login\\.php|wp-cron\\.php|xmlrpc\\.php|wp-activate\\.php|wp-signup\\.php)$";
+/**
+ * The ONLY public shapes of /wp-login.php (customer logout, as wp_logout_url() builds it): GET/HEAD, the exact path (no path-info, lower case), and exactly
+ *   action=logout[&redirect_to=<x>][&_wpnonce=<hex>]      WordPress's confirm page / the nonce-carrying logout
+ *   loggedout=true[&wp_lang=<locale>]                      WordPress's landing page after logout
+ * No other parameter, no other method, no case-insensitivity. A broader exception (any method, `(?i)`, parameter anywhere) let `POST /wp-login.php?loggedout=true`
+ * with a login body reach wp_signon() from any address (security review F2, reproduced on the twin: 302 + a valid session cookie). No `{n,m}` quantifier and no whitespace:
+ * the expression is written unquoted in the Caddyfile.
+ */
+export const WP_LOGIN_PUBLIC_METHODS = ["GET", "HEAD"];
+export const WP_LOGIN_PUBLIC_PATH = "/wp-login.php";
+export const WP_LOGIN_PUBLIC_QUERY = "^(action=logout(&redirect_to=[^&]*)?(&_wpnonce=[0-9a-f]+)?|loggedout=true(&wp_lang=[A-Za-z_]+)?)$";
+/** Paths that must be a branded edge 404: the export's error-page duplicates, the multisite entry points (WordPress would 302 them to wp-login.php?action=register = 403), and the 5xx page file itself (served only by handle_errors). */
+export const DUPLICATE_ERROR_RE = "^/(?:404|_not-found)(?:/|\\.html)?$|^/(?:wp-activate|wp-signup)\\.php$|^/50x\\.html$";
+export const WP_MACHINE_RE = "^/(?:wp-json|wp-admin|wc-api|wc-ajax)(?:/.*)?$|^/(?:wp-login\\.php|wp-cron\\.php|xmlrpc\\.php)$";
 /** WordPress's own static files: routed to WordPress but NOT forced to no-store (WordPress / the hosting stack send validators and decide caching; forcing no-store made every theme asset uncacheable). */
 export const WP_ASSETS_RE = "^/(?:wp-content|wp-includes)(?:/.*)?$";
 /** The root path, with or without a language prefix: WooCommerce's plain-permalink endpoints (?wc-ajax=, ?wc-api=, ?rest_route=) live on it. */
@@ -290,9 +301,38 @@ export const CASES = [
   d("https://www.copilt.org/wp-login.php?action=register"),
   d("https://www.copilt.org/WP-LOGIN.php"),
   d("https://www.copilt.org/wp-login.php?redirect_to=x&action=logout2", { note: "negative control: the query value must match whole" }),
-  o("https://www.copilt.org/wp-login.php?action=logout&_wpnonce=abc", "wordpress", 200, { cache: NOCACHE, note: "CUSTOMER flow: wp_logout_url() in the Connect page and plan-intent code" }),
+  // security review F2: the old exception matched any method and any case, so these reached wp_signon() from any address
+  d("https://www.copilt.org/wp-login.php?loggedout=true", { method: "POST", note: "REVIEW F2: POST with a login body used to return 302 + a session cookie" }),
+  d("https://www.copilt.org/wp-login.php?action=logout", { method: "POST" }),
+  d("https://www.copilt.org/wp-login.php?action=logout&_wpnonce=abc123", { method: "POST" }),
+  d("https://www.copilt.org/wp-login.php?ACTION=logout", { method: "POST", note: "case variant of the parameter name" }),
+  d("https://www.copilt.org/wp-login.php?ACTION=logout", { note: "GET too: the exception is exact and case-sensitive" }),
+  d("https://www.copilt.org/wp-login.php?LOGGEDOUT=true", { method: "POST" }),
+  d("https://www.copilt.org/wp-login.php?loggedout=TRUE"),
+  d("https://www.copilt.org/wp-login.php?loggedout=true&log=a&pwd=b", { method: "POST", note: "extra parameters" }),
+  d("https://www.copilt.org/wp-login.php?action=logout&action=login", { method: "POST" }),
+  d("https://www.copilt.org/wp-login.php?action=logout&x=1", { note: "any extra parameter" }),
+  d("https://www.copilt.org/wp-login.php?loggedout=true&x=1"),
+  d("https://www.copilt.org/wp-login.php?x=1&loggedout=true", { note: "parameter order is part of the shape" }),
+  d("https://www.copilt.org/wp-login.php?action=logout", { method: "PUT" }),
+  d("https://www.copilt.org/wp-login.php?action=logout", { method: "DELETE" }),
+  d("https://www.copilt.org/wp-login.php?action=logout", { method: "OPTIONS" }),
+  d("https://www.copilt.org/wp-login.php/x?action=logout", { note: "path-info after the file" }),
+  d("https://www.copilt.org/WP-LOGIN.php?action=logout", { note: "path case" }),
+  d("https://www.copilt.org/wp-login.php?action=login", { method: "POST" }),
+  d("https://www.copilt.org/wp-login.php?action=register", { method: "POST" }),
+  d("https://www.copilt.org/wp-login.php?action=rp"),
+  d("https://www.copilt.org/wp-login.php?action=resetpass", { method: "POST" }),
+  d("https://www.copilt.org/wp-login.php?action=postpass", { method: "POST" }),
+  d("https://www.copilt.org/wp-login.php?action=confirmaction"),
+  o("https://www.copilt.org/wp-login.php?action=logout", "wordpress", 200, { method: "HEAD", cache: NOCACHE, note: "HEAD is allowed like GET" }),
+  o("https://www.copilt.org/wp-login.php?action=logout&_wpnonce=abc123def", "wordpress", 200, { cache: NOCACHE, note: "CUSTOMER flow: wp_logout_url() in the Connect page and plan-intent code" }),
+  o("https://www.copilt.org/wp-login.php?action=logout&redirect_to=https%3A%2F%2Fwww.copilt.org%2Fpricing%2F", "wordpress", 200, { cache: NOCACHE, note: "WordPress's confirm page (the order wp_logout_url() builds: action, redirect_to, _wpnonce)" }),
+  o("https://www.copilt.org/wp-login.php?action=logout&redirect_to=https%3A%2F%2Fwww.copilt.org%2Fpricing%2F&_wpnonce=0a1b2c3d4e", "wordpress", 200, { cache: NOCACHE }),
+  o("https://www.copilt.org/wp-login.php?loggedout=true", "wordpress", 200, { cache: NOCACHE }),
   o("https://www.copilt.org/wp-login.php?loggedout=true&wp_lang=en_US", "wordpress", 200, { cache: NOCACHE }),
-  o("https://www.copilt.org/wp-login.php?redirect_to=https%3A%2F%2Fwww.copilt.org%2F&action=logout", "wordpress", 200, { cache: NOCACHE }),
+  o("https://www.copilt.org/wp-login.php", "wordpress", 200, { method: "POST", peer: "operator", cache: NOCACHE, note: "operators may POST (staff sign-in)" }),
+  o("https://www.copilt.org/wp-login.php?loggedout=true", "wordpress", 200, { method: "POST", peer: "operator", cache: NOCACHE }),
   o("https://www.copilt.org/wp-login.php", "wordpress", 200, { peer: "operator", cache: NOCACHE }),
   o("https://www.copilt.org/wp-login.php?action=lostpassword", "wordpress", 200, { peer: "operator", cache: NOCACHE }),
   d("https://www.copilt.org/wp-cron.php", { note: "DISABLE_WP_CRON + system cron; the entitlement outbox runs from the system cron" }),
@@ -311,6 +351,11 @@ export const CASES = [
   b("https://www.copilt.org/pricing/%00"),
   b("https://www.copilt.org/pricing/%0d%0aSet-Cookie:x=1"),
   o("https://www.copilt.org/..;/wp-admin/", "404", 404, { note: "`..;` is not a dot-segment for nginx/Apache/PHP and is not under any WordPress prefix: static 404, never proxied" }),
+  // ---- review F15: not routed to WordPress (they ended in a 403 there) and the 5xx page is not a public page ----
+  o("https://www.copilt.org/wp-activate.php", "404", 404, { note: "multisite entry point: the Control Plane is single-site" }),
+  o("https://www.copilt.org/wp-signup.php", "404", 404),
+  o("https://www.copilt.org/wp-signup.php", "404", 404, { method: "POST" }),
+  o("https://www.copilt.org/50x.html", "404", 404, { note: "served only by the edge's error handler, never as a page" }),
   // ---- 404s: never owned -------------------------------------------------------------------------------------------
   o("https://www.copilt.org/get-started/", "404", 404, { note: "UNOWNED: promised by the docs, not built in the site" }),
   o("https://www.copilt.org/install/", "404", 404, { note: "blocked alias (target not built)" }),

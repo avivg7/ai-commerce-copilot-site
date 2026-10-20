@@ -125,11 +125,21 @@ export function rawRequest(inst, text, { secure = true, servername = HOSTS.www, 
   });
 }
 
-/** Parse the JSON access log into a Map(request_id -> entry). */
-export function readAccessLog(file = path.join(P.logs, "aicc-edge.log")) {
+/**
+ * Parse the JSON access logs of EVERY instance into a Map(request_id -> entry): logs/aicc-edge*.log (the standing edge) and logs/<instance>/aicc-edge*.log (the others),
+ * including files already rolled by Caddy (aicc-edge-<timestamp>.log and .log.gz). Review F12: the owner proof used to read one shared file and turned into
+ * "no log entry" for every case after the first 20 MiB roll.
+ */
+export function readAccessLog() {
   const m = new Map(), all = [];
-  if (!fs.existsSync(file)) return { map: m, all };
-  for (const l of fs.readFileSync(file, "utf8").split("\n")) { if (!l.trim()) continue; try { const j = JSON.parse(l); all.push(j); if (j.request_id) m.set(j.request_id, j); } catch { /* partial line */ } }
+  const dirs = [P.logs, ...fs.readdirSync(P.logs, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => path.join(P.logs, e.name))];
+  for (const d of dirs) {
+    for (const f of fs.readdirSync(d).filter((x) => /^aicc-edge.*\.log(\.gz)?$/.test(x)).sort()) {
+      const full = path.join(d, f);
+      const text = f.endsWith(".gz") ? spawnSync("gunzip", ["-c", full], { encoding: "utf8", maxBuffer: 512 * 1024 * 1024 }).stdout : fs.readFileSync(full, "utf8");
+      for (const l of text.split("\n")) { if (!l.trim()) continue; try { const j = JSON.parse(l); all.push(j); if (j.request_id) m.set(j.request_id, j); } catch { /* partial line */ } }
+    }
+  }
   return { map: m, all };
 }
 export function sh(cmd, args, o = {}) { const r = spawnSync(cmd, args, { encoding: "utf8", ...o }); return { code: r.status, out: (r.stdout || "") + (r.stderr || ""), stdout: r.stdout || "" }; }
@@ -182,3 +192,12 @@ export function startProbe(inst, urls, { concurrency = 4, pauseMs = 15, timeoutM
     },
   };
 }
+
+/** Every edge log file (access, error, stdout), all instances, rolled files included; the CP fixture's own logs (cp-*) excluded. */
+export function allEdgeLogFiles() {
+  const out = [];
+  const walk = (d) => { for (const e of fs.readdirSync(d, { withFileTypes: true })) { const f = path.join(d, e.name); if (e.isDirectory()) walk(f); else if (/\.(log|gz)$/.test(e.name) && !/^cp-/.test(e.name)) out.push(f); } };
+  walk(P.logs);
+  return out;
+}
+export const readLogFile = (f) => (f.endsWith(".gz") ? spawnSync("gunzip", ["-c", f], { encoding: "utf8", maxBuffer: 512 * 1024 * 1024 }).stdout : fs.readFileSync(f, "utf8"));

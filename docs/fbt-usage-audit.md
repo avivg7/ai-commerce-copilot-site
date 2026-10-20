@@ -115,6 +115,7 @@ Counts: before this pass 33 positioning slots across the four locales carried th
 | file `docs/content-architecture.md` | up to 5 mention(s) | A | documentation that explains the widget and the guard |
 | file `scripts/interaction-test.mjs` | up to 9 mention(s) | A | test or tooling text about the widget heading and the demo |
 | file `scripts/lang-scope-check.mjs` | up to 1 mention(s) | A | test or tooling text about the widget heading and the demo |
+| file `scripts/rehearsal/browser-flows.mjs` | up to 2 mention(s) | A | test or tooling text about the widget heading and the demo (the edge rehearsal's browser suite asserts the home FAQ list and a CSS class of the widget) |
 | file `scripts/rules-core-test.mjs` | up to 3 mention(s) | A | test or tooling text about the widget heading and the demo |
 | file `scripts/shots-brand.mjs` | up to 2 mention(s) | A | test or tooling text about the widget heading and the demo |
 | file `scripts/visual-contract.mjs` | up to 14 mention(s) | A | test or tooling text about the widget heading and the demo |

@@ -19,10 +19,14 @@ export function settings(argvOverride, argv = process.argv.slice(2)) {
     operatorCidrs: opt("operator-cidrs", base.operatorCidrs),
     wpTimeout: opt("wp-timeout", "60s"),
     variant: opt("variant", ""),
+    storage: opt("storage", P.caddyData),
+    tlsFiles: opt("tls-files", ""), // "cert,key": rehearse the manual-certificate form (Option A) instead of tls internal
     template: opt("template", P.template),
     ...(argvOverride || {}),
   };
 }
+/** Per-instance log directory: the standing edge keeps logs/ (docs and phase-2 tests read it), every other instance gets logs/<name>/ so none shares a rotated file. */
+export const logDirFor = (s) => (s.name === "edge" ? P.logs : path.join(P.logs, s.name));
 const caddyfilePath = (s) => path.join(P.generated, s.name === "edge" ? "Caddyfile" : `Caddyfile.${s.name}`);
 
 function replaceRegion(text, begin, end, body) {
@@ -48,7 +52,7 @@ export function generate(s) {
     `\thttp_port ${s.httpPort}`,
     `\thttps_port ${s.httpsPort}`,
     ...(s.httpsPort !== 443 ? ["\t# high-port instances bind loopback only; :80/:443 cannot (macOS allows unprivileged low ports only on the wildcard address)", "\tdefault_bind 127.0.0.1 [::1]"] : []),
-    `\tstorage file_system ${P.caddyData}`,
+    `\tstorage file_system ${s.storage || P.caddyData}`,
     "\torder abort before redir",
     ...((s.variant || "").split("+").includes("no-certs") ? ["\t# VARIANT no-certs: Caddy manages no certificate at all (rehearses the window before a certificate exists)", "\tauto_https disable_certs"] : []),
     "\tservers {",
@@ -60,7 +64,7 @@ export function generate(s) {
     "\t\tmax_header_size 16KB",
     "\t}",
     "\tlog {",
-    `\t\toutput file ${P.logs}/error.log {`,
+    `\t\toutput file ${logDirFor(s)}/error.log {`,
     "\t\t\troll_size 20MiB",
     "\t\t\troll_keep 5",
     "\t\t\troll_keep_for 720h",
@@ -71,7 +75,7 @@ export function generate(s) {
     "\t# END GLOBAL OPTIONS",
   ].join("\n");
   t = replaceRegion(t, "\t# BEGIN GLOBAL OPTIONS", "# END GLOBAL OPTIONS", globals.replace(/^\t/, "\t") ).replace(/# END GLOBAL OPTIONS(?!\n)/, "# END GLOBAL OPTIONS");
-  t = replaceSnippet(t, "aicc_tls", "\ttls internal");
+  t = replaceSnippet(t, "aicc_tls", s.tlsFiles ? `\ttls ${s.tlsFiles.split(",")[0]} ${s.tlsFiles.split(",")[1]}` : "\ttls internal");
   t = replaceSnippet(t, "aicc_site_hook", [
     "\t# rehearsal only: the wildcard listener (macOS lets an unprivileged process bind :80/:443 only on the wildcard address) must not serve the LAN.",
     "\t@aicc_non_loopback not remote_ip 127.0.0.0/8 ::1/128",
@@ -102,19 +106,24 @@ export function safetyCheck(s, text) {
   const httpsSites = sites.filter((a) => a.split(",").some((x) => !x.trim().startsWith("http://")));
   const tlsImports = (code.match(/^\s*import aicc_tls\s*$/gm) || []).length;
   if (httpsSites.length !== tlsImports) errs.push(`${httpsSites.length} site blocks serve https but ${tlsImports} import aicc_tls`);
-  if (!/\(aicc_tls\) \{\n\s*tls internal\s*\n\}/.test(code)) errs.push("(aicc_tls) is not `tls internal`");
+  if (!/\(aicc_tls\) \{\n\s*tls internal\s*\n\}/.test(code)) {
+    const m = /\(aicc_tls\) \{\n\s*tls (\S+) (\S+)\s*\n\}/.exec(code);
+    if (!m || !m[1].startsWith(HOME + "/") || !m[2].startsWith(HOME + "/")) errs.push("(aicc_tls) is neither `tls internal` nor `tls <cert> <key>` with both files under " + HOME);
+  }
   if (/^\s*(default_)?bind\s/m.test(code) && !/^\s*(default_)?bind\s+(127\.0\.0\.1|\[::1\])(\s+(127\.0\.0\.1|\[::1\]))*\s*$/m.test(code)) errs.push("non-loopback bind");
   if (!(s.staticRoot.startsWith(HOME))) errs.push(`static root ${s.staticRoot} is outside ${HOME}`);
   return errs;
 }
 
 export function envFor(s) {
+  fs.mkdirSync(logDirFor(s), { recursive: true });
   return {
     ...process.env,
     AICC_STATIC_ROOT: s.staticRoot,
     AICC_WP_UPSTREAM: s.upstream,
     AICC_OPERATOR_CIDRS: s.operatorCidrs,
-    AICC_LOG_DIR: P.logs,
+    AICC_LOG_DIR: logDirFor(s),
+    AICC_H3_PORT: String(s.httpsPort),
     AICC_WP_TIMEOUT: s.wpTimeout,
     XDG_DATA_HOME: path.join(HOME, "caddy/xdg-data"),
     XDG_CONFIG_HOME: P.caddyConfig,
@@ -127,8 +136,15 @@ function guarded(s) {
   if (errs.length) { console.error("REFUSING:\n  " + errs.join("\n  ")); process.exit(3); }
   return file;
 }
+/** scripts/ops/edge-preflight.sh on the generated file with this instance's environment: the same gate systemd runs as ExecStartPre in production. */
+export function preflight(s, file, { quiet = true } = {}) {
+  const r = sh("bash", [path.join(REPO, "scripts/ops/edge-preflight.sh"), "--caddyfile", file, "--caddy", P.caddy, "--no-validate", ...(quiet ? ["--quiet"] : [])], { env: envFor(s) });
+  return { ok: r.code === 0, out: r.out };
+}
 export async function validate(s, quiet) {
   const file = guarded(s);
+  const pf = preflight(s, file);
+  if (!pf.ok) { console.error(pf.out); process.exit(4); }
   const r = sh(P.caddy, ["validate", "--config", file, "--adapter", "caddyfile"], { env: envFor(s) });
   if (!quiet) console.log(r.out.split("\n").filter((l) => !l.startsWith("{")).join("\n") || r.out);
   return { ok: r.code === 0, out: r.out, file };
@@ -197,30 +213,55 @@ export async function status(s) {
   console.log(`root CA: ${P.rootCrt} ${fs.existsSync(P.rootCrt) ? "(present)" : "(created on first start)"}`);
 }
 
-export function release() {
-  ensureDirs();
-  const out = path.join(REPO, "out");
-  if (!fs.existsSync(path.join(out, "index.html"))) { console.error("out/ missing: AICC_BASE_PATH=\"\" SITE_URL=https://www.copilt.org npm run build"); process.exit(2); }
+/**
+ * Create a release from a build and swap `current` to it atomically.
+ * REVIEW F7 (architecture): the swap itself is lossless, but the previous release's /_next/static/* chunks used to disappear at once, so every open tab and every cached page
+ * holding the old HTML got 404s for its scripts. Now the new release directory = the new build + the _next/static files that the previous `keep` (3) releases INTRODUCED
+ * (hashed names never collide, so a copy cannot shadow anything). Each release records the chunks of its OWN build in <id>.static.txt next to the directory, so a chunk
+ * is carried for exactly `keep` further releases and then dropped; release directories older than the newest keep+1 are pruned. HTML and every other asset come from the new build only.
+ */
+export function release({ outDir = path.join(REPO, "out"), keep = 3, quiet = false, releasesDir = P.releases, currentLink = P.current } = {}) {
+  ensureDirs(); fs.mkdirSync(releasesDir, { recursive: true });
+  if (!fs.existsSync(path.join(outDir, "index.html"))) { console.error("out/ missing: AICC_BASE_PATH=\"\" SITE_URL=https://www.copilt.org npm run build"); process.exit(2); }
   const sha = sh("git", ["-C", REPO, "rev-parse", "--short", "HEAD"]).stdout.trim();
-  const id = `${new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d+Z$/, "Z")}-${sha}`;
-  const dir = path.join(P.releases, id);
+  let id = `${new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d+Z$/, "Z")}-${sha}`;
+  while (fs.existsSync(path.join(releasesDir, id))) id += "x";
+  const dir = path.join(releasesDir, id);
+  const previous = fs.readdirSync(releasesDir, { withFileTypes: true }).filter((e) => e.isDirectory() && /^\d{8}T\d{6}Z-/.test(e.name)).map((e) => e.name).sort().reverse();
   fs.mkdirSync(dir, { recursive: true });
-  const r = sh("rsync", ["-a", "--delete", "--exclude", ".DS_Store", out + "/", dir + "/"]);
+  const r = sh("rsync", ["-a", "--delete", "--exclude", ".DS_Store", outDir + "/", dir + "/"]);
   if (r.code !== 0) { console.error(r.out); process.exit(1); }
+  // chunks this build introduces (before anything is carried over)
+  const own = [];
+  const walk = (d, rel) => { if (!fs.existsSync(d)) return; for (const e of fs.readdirSync(d, { withFileTypes: true })) { const f = rel ? `${rel}/${e.name}` : e.name; if (e.isDirectory()) walk(path.join(d, e.name), f); else own.push(f); } };
+  walk(path.join(dir, "_next/static"), "");
+  let carried = 0;
+  for (const prev of previous.slice(0, keep)) {
+    const mf = path.join(releasesDir, `${prev}.static.txt`);
+    if (!fs.existsSync(mf)) continue;
+    for (const rel of fs.readFileSync(mf, "utf8").split("\n").filter(Boolean)) {
+      const from = path.join(releasesDir, prev, "_next/static", rel), to = path.join(dir, "_next/static", rel);
+      if (fs.existsSync(to) || !fs.existsSync(from)) continue;
+      fs.mkdirSync(path.dirname(to), { recursive: true }); fs.copyFileSync(from, to); carried++;
+    }
+  }
+  fs.writeFileSync(path.join(releasesDir, `${id}.static.txt`), own.join("\n") + "\n");
   fs.copyFileSync(P.fiftyxx, path.join(dir, "50x.html"));
   sh("bash", ["-c", `cd "${dir}" && find . -type f -print0 | sort -z | xargs -0 shasum -a 256 > "../${id}.sha256"`]);
-  const tmp = path.join(P.releases, `.current.${process.pid}`);
+  const tmp = path.join(releasesDir, `.current.${process.pid}`);
   fs.rmSync(tmp, { force: true });
   fs.symlinkSync(dir, tmp);
-  fs.renameSync(tmp, P.current); // atomic: rename(2) over the existing symlink
-  console.log(`release ${id}\n  current -> ${dir}\n  demo sha256 ${sh("shasum", ["-a", "256", path.join(dir, "demo/aicc-demo.mp4")]).stdout.slice(0, 16)}...`);
-  return dir;
+  fs.renameSync(tmp, currentLink); // atomic: rename(2) over the existing symlink
+  // prune: keep the new release and the newest `keep` before it
+  for (const old of previous.slice(keep)) { fs.rmSync(path.join(releasesDir, old), { recursive: true, force: true }); for (const ext of [".sha256", ".static.txt"]) fs.rmSync(path.join(releasesDir, old + ext), { force: true }); }
+  if (!quiet) console.log(`release ${id}\n  current -> ${dir}\n  _next/static: ${own.length} own file(s) + ${carried} carried from the previous ${Math.min(keep, previous.length)} release(s); pruned ${Math.max(0, previous.length - keep)} older\n  demo sha256 ${sh("shasum", ["-a", "256", path.join(dir, "demo/aicc-demo.mp4")]).stdout.slice(0, 16)}...`);
+  return { dir, id, own: own.length, carried };
 }
 
 export function launchdPlist(s) {
   const label = "org.copilt.aicc-rehearsal-edge";
   const env = envFor(s);
-  const keys = ["AICC_STATIC_ROOT", "AICC_WP_UPSTREAM", "AICC_OPERATOR_CIDRS", "AICC_LOG_DIR", "AICC_WP_TIMEOUT", "XDG_DATA_HOME", "XDG_CONFIG_HOME"];
+  const keys = ["AICC_STATIC_ROOT", "AICC_WP_UPSTREAM", "AICC_OPERATOR_CIDRS", "AICC_LOG_DIR", "AICC_H3_PORT", "AICC_WP_TIMEOUT", "XDG_DATA_HOME", "XDG_CONFIG_HOME"];
   const file = guarded(s);
   const plist = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">

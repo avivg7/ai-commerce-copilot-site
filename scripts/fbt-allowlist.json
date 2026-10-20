@@ -129,6 +129,10 @@
     "README.md": {
       "max": 2,
       "reason": "documentation that explains the widget and the guard"
+    },
+    "scripts/rehearsal/browser-flows.mjs": {
+      "max": 2,
+      "reason": "test or tooling text about the widget heading and the demo (the browser suite asserts the home FAQ list and the CSS class of the storefront widget's intro)"
     }
   }
 }

@@ -172,6 +172,7 @@ define( 'WP_HOME', '$SITE_URL' );
 define( 'WP_SITEURL', '$SITE_URL' );
 if ( ( \$_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '' ) === 'https' ) { \$_SERVER['HTTPS'] = 'on'; }
 define( 'AICC_LM_TRUSTED_PROXIES', array( '127.0.0.1' ) ); // the edge's address as the upstream sees it (the rehearsal edge dials 127.0.0.1)
+define( 'AICC_LM_OPERATOR_CIDRS', '127.0.0.1/32' ); // IPv4 loopback = the operators of the rehearsal (never throttled); ::1 is an ordinary client, so the login throttle can be exercised from it
 define( 'DISABLE_WP_CRON', true );
 define( 'AICC_LM_ALLOW_DEV_SECRET_BOOTSTRAP', true ); // fixture only: a local dev value for the activation-proof / entitlement-webhook secrets
 define( 'WP_DEBUG', false );

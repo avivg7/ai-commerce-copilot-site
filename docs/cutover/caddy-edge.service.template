@@ -1,16 +1,35 @@
-# NOT APPLIED. TEMPLATE for the production edge host (Linux, systemd). Never executed by the rehearsal (which supervised Caddy with launchd on a Mac:
-# docs/cutover/rehearsal.md "Restart and failure"). Copy to /etc/systemd/system/caddy-aicc-edge.service, then `systemctl daemon-reload && systemctl enable --now caddy-aicc-edge`.
+# NOT APPLIED. TEMPLATE for the production edge host (Linux, systemd). Never executed, and `systemd-analyze verify` was NOT run (it does not exist on the macOS rehearsal host):
+# every directive below is written from the systemd documentation, so run `systemd-analyze verify aicc-edge.service` and `systemd-analyze security aicc-edge.service`
+# on the real host before enabling it. The rehearsal supervised the same Caddy with launchd instead (docs/cutover/rehearsal.md "Restart and failure").
 #
-# Its own unit and its own Caddy process, separate from the API host's Caddy (never share a process or a Caddyfile with api.copilt.org).
-# /etc/caddy/aicc-edge.env holds the environment the Caddyfile reads (docs/cutover/Caddyfile.edge.template header), for example:
+# SELF-CONTAINED AND COLLISION-FREE (architecture review F8). Everything is named aicc-edge so that it can never touch another Caddy on the same machine, in particular the
+# API's Caddy on 139.59.157.231 (its Caddyfile, the `caddy` user, /var/lib/caddy, /var/log/caddy and the default admin address localhost:2019 all belong to that service):
+#   service        aicc-edge.service                   (disable the distro's caddy.service on the edge host if it exists: `systemctl disable --now caddy`)
+#   config         /etc/aicc-edge/Caddyfile            (docs/cutover/Caddyfile.edge.template, completed)
+#   environment    /etc/aicc-edge/edge.env             (KEY=VALUE, mode 0640, owner root:aicc-edge)
+#   user / group   aicc-edge (system user, no shell, no home)
+#   storage        /var/lib/aicc-edge/caddy            (XDG_DATA_HOME=/var/lib/aicc-edge: ACME account, certificates, keys; 0700)
+#   logs           /var/log/aicc-edge                  (AICC_LOG_DIR; Caddy rotates itself)
+#   admin API      127.0.0.1:12019                     (AICC_ADMIN_ADDR; NOT 2019; loopback only; reload uses it explicitly)
+#   preflight      /usr/local/sbin/aicc-edge-preflight (a copy of scripts/ops/edge-preflight.sh, mode 0755)
+# PLACEMENT (an OWNER decision, runbook 1.2): two Caddy processes cannot both listen on :80/:443 of the same IP address. The edge therefore needs its own host, or its own reserved
+# IP address on a shared host (then `bind <that-ip>` in every site block of BOTH Caddyfiles, and the API's Caddy must stop using the wildcard address). Adding the www/apex blocks
+# to the API's Caddy would avoid the second process but puts this site and the API in one process and one reload domain; that was rejected earlier as a trust-boundary change
+# and this plan does not ask for it. Do not follow this unit literally on the API droplet.
+#
+# Install:  useradd --system --no-create-home --shell /usr/sbin/nologin aicc-edge
+#           install -d -m 0750 -o root -g aicc-edge /etc/aicc-edge ; install -m 0640 -o root -g aicc-edge edge.env Caddyfile /etc/aicc-edge/
+#           install -m 0755 scripts/ops/edge-preflight.sh /usr/local/sbin/aicc-edge-preflight
+#           cp this file /etc/systemd/system/aicc-edge.service ; systemctl daemon-reload ; systemctl enable --now aicc-edge
+# /etc/aicc-edge/edge.env, for example (quote values with spaces):
 #   AICC_STATIC_ROOT=/srv/aicc/current
 #   AICC_WP_UPSTREAM=10.0.0.12:8080
-#   AICC_OPERATOR_CIDRS=203.0.113.7/32 2001:db8::/48        # [OWNER INPUT] who may reach /wp-admin/, staff /wp-login.php and /wp-cron.php
-#   AICC_ACME_EMAIL=ops@example.invalid                       # [OWNER INPUT] ACME account contact
-#   AICC_LOG_DIR=/var/log/caddy
+#   AICC_OPERATOR_CIDRS="203.0.113.7/32 2001:db8::/48"        # [OWNER INPUT] who may reach /wp-admin/, staff /wp-login.php and /wp-cron.php
+#   AICC_ACME_EMAIL=ops@example.invalid                         # [OWNER INPUT] ACME account contact (not relied on for expiry warnings)
+#   AICC_LOG_DIR=/var/log/aicc-edge
+#   AICC_ADMIN_ADDR=127.0.0.1:12019
 #   AICC_WP_TIMEOUT=60s
-# (systemd EnvironmentFile does not accept spaces in unquoted values: quote AICC_OPERATOR_CIDRS="a b" or use one Environment= line.)
-# Measured in the rehearsal on a Mac: graceful reload 82 ms with zero failed requests under load; kill -9 + supervised restart about 2.2 s with a 2 s throttle.
+# Rehearsal timings on a Mac (not a promise for Linux): graceful reload 82 ms with zero failed requests under load; kill -9 and a supervised restart about 2.2 s.
 
 [Unit]
 Description=AICC public edge (Caddy: www.copilt.org static site + WordPress Control Plane)
@@ -22,37 +41,48 @@ StartLimitBurst=10
 
 [Service]
 Type=notify
-User=caddy
-Group=caddy
-EnvironmentFile=/etc/caddy/aicc-edge.env
-Environment=XDG_DATA_HOME=/var/lib/caddy XDG_CONFIG_HOME=/var/lib/caddy/config
-ExecStartPre=/usr/bin/caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
-ExecStart=/usr/bin/caddy run --environ --config /etc/caddy/Caddyfile --adapter caddyfile
-ExecReload=/usr/bin/caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile --force
+User=aicc-edge
+Group=aicc-edge
+EnvironmentFile=/etc/aicc-edge/edge.env
+Environment=XDG_DATA_HOME=/var/lib/aicc-edge XDG_CONFIG_HOME=/var/lib/aicc-edge/config
+# Fail closed: Caddy alone starts happily with an empty AICC_OPERATOR_CIDRS (staff locked out), an empty AICC_STATIC_ROOT (every page 404) or no upstream (every WordPress route
+# 502). The preflight refuses all of that, plus expired/mismatched manual certificates, a non-loopback admin API and an unwritable log dir, and runs `caddy validate` last.
+ExecStartPre=/usr/local/sbin/aicc-edge-preflight --caddyfile /etc/aicc-edge/Caddyfile --caddy /usr/bin/caddy
+ExecStart=/usr/bin/caddy run --config /etc/aicc-edge/Caddyfile --adapter caddyfile
+# A reload runs the preflight first: a corrupt renewed certificate or an empty variable never reaches a running edge. The second line fails the unit's reload if Caddy refuses.
+ExecReload=/usr/local/sbin/aicc-edge-preflight --caddyfile /etc/aicc-edge/Caddyfile --caddy /usr/bin/caddy --quiet
+ExecReload=/usr/bin/caddy reload --config /etc/aicc-edge/Caddyfile --adapter caddyfile --address ${AICC_ADMIN_ADDR} --force
 TimeoutStopSec=10s
-# supervision: kill -9, crash or OOM -> restarted after 2 s (the launchd rehearsal used KeepAlive + ThrottleInterval 2)
-Restart=always
+# kill -9, a crash or the OOM killer end in "failed" and are restarted after 2 s; a clean `systemctl stop` is not restarted.
+Restart=on-failure
 RestartSec=2s
 LimitNOFILE=1048576
 # ports 80/443 as an unprivileged user
 AmbientCapabilities=CAP_NET_BIND_SERVICE
 CapabilityBoundingSet=CAP_NET_BIND_SERVICE
 NoNewPrivileges=true
-# certificate storage and logs: owned by the service user, 0700 (the rehearsal verified Caddy creates the data dir 0700 and keys 0600)
-StateDirectory=caddy
+# private state (certificate keys): 0700, owned by the service user
+StateDirectory=aicc-edge
 StateDirectoryMode=0700
-LogsDirectory=caddy
+LogsDirectory=aicc-edge
 LogsDirectoryMode=0750
 ProtectSystem=strict
 ProtectHome=true
 PrivateTmp=true
 PrivateDevices=true
-ReadOnlyPaths=/srv/aicc /etc/caddy
-ReadWritePaths=/var/lib/caddy /var/log/caddy
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictSUIDSGID=true
+LockPersonality=true
+# the release tree and the config are read-only (a leading "-" ignores a directory that does not exist yet); only state and logs are writable
+ReadOnlyPaths=-/srv/aicc -/etc/aicc-edge
+ReadWritePaths=/var/lib/aicc-edge /var/log/aicc-edge
 
 [Install]
 WantedBy=multi-user.target
 
 # --- system cron for WordPress (DISABLE_WP_CRON is true; /wp-cron.php is closed to the public by the edge). On the WordPress host, as the PHP user: ---
 #   * * * * * cd /var/www/cp && /usr/local/bin/wp cron event run --due-now >/dev/null 2>&1
-# --- certificate pre-issuance before the DNS flip (runbook 1.10): see docs/cutover/rehearsal.md "Certificate gate". ---
+# --- certificate lifecycle (runbook 1.10 and section 9): scripts/ops/cert-expiry-check.sh from a machine OUTSIDE the edge, scripts/ops/caddy-storage-backup.sh nightly. ---

@@ -3,9 +3,9 @@
 import fs from "node:fs";
 import path from "node:path";
 import * as M from "../lib/redirect-matrix.mjs";
-import { alive, readPid, waitFor, startProbe, P, INSTANCES, WP_UPSTREAM, req, rawRequest, readAccessLog, stripPort, resolveLocation, fsCaseInsensitive, sleep, now, ensureDirs, portListening, cpEchoToken, sh, caddyVersion } from "./lib.mjs";
+import { alive, readPid, waitFor, startProbe, allEdgeLogFiles, readLogFile, P, INSTANCES, WP_UPSTREAM, req, rawRequest, readAccessLog, stripPort, resolveLocation, fsCaseInsensitive, sleep, now, ensureDirs, portListening, cpEchoToken, sh, caddyVersion } from "./lib.mjs";
 import { Section } from "./harness.mjs";
-import { settings, start, stop, reload, launchdPlist, generateOldTarget, oldTargetSafety } from "./edge.mjs";
+import { settings, start, stop, reload, launchdPlist, generateOldTarget, oldTargetSafety, generate, safetyCheck, validate, preflight, envFor } from "./edge.mjs";
 void 0;
 import { REPO as REPO_ROOT } from "./lib.mjs";
 
@@ -256,25 +256,33 @@ async function behavior() {
   S.data.securityHeaders = secRows;
 
   // ---- G. Host handling ------------------------------------------------------------------------------------------
+  // Review F12: these used to be "status < 500 and no evil in Location", which a missing catch-all 421 block survived. Now the EXACT behaviour of the real Caddy is asserted:
+  //   exact: [status, bodyRegex|"empty"|null, locationRegex|"none"]
+  const MIS = "Misdirected request";
   const hostCases = [
-    ["Host: evil.example over TLS (valid SNI www.copilt.org)", "https://www.copilt.org/", { headers: { Host: "evil.example" } }],
-    ["Host: evil.example with path /pricing/", "https://www.copilt.org/pricing/", { headers: { Host: "evil.example" } }],
-    ["http Host: evil.example", "http://www.copilt.org/product", { headers: { Host: "evil.example" } }],
-    ["http Host: copilt.org.evil.example", "http://copilt.org/product", { headers: { Host: "copilt.org.evil.example" } }],
-    ["X-Forwarded-Host: evil.example on the apex", "http://copilt.org/product", { headers: { "X-Forwarded-Host": "evil.example" } }],
-    ["X-Forwarded-Host + X-Forwarded-Proto: http on www WordPress page", "https://www.copilt.org/my-account/", { headers: { "X-Forwarded-Host": "evil.example", "X-Forwarded-Proto": "http" } }],
-    ["X-Original-URL / X-Rewrite-URL on www", "https://www.copilt.org/pricing/", { headers: { "X-Original-URL": "/wp-admin/", "X-Rewrite-URL": "/wp-admin/" } }],
-    ["Host: WWW.COPILT.ORG (case)", "https://www.copilt.org/product/", { headers: { Host: "WWW.COPILT.ORG" } }],
-    ["Host: www.copilt.org. (trailing dot)", "https://www.copilt.org/product/", { headers: { Host: "www.copilt.org." } }],
-    ["Host: www.copilt.org:443", "https://www.copilt.org/product/", { headers: { Host: "www.copilt.org:443" } }],
+    ["Host: evil.example over TLS (valid SNI www.copilt.org): Caddy's no-match answer, an EMPTY 200 (no content, no redirect)", "https://www.copilt.org/", { headers: { Host: "evil.example" } }, [200, "empty", "none"], E],
+    ["Host: evil.example with path /pricing/ over TLS: the same empty 200, never WordPress", "https://www.copilt.org/pricing/", { headers: { Host: "evil.example" } }, [200, "empty", "none"], E],
+    ["http Host: evil.example: 421 Misdirected Request, no redirect", "http://www.copilt.org/product", { headers: { Host: "evil.example" } }, [421, MIS, "none"], PUBLIC],
+    ["http Host: copilt.org.evil.example: 421", "http://copilt.org/product", { headers: { Host: "copilt.org.evil.example" } }, [421, MIS, "none"], PUBLIC],
+    ["http Host: api.copilt.org: 421 (this edge never answers for the API host)", "http://copilt.org/", { headers: { Host: "api.copilt.org" } }, [421, MIS, "none"], PUBLIC],
+    ["http Host: 127.0.0.1 (IP literal): 421", "http://copilt.org/", { headers: { Host: "127.0.0.1" } }, [421, MIS, "none"], PUBLIC],
+    ["http Host: www.copilt.org.evil.example: 421", "http://copilt.org/", { headers: { Host: "www.copilt.org.evil.example" } }, [421, MIS, "none"], PUBLIC],
+    ["X-Forwarded-Host: evil.example on the apex: the redirect is built from constants -> 301 to https://www.copilt.org/product/", "http://copilt.org/product", { headers: { "X-Forwarded-Host": "evil.example" } }, [301, null, "^https://www\\.copilt\\.org(:\\d+)?/product/$"], PUBLIC],
+    ["X-Forwarded-Host + X-Forwarded-Proto: http on a WordPress page: 200 from WordPress, evil.example nowhere in the page", "https://www.copilt.org/my-account/", { headers: { "X-Forwarded-Host": "evil.example", "X-Forwarded-Proto": "http" } }, [200, "!evil", "none"], E],
+    ["X-Original-URL / X-Rewrite-URL on www: ignored (200 pricing page, not wp-admin)", "https://www.copilt.org/pricing/", { headers: { "X-Original-URL": "/wp-admin/", "X-Rewrite-URL": "/wp-admin/" } }, [200, "!wp-admin/index", "none"], E],
+    ["Host: WWW.COPILT.ORG (case): the static page", "https://www.copilt.org/product/", { headers: { Host: "WWW.COPILT.ORG" } }, [200, "html", "none"], E],
+    ["Host: www.copilt.org. (trailing dot): Caddy's no-match empty 200", "https://www.copilt.org/product/", { headers: { Host: "www.copilt.org." } }, [200, "empty", "none"], E],
+    ["Host: www.copilt.org:443: the static page", "https://www.copilt.org/product/", { headers: { Host: "www.copilt.org:443" } }, [200, "html", "none"], E],
   ];
   const hostRows = [];
-  for (const [label, url, o] of hostCases) {
-    const r = await rq(url.startsWith("http://") ? PUBLIC : E, url, o);
+  for (const [label, url, o, exact, inst] of hostCases) {
+    const r = await rq(inst, url, o);
     const loc = one(r, "location") || "";
-    const ok = r.status > 0 && r.status < 500 && !/evil\.example/i.test(loc + r.body.slice(0, 20000)) && (loc === "" || /^https:\/\/www\.copilt\.org(:\d+)?\//.test(loc));
+    const [st, bodyRule, locRule] = exact;
+    const bodyOk = bodyRule === null ? true : bodyRule === "empty" ? r.body.length === 0 : bodyRule === "html" ? /<html/i.test(r.body) : bodyRule.startsWith("!") ? !r.body.includes(bodyRule.slice(1)) && !/evil\.example/.test(r.body) : r.body.trim() === bodyRule;
+    const locOk = locRule === "none" ? loc === "" : new RegExp(locRule).test(loc);
     hostRows.push({ case: label, status: r.status, location: loc, bodyBytes: r.body.length });
-    S.check(`Host handling: ${label}`, ok, `status=${r.status} location=${loc} body[0..60]=${JSON.stringify(r.body.slice(0, 60))}`, `${r.status} ${loc}`);
+    S.check(`Host handling (exact): ${label}`, r.status === st && bodyOk && locOk && !/evil\.example/i.test(loc), `status=${r.status} (want ${st}) location=${loc || "-"} body[0..60]=${JSON.stringify(r.body.slice(0, 60))}`, `${r.status} ${loc}`);
   }
   const wpEcho = await rq(E, `https://www.copilt.org/wp-json/?__rehearsal_echo=${cpEchoToken()}`, { headers: { "X-Forwarded-Host": "evil.example", Host: "www.copilt.org" } });
   let echo = {}; try { echo = JSON.parse(wpEcho.body); } catch { /* */ }
@@ -318,6 +326,39 @@ async function behavior() {
     S.check(`method ${m} ${p}: no 5xx, TRACE never reflects the request`, r.status > 0 && r.status < 500 && !(m === "TRACE" && reflected), `status=${r.status} allow=${one(r, "allow") || "-"} reflected=${reflected}`, `${r.status}`);
   }
   S.data.methodRows = methodRows;
+
+  // ---- K. request body cap (E9) and Alt-Svc (E10) -----------------------------------------------------------------------------------
+  const big12 = "/tmp/aicc-body-12mb.bin", big3 = "/tmp/aicc-body-3mb.bin", big1 = "/tmp/aicc-body-1mb.bin";
+  for (const [f, mb] of [[big12, 12], [big3, 3], [big1, 1]]) fs.writeFileSync(f, Buffer.alloc(mb * 1024 * 1024, 0x61));
+  const post = (inst, url, file, extraHeaders = {}) => rq(inst, url, { method: "POST", extra: ["--data-binary", `@${file}`], headers: { "Content-Type": "application/octet-stream", ...extraHeaders }, timeout: 60 });
+  for (const [label, path0] of [["license REST", "/wp-json/aicc-license/v1/validate"], ["Store API", "/wp-json/wc/store/v1/cart/add-item"], ["login form", "/my-account/"], ["admin-ajax.php (public)", "/wp-admin/admin-ajax.php"], ["wc-ajax", "/?wc-ajax=update_order_review"], ["lost-password", "/my-account/lost-password/"]]) {
+    const r = await post(PUBLIC, `https://www.copilt.org${path0}`, big12);
+    S.check(`request body cap: a 12 MB POST to ${label} (${path0}) is rejected at the edge with 413 and never reaches WordPress`, r.status === 413 && one(r, "x-rehearsal-upstream") !== "wordpress", `status=${r.status} ${r.error || ""}`.slice(0, 160));
+  }
+  const rb3 = await post(PUBLIC, "https://www.copilt.org/wp-json/aicc-license/v1/validate", big3);
+  S.check("request body cap: 3 MB (> 2 MB cap) -> 413", rb3.status === 413, `${rb3.status}`);
+  const rb1 = await post(PUBLIC, "https://www.copilt.org/wp-json/aicc-license/v1/validate", big1);
+  S.check("request body cap: 1 MB (< cap) passes the edge and WordPress answers (any 2xx/4xx, not 413/5xx)", rb1.status > 0 && rb1.status !== 413 && rb1.status < 500 && one(rb1, "x-rehearsal-upstream") === "wordpress", `${rb1.status}`);
+  const chunked = await rq(PUBLIC, "https://www.copilt.org/wp-json/aicc-license/v1/validate", { method: "POST", extra: ["--data-binary", `@${big12}`, "-H", "Transfer-Encoding: chunked"], headers: { "Content-Type": "application/octet-stream" }, timeout: 60 });
+  S.check("request body cap: a 12 MB CHUNKED POST (no Content-Length to check up front) is cut off too (413, or the connection is closed), never accepted", chunked.status === 413 || chunked.status === 0 || chunked.status === 400, `${chunked.status} ${chunked.error || ""}`.slice(0, 160));
+  const opBig = await post(E, "https://www.copilt.org/wp-admin/async-upload.php", big12);
+  S.check("operator-only /wp-admin/ has the larger cap: a 12 MB POST from an operator is NOT cut by the 2 MB cap (WordPress answers)", opBig.status !== 413 && opBig.status > 0 && one(opBig, "x-rehearsal-upstream") === "wordpress", `${opBig.status}`);
+  const pubBig = await post(PUBLIC, "https://www.copilt.org/wp-admin/async-upload.php", big12);
+  S.check("the same upload from a non-operator is refused earlier by the allowlist (403)", pubBig.status === 403, `${pubBig.status}`);
+  for (const f of [big12, big3, big1]) fs.rmSync(f, { force: true });
+  const altSvcRows = [];
+  for (const [inst, label] of [[E, "standing edge"], [PUBLIC, "twin"]]) for (const p of ["/", "/pricing/", "/wp-json/aicc-license/v1/plans", "/nothing-here/", "/robots.txt"]) {
+    const r = await rq(inst, `https://www.copilt.org${p}`);
+    const port = inst === E ? "443" : String(PUBLIC.httpsPort);
+    const v = r.headers["alt-svc"] || [];
+    altSvcRows.push({ instance: label, path: p, altSvc: v });
+    S.check(`Alt-Svc is exactly one value h3=":${port}"; ma=3600 (not Caddy's 30-day default, not duplicated) on ${label} ${p}`, v.length === 1 && v[0] === `h3=":${port}"; ma=3600`, JSON.stringify(v));
+  }
+  const altRedir = await rq(PUBLIC, "http://copilt.org/product");
+  S.info("Alt-Svc on a plain-http redirect", JSON.stringify(altRedir.headers["alt-svc"] || "none (not sent over http)"));
+  S.data.altSvc = altSvcRows;
+  const direct50x = await rq(E, "https://www.copilt.org/50x.html");
+  S.check("/50x.html is not a public page: 404 from the edge (the file is still used internally for error handling: see the 5xx section)", direct50x.status === 404 && !/temporarily unavailable/.test(direct50x.body), `${direct50x.status}`);
 
   // ---- J. invariant over everything seen so far ---------------------------------------------------------------------------------
   const sc = SEEN.filter((x) => x.setCookie > 0);
@@ -391,6 +432,55 @@ async function admin() {
   // a spoofed operator address cannot help: XFF is not what the allowlist reads
   const spoof = await rq(PUBLIC, "https://www.copilt.org/wp-admin/", { headers: { "X-Forwarded-For": "192.0.2.1", "X-Real-IP": "192.0.2.1", Forwarded: "for=192.0.2.1" } });
   S.check("spoofed X-Forwarded-For / X-Real-IP / Forwarded of an operator address does not open /wp-admin/ (allowlist uses the TCP peer)", spoof.status === 403, `status=${spoof.status}`);
+
+  // ---- 2b. E1 (security review F2): no session can be obtained through wp-login.php from a non-operator source ---------------------------------------
+  const bypassJar = "/tmp/aicc-bypass.jar"; fs.rmSync(bypassJar, { force: true });
+  const loginBody = "log=rehearsal-admin&pwd=" + encodeURIComponent("Rehearsal-Admin-2026!") + "&wp-submit=Log+In&redirect_to=" + encodeURIComponent("https://www.copilt.org/wp-admin/") + "&testcookie=1";
+  const upBefore = upstreamLog().length;
+  const bypass = [
+    ["POST ?loggedout=true", "?loggedout=true", { method: "POST" }],
+    ["POST ?loggedout=true&wp_lang=en_US", "?loggedout=true&wp_lang=en_US", { method: "POST" }],
+    ["POST ?action=logout (+ action=login in the body)", "?action=logout", { method: "POST", body: loginBody + "&action=login" }],
+    ["POST ?ACTION=logout", "?ACTION=logout", { method: "POST" }],
+    ["POST ?LOGGEDOUT=true", "?LOGGEDOUT=true", { method: "POST" }],
+    ["POST ?action=logout&x=1", "?action=logout&x=1", { method: "POST" }],
+    ["POST ?loggedout=true&log=x&pwd=y", "?loggedout=true&log=x&pwd=y", { method: "POST" }],
+    ["POST ?action=logout&action=login", "?action=logout&action=login", { method: "POST" }],
+    ["POST ?x=1&loggedout=true", "?x=1&loggedout=true", { method: "POST" }],
+    ["POST ?action=logout&_wpnonce=abc123", "?action=logout&_wpnonce=abc123", { method: "POST" }],
+    ["POST plain (no query)", "", { method: "POST" }],
+    ["POST ?action=login", "?action=login", { method: "POST" }],
+    ["PUT ?loggedout=true", "?loggedout=true", { method: "PUT" }],
+    ["POST with X-HTTP-Method-Override: GET", "?loggedout=true", { method: "POST", headers: { "X-HTTP-Method-Override": "GET" } }],
+    ["POST over HTTP/2", "?loggedout=true", { method: "POST", http: "2" }],
+    ["POST /wp-login.php/ (path-info)", "/?loggedout=true", { method: "POST", rawSuffix: true }],
+    ["POST /WP-LOGIN.PHP?loggedout=true", "?loggedout=true", { method: "POST", path: "/WP-LOGIN.PHP" }],
+    ["POST //wp-login.php?loggedout=true", "?loggedout=true", { method: "POST", path: "//wp-login.php" }],
+    ["POST /wp-login.php%2e?loggedout=true", "?loggedout=true", { method: "POST", path: "/wp-login.php%20" }],
+  ];
+  const bypassRows = [];
+  for (const [label, q, o] of bypass) {
+    const p0 = o.path || "/wp-login.php";
+    const url = o.rawSuffix ? `https://www.copilt.org/wp-login.php${q}` : `https://www.copilt.org${p0}${q}`;
+    const r = await rq(PUBLIC, url, { method: o.method, body: o.body ?? loginBody, headers: { Cookie: "wordpress_test_cookie=WP%20Cookie%20check", ...(o.headers || {}) }, extra: ["-c", bypassJar], http: o.http });
+    const cookies = (r.headers["set-cookie"] || []).filter((c) => /wordpress_logged_in|wordpress_sec/.test(c));
+    const reached = one(r, "x-rehearsal-upstream") === "wordpress";
+    bypassRows.push({ attempt: label, status: r.status, reachedWordPress: reached, sessionCookies: cookies.length });
+    S.check(`login bypass attempt from a non-operator: ${label} -> no session (status ${r.status}, WordPress reached: ${reached})`, cookies.length === 0 && !(r.status === 302 && /wp-admin/.test(one(r, "location") || "")) && (r.status === 403 || r.status === 404 || r.status === 400), `status=${r.status} reached=${reached} session cookies=${cookies.length}`, `${r.status}`);
+  }
+  S.data.loginBypass = bypassRows;
+  const jarText = fs.existsSync(bypassJar) ? fs.readFileSync(bypassJar, "utf8") : "";
+  S.check("after all bypass attempts the cookie jar holds NO wordpress_logged_in / wordpress_sec cookie", !/wordpress_logged_in|wordpress_sec/.test(jarText), jarText.split("\n").filter((l) => /wordpress_/.test(l)).length + " wordpress_* cookie lines");
+  const hit = upstreamLog().slice(upBefore).filter((e) => /wp-login/i.test(e.uri));
+  S.check("the CP's own request log shows NONE of the bypass POSTs (the edge answered them; WordPress never ran wp_signon)", hit.length === 0, `${hit.length} wp-login requests reached the upstream: ${hit.slice(0, 3).map((e) => e.method + " " + e.uri).join(", ")}`);
+  const opLogin = await rq(E, "https://www.copilt.org/wp-login.php", { method: "POST", body: loginBody, headers: { Cookie: "wordpress_test_cookie=WP%20Cookie%20check" }, extra: ["-c", "/tmp/aicc-bypass-op.jar"] });
+  S.check("control: the SAME login POST from an operator source still signs in (302 + session cookie): the block is by source, not a broken form", opLogin.status === 302 && (opLogin.headers["set-cookie"] || []).some((c) => /wordpress_logged_in/.test(c)), `${opLogin.status}`);
+  fs.rmSync("/tmp/aicc-bypass-op.jar", { force: true }); fs.rmSync(bypassJar, { force: true });
+  // GET shapes that stay open: exactly the two customer shapes
+  const okShapes = ["?action=logout", "?action=logout&redirect_to=https%3A%2F%2Fwww.copilt.org%2Fpricing%2F", "?action=logout&redirect_to=https%3A%2F%2Fwww.copilt.org%2F&_wpnonce=0a1b2c3d4e", "?loggedout=true", "?loggedout=true&wp_lang=en_US"];
+  for (const q of okShapes) { const r = await rq(PUBLIC, `https://www.copilt.org/wp-login.php${q}`); S.check(`customer logout shape stays open for GET: ${q}`, one(r, "x-rehearsal-upstream") === "wordpress", `${r.status}`); }
+  const badGets = ["?action=lostpassword", "?action=register", "?action=rp&key=x&login=y", "?action=logout&x=1", "?loggedout=true&x=1", "?ACTION=logout", "?action=postpass", "?action=confirmaction&request_id=1", "?action=resetpass", "?checkemail=confirm", "?reauth=1"];
+  for (const q of badGets) { const r = await rq(PUBLIC, `https://www.copilt.org/wp-login.php${q}`); S.check(`GET ${q} is operator-only (403 from the edge)`, r.status === 403 && one(r, "x-rehearsal-upstream") !== "wordpress", `${r.status}`); }
 
   // ---- 3. operator can really use wp-admin through the edge --------------------------------------------------------------------------
   const opJar = "/tmp/aicc-op.jar"; fs.rmSync(opJar, { force: true });
@@ -619,7 +709,7 @@ async function breakIt() {
   await raw("absolute-URI request line to another host", `GET http://evil.example/pricing/ HTTP/1.1\r\n${H}Connection: close\r\n\r\n`, /^(400|421|404|200|closed|none|ECONN)/);
   await raw("bare LF line endings / header injection via LF", `GET /pricing/ HTTP/1.1\n${H.replace("\r\n", "\n")}X-A: b\nConnection: close\n\n`, /^(400|200|closed|none|ECONN|\d{3})$/);
   await raw("NUL byte in a header value", `GET /pricing/ HTTP/1.1\r\n${H}X-A: a\u0000b\r\nConnection: close\r\n\r\n`, /^(400|closed|none|ECONN)/);
-  await raw("HTTP/1.0 without Host over plain http", `GET /product HTTP/1.0\r\n\r\n`, /^(400|421|404|200|closed|none|ECONN)/, false);
+  await raw("HTTP/1.0 without Host over plain http", `GET /product HTTP/1.0\r\n\r\n`, /^421$/, false);
   await raw("pipelined second request after a normal one is answered normally (framing intact)", `GET /robots.txt HTTP/1.1\r\n${H}\r\nGET /SMUGGLED-PIPELINE HTTP/1.1\r\n${H}Connection: close\r\n\r\n`, /^200$/);
   // 3. path normalisation and locale + WordPress
   const norm = [["/product/../pricing/", 400], ["/pricing/%2e%2e/product/", 400], ["/product//", null], ["/pricing//", null], ["/he/pricing/", 200], ["/he/my-account/lost-password/", 200], ["/he/my-account/", 200], ["/es/cart/", 200], ["/ru/pricing/", 200], ["/he/xmlrpc.php", 404], ["/he/wp-admin/", 404], ["/he/wp-login.php", 404]];
@@ -689,10 +779,10 @@ async function logging() {
   const loc4 = e4?.resp_headers?.Location?.[0] || "";
   S.check("a redirect's logged Location is redacted (apex /my-account?key=... )", !loc4.includes("REDIRKEYSECRET") && /key=REDACTED/.test(loc4), loc4);
   // grep every log for every secret string (also the pre-existing lines from the admin section's real reset flow)
-  const files = fs.readdirSync(P.logs).filter((f) => /\.(log|gz)$/.test(f) && !/^cp-/.test(f));
+  const files = allEdgeLogFiles().map((f) => path.relative(P.logs, f));
   const all2 = Object.values(marks).concat(["COOKIESECRET", "SESSIONSECRET", "AUTHSECRET", "XWPNONCESECRET", "REFSECRET", "BODYSECRET", "BODYSECRET2", "REDIRKEYSECRET", "DENYSECRET", "UPPERSECRET", "LOGINBODYSECRET"], secrets);
   const hits = [];
-  for (const f of files) { const text = f.endsWith(".gz") ? sh("gunzip", ["-c", path.join(P.logs, f)]).stdout : fs.readFileSync(path.join(P.logs, f), "utf8"); for (const sec of all2) if (text.includes(sec)) hits.push(`${f}: ${sec.slice(0, 4)}…`); }
+  for (const f of files) { const text = readLogFile(path.join(P.logs, f)); for (const sec of all2) if (text.includes(sec)) hits.push(`${f}: ${sec.slice(0, 4)}…`); }
   S.check(`grep: none of ${all2.length} secret strings (test password, REAL emailed reset key, cookie/auth/nonce values, every query secret) appears in ${files.length} edge log files (${files.join(", ")})`, hits.length === 0, hits.join("; ") || "0 hits");
   fs.rmSync(path.join(P.run, "log-grep-secrets.txt"), { force: true });
   const realResetPath = all.filter((x) => /\/my-account\/lost-password\/\?/.test(x.request?.uri || "") && /show-reset-form|key=/.test(x.request?.uri || "")).slice(-3).map((x) => x.request.uri);
@@ -1102,14 +1192,16 @@ async function rollback() {
   const notAfter = /notAfter=(.*)/.exec(facts)?.[1];
   const fresh = sh("bash", ["-c", "echo | openssl s_client -connect www.copilt.org:443 -servername www.copilt.org 2>/dev/null | openssl x509 -noout -dates"]).stdout.trim().replace(/\n/g, "; ");
   S.info("GitHub Pages certificate, re-verified now (openssl s_client -connect www.copilt.org:443 | openssl x509 -noout -dates)", fresh);
-  S.check("the GitHub Pages certificate expires 2026-11-19 (not yet renewed): rollback via DNS is credible only until then unless GitHub renews BEFORE the flip", /Nov 19 .* 2026 GMT/.test(fresh), fresh);
+  const naFresh = /notAfter=(.*)/.exec(fresh)?.[1];
+  const daysLeft = naFresh ? Math.round((new Date(naFresh) - new Date()) / 86400000) : -1;
+  S.check(`the GitHub Pages certificate in force is read live and is still valid (notAfter ${naFresh}, ${daysLeft} days left): the rollback window ends there, because GitHub cannot renew while DNS points elsewhere`, daysLeft > 0, fresh);
   S.data.realWorldTimeline = {
     dnsTtlAuthoritative: "1799-1800 s at dns1/dns2.registrar-servers.com (apex A, www CNAME, MX, TXT); recursive resolvers showed 464-2250 s remaining on 2026-10-20",
     lowerTtlTo300: "Lower the www CNAME and the apex A records to 300 s at least 30 minutes (ideally 24 h) before the flip: the old TTL (1800 s) must expire first",
     negativeCaching: "SOA minimum is 3601 s: an empty answer for www (CNAME deleted before the A record exists) may be cached up to 1 h by resolvers. Delete and add back-to-back (one edit), never leave a gap",
     browserCaches: "301s for apex/aliases are cached by browsers indefinitely unless max-age is given; the apex -> www 301 already exists today (GitHub), so returning visitors see no change; /account /login /register /shop /store 301s (new) are cached and can outlive a rollback",
     hsts: "max-age=300 only, no includeSubDomains/preload: after a rollback browsers forget the HSTS pin within 5 minutes; the old site sends no HSTS",
-    pagesCertificate: `notAfter ${notAfter}: GitHub renews about 30 days before expiry but cannot while DNS points elsewhere (its validation is HTTP from its own servers); a rollback after that date presents an EXPIRED certificate`,
+    pagesCertificate: `notAfter ${naFresh} (read live; the snapshot taken earlier said ${notAfter}): GitHub renews about 30 days before expiry but cannot while DNS points elsewhere (its validation is HTTP from its own servers); a rollback after that date presents an EXPIRED certificate`,
     estimate: "Revert edit at the registrar: minutes (human). Propagation: <= 300 s after TTL was lowered (<= 1800 s if it was not). Old site reachable again for most clients within 5-10 minutes, long tail up to TTL. Valid TLS on return: only if the Pages certificate is still valid.",
   };
   S.save();
@@ -1134,8 +1226,8 @@ async function safety() {
   const net = sh("lsof", ["-nP", "-a", "-p", pids, "-i"]).stdout.split("\n").filter((l) => /ESTABLISHED|SYN_SENT|CLOSE_WAIT|TIME_WAIT/.test(l));
   const outbound = net.filter((l) => !/127\.0\.0\.1|\[::1\]|->\*|\*:/.test(l.replace(/\(LISTEN\)/, "")));
   S.check("no outbound (non-loopback) connection from any Caddy process at this moment (lsof -i)", outbound.length === 0, outbound.slice(0, 3).join(" | ") || `${net.length} loopback connections only`);
-  const logs = ["error.log", "caddy-edge.stdout.log", "caddy-public.stdout.log"].filter((f) => fs.existsSync(path.join(P.logs, f)));
-  const acmeLines = logs.flatMap((f) => fs.readFileSync(path.join(P.logs, f), "utf8").split("\n").filter((l) => /acme|letsencrypt|zerossl|acme-v02|acme-staging/i.test(l)).map((l) => `${f}: ${l.slice(0, 160)}`));
+  const logs = allEdgeLogFiles().map((f) => path.relative(P.logs, f)).filter((f) => /error\.log|stdout\.log/.test(f));
+  const acmeLines = logs.flatMap((f) => readLogFile(path.join(P.logs, f)).split("\n").filter((l) => /acme|letsencrypt|zerossl|acme-v02|acme-staging/i.test(l)).map((l) => `${f}: ${l.slice(0, 160)}`));
   S.check(`no ACME / Let's Encrypt / ZeroSSL line in ${logs.join(", ")}`, acmeLines.length === 0, acmeLines.slice(0, 2).join(" | ") || "none");
   S.check("Caddy storage has no ACME account or challenge directory (acme/ absent); only the local CA and local certificates", !fs.existsSync(path.join(P.caddyData, "acme")) && fs.existsSync(path.join(P.caddyData, "pki/authorities/local")), fs.readdirSync(P.caddyData).join(","));
   S.check("the edge's upstream is loopback and the only upstream of any generated file", gens.every((f) => !/reverse_proxy\s+(?!\{\$AICC_WP_UPSTREAM\})/.test(fs.readFileSync(path.join(P.generated, f), "utf8").split("\n").filter((l) => !/^\s*#/.test(l)).join("\n"))), "reverse_proxy {$AICC_WP_UPSTREAM} = 127.0.0.1:18982 in the runner's environment");
@@ -1165,10 +1257,539 @@ echo wp_json_encode(array('code'=>wp_remote_retrieve_response_code($r),'redirect
   return [S];
 }
 
-const SECTIONS = { apexpost, safety, rollback, tls: tlsSection, restart, routing, behavior, admin, errors, break: breakIt, logging, demo };
+/* ------------------------------------------------------------------ Option A: a pre-issued (manual) certificate: tls <cert> <key> (review F1/F13) */
+async function optiona() {
+  const S = new Section("14-option-a-manual-certificate", "Option A: `tls <cert> <key>` with a throwaway self-signed certificate (no public CA): validate, serve both names, redirects, HSTS, reload picks up a replaced file");
+  const dir = path.join(P.home, "run/option-a"); fs.rmSync(dir, { recursive: true, force: true }); fs.mkdirSync(path.join(dir, "certs"), { recursive: true, mode: 0o700 }); fs.mkdirSync(path.join(dir, "storage"), { recursive: true, mode: 0o700 });
+  const cert = path.join(dir, "certs/fullchain.pem"), key = path.join(dir, "certs/privkey.pem");
+  const mk = (days, cn) => {
+    const r = sh("openssl", ["req", "-x509", "-newkey", "ec", "-pkeyopt", "ec_paramgen_curve:prime256v1", "-nodes", "-keyout", key + ".new", "-out", cert + ".new", "-days", String(days), "-subj", `/CN=${cn}`, "-addext", "subjectAltName=DNS:www.copilt.org,DNS:copilt.org"]);
+    fs.renameSync(key + ".new", key); fs.renameSync(cert + ".new", cert); fs.chmodSync(key, 0o600);
+    return r.code === 0;
+  };
+  S.check("a throwaway self-signed certificate (EC P-256, SAN www.copilt.org + copilt.org, 10 days) was generated locally: no CA of any kind is contacted", mk(10, "aicc-option-a-throwaway-1"), "");
+  const serial = (name, port) => /serial=(.*)/.exec(sh("bash", ["-c", `echo | openssl s_client -connect 127.0.0.1:${port} -servername ${name} 2>/dev/null | openssl x509 -noout -serial`]).stdout)?.[1];
+  const issuerOf = (name, port) => sh("bash", ["-c", `echo | openssl s_client -connect 127.0.0.1:${port} -servername ${name} 2>/dev/null | openssl x509 -noout -issuer -ext subjectAltName`]).stdout;
+  const certSerial = () => /serial=(.*)/.exec(sh("openssl", ["x509", "-in", cert, "-noout", "-serial"]).stdout)?.[1];
+  const A = { name: "optiona", httpPort: 18120, httpsPort: 18455 };
+  const cfg = { ...settings(), ...A, admin: "127.0.0.1:12025", upstream: WP_UPSTREAM, staticRoot: P.current, wpTimeout: "60s", variant: "", storage: path.join(dir, "storage"), tlsFiles: `${cert},${key}` };
+  const gen = generate(cfg);
+  S.check("the generator renders `(aicc_tls) { tls <cert> <key> }` and its safety rules accept it (local files only, no ACME)", /\(aicc_tls\) \{\n\s*tls \S+fullchain\.pem \S+privkey\.pem\n\}/.test(gen.text) && safetyCheck(cfg, gen.text).length === 0, safetyCheck(cfg, gen.text).join("; "));
+  const v = await validate(cfg, true);
+  S.check("`caddy validate` accepts the manual-certificate rendering (before the apex split this was: \"server listening on [...] is HTTP, but attempts to configure TLS connection policies\")", v.ok, v.out.split("\n").filter((l) => !l.startsWith("{")).join(" ").slice(0, 200));
+  // the PRODUCTION template itself (global block, email line, no local_certs) with the manual form: `caddy adapt` only (it never provisions an ACME issuer or contacts a CA)
+  const prod = fs.readFileSync(P.template, "utf8").replace(/\(aicc_tls\) \{\n(?:(?!\}\n)[^\n]*\n)*\}\n/, `(aicc_tls) {\n\ttls ${cert} ${key}\n}\n`);
+  fs.writeFileSync(path.join(dir, "Caddyfile.production-option-a"), prod);
+  const ad = sh(P.caddy, ["adapt", "--config", path.join(dir, "Caddyfile.production-option-a"), "--adapter", "caddyfile"], { env: { ...process.env, AICC_ACME_EMAIL: "ops@example.invalid", AICC_STATIC_ROOT: "/srv/aicc/current", AICC_WP_UPSTREAM: "10.0.0.12:8080", AICC_OPERATOR_CIDRS: "203.0.113.7/32", AICC_LOG_DIR: dir } });
+  S.check("`caddy adapt` accepts the PRODUCTION template (global block, email line, no local_certs) with the manual `tls <cert> <key>` form", ad.code === 0 && /"load_files"/.test(ad.stdout), ad.code === 0 ? "load_files present for the https blocks" : ad.out.slice(-200));
+  fs.writeFileSync(path.join(dir, "adapted-production-option-a.json"), ad.stdout);
+  const mixed = fs.readFileSync(P.template, "utf8").replace(/\(aicc_tls\) \{\n(?:(?!\}\n)[^\n]*\n)*\}\n/, `(aicc_tls) {\n\ttls ${cert} ${key}\n}\n`).replace("http://copilt.org, http://www.copilt.org {\n\timport aicc_site_hook\n", "http://copilt.org, https://copilt.org, http://www.copilt.org {\n\timport aicc_site_hook\n\timport aicc_tls\n").replace(/https:\/\/copilt\.org \{\n(?:(?!\}\n)[^\n]*\n)*\}\n/, "");
+  fs.writeFileSync(path.join(dir, "Caddyfile.mixed-old-structure"), mixed);
+  const adMixed = sh(P.caddy, ["adapt", "--config", path.join(dir, "Caddyfile.mixed-old-structure"), "--adapter", "caddyfile"], { env: { ...process.env, AICC_ACME_EMAIL: "ops@example.invalid", AICC_STATIC_ROOT: "/srv/aicc/current", AICC_WP_UPSTREAM: "10.0.0.12:8080", AICC_OPERATOR_CIDRS: "203.0.113.7/32", AICC_LOG_DIR: dir } });
+  S.check("control: the OLD structure (one block mixing http:// and https:// addresses + a manual tls line) is rejected by the real Caddy, as the architecture review found", adMixed.code !== 0 && /is HTTP, but attempts to configure TLS connection policies/.test(adMixed.out), adMixed.out.split("\n").filter((l) => /error/.test(l)).join(" ").slice(0, 220));
+  await start(cfg, { quiet: true });
+  const OA = { ...cfg };
+  const ser1 = certSerial();
+  for (const name of ["www.copilt.org", "copilt.org"]) {
+    const info = issuerOf(name, 18455);
+    S.check(`${name}: the manual certificate is what is served (serial ${ser1}, CN aicc-option-a-throwaway-1, SAN covers both names, NOT a Caddy-issued one)`, serial(name, 18455) === ser1 && /aicc-option-a-throwaway-1/.test(info) && /DNS:www\.copilt\.org/.test(info) && /DNS:copilt\.org/.test(info) && !/Caddy Local Authority/.test(info), info.replace(/\n/g, " ").slice(0, 200));
+  }
+  S.check("nothing was issued automatically in this instance's storage (no certificates/ directory): Caddy used only the loaded files", !fs.existsSync(path.join(dir, "storage/certificates")), fs.readdirSync(path.join(dir, "storage")).join(","));
+  // serve, redirect, HSTS
+  const trust = ["--cacert", cert];
+  const R = (url, o = {}) => rqWith(OA, url, trust, o);
+  const home = await R("https://www.copilt.org/");
+  S.check("https://www.copilt.org/ serves the static home page over the manual certificate (200, HSTS max-age=300, HTTP/2)", home.status === 200 && one(home, "strict-transport-security") === "max-age=300" && /<html/.test(home.body), `${home.status} ${one(home, "strict-transport-security")}`);
+  const pr = await R("https://www.copilt.org/pricing/");
+  S.check("a WordPress route works through the same listener (200 from WordPress)", pr.status === 200 && one(pr, "x-rehearsal-upstream") === "wordpress", `${pr.status}`);
+  const apexS = await R("https://copilt.org/he/pricing?plan=solo"), apexH = await R("http://copilt.org/product"), wwwH = await R("http://www.copilt.org/x?y=1");
+  const strip = (l) => (l || "").replace(":18455", "");
+  S.check("https://copilt.org/... 301s to https://www.copilt.org in ONE hop with path + query (over the manual certificate)", apexS.status === 301 && strip(one(apexS, "location")) === "https://www.copilt.org/he/pricing/?plan=solo" && one(apexS, "strict-transport-security") === "max-age=300", `${apexS.status} ${one(apexS, "location")}`);
+  S.check("http://copilt.org and http://www.copilt.org 301 straight to https://www (no http -> https -> www chain)", apexH.status === 301 && strip(one(apexH, "location")) === "https://www.copilt.org/product/" && wwwH.status === 301 && strip(one(wwwH, "location")) === "https://www.copilt.org/x?y=1", `${apexH.status} ${one(apexH, "location")} / ${wwwH.status} ${one(wwwH, "location")}`);
+  const unk = await R("http://copilt.org/", { headers: { Host: "evil.example" } });
+  S.check("unknown Host on port 80 still gets the 421 catch-all", unk.status === 421, `${unk.status}`);
+  // monitor sees the 10-day certificate as a warning
+  const mon1 = sh("bash", [path.join(REPO_ROOT, "scripts/ops/cert-expiry-check.sh"), "--host", "www.copilt.org", "--connect", "127.0.0.1:18455"]);
+  S.check("scripts/ops/cert-expiry-check.sh reports the 10-day certificate as WARN (exit 1) on the live listener", mon1.code === 1 && /^WARN /.test(mon1.stdout), mon1.stdout.trim());
+  const monFile = sh("bash", [path.join(REPO_ROOT, "scripts/ops/cert-expiry-check.sh"), "--file", cert, "--warn-days", "5", "--crit-days", "2"]);
+  S.check("same file with thresholds 5/2 days -> OK (exit 0)", monFile.code === 0 && /^OK /.test(monFile.stdout), monFile.stdout.trim());
+  // REPLACE the files: Caddy does not watch them
+  const old1 = ser1;
+  mk(90, "aicc-option-a-throwaway-2");
+  const ser2 = certSerial();
+  await sleep(1500);
+  S.check("after the files are replaced on disk, WITHOUT a reload, Caddy keeps serving the OLD certificate (it does not watch certificate files: renewal needs `systemctl reload`)", serial("www.copilt.org", 18455) === old1 && ser2 !== old1, `served ${serial("www.copilt.org", 18455)} (old ${old1}, new on disk ${ser2})`);
+  const rl = await reload(OA, { quiet: true });
+  await sleep(300);
+  S.check(`after \`caddy reload\` (${rl.ms} ms) both names serve the NEW certificate, no failed request in between`, serial("www.copilt.org", 18455) === ser2 && serial("copilt.org", 18455) === ser2, `served ${serial("www.copilt.org", 18455)}, ${serial("copilt.org", 18455)} (new ${ser2})`);
+  const mon2 = sh("bash", [path.join(REPO_ROOT, "scripts/ops/cert-expiry-check.sh"), "--host", "www.copilt.org", "--host", "copilt.org", "--connect", "127.0.0.1:18455"]);
+  S.check("the monitor is green (OK, exit 0) for both names after the renewal reload", mon2.code === 0, mon2.stdout.trim().replace(/\n/g, " | "));
+  // a broken replacement is caught BEFORE it is loaded
+  const keep = fs.readFileSync(cert);
+  fs.writeFileSync(cert, "not a certificate");
+  const pf = preflight(OA, generate(OA).file);
+  S.check("preflight refuses to reload a corrupt certificate file (so a bad renewal cannot take the edge down on reload)", !pf.ok && /not a PEM certificate/.test(pf.out), pf.out.trim().slice(0, 160));
+  fs.writeFileSync(cert, keep);
+  await stop(OA, { quiet: true });
+  S.note("Throwaway certificate only: nothing here proves a public CA's certificate would be accepted, only that the file form validates, serves both names, redirects and reloads. Certbot/DNS-01 issuance of the real certificate is UNPROVEN (rehearsal.md 'Certificate gate').");
+  S.save();
+  fs.rmSync(dir, { recursive: true, force: true });
+  return [S];
+}
+async function rqWith(inst, url, extra, o = {}) { return req(inst, url, { ...o, extra: [...extra, ...(o.extra || [])] }); }
+
+/* ------------------------------------------------------------------ preflight: fail-closed start (E5, architecture review F6) */
+async function preflightSection() {
+  const S = new Section("15-preflight", "scripts/ops/edge-preflight.sh: every missing or unsafe input stops the start with a clear message (negative tests)");
+  const dir = path.join(P.home, "run/preflight"); fs.rmSync(dir, { recursive: true, force: true }); fs.mkdirSync(dir, { recursive: true });
+  const root = path.join(dir, "static"), logs = path.join(dir, "logs"); fs.mkdirSync(root, { recursive: true }); fs.mkdirSync(logs, { recursive: true });
+  for (const f of ["index.html", "404.html", "50x.html"]) fs.writeFileSync(path.join(root, f), "<html></html>");
+  const script = path.join(REPO_ROOT, "scripts/ops/edge-preflight.sh");
+  const rehearsalFile = path.join(P.generated, "Caddyfile");
+  const prodFile = path.join(dir, "Caddyfile.production"); fs.writeFileSync(prodFile, fs.readFileSync(P.template, "utf8"));
+  const base = { AICC_STATIC_ROOT: root, AICC_WP_UPSTREAM: "127.0.0.1:18982", AICC_OPERATOR_CIDRS: "127.0.0.1/32 ::1/128", AICC_LOG_DIR: logs, AICC_ACME_EMAIL: "ops@example.invalid" };
+  const run = (over, file = rehearsalFile, extra = []) => {
+    const env = { PATH: process.env.PATH, HOME: process.env.HOME, ...base, ...over };
+    for (const k of Object.keys(env)) if (env[k] === undefined) delete env[k];
+    return sh("bash", [script, "--caddyfile", file, "--caddy", P.caddy, "--no-validate", "--quiet", ...extra], { env });
+  };
+  const bad = (name, over, re, file, extra) => { const r = run(over, file, extra); S.check(`NEGATIVE: ${name} -> exit 1 and a message matching ${re}`, r.code === 1 && re.test(r.out), `exit ${r.code}: ${r.out.trim().split("\n")[0].slice(0, 170)}`); };
+  const good = (name, over, file, extra) => { const r = run(over, file, extra); S.check(`POSITIVE: ${name} -> exit 0`, r.code === 0, `exit ${r.code}: ${r.out.trim().split("\n").slice(0, 2).join(" | ").slice(0, 170)}`); };
+  good("a complete environment (rehearsal Caddyfile)", {});
+  bad("AICC_OPERATOR_CIDRS unset (Caddy alone would start and lock staff out)", { AICC_OPERATOR_CIDRS: undefined }, /AICC_OPERATOR_CIDRS is empty or unset/);
+  bad("AICC_OPERATOR_CIDRS empty", { AICC_OPERATOR_CIDRS: "" }, /AICC_OPERATOR_CIDRS is empty or unset/);
+  bad("AICC_OPERATOR_CIDRS only spaces", { AICC_OPERATOR_CIDRS: "   " }, /AICC_OPERATOR_CIDRS is empty or unset/);
+  for (const v of ["0.0.0.0/0", "::/0", "0.0.0.0", "::", "10.0.0.0/0"]) bad(`AICC_OPERATOR_CIDRS=${v} (would make /wp-admin/ public)`, { AICC_OPERATOR_CIDRS: v }, /matches every address/);
+  good("AICC_OPERATOR_CIDRS=0.0.0.0/0 with the explicit override AICC_ALLOW_OPEN_OPERATOR=1", { AICC_OPERATOR_CIDRS: "0.0.0.0/0", AICC_ALLOW_OPEN_OPERATOR: "1" });
+  for (const v of ["300.1.1.1/32", "10.0.0.1/33", "abc", "10.0.0/24", "2001:db8::/129", "1.2.3.4/x", "203.0.113.7;rm"]) bad(`AICC_OPERATOR_CIDRS=${v}`, { AICC_OPERATOR_CIDRS: v }, /is not an IPv4\/IPv6 address or CIDR/);
+  good("AICC_OPERATOR_CIDRS with IPv4, IPv6 and CIDR items", { AICC_OPERATOR_CIDRS: "203.0.113.7 198.51.100.0/24 2001:db8::/48 ::1" });
+  bad("AICC_STATIC_ROOT unset", { AICC_STATIC_ROOT: undefined }, /AICC_STATIC_ROOT is empty or unset/);
+  bad("AICC_STATIC_ROOT does not exist", { AICC_STATIC_ROOT: path.join(dir, "nope") }, /is not a directory/);
+  const noIdx = path.join(dir, "no-index"); fs.mkdirSync(noIdx); fs.writeFileSync(path.join(noIdx, "50x.html"), "x"); fs.writeFileSync(path.join(noIdx, "404.html"), "x");
+  bad("AICC_STATIC_ROOT without index.html", { AICC_STATIC_ROOT: noIdx }, /has no index\.html/);
+  const no50 = path.join(dir, "no-50x"); fs.mkdirSync(no50); fs.writeFileSync(path.join(no50, "index.html"), "x"); fs.writeFileSync(path.join(no50, "404.html"), "x");
+  bad("AICC_STATIC_ROOT without 50x.html (the 5xx page would be Caddy's empty body)", { AICC_STATIC_ROOT: no50 }, /has no 50x\.html/);
+  const dangling = path.join(dir, "dangling"); fs.symlinkSync(path.join(dir, "gone"), dangling);
+  bad("AICC_STATIC_ROOT is a dangling symlink (a release was deleted under `current`)", { AICC_STATIC_ROOT: dangling }, /is not a directory/);
+  good("AICC_STATIC_ROOT is a symlink to a good release", { AICC_STATIC_ROOT: (() => { const l = path.join(dir, "current"); fs.symlinkSync(root, l); return l; })() });
+  bad("AICC_WP_UPSTREAM unset", { AICC_WP_UPSTREAM: undefined }, /AICC_WP_UPSTREAM is empty or unset/);
+  for (const v of ["127.0.0.1", "127.0.0.1:99999", "127.0.0.1:0", "127.0.0.1:abc", ":8080"]) bad(`AICC_WP_UPSTREAM=${v}`, { AICC_WP_UPSTREAM: v }, /AICC_WP_UPSTREAM/);
+  good("AICC_WP_UPSTREAM=http://10.0.0.12:8080", { AICC_WP_UPSTREAM: "http://10.0.0.12:8080" });
+  bad("AICC_LOG_DIR does not exist", { AICC_LOG_DIR: path.join(dir, "nolog") }, /does not exist/);
+  const ro = path.join(dir, "ro-logs"); fs.mkdirSync(ro); fs.chmodSync(ro, 0o500);
+  bad("AICC_LOG_DIR not writable", { AICC_LOG_DIR: ro }, /not writable/);
+  fs.chmodSync(ro, 0o700);
+  bad("AICC_WP_TIMEOUT=banana", { AICC_WP_TIMEOUT: "banana" }, /not a duration/);
+  // production-style Caddyfile (the template itself): the ACME e-mail is mandatory, the admin API has no address (warning only)
+  bad("production template, AICC_ACME_EMAIL unset", { AICC_ACME_EMAIL: undefined }, /AICC_ACME_EMAIL is empty or not an e-mail address/, prodFile);
+  bad("production template, AICC_ACME_EMAIL=not-an-email", { AICC_ACME_EMAIL: "not-an-email" }, /AICC_ACME_EMAIL/, prodFile);
+  const rProd = sh("bash", [script, "--caddyfile", prodFile, "--caddy", P.caddy, "--no-validate"], { env: { PATH: process.env.PATH, HOME: process.env.HOME, ...base } });
+  S.check("POSITIVE: the production template with a plausible AICC_ACME_EMAIL passes; its admin API resolves to 127.0.0.1:12019 (NOT Caddy's default localhost:2019, which another Caddy on the host may own)", rProd.code === 0 && /admin API 127\.0\.0\.1:12019/.test(rProd.out), `exit ${rProd.code}: ${(rProd.out.match(/admin API \S+/) || ["(no admin line)"])[0]}`);
+  bad("production template with AICC_ADMIN_ADDR=0.0.0.0:2019 (admin API on every interface)", { AICC_ADMIN_ADDR: "0.0.0.0:2019" }, /admin API address '0\.0\.0\.0:2019' is not loopback/, prodFile);
+  const badAdmin = path.join(dir, "Caddyfile.admin-open"); fs.writeFileSync(badAdmin, fs.readFileSync(rehearsalFile, "utf8").replace(/^\tadmin .*$/m, "\tadmin 0.0.0.0:2019"));
+  bad("Caddyfile with `admin 0.0.0.0:2019` (unauthenticated reconfiguration API on every interface)", {}, /admin API address '0\.0\.0\.0:2019' is not loopback/, badAdmin);
+  good("Caddyfile with `admin unix//run/aicc-edge/admin.sock`", {}, (() => { const f = path.join(dir, "Caddyfile.admin-sock"); fs.writeFileSync(f, fs.readFileSync(rehearsalFile, "utf8").replace(/^\tadmin .*$/m, "\tadmin unix//run/aicc-edge/admin.sock")); return f; })());
+  // manual certificate (Option A) checks
+  const mkCert = (name, { days = 90, san = "DNS:www.copilt.org,DNS:copilt.org", mode = 0o600 } = {}) => {
+    const c = path.join(dir, `${name}.pem`), k = path.join(dir, `${name}.key`);
+    sh("openssl", ["req", "-x509", "-newkey", "ec", "-pkeyopt", "ec_paramgen_curve:prime256v1", "-nodes", "-keyout", k, "-out", c, ...(days <= 0 ? ["-not_before", "20200101000000Z", "-not_after", "20200102000000Z"] : ["-days", String(days)]), "-subj", "/CN=preflight-test", "-addext", `subjectAltName=${san}`]);
+    fs.chmodSync(k, mode);
+    return { c, k };
+  };
+  const withTls = (c, k) => { const f = path.join(dir, `Caddyfile.tls.${path.basename(c)}`); fs.writeFileSync(f, fs.readFileSync(rehearsalFile, "utf8").replace(/\(aicc_tls\) \{\n\ttls internal\n\}/, `(aicc_tls) {\n\ttls ${c} ${k}\n}`)); return f; };
+  const ok = mkCert("good"); good("manual certificate: valid, both SANs, key 0600, key matches", {}, withTls(ok.c, ok.k));
+  const miss = withTls(path.join(dir, "missing.pem"), ok.k); bad("manual certificate file missing", {}, /TLS certificate file .* is not readable/, miss);
+  const mk2 = mkCert("wrongsan", { san: "DNS:www.copilt.org" }); bad("manual certificate lacks the apex SAN (Option A must cover BOTH names)", {}, /has no SAN DNS:copilt\.org/, withTls(mk2.c, mk2.k));
+  const mk3 = mkCert("openkey", { mode: 0o644 }); bad("manual key is group/world readable", {}, /must not be group\/world accessible/, withTls(mk3.c, mk3.k));
+  const mk4 = mkCert("other"); bad("manual key does not belong to the certificate", {}, /does not belong to certificate/, withTls(ok.c, mk4.k));
+  const mk5 = mkCert("expired", { days: 0 }); bad("manual certificate has EXPIRED", {}, /has EXPIRED/, withTls(mk5.c, mk5.k));
+  const mk6 = mkCert("soon", { days: 10 }); const rSoon = run({}, withTls(mk6.c, mk6.k)); S.check("manual certificate expiring in 10 days: still starts (exit 0) but WARNS", rSoon.code === 0 && /expires within 21 days/.test(rSoon.out), `exit ${rSoon.code}: ${rSoon.out.trim().split("\n")[0].slice(0, 150)}`);
+  fs.writeFileSync(path.join(dir, "garbage.pem"), "not a cert"); bad("manual certificate file is not PEM", {}, /not a PEM certificate/, withTls(path.join(dir, "garbage.pem"), ok.k));
+  // the rehearsal runner itself calls the preflight (exit code 4) and the systemd unit template does too
+  const rr = sh("node", [path.join(REPO_ROOT, "scripts/rehearsal/rehearsal.mjs"), "validate", "--name", "preflighttest", "--http-port", "18130", "--https-port", "18456", "--admin", "127.0.0.1:12026", "--operator-cidrs", ""]);
+  S.check("the rehearsal runner (rehearsal.mjs validate/start/reload) runs the preflight and stops with exit 4 on an empty operator list", rr.code === 4 && /AICC_OPERATOR_CIDRS is empty or unset/.test(rr.out), `exit ${rr.code}: ${rr.out.trim().split("\n")[0].slice(0, 150)}`);
+  const unit = fs.readFileSync(path.join(REPO_ROOT, "docs/cutover/caddy-edge.service.template"), "utf8");
+  S.check("the systemd unit template runs the preflight as ExecStartPre and in ExecReload", /^ExecStartPre=.*aicc-edge-preflight/m.test(unit) && /^ExecReload=.*aicc-edge-preflight/m.test(unit), "ExecStartPre and ExecReload call aicc-edge-preflight (an install copy of scripts/ops/edge-preflight.sh)");
+  // the preflight really catches what the review found Caddy does not: the real Caddy starts with an empty list and denies everyone
+  const emptyCaddy = path.join(dir, "empty-cidr"); fs.mkdirSync(emptyCaddy, { recursive: true });
+  const inst = { ...settings(), name: "emptycidr", httpPort: 18131, httpsPort: 18457, admin: "127.0.0.1:12027", upstream: WP_UPSTREAM, staticRoot: P.current, operatorCidrs: "" };
+  const g = generate(inst);
+  const direct = sh(P.caddy, ["validate", "--config", g.file, "--adapter", "caddyfile"], { env: { ...envFor(inst), AICC_OPERATOR_CIDRS: "" } });
+  S.check("control: the real `caddy validate` alone says \"Valid configuration\" for the EMPTY operator list (this is why the preflight exists)", direct.code === 0 && /Valid configuration/.test(direct.out), direct.out.split("\n").filter((l) => !l.startsWith("{")).join(" ").trim());
+  fs.rmSync(path.join(P.generated, "Caddyfile.emptycidr"), { force: true }); fs.rmSync(path.join(P.generated, "Caddyfile.preflighttest"), { force: true });
+  fs.rmSync(dir, { recursive: true, force: true });
+  S.save();
+  return [S];
+}
+
+/* ------------------------------------------------------------------ release: union of _next/static across releases (E6, architecture review F7) */
+async function releaseSection() {
+  const S = new Section("16-release-swap", "Release swap: old pages keep working after a new release goes live (union of _next/static of the previous 3 releases), no failed request during the swap");
+  await ensureInstances();
+  const work = path.join(P.home, "run/release-test"); fs.rmSync(work, { recursive: true, force: true }); fs.mkdirSync(work, { recursive: true });
+  // a SANDBOX release tree and its own throwaway instance: the standing releases and the standing edge are never touched
+  const releasesDir = path.join(work, "releases"), currentLink = path.join(releasesDir, "current");
+  const REL = (o) => release({ ...o, releasesDir, currentLink, quiet: true });
+  const I = { name: "reltest", httpPort: 18140, httpsPort: 18458 };
+  const outDir = path.join(REPO_ROOT, "out");
+  // fabricate builds from the real out/: same HTML/assets, a different hashed chunk NAME per build (as a real rebuild produces), the HTML pointing at it
+  const build = (tag) => {
+    const d = path.join(work, `out-${tag}`);
+    sh("rsync", ["-a", "--exclude", ".DS_Store", outDir + "/", d + "/"]);
+    const chunks = path.join(d, "_next/static/chunks");
+    const pick = fs.readdirSync(chunks).find((f) => f.startsWith("main-app-") && f.endsWith(".js"));
+    const renamed = pick.replace(/-([0-9a-f]+)\.js$/, `-${tag}.js`);
+    fs.renameSync(path.join(chunks, pick), path.join(chunks, renamed));
+    sh("bash", ["-c", `cd ${d} && grep -rl '${pick}' . | xargs sed -i '' 's/${pick}/${renamed}/g'`]);
+    return { d, renamed };
+  };
+  const b = ["aaa111", "bbb222", "ccc333", "ddd444", "eee555"].map(build);
+  REL({ outDir: b[0].d }); await sleep(1100);
+  const E = { ...settings(), ...I, admin: "127.0.0.1:12028", upstream: WP_UPSTREAM, staticRoot: currentLink, wpTimeout: "60s", variant: "" };
+  await start(E, { quiet: true });
+  const chunkOf = (html) => (/\/_next\/static\/chunks\/(main-app-[^"]+?\.js)/.exec(html) || [])[1];
+  const H = async (p, o = {}) => rq(I, `https://www.copilt.org${p}`, o);
+  REL({ outDir: b[1].d }); await sleep(1100);
+  const live2 = await H("/");
+  S.check("after release 2 the live HTML references release 2's chunk, and release 1's chunk (an older open tab / cached page) still answers 200", chunkOf(live2.body) === b[1].renamed && (await H(`/_next/static/chunks/${b[0].renamed}`, { head: true })).status === 200 && (await H(`/_next/static/chunks/${b[1].renamed}`, { head: true })).status === 200, `live HTML chunk ${chunkOf(live2.body)}; release-1 chunk ${(await H(`/_next/static/chunks/${b[0].renamed}`, { head: true })).status}`);
+  const productChunk = chunkOf((await H("/product/")).body);
+  const probe = startProbe(I, ["https://www.copilt.org/", "https://www.copilt.org/product/", `https://www.copilt.org/_next/static/chunks/${productChunk}`, `https://www.copilt.org/_next/static/chunks/${b[0].renamed}`, "https://www.copilt.org/pricing/"], { concurrency: 6, pauseMs: 5 });
+  await sleep(700);
+  for (const x of [b[2], b[3]]) { REL({ outDir: x.d }); await sleep(900); }
+  await sleep(500);
+  const sum = await probe.stop();
+  S.check(`two live release swaps under a concurrent probe (6 workers, ${sum.total} requests including the previous releases' chunks and a WordPress page): ZERO failed requests`, sum.failed === 0, `failed=${sum.failed} ${sum.failures.join("; ")}`);
+  const cur4 = fs.realpathSync(currentLink);
+  S.check("release 4 contains its own chunk plus the chunks of releases 1, 2 and 3 (union of the previous 3)", b.slice(0, 4).every((x) => fs.existsSync(path.join(cur4, "_next/static/chunks", x.renamed))), "");
+  REL({ outDir: b[4].d });
+  const cur5 = fs.realpathSync(currentLink);
+  S.check("release 5 DROPS release 1's chunk (carried for exactly 3 further releases) but keeps 2, 3, 4 and its own", !fs.existsSync(path.join(cur5, "_next/static/chunks", b[0].renamed)) && b.slice(1).every((x) => fs.existsSync(path.join(cur5, "_next/static/chunks", x.renamed))), "");
+  const html5 = fs.readFileSync(path.join(cur5, "index.html"), "utf8");
+  S.check("HTML and every non-chunk asset come from the new build only (release 5's index.html references release 5's chunk, not an older one)", html5.includes(b[4].renamed) && !html5.includes(b[3].renamed), "");
+  const dirs = fs.readdirSync(releasesDir).filter((x) => /^\d{8}T/.test(x) && !x.endsWith(".sha256") && !x.endsWith(".static.txt")).sort();
+  S.check("pruning: the new release plus the newest 3 earlier ones are kept (4 directories; older ones and their manifests are removed)", dirs.length === 4 && fs.readdirSync(releasesDir).filter((x) => x.endsWith(".sha256")).length === 4 && fs.readdirSync(releasesDir).filter((x) => x.endsWith(".static.txt")).length === 4, `${dirs.length} dirs`);
+  const a5 = await H(`/_next/static/chunks/${b[4].renamed}`, { head: true }), z1 = await H(`/_next/static/chunks/${b[0].renamed}`, { head: true });
+  S.check("live: release 5's chunk 200; the dropped release-1 chunk is a plain 404 (not a 5xx)", a5.status === 200 && z1.status === 404, `${a5.status} / ${z1.status}`);
+  S.info("chunk 404 response", `${one(z1, "content-type")} cache-control=${one(z1, "cache-control")}`);
+  const older = dirs[dirs.length - 2];
+  const tmp = path.join(releasesDir, ".current.rb"); fs.symlinkSync(path.join(releasesDir, older), tmp); fs.renameSync(tmp, currentLink);
+  const rb = await H("/");
+  S.check("static rollback = repoint `current` to the previous release directory: 200 and the previous build's HTML (no build, no DNS, no reload)", rb.status === 200 && rb.body.includes(b[3].renamed), `${rb.status}`);
+  await stop(E, { quiet: true });
+  S.check("the standing release tree was not touched by this test", fs.realpathSync(P.current).startsWith(P.releases) && !fs.readdirSync(P.releases).some((x) => /reltest/.test(x)), fs.realpathSync(P.current));
+  fs.rmSync(work, { recursive: true, force: true });
+  fs.rmSync(path.join(P.generated, "Caddyfile.reltest"), { force: true });
+  S.note("Not tested: Next.js's client behaviour on a chunk 404 after the 3-release window (a tab older than three releases still needs a reload).");
+  S.save();
+  return [S];
+}
+import { release } from "./edge.mjs";
+
+/* ------------------------------------------------------------------ ops scripts: exposure check, expiry monitor, storage backup/restore (E2, E9) */
+async function opsSection() {
+  const S = new Section("17-ops-scripts", "scripts/ops: upstream-exposure-check.sh, cert-expiry-check.sh, caddy-storage-backup.sh (backup, verify, restore, restored storage serves the same certificate)");
+  await ensureInstances();
+  const ops = (n) => path.join(REPO_ROOT, "scripts/ops", n);
+  const work = path.join(P.home, "run/ops-test"); fs.rmSync(work, { recursive: true, force: true }); fs.mkdirSync(work, { recursive: true });
+  // ---- upstream exposure ----
+  const lan = sh("bash", ["-c", "ipconfig getifaddr en0 || ipconfig getifaddr en1"]).stdout.trim();
+  const pos = sh("bash", [ops("upstream-exposure-check.sh"), "--target", "127.0.0.1:18982", "--expect-reachable"]);
+  S.check("positive control (vantage point = the edge): the upstream 127.0.0.1:18982 IS reachable, as it must be for the edge", pos.code === 0 && /^OK/.test(pos.stdout), pos.stdout.trim());
+  if (lan) {
+    const neg = sh("bash", [ops("upstream-exposure-check.sh"), "--target", `${lan}:18982`]);
+    S.check(`the fixture upstream is NOT reachable on the Mac's LAN address (${lan.replace(/\.\d+$/, ".x")}:18982): bound to loopback only -> exit 0`, neg.code === 0 && /^OK: .* not reachable/.test(neg.stdout), neg.stdout.trim().slice(0, 160));
+    const sql = sh("bash", [ops("upstream-exposure-check.sh"), "--target", `${lan}:18971`]);
+    S.check("MySQL 18971 is not reachable on the LAN address either", sql.code === 0, sql.stdout.trim().slice(0, 120));
+    const net = await import("node:net");
+    void net;
+    // a separate process: spawnSync below would block THIS process's event loop and an in-process server could never answer
+    const { spawn: spawnP } = await import("node:child_process");
+    const exposed = spawnP("node", ["-e", 'require("http").createServer((q,r)=>r.end("ok")).listen(28990,"0.0.0.0")'], { stdio: "ignore" });
+    await sleep(600);
+    const ex = sh("bash", [ops("upstream-exposure-check.sh"), "--target", `${lan}:28990`]);
+    S.check("negative control: a throwaway server bound to 0.0.0.0 IS reported EXPOSED (exit 1), including the forged-X-Forwarded-For answer", ex.code === 1 && /EXPOSED/.test(ex.out) && /HTTP 200/.test(ex.out), ex.out.trim().slice(0, 200));
+    exposed.kill("SIGTERM");
+  } else S.info("exposure check against a LAN address skipped", "no LAN interface address on this Mac");
+  const unk = sh("bash", [ops("upstream-exposure-check.sh")]);
+  S.check("usage error without --target exits 3", unk.code === 3, `exit ${unk.code}`);
+  // ---- expiry monitor: file / expired / unreachable ----
+  const mk = (name, days) => { const c = path.join(work, name + ".pem"), k = path.join(work, name + ".key"); sh("openssl", ["req", "-x509", "-newkey", "ec", "-pkeyopt", "ec_paramgen_curve:prime256v1", "-nodes", "-keyout", k, "-out", c, ...(days <= 0 ? ["-not_before", "20200101000000Z", "-not_after", "20200102000000Z"] : ["-days", String(days)]), "-subj", "/CN=t", "-addext", "subjectAltName=DNS:www.copilt.org"]); return c; };
+  const exp = mk("expired", 0);
+  const cases = [["a 3-day certificate file", mk("three", 3), 2, /^CRITICAL/], ["a 15-day certificate file", mk("fifteen", 15), 1, /^WARN/], ["a 60-day certificate file", mk("sixty", 60), 0, /^OK/], ["an expired certificate file", exp, 2, /^CRITICAL .*EXPIRED/]];
+  for (const [label, f, code, re] of cases) { const r = sh("bash", [ops("cert-expiry-check.sh"), "--file", f]); S.check(`cert-expiry-check.sh: ${label} -> exit ${code}`, r.code === code && re.test(r.stdout), `exit ${r.code}: ${r.stdout.trim()}`); }
+  const nohost = sh("bash", [ops("cert-expiry-check.sh"), "--host", "www.copilt.org", "--connect", "127.0.0.1:1"]);
+  S.check("cert-expiry-check.sh: an unreachable listener -> UNKNOWN, exit 3 (a dead edge must alert too)", nohost.code === 3 && /^UNKNOWN/.test(nohost.stdout), nohost.stdout.trim());
+  const live = sh("bash", [ops("cert-expiry-check.sh"), "--host", "www.copilt.org", "--host", "copilt.org", "--connect", "127.0.0.1:443", "--cacert", P.rootCrt, "--warn-days", "0", "--crit-days", "0"]);
+  S.check("cert-expiry-check.sh against the standing edge with verification against the rehearsal root (both names)", live.code === 0 && (live.stdout.match(/^OK/gm) || []).length === 2, live.stdout.trim().replace(/\n/g, " | "));
+  // ---- storage backup / restore ----
+  const bak = path.join(work, "backups"), pass = path.join(work, "pass.txt"); fs.writeFileSync(pass, "rehearsal-backup-passphrase\n", { mode: 0o600 });
+  const b1 = sh("bash", [ops("caddy-storage-backup.sh"), "backup", P.caddyData, bak]);
+  const arc = fs.readdirSync(bak).find((x) => x.endsWith(".tar.gz"));
+  S.check("backup: archive written 0600 into a 0700 directory, verified (contains certificates, keys and the local CA)", b1.code === 0 && !!arc && (fs.statSync(path.join(bak, arc)).mode & 0o777) === 0o600 && (fs.statSync(bak).mode & 0o777) === 0o700 && /certificate file\(s\)/.test(b1.stdout), b1.stdout.trim().split("\n").pop());
+  const b2 = sh("bash", [ops("caddy-storage-backup.sh"), "backup", P.caddyData, bak, "--passphrase-file", pass]);
+  const enc = fs.readdirSync(bak).find((x) => x.endsWith(".tar.gz.enc"));
+  S.check("encrypted backup (openssl aes-256-cbc pbkdf2 with a passphrase file): written, and its content is NOT readable as a tar archive without the passphrase", b2.code === 0 && !!enc && sh("bash", ["-c", `tar -tzf ${path.join(bak, enc)} 2>&1 | head -1`]).stdout.trim() === "" || /not in gzip|Error|invalid/i.test(sh("bash", ["-c", `tar -tzf ${path.join(bak, enc)} 2>&1 | head -2`]).out), b2.stdout.trim().split("\n").pop());
+  const wrong = path.join(work, "wrong.txt"); fs.writeFileSync(wrong, "nope\n");
+  const vbad = sh("bash", [ops("caddy-storage-backup.sh"), "verify", path.join(bak, enc), "--passphrase-file", wrong]);
+  S.check("verify with the WRONG passphrase fails (exit 1)", vbad.code === 1, vbad.out.trim().slice(0, 100));
+  const refuse = sh("bash", [ops("caddy-storage-backup.sh"), "restore", path.join(bak, arc), path.join(work, "restored-refused")]);
+  S.check("restore refuses while a caddy process is running (the standing edge is up) unless --force", refuse.code === 1 && /caddy process is running/.test(refuse.out), refuse.out.trim().slice(0, 120));
+  const rdir = path.join(work, "restored");
+  const rs = sh("bash", [ops("caddy-storage-backup.sh"), "restore", path.join(bak, enc), rdir, "--passphrase-file", pass, "--force"]);
+  const modes = []; const keyModes = [];
+  const walkM = (d) => { for (const e of fs.readdirSync(d, { withFileTypes: true })) { const f = path.join(d, e.name); if (e.isDirectory()) { modes.push((fs.statSync(f).mode & 0o777).toString(8)); walkM(f); } else if (e.name.endsWith(".key")) keyModes.push((fs.statSync(f).mode & 0o777).toString(8)); } };
+  modes.push((fs.statSync(rdir).mode & 0o777).toString(8)); walkM(rdir);
+  S.check("restore from the encrypted archive (--force because the edge runs): key files 0600, directory 0700", rs.code === 0 && keyModes.length >= 3 && keyModes.every((m) => m === "600") && modes.every((m) => m === "700"), `${keyModes.length} keys: ${[...new Set(keyModes)].join(",")}; ${modes.length} dirs: ${[...new Set(modes)].join(",")}`);
+  const cmp = sh("bash", ["-c", `diff -rq ${P.caddyData}/certificates ${rdir}/certificates && diff -rq ${P.caddyData}/pki ${rdir}/pki && echo identical`]);
+  S.check("the restored certificates and the CA are byte-identical to the live storage", /identical/.test(cmp.stdout), cmp.out.trim().slice(0, 120));
+  // a Caddy started on the RESTORED storage serves the same certificate: no re-issue
+  const R = { ...settings(), name: "restored", httpPort: 18150, httpsPort: 18459, admin: "127.0.0.1:12029", upstream: WP_UPSTREAM, staticRoot: P.current, wpTimeout: "60s", variant: "", storage: rdir };
+  await start(R, { quiet: true });
+  const serial = (port) => /serial=(.*)/.exec(sh("bash", ["-c", `echo | openssl s_client -connect 127.0.0.1:${port} -servername www.copilt.org 2>/dev/null | openssl x509 -noout -serial`]).stdout)?.[1];
+  S.check("a Caddy started on the restored storage presents the SAME leaf certificate (serial) as the live edge: nothing is re-issued from a restore", !!serial(18459) && serial(18459) === serial(443), `${serial(18459)} vs ${serial(443)}`);
+  await stop(R, { quiet: true });
+  fs.rmSync(path.join(P.generated, "Caddyfile.restored"), { force: true });
+  for (let i = 0; i < 3; i++) { await sleep(1100); sh("bash", [ops("caddy-storage-backup.sh"), "backup", P.caddyData, bak, "--keep", "2"]); }
+  S.check("--keep 2 prunes older plain archives (at most 2 plain archives remain)", fs.readdirSync(bak).filter((x) => x.endsWith(".tar.gz")).length === 2, fs.readdirSync(bak).join(", "));
+  fs.rmSync(work, { recursive: true, force: true });
+  S.save();
+  return [S];
+}
+
+/* ------------------------------------------------------------------ mutation: break the template on purpose and require the REAL-Caddy detectors to notice (E8, architecture review F12) */
+async function mutation() {
+  const S = new Section("18-mutation-real-caddy", "Mutation testing against a REAL Caddy: each mutated template runs on a scratch instance and a real-HTTP detector must fail (survivors listed honestly)");
+  await ensureInstances();
+  const dir = path.join(P.home, "run/mutants"); fs.rmSync(dir, { recursive: true, force: true }); fs.mkdirSync(path.join(dir, "certs"), { recursive: true });
+  const T = cpEchoToken();
+  const base = fs.readFileSync(P.template, "utf8");
+  const I = { name: "mut", httpPort: 18160, httpsPort: 18460 };
+  const big = path.join(dir, "body.bin"); fs.writeFileSync(big, Buffer.alloc(4 * 1024 * 1024, 0x61));
+  // throwaway pair for the Option A detector
+  const cert = path.join(dir, "certs/fullchain.pem"), key = path.join(dir, "certs/privkey.pem");
+  sh("openssl", ["req", "-x509", "-newkey", "ec", "-pkeyopt", "ec_paramgen_curve:prime256v1", "-nodes", "-keyout", key, "-out", cert, "-days", "30", "-subj", "/CN=m", "-addext", "subjectAltName=DNS:www.copilt.org,DNS:copilt.org"]);
+  fs.chmodSync(key, 0o600);
+  const spoofNames = ["Client-IP", "CF-Connecting-IP", "X-Cluster-Client-IP", "X-Originating-IP", "Fastly-Client-IP", "Forwarded-For", "X-Forwarded", "X-Forwarded-Port", "X-Forwarded-Scheme", "X-Forwarded-Ssl", "Front-End-Https", "X-Url-Scheme", "X-Real-IP", "X-Client-IP", "True-Client-IP", "Forwarded", "X-Original-URL", "X-Rewrite-URL", "X-Forwarded-Server"];
+  const detectors = {
+    async "security headers appear once on proxied WordPress responses"(R) {
+      const bad = [];
+      for (const p of ["/wp-login.php?loggedout=true", "/my-account/", "/pricing/", "/wp-json/", "/wp-admin/admin-ajax.php"]) { const r = await R(`https://www.copilt.org${p}`); for (const h of ["x-frame-options", "referrer-policy", "x-content-type-options", "permissions-policy", "strict-transport-security", "x-request-id"]) if ((r.headers[h] || []).length !== 1) bad.push(`${p} ${h} x${(r.headers[h] || []).length}`); }
+      return bad;
+    },
+    async "Cache-Control appears once on forced-no-store WordPress routes"(R) {
+      const bad = [];
+      for (const p of ["/my-account/", "/cart/", "/wp-json/aicc-license/v1/plans", "/wp-admin/admin-ajax.php", "/?wc-ajax=get_refreshed_fragments"]) { const r = await R(`https://www.copilt.org${p}`); if ((r.headers["cache-control"] || []).length !== 1 || r.headers["cache-control"][0] !== "private, no-store, max-age=0") bad.push(`${p} ${JSON.stringify(r.headers["cache-control"])}`); }
+      return bad;
+    },
+    async "unknown Host on :80 -> exactly 421 'Misdirected request'"(R) { const r = await R("http://copilt.org/product", { headers: { Host: "evil.example" } }); return r.status === 421 && r.body.trim() === "Misdirected request" && !(r.headers.location || []).length ? [] : [`status ${r.status} body ${JSON.stringify(r.body.slice(0, 30))} location ${(r.headers.location || [])[0]}`]; },
+    async "client-supplied identity headers never reach WordPress"(R) {
+      const h = {}; for (const n of spoofNames) h[n] = "6.6.6.6"; h["X-Forwarded-For"] = "6.6.6.6, 7.7.7.7"; h["X-Forwarded-Proto"] = "http"; h["X-Forwarded-Host"] = "evil.example"; h["X-Request-Id"] = "attacker-id";
+      const r = await R(`https://www.copilt.org/wp-json/?__rehearsal_echo=${T}`, { headers: h }); let j = {}; try { j = JSON.parse(r.body); } catch { return ["no echo"]; }
+      const seen = j.headers || {}; const bad = spoofNames.filter((n) => n.toLowerCase() in seen).map((n) => `leaked ${n}`);
+      if (seen["x-forwarded-for"] !== "127.0.0.1") bad.push(`xff=${seen["x-forwarded-for"]}`); if (seen["x-forwarded-proto"] !== "https") bad.push(`xfp=${seen["x-forwarded-proto"]}`); if (seen["x-forwarded-host"] !== "www.copilt.org") bad.push(`xfh=${seen["x-forwarded-host"]}`); if (seen["x-request-id"] === "attacker-id" || !seen["x-request-id"]) bad.push(`request-id=${seen["x-request-id"]}`);
+      return bad;
+    },
+    async "wp-login.php cannot be used by a non-operator to log in (POST ?loggedout=true / ?ACTION=logout)"(R) {
+      const bad = [];
+      for (const q of ["?loggedout=true", "?ACTION=logout", "?action=logout&x=1"]) { const r = await R(`https://www.copilt.org/wp-login.php${q}`, { method: "POST", body: "log=rehearsal-admin&pwd=Rehearsal-Admin-2026%21&wp-submit=Log+In&testcookie=1", headers: { Cookie: "wordpress_test_cookie=WP%20Cookie%20check" } }); if (r.status !== 403 || (r.headers["set-cookie"] || []).some((c) => /wordpress_logged_in/.test(c))) bad.push(`${q} -> ${r.status}`); }
+      return bad;
+    },
+    async "12 MB public POST -> 413"(R) { const r = await R("https://www.copilt.org/wp-json/aicc-license/v1/validate", { method: "POST", extra: ["--data-binary", `@${big}`], headers: { "Content-Type": "application/octet-stream" } }); return r.status === 413 ? [] : [`status ${r.status}`]; },
+    async "TRACE -> 405"(R) { const r = await R("https://www.copilt.org/pricing/", { method: "TRACE" }); return r.status === 405 ? [] : [`status ${r.status}`]; },
+    async "dot-segments -> 400"(R) { const r = await R("https://www.copilt.org/pricing/../wp-admin/post.php"); return r.status === 400 ? [] : [`status ${r.status}`]; },
+    async "404 and 5xx pages carry HSTS/nosniff/request-id and no Server"(R) { const r = await R("https://www.copilt.org/nothing-here/"); const bad = []; if (r.status !== 404) bad.push(`status ${r.status}`); for (const h of ["strict-transport-security", "x-content-type-options", "x-request-id"]) if ((r.headers[h] || []).length !== 1) bad.push(h); if ((r.headers.server || []).length) bad.push("server header"); return bad; },
+    async "Alt-Svc is one short value"(R) { const r = await R("https://www.copilt.org/"); const v = r.headers["alt-svc"] || []; return v.length === 1 && /ma=3600$/.test(v[0]) ? [] : [JSON.stringify(v)]; },
+    async "no Via/X-Powered-By on proxied responses"(R) { const r = await R("https://www.copilt.org/pricing/"); return ["via", "x-powered-by", "server"].filter((h) => (r.headers[h] || []).length).map((h) => `${h} present`); },
+    async "/wp-admin/ and /xmlrpc.php are 403 for a non-operator"(R) { const bad = []; for (const p of ["/wp-admin/", "/xmlrpc.php", "/wp-cron.php"]) { const r = await R(`https://www.copilt.org${p}`); if (r.status !== 403) bad.push(`${p} ${r.status}`); } return bad; },
+    async "wp-activate / wp-signup / 50x.html are edge 404s"(R) { const bad = []; for (const p of ["/wp-activate.php", "/wp-signup.php", "/50x.html"]) { const r = await R(`https://www.copilt.org${p}`); if (r.status !== 404 || (r.headers["x-rehearsal-upstream"] || []).length) bad.push(`${p} ${r.status}`); } return bad; },
+  };
+  const optA = async (text) => { // Option A structure: the mutated template must still validate with a manual `tls <cert> <key>`
+    const f = path.join(dir, "optA.template"); fs.writeFileSync(f, text);
+    const cfg = { ...settings(), name: "mutopta", httpPort: 18161, httpsPort: 18461, admin: "127.0.0.1:12031", upstream: WP_UPSTREAM, staticRoot: P.current, wpTimeout: "60s", variant: "", template: f, tlsFiles: `${cert},${key}`, storage: path.join(dir, "storage-opta") };
+    const g = generate(cfg); // (the generator's own safety rules are bypassed on purpose: this detector must be Caddy itself)
+    const v = sh(P.caddy, ["validate", "--config", g.file, "--adapter", "caddyfile"], { env: envFor(cfg) });
+    fs.rmSync(g.file, { force: true });
+    return v.code === 0 ? [] : [`caddy validate: ${v.out.split("\n").filter((l) => /error/.test(l)).join(" ").slice(0, 150)}`];
+  };
+  const runOn = async (name, text) => {
+    const f = path.join(dir, `${name}.template`); fs.writeFileSync(f, text);
+    const cfg = { ...settings(), ...I, admin: "127.0.0.1:12030", upstream: WP_UPSTREAM, staticRoot: P.current, wpTimeout: "60s", variant: "", template: f, operatorCidrs: "192.0.2.1/32" }; // same storage as the standing edge: same local CA, so the harness trusts the scratch instance
+    const g = generate(cfg);
+    const v = sh(P.caddy, ["validate", "--config", g.file, "--adapter", "caddyfile"], { env: envFor(cfg) });
+    if (v.code !== 0) return { startFailed: v.out.split("\n").filter((l) => /error/.test(l)).join(" ").slice(0, 200), fired: [] };
+    await start(cfg, { quiet: true });
+    const R = (url, o = {}) => req(I, url, o);
+    const fired = [];
+    for (const [dn, fn] of Object.entries(detectors)) { let bad = []; try { bad = await fn(R); } catch (e) { bad = [`detector error ${String(e).slice(0, 80)}`]; } if (bad.length) fired.push({ detector: dn, evidence: bad.slice(0, 3).join("; ") }); }
+    await stop(cfg, { quiet: true });
+    return { fired };
+  };
+  const results = [];
+  const baseRun = await runOn("baseline", base);
+  const baseOptA = await optA(base);
+  S.check("baseline (unmutated template) on a scratch instance: every real-Caddy detector is green", baseRun.fired.length === 0 && !baseRun.startFailed, baseRun.fired.map((x) => `${x.detector}: ${x.evidence}`).join(" | ") || baseRun.startFailed || "all 13 detectors pass");
+  S.check("baseline: the Option A structure (`tls <cert> <key>`) validates", baseOptA.length === 0, baseOptA.join(" "));
+  const rmLine = (text, line, count = 1) => { let c = 0; return text.split("\n").filter((l) => { if (l.trim() === line.trim() && c < count) { c++; return false; } return true; }).join("\n"); };
+  const afterBlock = (text, head, from, to) => { const i = text.indexOf(head); if (i < 0) throw new Error("mutant setup: " + head); const j = text.indexOf(from, i); if (j < 0) throw new Error("mutant setup: " + from); return text.slice(0, j) + to + text.slice(j + from.length); };
+  const MUTANTS = [
+    ["M01 remove `defer` from the security_headers block (expected equivalent on the routes WordPress sends X-Frame-Options/Referrer-Policy: only Cache-Control was ever seen duplicated, see M02)", (t) => afterBlock(t, "(security_headers) {", "\t\tdefer\n", "")],
+    ["M02 remove `defer` from to_wordpress_nocache (Cache-Control)", (t) => afterBlock(t, "(to_wordpress_nocache) {", "\t\tdefer\n", "")],
+    ["M03 delete the catch-all http:// 421 block", (t) => t.replace(/http:\/\/ \{\n[\s\S]*?\n\}\n/, "")],
+    ["M04 remove `header_up -Client-IP`", (t) => rmLine(t, "header_up -Client-IP")],
+    ["M05 remove `header_up -CF-Connecting-IP`", (t) => rmLine(t, "header_up -CF-Connecting-IP")],
+    ["M06 restore the OLD wp-login exception (any method, case-insensitive)", (t) => t.replace(/\t\tnot expression \{http\.request\.method\} in \[[^\n]*\n/, "\t\tnot expression {http.request.uri.query}.matches('(?i)(^|&)(action=logout|loggedout=true)(&|$)')\n")],
+    ["M07 remove `header_up X-Forwarded-For {remote_host}` (expected equivalent: Caddy overwrites it itself)", (t) => rmLine(t, "header_up X-Forwarded-For {remote_host}")],
+    ["M08 remove `header_up X-Forwarded-Proto {scheme}` (expected equivalent)", (t) => rmLine(t, "header_up X-Forwarded-Proto {scheme}")],
+    ["M09 remove `header_up X-Forwarded-Host {host}` (expected equivalent)", (t) => rmLine(t, "header_up X-Forwarded-Host {host}")],
+    ["M10 remove the request body cap from to_wordpress_nocache", (t) => afterBlock(t, "(to_wordpress_nocache) {", "\timport wp_body_cap\n", "")],
+    ["M11 remove the TRACE/TRACK/CONNECT guard", (t) => t.replace(/\t@bad_method method TRACE TRACK CONNECT\n\thandle @bad_method \{\n(?:\t\t[^\n]*\n)*\t\}\n/, "")],
+    ["M12 remove the dot-segment guard (bad_path)", (t) => t.replace(/\t@bad_path vars_regexp[^\n]*\n\thandle @bad_path \{\n(?:\t\t[^\n]*\n)*\t\}\n/, "")],
+    ["M13 remove `import security_headers` from handle_errors", (t) => afterBlock(t, "\thandle_errors {", "\t\timport security_headers\n", "")],
+    ["M14 remove the Alt-Svc override", (t) => t.replace(/\t\t# Caddy advertises h3[^\n]*\n\t\tAlt-Svc [^\n]*\n/, "")],
+    ["M15 remove `-Via` and `-Server` from security_headers", (t) => rmLine(rmLine(t, "-Via"), "-Server")],
+    ["M16 remove `request_header X-Request-Id` (client-chosen id passes)", (t) => rmLine(t, "request_header X-Request-Id {http.request.uuid}")],
+    ["M17 the /wp-admin/ deny rule removed (wp-admin public)", (t) => t.replace(/\t@wp_admin_deny \{\n(?:\t\t[^\n]*\n)*\t\}\n\thandle @wp_admin_deny \{\n(?:\t\t[^\n]*\n)*\t\}\n/, "")],
+    ["M17b the operator condition removed from the /wp-admin/ rule (expected equivalent here: it only locks OPERATORS out, which the outsider detector cannot see; the operator side is covered by section 04)", (t) => t.replace(/(\t@wp_admin_deny \{\n(?:\t\t[^\n]*\n)*?)\t\tnot remote_ip \{\$AICC_OPERATOR_CIDRS\}\n/, "$1")],
+    ["M18 xmlrpc deny removed", (t) => t.replace(/\t@xmlrpc_deny path_regexp[^\n]*\n\thandle @xmlrpc_deny \{\n(?:\t\t[^\n]*\n)*\t\}\n/, "")],
+    ["M19 `auto_https disable_redirects` removed (the explicit catch-all still answers: expected equivalent)", (t) => rmLine(t, "auto_https disable_redirects")],
+    ["M20 wp-activate/wp-signup/50x.html routed to WordPress/static again (dup_error pattern shrunk)", (t) => t.replace("|^/(?:wp-activate|wp-signup)\\.php$|^/50x\\.html$", "")],
+  ];
+  const optAMutants = [
+    ["M21 import aicc_tls into the http:// apex block (Option A: validate must fail)", (t) => t.replace("http://copilt.org, http://www.copilt.org {\n\timport aicc_site_hook\n", "http://copilt.org, http://www.copilt.org {\n\timport aicc_site_hook\n\timport aicc_tls\n")],
+    ["M22 one mixed http:// + https:// apex block again (Option A: validate must fail)", (t) => t.replace("http://copilt.org, http://www.copilt.org {\n\timport aicc_site_hook\n", "http://copilt.org, https://copilt.org, http://www.copilt.org {\n\timport aicc_site_hook\n\timport aicc_tls\n").replace(/https:\/\/copilt\.org \{\n(?:(?!\}\n)[^\n]*\n)*\}\n/, "")],
+  ];
+  for (const [name, fn] of MUTANTS) {
+    const id = name.slice(0, 3);
+    const text = fn(base);
+    if (text === base) { S.check(`${id}: mutant setup changed the template`, false, name); continue; }
+    const r = await runOn(id, text);
+    const killed = !!r.startFailed || r.fired.length > 0;
+    results.push({ mutant: name, killed, how: r.startFailed ? `caddy validate refused: ${r.startFailed}` : r.fired.map((x) => `${x.detector} [${x.evidence}]`).join(" | ") || "SURVIVED" });
+    if (/expected equivalent/.test(name)) S.info(`${name}`, killed ? `killed by: ${results[results.length - 1].how}` : "SURVIVED (equivalent: the detectors assert what the CP actually receives, and Caddy produces the same value without the line)");
+    else S.check(`${name} -> killed by a real-Caddy detector`, killed, results[results.length - 1].how, killed ? "killed" : "SURVIVED");
+  }
+  for (const [name, fn] of optAMutants) {
+    const out = await optA(fn(base));
+    results.push({ mutant: name, killed: out.length > 0, how: out.join(" ") || "SURVIVED" });
+    S.check(`${name} -> killed`, out.length > 0, out.join(" ") || "SURVIVED");
+  }
+  S.data.mutants = results;
+  const surv = results.filter((x) => !x.killed).map((x) => x.mutant.slice(0, 3));
+  S.note(`${results.length} mutants run against a real Caddy; killed ${results.filter((x) => x.killed).length}; survivors: ${surv.join(", ") || "none"}.`);
+  fs.rmSync(dir, { recursive: true, force: true });
+  for (const f of fs.readdirSync(P.generated)) if (/^Caddyfile\.(mut|mutopta)/.test(f)) fs.rmSync(path.join(P.generated, f), { force: true });
+  S.save();
+  return [S];
+}
+
+/* ------------------------------------------------------------------ throttle: the CP's failed-login throttle in a REAL browser through the edge (E11) */
+async function throttle() {
+  const S = new Section("19-login-throttle-browser", "Failed-login throttle (CP plugin) in a real Chrome through the edge: generic error, lock after 10, per-address buckets, operator exempt");
+  await ensureInstances();
+  const { chromium } = await import("playwright-core");
+  const spkiOf = (cmd) => sh("bash", ["-c", `${cmd} | openssl x509 -pubkey -noout | openssl pkey -pubin -outform der | openssl dgst -sha256 -binary | base64`]).stdout.trim();
+  const spki = [`cat ${P.rootCrt}`, `cat ${path.dirname(P.rootCrt)}/intermediate.crt`, `echo | openssl s_client -connect 127.0.0.1:443 -servername www.copilt.org 2>/dev/null`].map(spkiOf).filter(Boolean).join(",");
+  const exe = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+  const wp = (...a) => sh("bash", [P.cpFixture, "wp", ...a]);
+  const login = "throttle-" + Math.random().toString(36).slice(2, 8), PASS = "Throttle-Test-2026!";
+  wp("user", "create", login, `${login}@example.test`, "--role=customer", `--user_pass=${PASS}`);
+  wp("transient", "delete", "--all");
+  const launch = (ip) => chromium.launch({ executablePath: exe, args: [`--host-resolver-rules=MAP www.copilt.org ${ip}, MAP copilt.org ${ip}`, `--ignore-certificate-errors-spki-list=${spki}`] });
+  const attempt = async (page, user, pass) => {
+    await page.goto("https://www.copilt.org/my-account/", { waitUntil: "domcontentloaded" });
+    await page.fill("#username", user); await page.fill("#password", pass);
+    await Promise.all([page.waitForNavigation({ waitUntil: "domcontentloaded" }), page.click("button[name=login]")]);
+    const err = (await page.locator(".woocommerce-error").allInnerTexts()).join(" | ").replace(/\s+/g, " ").trim();
+    const signedIn = (await page.locator("a[href*=customer-logout]").count()) > 0;
+    return { err, signedIn };
+  };
+  const GENERIC = /username or password is incorrect/i, LOCKED = /too many failed sign-in attempts/i;
+  const b6 = await launch("[::1]");
+  try {
+    const ctx = await b6.newContext(); const pg = await ctx.newPage();
+    const first = await attempt(pg, login, "wrong-1");
+    S.check("real Chrome from the client address ::1: a wrong password for a REAL account shows the generic error", GENERIC.test(first.err) && !first.signedIn, first.err);
+    const ghost = await attempt(pg, "no-such-user-" + login, "wrong-1");
+    S.check("an unknown username shows the IDENTICAL text (no account enumeration at the form)", ghost.err === first.err, `${JSON.stringify(first.err)} vs ${JSON.stringify(ghost.err)}`);
+    const ghostMail = await attempt(pg, `nobody-${login}@example.test`, "wrong-1");
+    S.check("an unknown e-mail address shows the IDENTICAL text (WooCommerce's 'could not be found with this email address' is off)", ghostMail.err === first.err, JSON.stringify(ghostMail.err));
+    const all = [first.err];
+    for (let i = 2; i <= 9; i++) all.push((await attempt(pg, login, "wrong-" + i)).err);
+    S.check("failures 1-9 for the real account: every answer is the generic error (not locked yet)", all.every((e) => GENERIC.test(e)), [...new Set(all)].join(" || ").slice(0, 160));
+    const tenth = await attempt(pg, login, "wrong-10");
+    const locked = await attempt(pg, login, PASS);
+    S.check("after the 10th failure the CORRECT password is refused with the lock text and no session is created", LOCKED.test(locked.err) && !locked.signedIn && !(await ctx.cookies()).some((c) => /wordpress_logged_in/.test(c.name)), `10th: ${tenth.err}; then correct password: ${locked.err}`);
+    for (let i = 0; i < 9; i++) await attempt(pg, "ghost-lock-" + login, "x");
+    const gl1 = await attempt(pg, "ghost-lock-" + login, "x");
+    const gl2 = await attempt(pg, "ghost-lock-" + login, PASS);
+    S.check("a NON-EXISTING username locks the same way and shows the same lock text as the real account", LOCKED.test(gl2.err) && gl2.err === locked.err, `${gl1.err} / ${gl2.err}`);
+    const other = await attempt(pg, `other-${login}`, "x");
+    S.check("a different username from the same address is still answered normally (per-pair bucket, not yet the address ceiling)", GENERIC.test(other.err), other.err);
+    await ctx.close();
+  } finally { await b6.close(); }
+  const b4 = await launch("127.0.0.1");
+  try {
+    const ctx = await b4.newContext(); const pg = await ctx.newPage();
+    for (let i = 0; i < 12; i++) await attempt(pg, login, "wrong-op-" + i);
+    const ok = await attempt(pg, login, PASS);
+    S.check("an operator address (127.0.0.1/32 in AICC_LM_OPERATOR_CIDRS) is never locked: 12 failures, then the correct password signs in", ok.signedIn && !ok.err, ok.err || "signed in");
+    await ctx.close();
+  } finally { await b4.close(); }
+  await sleep(300);
+  const { all: logAll } = readAccessLog();
+  const sixes = logAll.filter((x) => x.request?.remote_ip === "::1" && /^\/my-account\/$/.test(x.request?.uri || "") && x.request.method === "POST").length;
+  S.check(`the edge access log recorded the throttled client as ::1 (${sixes} sign-in POSTs) and none was refused by the edge (all reached WordPress)`, sixes >= 20 && logAll.filter((x) => x.request?.remote_ip === "::1" && x.request?.method === "POST" && x.status === 403).length === 0, `${sixes} POSTs from ::1`);
+  wp("transient", "delete", "--all"); wp("user", "delete", login, "--yes");
+  S.note("Limits, honestly: per-address buckets (everybody behind one NAT shares the 30/15 min address ceiling); no protection against a distributed attack (many addresses, few tries each); counters are WordPress transients (database), not atomic; the edge itself has no rate limiter (stock Caddy), see the runbook's ops item.");
+  S.save();
+  return [S];
+}
+
+/* ------------------------------------------------------------------ staging: the runbook's hard gate as a tool (E3) */
+async function staging() {
+  const S = new Section("20-staging-replay-tool", "scripts/staging-replay.mjs (`npm run staging:replay`) against the rehearsal edges: it works from the tool alone, and it catches a broken edge");
+  await ensureInstances();
+  const tool = path.join(REPO_ROOT, "scripts/staging-replay.mjs");
+  const run = (args, timeoutMs = 300000) => sh("node", [tool, ...args], { timeout: timeoutMs });
+  const out = path.join(P.evidence, "staging-replay");
+  fs.mkdirSync(out, { recursive: true });
+  const summary = (r) => (r.out.match(/cases: .*|PASS: .*|FAIL: .*/g) || []).join(" | ");
+  const std = run(["--edge-ip", "127.0.0.1", "--cacert", P.rootCrt, "--source", "operator", "--ci-fs", "accept", "--json", path.join(out, "standing-edge-operator.json")]);
+  S.check("standing edge on :80/:443, source=operator (the replay uses --edge-ip/--cacert only; no marker header, no rehearsal code): every applicable case passes", std.code === 0 && /PASS: every applicable case/.test(std.out), summary(std));
+  const twin = run(["--base", `https://127.0.0.1:${PUBLIC.httpsPort}`, "--http-port", String(PUBLIC.httpPort), "--location-port", String(PUBLIC.httpsPort), "--cacert", P.rootCrt, "--source", "public", "--ci-fs", "accept", "--json", path.join(out, "twin-public.json")]);
+  S.check("twin (operator list = 192.0.2.1/32), source=public: every applicable case passes, including every wp-admin/wp-login/xmlrpc/wp-cron denial", twin.code === 0 && /PASS: every applicable case/.test(twin.out), summary(twin));
+  const j = JSON.parse(fs.readFileSync(path.join(out, "twin-public.json"), "utf8"));
+  S.check("the twin run covered the wp-login bypass cases of the security review (POST ?loggedout=true, ?ACTION=logout, ...)", j.rows.filter((r) => /wp-login\.php/.test(r.request) && /^(POST|PUT|DELETE|OPTIONS)/.test(r.request) && r.result === "PASS").length >= 10, `${j.rows.filter((r) => /wp-login\.php/.test(r.request) && r.result === "PASS").length} wp-login cases passed`);
+  const nopost = run(["--base", `https://127.0.0.1:${PUBLIC.httpsPort}`, "--http-port", String(PUBLIC.httpPort), "--location-port", String(PUBLIC.httpsPort), "--cacert", P.rootCrt, "--no-post", "--no-sweep", "--ci-fs", "accept", "--json", path.join(out, "twin-no-post.json")]);
+  const jp = JSON.parse(fs.readFileSync(path.join(out, "twin-no-post.json"), "utf8"));
+  S.check("--no-post sends nothing but GET/HEAD/OPTIONS (every state-changing case is reported SKIP)", nopost.code === 0 && jp.rows.filter((r) => r.result === "SKIP" && /--no-post/.test(r.note)).length > 20 && !jp.rows.some((r) => /^(POST|PUT|DELETE|PATCH)/.test(r.request) && r.result !== "SKIP"), `${jp.rows.filter((r) => /--no-post/.test(r.note || "")).length} skipped`);
+  const strict = run(["--edge-ip", "127.0.0.1", "--cacert", P.rootCrt, "--source", "operator", "--no-sweep", "--ci-fs", "expect-404"]);
+  S.check("--ci-fs expect-404 (the Linux default) FAILS on this macOS volume: /Pricing/ and /PRODUCT/ are 200 here (case-insensitive file system), and the tool says so", strict.code === 1 && /\/Pricing\/|\/PRODUCT\//.test(strict.out), summary(strict));
+  const notrust = run(["--edge-ip", "127.0.0.1", "--source", "operator", "--no-sweep"]);
+  S.check("without --cacert/--insecure the rehearsal CA is not trusted: the tool refuses to continue (exit 2) instead of silently disabling verification", notrust.code === 2 && /cannot reach the edge/.test(notrust.out), notrust.out.trim().split("\n").pop().slice(0, 160));
+  const both = run(["--edge-ip", "127.0.0.1", "--insecure", "--cacert", P.rootCrt]);
+  S.check("--insecure together with --cacert is refused (exit 2)", both.code === 2, both.out.trim().slice(0, 100));
+  const ins = run(["--edge-ip", "127.0.0.1", "--insecure", "--source", "operator", "--no-sweep", "--ci-fs", "accept"]);
+  S.check("--insecure works only when given, and the report says the certificate was NOT verified", ins.code === 0 && /CERTIFICATE NOT VERIFIED/.test(ins.out), summary(ins));
+  // a broken edge must FAIL the gate: the pre-fix wp-login exception on a scratch instance
+  const base = fs.readFileSync(P.template, "utf8");
+  const mutated = base.replace(/\t\tnot expression \{http\.request\.method\} in \[[^\n]*\n/, "\t\tnot expression {http.request.uri.query}.matches('(?i)(^|&)(action=logout|loggedout=true)(&|$)')\n");
+  const dir = path.join(P.home, "run/staging-mut"); fs.mkdirSync(dir, { recursive: true });
+  const tf = path.join(dir, "mutant.template"); fs.writeFileSync(tf, mutated);
+  const cfg = { ...settings(), name: "mut", httpPort: 18160, httpsPort: 18460, admin: "127.0.0.1:12030", upstream: WP_UPSTREAM, staticRoot: P.current, wpTimeout: "60s", variant: "", template: tf, operatorCidrs: "192.0.2.1/32" };
+  await start(cfg, { quiet: true });
+  const bad = run(["--base", "https://127.0.0.1:18460", "--http-port", "18160", "--location-port", "18460", "--cacert", P.rootCrt, "--source", "public", "--ci-fs", "accept", "--no-sweep"]);
+  await stop(cfg, { quiet: true });
+  fs.rmSync(dir, { recursive: true, force: true }); fs.rmSync(path.join(P.generated, "Caddyfile.mut"), { force: true });
+  S.check("the gate FAILS on an edge that still has the old wp-login exception (exit 1, and the failing wp-login cases are named)", bad.code === 1 && /FAIL POST https:\/\/www\.copilt\.org\/wp-login\.php\?loggedout=true/.test(bad.out), summary(bad) + " | " + (bad.out.match(/FAIL [^\n]*wp-login[^\n]*/g) || []).slice(0, 2).join(" ; "));
+  S.save();
+  return [S];
+}
+
+const SECTIONS = { staging, throttle, mutation, ops: opsSection, release: releaseSection, preflight: preflightSection, optiona, apexpost, safety, rollback, tls: tlsSection, restart, routing, behavior, admin, errors, break: breakIt, logging, demo };
 export async function main(args) {
   ensureDirs();
-  const ORDER = ["routing", "behavior", "admin", "errors", "break", "logging", "demo", "restart", "tls", "rollback", "apexpost", "safety"];
+  const ORDER = ["routing", "behavior", "admin", "errors", "break", "logging", "demo", "restart", "tls", "rollback", "apexpost", "optiona", "preflight", "release", "ops", "mutation", "throttle", "staging", "safety"];
   const want = args.length && args[0] !== "all" ? args : ORDER;
   let failed = 0;
   console.log(caddyVersion());

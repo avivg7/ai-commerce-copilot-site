@@ -84,8 +84,11 @@ function genRouting() {
   deny("wp_cron_deny", 403, "Forbidden");
   L.push(`\t@wp_admin_deny {`, `\t\tpath_regexp wp_admin_deny ${M.WP_ADMIN_RE}`, `\t\tnot path_regexp wp_admin_public ${M.WP_ADMIN_PUBLIC_RE}`, `\t\tnot remote_ip ${OPS}`, `\t}`);
   deny("wp_admin_deny", 403, "Forbidden");
-  L.push(`\t@wp_login_deny {`, `\t\tpath_regexp wp_login_deny ${M.WP_LOGIN_RE}`, `\t\tnot expression {http.request.uri.query}.matches('${M.WP_LOGIN_PUBLIC_QUERY}')`, `\t\tnot remote_ip ${OPS}`, `\t}`);
+  L.push(`\t@wp_login_deny {`, `\t\tpath_regexp wp_login_deny ${M.WP_LOGIN_RE}`, `\t\tnot expression {http.request.method} in [${M.WP_LOGIN_PUBLIC_METHODS.map((x) => `'${x}'`).join(",")}] && {http.request.uri.path} == '${M.WP_LOGIN_PUBLIC_PATH}' && {http.request.uri.query}.matches('${M.WP_LOGIN_PUBLIC_QUERY}')`, `\t\tnot remote_ip ${OPS}`, `\t}`);
   deny("wp_login_deny", 403, "Forbidden");
+  // everything of /wp-admin/ that is still here is an operator (or the public admin-ajax/admin-post): operators may upload big files, the public routes keep the 2 MB cap
+  L.push(`\t@wp_admin_big {`, `\t\tpath_regexp wp_admin_big ${M.WP_ADMIN_RE}`, `\t\tnot path_regexp wp_admin_big_public ${M.WP_ADMIN_PUBLIC_RE}`, `\t}`);
+  L.push(`\thandle @wp_admin_big {`, `\t\timport to_wordpress_admin`, `\t}`);
   named("dup_error", M.DUPLICATE_ERROR_RE);
   L.push(`\thandle @dup_error {`, `\t\terror 404`, `\t}`);
   named("static_immutable", M.IMMUTABLE_RE);
@@ -154,6 +157,7 @@ function parseMatchers(lines) {
         if ((n = /^path_regexp (\S+) (.+)$/.exec(lines[i]))) body.push({ t: "path_regexp", re: mkRe(n[2]) });
         else if ((n = /^not path_regexp (\S+) (.+)$/.exec(lines[i]))) body.push({ t: "not_path_regexp", re: mkRe(n[2]) });
         else if (lines[i] === "not remote_ip {$AICC_OPERATOR_CIDRS}") body.push({ t: "not_operator" });
+        else if ((n = /^not expression \{http\.request\.method\} in \[([^\]]+)\] && \{http\.request\.uri\.path\} == '([^']+)' && \{http\.request\.uri\.query\}\.matches\('(.+)'\)$/.exec(lines[i]))) body.push({ t: "not_login_public", methods: n[1].split(",").map((x) => x.replace(/'/g, "")), path: n[2], re: mkRe(n[3]) });
         else if ((n = /^not expression \{http\.request\.uri\.query\}\.matches\('(.+)'\)$/.exec(lines[i]))) body.push({ t: "not_query_matches", re: mkRe(n[1]) });
         else if (lines[i] === `expression ${qph} != ''`) body.push({ t: "query_nonempty" });
         else if ((n = /^method (.+)$/.exec(lines[i]))) body.push({ t: "method", list: n[1].split(/\s+/) });
@@ -169,6 +173,7 @@ function parseMatchers(lines) {
       for (i++; lines[i] !== "}"; i++) {
         let n;
         if (lines[i] === "import to_wordpress") act.origin = "wordpress";
+        else if (lines[i] === "import to_wordpress_admin") { act.origin = "wordpress"; act.cache = "private, no-store, max-age=0"; }
         else if (lines[i] === "import to_wordpress_nocache") { act.origin = "wordpress"; act.cache = "private, no-store, max-age=0"; }
         else if (lines[i] === "import to_static") act.origin = "static";
         else if (lines[i] === "import static_csp") act.csp = true;
@@ -197,6 +202,7 @@ function matches(set, name, req) {
     else if (mm.t === "query_matches") { if (!mm.re.test(req.query)) return null; }
     else if (mm.t === "not_path_regexp") { if (mm.re.test(req.cleanPath ?? req.path)) return null; }
     else if (mm.t === "not_query_matches") { if (mm.re.test(req.query)) return null; }
+    else if (mm.t === "not_login_public") { if (mm.methods.includes(req.method) && req.path === mm.path && mm.re.test(req.query)) return null; }
     else if (mm.t === "not_operator") { if (req.operator) return null; }
     else if (mm.t === "method") { if (!mm.list.includes(req.method)) return null; }
     else if (mm.t === "not_method") { if (mm.list.includes(req.method)) return null; }
@@ -234,15 +240,21 @@ function parseCaddyStructure(text) {
   return { snippets, sites };
 }
 const structure = parseCaddyStructure(regenerated);
-const apexSite = structure.sites.find((x) => x.text.includes("# BEGIN GENERATED: host redirect"));
+// imports, followed through snippets that import other snippets (apex_site imports edge_log, security_headers, hsts, aicc_redirects)
+const allImportsOf = (names, seen = new Set()) => { for (const n of names) { if (seen.has(n)) continue; seen.add(n); const sn = structure.snippets.get(n); if (sn) allImportsOf(sn.body.map((l) => /^import\s+(\S+)$/.exec(l)?.[1]).filter(Boolean), seen); } return seen; };
+for (const x of structure.sites) x.allImports = [...allImportsOf(x.imports)];
+const apexSites = structure.sites.filter((x) => x.allImports.includes("apex_site"));
+const apexSite = apexSites[0]; // the http:// block (the https one is checked separately)
+const apexHttpsSite = apexSites.find((x) => x.addresses.some((a) => a.startsWith("https://")));
+const apexHttpSite = apexSites.find((x) => x.addresses.every((a) => a.startsWith("http://")));
 const wwwSite = structure.sites.find((x) => x.text.includes("# BEGIN GENERATED: routing"));
 for (const x of structure.sites) {
-  x.hasRedirects = x.imports.includes("aicc_redirects");
-  x.hasHost = x === apexSite;
+  x.hasRedirects = x.allImports.includes("aicc_redirects");
+  x.hasHost = apexSites.includes(x);
   x.hasRouting = x === wwwSite;
   // response headers contributed by the imported snippets (Caddy's `header` runs before `redir`/`handle`, so redirects carry them too)
   x.headers = {};
-  for (const name of x.imports) {
+  for (const name of x.allImports) {
     const sn = structure.snippets.get(name);
     if (!sn) continue;
     for (const l of sn.body) {
@@ -331,17 +343,26 @@ if (!QUIET) console.log(`test-redirects: ${M.CASES.length} cases, stand-in edge 
 /* structure of the site blocks (explicit, on top of the behavioural model) */
 {
   const sameSet = (a, b) => JSON.stringify([...a].sort()) === JSON.stringify([...b].sort());
-  ok(structure.sites.length === 3, `the Caddyfile should have exactly three site blocks (apex+http, the catch-all http:// that answers unknown Hosts with 421, and www), found ${structure.sites.length}`);
+  ok(structure.sites.length === 4, `the Caddyfile should have exactly four site blocks (http:// apex+www, https://copilt.org, the catch-all http:// that answers unknown Hosts with 421, and www), found ${structure.sites.length}`);
+  // review F1 (architecture): a "tls <cert> <key>" line in a block that also has http:// addresses is rejected by caddy validate, so aicc_tls may only be imported by blocks whose addresses are all https
+  for (const x of structure.sites) if (x.allImports.includes("aicc_tls")) ok(x.addresses.every((a) => !a.startsWith("http://")), `aicc_tls is imported by a block with an http:// address (${x.addresses.join(", ")}): "tls <file> <file>" would fail caddy validate`);
+  ok(!!apexHttpSite && !!apexHttpsSite && sameSet(apexHttpSite.addresses, ["http://copilt.org", "http://www.copilt.org"]) && sameSet(apexHttpsSite.addresses, ["https://copilt.org"]), `the apex must be split into http://copilt.org, http://www.copilt.org (no TLS) and https://copilt.org (imports aicc_tls); found: ${apexSites.map((x) => x.addresses.join(" ")).join(" | ")}`);
+  ok(!!apexHttpsSite && apexHttpsSite.allImports.includes("aicc_tls"), "https://copilt.org must import aicc_tls");
   ok(structure.sites.some((x) => x.addresses.length === 1 && x.addresses[0] === "http://" && /respond "Misdirected request" 421/.test(x.text)), "the catch-all http:// block (421) is missing: unknown Hosts on port 80 would be redirected to https://<attacker host>");
   ok(/^\s*auto_https disable_redirects\s*$/m.test(regenerated), "global option `auto_https disable_redirects` is missing (Caddy would 308 any Host on port 80 to https://<that Host>)");
   ok(/handle_errors \{\s*(?:#[^\n]*\n\s*)*import security_headers\s*\n\s*import hsts/.test(regenerated), "handle_errors must import security_headers and hsts (error pages do not inherit the site block's header directives)");
-  ok(!!apexSite && !!wwwSite && apexSite !== wwwSite, "could not find the apex block (host redirect) and the www block (routing) in the template");
+  ok(!!apexSite && !!wwwSite && !apexSites.includes(wwwSite), "could not find the apex blocks (import apex_site) and the www block (routing) in the template");
   if (apexSite && wwwSite) {
-    ok(sameSet(apexSite.addresses, ["http://copilt.org", "https://copilt.org", "http://www.copilt.org"]), `the apex block must answer http://copilt.org, https://copilt.org and http://www.copilt.org; it has: ${apexSite.addresses.join(", ")}`);
     ok(sameSet(wwwSite.addresses, ["www.copilt.org"]), `the www block must be exactly www.copilt.org; it has: ${wwwSite.addresses.join(", ")}`);
-    for (const [name, x] of [["apex", apexSite], ["www", wwwSite]]) for (const imp of ["security_headers", "hsts", "aicc_redirects"]) ok(x.imports.includes(imp), `the ${name} block must \`import ${imp}\`; it imports: ${x.imports.join(", ") || "(nothing)"}`);
+    ok(wwwSite.allImports.includes("aicc_tls"), "the www block must import aicc_tls");
+    for (const [name, x] of [["apex http", apexHttpSite], ["apex https", apexHttpsSite], ["www", wwwSite]]) if (x) for (const imp of ["security_headers", "hsts", "aicc_redirects"]) ok(x.allImports.includes(imp), `the ${name} block must import ${imp} (directly or through apex_site); it imports: ${x.allImports.join(", ") || "(nothing)"}`);
+    ok([...structure.snippets.keys()].includes("apex_site"), "snippet apex_site must exist");
   }
   ok([...structure.snippets.keys()].includes("aicc_redirects") && [...structure.snippets.keys()].includes("hsts"), "snippets aicc_redirects and hsts must exist");
+  // request body cap (E9): every PUBLIC WordPress route is capped at 2 MB; only the operator-only /wp-admin/ route may take more
+  for (const n of ["to_wordpress", "to_wordpress_nocache"]) ok(structure.snippets.get(n)?.body.includes("import wp_body_cap"), `snippet ${n} must import wp_body_cap (public WordPress routes have a request body cap)`);
+  ok(/request_body \{\s*max_size 2MB\s*\}/.test((structure.snippets.get("wp_body_cap")?.body || []).join("\n").replace(/\n+/g, " ")) || (structure.snippets.get("wp_body_cap")?.body || []).join(" ").includes("max_size 2MB"), "wp_body_cap must set max_size 2MB");
+  ok(!structure.snippets.get("to_wordpress_admin")?.body.includes("import wp_body_cap") && (structure.snippets.get("to_wordpress_admin")?.body || []).join(" ").includes("max_size 64MB"), "to_wordpress_admin (operator-only /wp-admin/) has its own, larger cap");
   ok(!structure.sites.some((x) => x.addresses.some((a) => a.includes(M.API_HOST))), "api.copilt.org must not have a site block in this file");
 }
 for (const c of M.CASES) {
@@ -452,15 +473,20 @@ if (!QUIET && tplArg < 0 && !WRITE) await selfTest();
 /* ------------------------------------------------------------------ 6. self-test: mutants of the template that this harness must kill */
 async function selfTest() {
   const real = fs.readFileSync(path.join(ROOT, "docs/cutover/Caddyfile.edge.template"), "utf8");
-  const apexHead = "http://copilt.org, https://copilt.org, http://www.copilt.org {";
+  const apexHead = "http://copilt.org, http://www.copilt.org {";
+  const apexSnippet = "(apex_site) {";
   const afterHead = (text, head, from, to) => { const i = text.indexOf(head); if (i < 0) throw new Error(`mutant setup: "${head}" not found`); const j = text.indexOf(from, i); if (j < 0) throw new Error(`mutant setup: "${from.trim()}" not found after "${head}"`); return text.slice(0, j) + to + text.slice(j + from.length); };
   const MUTANTS = [
     ["delete `import aicc_redirects` from the www block", (t) => afterHead(t, "\nwww.copilt.org {", "\timport aicc_redirects\n", "")],
-    ["remove http://www.copilt.org from the apex address list", (t) => t.replace(apexHead, "http://copilt.org, https://copilt.org {")],
-    ["delete `import hsts` from the apex block", (t) => afterHead(t, apexHead, "\timport hsts\n", "")],
+    ["remove http://www.copilt.org from the apex address list", (t) => t.replace(apexHead, "http://copilt.org {")],
+    ["delete `import hsts` from the apex snippet", (t) => afterHead(t, apexSnippet, "\timport hsts\n", "")],
     ["delete `import hsts` from the www block", (t) => afterHead(t, "\nwww.copilt.org {", "\timport hsts\n", "")],
-    ["delete `import security_headers` from the apex block", (t) => afterHead(t, apexHead, "\timport security_headers\n", "")],
-    ["delete `import aicc_redirects` from the apex block", (t) => afterHead(t, apexHead, "\timport aicc_redirects\n", "")],
+    ["delete `import security_headers` from the apex snippet", (t) => afterHead(t, apexSnippet, "\timport security_headers\n", "")],
+    ["delete `import aicc_redirects` from the apex snippet", (t) => afterHead(t, apexSnippet, "\timport aicc_redirects\n", "")],
+    ["import aicc_tls into the http:// apex block (breaks `tls <file> <file>`: architecture review F1)", (t) => t.replace(apexHead + "\n\timport aicc_site_hook\n", apexHead + "\n\timport aicc_site_hook\n\timport aicc_tls\n")],
+    ["merge the apex back into one mixed http:// + https:// block (F1)", (t) => t.replace(apexHead, "http://copilt.org, https://copilt.org, http://www.copilt.org {\n\timport aicc_tls")],
+    ["restore the old wp-login exception (any method, case-insensitive; security review F2)", (t) => t.replace(/\t\tnot expression \{http\.request\.method\} in \[[^\n]*\n/, "\t\tnot expression {http.request.uri.query}.matches('(?i)(^|&)(action=logout|loggedout=true)(&|$)')\n")],
+    ["drop the request body cap from to_wordpress (E9)", (t) => afterHead(t, "(to_wordpress) {", "\timport wp_body_cap\n", "")],
     ["raise HSTS with includeSubDomains", (t) => t.replace('Strict-Transport-Security "max-age=300"', 'Strict-Transport-Security "max-age=300; includeSubDomains"')],
     ["tamper with a generated routing line (drift)", (t) => t.replace("\thandle @wp_pages {\n\t\timport to_wordpress\n", "\thandle @wp_pages {\n\t\timport to_static\n")],
     ["turn the host redirect for other methods into a 301", (t) => t.replace("redir https://www.copilt.org{uri} 308", "redir https://www.copilt.org{uri} 301")],
