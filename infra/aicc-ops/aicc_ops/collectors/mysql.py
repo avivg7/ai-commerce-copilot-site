@@ -21,8 +21,9 @@ class MysqlError(Exception):
 
 
 def build_argv(sect: dict) -> list:
-    return [sect["client"], "--protocol=socket", f"--socket={sect['socket']}", f"--user={sect['user']}",
-            "--batch", "--skip-column-names", "--connect-timeout=3", "--no-defaults"]
+    # --no-defaults MUST be the first option: the mysql client rejects it anywhere else ("unknown option", found on the real host)
+    return [sect["client"], "--no-defaults", "--protocol=socket", f"--socket={sect['socket']}", f"--user={sect['user']}",
+            "--batch", "--skip-column-names", "--connect-timeout=3"]
 
 
 def run_sql(sect: dict, sql: str, timeout: float = 8.0, database: str = "") -> str:
@@ -61,7 +62,7 @@ def collect(full_cfg, cfg, state, now) -> Result:
     try:
         out = run_sql(cfg, sql, cfg.get("timeout_s", 8))
     except MysqlError as e:
-        if e.code in DOWN_CODES or e.code == 0:
+        if e.code in DOWN_CODES:
             return Result(metrics={"mysql.up": 0.0})
         raise CollectorError(f"mysql error {e.code}: {e}")
     return from_pairs(parse_pairs(out), state)

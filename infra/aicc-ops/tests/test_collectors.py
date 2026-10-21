@@ -196,7 +196,9 @@ class PhpFpmTests(TmpCase):
 class MysqlTests(TmpCase):
     def _client(self, text, rc=0, err=""):
         p = os.path.join(self.tmp, "mysqlstub")
-        write_exe(p, f"cat {fixture(text)} 2>/dev/null\n[ -n '{err}' ] && echo '{err}' >&2\nexit {rc}\n" if text else f"echo '{err}' >&2\nexit {rc}\n")
+        import shlex
+        e = shlex.quote(err)
+        write_exe(p, f"cat {fixture(text)} 2>/dev/null\n[ -n {e} ] && printf '%s\\n' {e} >&2\nexit {rc}\n" if text else f"printf '%s\\n' {e} >&2\nexit {rc}\n")
         return p
 
     def sect(self, client):
@@ -224,6 +226,15 @@ class MysqlTests(TmpCase):
     def test_access_denied_is_collector_failure(self):
         with self.assertRaises(CollectorError):
             mysql.collect({}, self.sect(self._client("", 1, "ERROR 1045 (28000): Access denied")), {}, 1)
+
+    def test_client_option_errors_are_collector_failures_not_down(self):
+        # found on the real host: `mysql: [ERROR] unknown option '--no-defaults'` has no ERROR <code> and must NOT be read as "MySQL is down"
+        with self.assertRaises(CollectorError):
+            mysql.collect({}, self.sect(self._client("", 7, "mysql: [ERROR] unknown option '--no-defaults'.")), {}, 1)
+
+    def test_no_defaults_is_the_first_client_option(self):
+        a = mysql.build_argv(self.sect("mysql"))
+        self.assertEqual(a[1], "--no-defaults")
 
     def test_missing_client(self):
         with self.assertRaises(CollectorError):
