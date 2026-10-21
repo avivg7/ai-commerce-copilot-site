@@ -67,7 +67,28 @@ An off-host copy that is never restored is a hope, not a backup: the drill below
 
 Scenario: the data tier of the Droplet is lost (database dropped, uploads and `wp-config.php` deleted). Recovery source: the verified copy that lives on the Mac. Steps and timings are in the JSON report; the pass criteria are (1) `aicc-restore live` ends with its health gate and sanity checks green, (2) the per-table fingerprint (row count + `CHECKSUM TABLE`) of the recovered database equals the fingerprint taken before the disaster, (3) uploads and `wp-config.php` exist again, (4) `/healthz` and `/pricing/` answer 200 through the edge, (5) no restore directory, scratch database or stray listener remains.
 
-DRILL_RESULT_PLACEHOLDER
+**Measured on the real staging host, 2026-10-21 (evidence: `~/Downloads/AICC-cutover-evidence/linux-stage/phase2b/dr-drill-3.json`; two earlier runs of the same day failed for reasons found and fixed in the drill script/restore tool, and the first complete run showed the `wp_options` checksum difference explained below).**
+
+| Step | Seconds |
+|---|---|
+| freeze writers / fresh backup / fingerprint before (preparation, not RTO) | 1.1 / 9.6 / 2.9 |
+| off-host pull to the Mac (restricted key, checksums verified, ack) | 8.3 |
+| **disaster** (database dropped, uploads and wp-config.php deleted) | 2.9 |
+| copy the Mac's verified copy back to the host | 2.4 |
+| strict check: the Mac copy loaded into a scratch database and fingerprinted | 10.1 |
+| `aicc-restore live` in total | 33.1 |
+|   verify / preload check (dump loads into a scratch DB first) | 0.13 / 13.22 |
+|   database restore | 7.11 |
+|   files restore + permissions | 0.02 + 0.03 |
+|   start services | 0.43 |
+|   health gate (PHP + wp-config + DB + WordPress + WooCommerce + plugin, `/healthz` through the edge, siteurl) | 8.32 |
+|   sanity (options rows, administrator exists) | 2.33 |
+| fingerprint after recovery | 3.1 |
+| **RTO: disaster declared to recovery proven** | **60.4** |
+
+What the drill proved: the recovery source was the copy that lives OFF the host; the database came back with the same 58 tables; the Mac's copy loaded into a scratch database is **identical to the pre-disaster state in every table (row count and `CHECKSUM TABLE`: 0 differing lines)**; all 13 uploaded files came back and a marker file with random content is byte-identical; `/healthz` and `/pricing/` answer 200 through the edge; no restore directory, scratch database or stray unit remained, all services and timers are active. The live database differs from the pre-disaster fingerprint in one table only, `wp_options` (434 rows both times, a different checksum): the application rewrites options (cron schedule, transients) on its first requests after start-up. That comparison therefore allows a named list of application-rewritten tables, and the strict, exception-free comparison is the one made on the off-host copy.
+
+What this RTO is: loss of the data tier on the same Droplet, a staging-sized database (3.4 MB) and uploads (13 files), the Mac online. It is **not** a promise for a larger production database, and not for loss of the whole Droplet (new host: cloud-init + `install-stack.sh` + database account + this restore + redeploying the release tarballs from the Mac + the certificate; that path is documented, not timed). `aicc-restore live` needs the hashes of the OFF-HOST copy (`--sha256`, `--files-sha256`); for a whole-host rebuild add `--allow-new-host-id` (the rebuilt host has a new random stage id) and re-render `wp-config.php` or restore the database password (the restored `wp-config.php` holds the OLD database password; the new database account has a new one). If the database is already gone the safety backup step fails: pass `--no-safety-backup` (the drill does). Run `aicc-restore live` under `tmux`/`systemd-run` so a dropped SSH session cannot interrupt it (it ignores SIGHUP/SIGPIPE, but a killed terminal is not a plan).
 
 ## Covered and not covered by this procedure
 

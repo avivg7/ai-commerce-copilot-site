@@ -75,7 +75,7 @@ MARK_BEFORE="$(rem "sudo sha256sum /srv/aicc/shared/uploads/$MARK | cut -d' ' -f
 UPLOADS_BEFORE="$(rem 'sudo find /srv/aicc/shared/uploads -type f | wc -l' | tr -d ' ')"
 t=$(now); rem 'sudo /usr/local/sbin/aicc-backup --label manual' >/dev/null 2>&1; step fresh_backup "$(el "$t" "$(now)")"
 t=$(now); rem 'sudo /usr/local/sbin/aicc-restore fingerprint --out /srv/aicc/restore-in/pre.fp' >/dev/null 2>&1; step fingerprint_before "$(el "$t" "$(now)")"
-PRE_TABLES="$(rem 'sudo wc -l < /srv/aicc/restore-in/pre.fp' | tr -d ' ')"
+PRE_TABLES="$(rem 'sudo sh -c "wc -l < /srv/aicc/restore-in/pre.fp"' | tr -d ' ')"
 
 echo "== phase 2: off-host pull to the Mac (restricted key) =="
 t=$(now)
@@ -107,6 +107,10 @@ t=$(now)
 for f in "$DUMP" "$FARC"; do rem "sudo tee /srv/aicc/restore-in/$f >/dev/null && sudo chmod 600 /srv/aicc/restore-in/$f" < "$DEST/$f"; done
 step copy_back_to_host "$(el "$t" "$(now)")"
 t=$(now)
+rem "sudo /usr/local/sbin/aicc-restore scratch --dump /srv/aicc/restore-in/$DUMP --sha256 $LOCAL_D --fingerprint-out /srv/aicc/restore-in/scratch.fp" >/dev/null 2>&1 || echo "WARNING: scratch load of the Mac copy failed" >&2
+step offhost_copy_scratch_check "$(el "$t" "$(now)")"
+STRICT_DIFF="$(rem 'sudo diff /srv/aicc/restore-in/pre.fp /srv/aicc/restore-in/scratch.fp | grep -c "^[<>]" || true')"
+t=$(now)
 RC=0
 rem "sudo /usr/local/sbin/aicc-restore live --dump /srv/aicc/restore-in/$DUMP --sha256 $LOCAL_D --files /srv/aicc/restore-in/$FARC --files-sha256 $LOCAL_F --yes-replace-live --no-safety-backup --report /srv/aicc/restore-in/restore-report.json" >/dev/null || RC=$?
 step aicc_restore_live "$(el "$t" "$(now)")"
@@ -115,7 +119,12 @@ REPORT_REMOTE="$(rem 'sudo cat /srv/aicc/restore-in/restore-report.json')"
 echo "== phase 5: prove the data came back =="
 t=$(now); rem 'sudo /usr/local/sbin/aicc-restore fingerprint --out /srv/aicc/restore-in/post.fp' >/dev/null 2>&1; step fingerprint_after "$(el "$t" "$(now)")"
 DIFFN="$(rem 'sudo diff /srv/aicc/restore-in/pre.fp /srv/aicc/restore-in/post.fp | grep -c "^[<>]" || true')"
-POST_TABLES="$(rem 'sudo wc -l < /srv/aicc/restore-in/post.fp' | tr -d ' ')"
+DIFF_TABLES="$(rem 'sudo diff /srv/aicc/restore-in/pre.fp /srv/aicc/restore-in/post.fp | grep "^[<>]" | cut -f1 | sed "s/^[<>] //" | sort -u | tr "\n" " "')"
+# Tables the APPLICATION itself rewrites on its first requests after start-up (cron schedule, transients, sessions, scheduler logs, operational counters): allowed to differ
+# in the LIVE comparison only. Everything else must match exactly, and the scratch comparison of the off-host copy (above) has NO exceptions.
+VOLATILE='^(wp_options|wp_actionscheduler_(actions|claims|groups|logs)|wp_woocommerce_sessions|wp_usermeta|wp_aicc_ops_counters|wp_aicc_[a-z_]*(throttle|counter|log)[a-z_]*)$'
+UNEXPECTED="$(for t in $DIFF_TABLES; do if printf '%s\n' "$t" | grep -Evq "$VOLATILE"; then printf '%s ' "$t"; fi; done; true)"
+POST_TABLES="$(rem 'sudo sh -c "wc -l < /srv/aicc/restore-in/post.fp"' | tr -d ' ')"
 UPLOADS_AFTER="$(rem 'sudo find /srv/aicc/shared/uploads -type f | wc -l' | tr -d ' ')"
 FILES_OK="$(rem 'sudo test -s /srv/aicc/shared/wp-config.php && echo yes || echo no')"
 MARK_AFTER="$(rem "sudo sha256sum /srv/aicc/shared/uploads/$MARK 2>/dev/null | cut -d' ' -f1")"
@@ -130,16 +139,16 @@ echo "== phase 6: clean up =="
 rem 'sudo rm -rf /srv/aicc/restore-in'
 rem "sudo rm -f /srv/aicc/shared/uploads/$MARK"
 rem 'sudo systemctl start aicc-backup.timer' >/dev/null 2>&1 || true
-LEFT="$(rem 'sudo ls /srv/aicc/restore-in 2>/dev/null | wc -l | tr -d " "; mysql --no-defaults -N -e "SHOW DATABASES" 2>/dev/null | grep -c "^aicc_dr" || true' | tr '\n' ' ')"
+LEFT="$(rem 'sudo ls /srv/aicc/restore-in 2>/dev/null | wc -l | tr -d " "; sudo mysql --no-defaults -N -e "SHOW DATABASES" 2>/dev/null | grep -c "^aicc_dr" || true' | tr '\n' ' ')"
 UNITS="$(rem 'systemctl is-active php8.3-fpm mysql aicc-edge aicc-ops aicc-wp-cron.timer aicc-backup.timer | tr "\n" " "')"
 
-OK=true; { [ "$RC" = 0 ] && [ "$DIFFN" = 0 ] && [ "$PRE_TABLES" = "$POST_TABLES" ] && [ "$FILES_OK" = yes ] && [ "$HEALTH" = 200 ] && [ "$APP" = 200 ]; } || OK=false
+OK=true; { [ "$RC" = 0 ] && [ "$STRICT_DIFF" = 0 ] && [ -z "$UNEXPECTED" ] && [ "$PRE_TABLES" = "$POST_TABLES" ] && [ "$FILES_OK" = yes ] && [ "$HEALTH" = 200 ] && [ "$APP" = 200 ]; } || OK=false
 mkdir -p "$(dirname "$REPORT")"
 jq -n --arg ok "$OK" --arg t0 "$T0_ISO" --arg t1 "$T1_ISO" --argjson rto "$RTO" --argjson steps "$STEPS" --argjson restore "$REPORT_REMOTE" \
-  --arg pre "$PRE_TABLES" --arg post "$POST_TABLES" --arg diffn "$DIFFN" --arg files "$FILES_OK" --arg health "$HEALTH" --arg app "$APP" --arg units "$UNITS" --arg left "$LEFT" \
+  --arg pre "$PRE_TABLES" --arg post "$POST_TABLES" --arg diffn "$DIFFN" --arg strict "$STRICT_DIFF" --arg dtabs "$DIFF_TABLES" --arg unexp "$UNEXPECTED" --arg files "$FILES_OK" --arg health "$HEALTH" --arg app "$APP" --arg units "$UNITS" --arg left "$LEFT" \
   --arg dump "$DUMP" --arg farc "$FARC" --arg dsha "$LOCAL_D" --arg fsha "$LOCAL_F" --argjson total "$(el "$T_ALL0" "$(now)")" --argjson ub "${UPLOADS_BEFORE:-0}" --argjson ua "${UPLOADS_AFTER:-0}" \
   '{drill:"staging data-tier loss, recovery from the OFF-HOST (Mac) copy",passed:($ok=="true"),disaster_declared_at:$t0,recovered_and_proven_at:$t1,rto_seconds:$rto,drill_total_seconds:$total,
-    backup_set:{dump:$dump,files:$farc,dump_sha256:$dsha,files_sha256:$fsha},data_correctness:{tables_before:($pre|tonumber),tables_after:($post|tonumber),differing_fingerprint_lines:($diffn|tonumber)},
+    backup_set:{dump:$dump,files:$farc,dump_sha256:$dsha,files_sha256:$fsha},data_correctness:{tables_before:($pre|tonumber),tables_after:($post|tonumber),offhost_copy_vs_before_strict_differing_lines:($strict|tonumber),live_after_recovery_differing_lines:($diffn|tonumber),live_after_recovery_differing_tables:$dtabs,unexpected_differing_tables:$unexp},
     uploads_and_wpconfig_present:$files,uploads_files_before:$ub,uploads_files_after:$ua,healthz_http:$health,pricing_http:$app,services_after:$units,leftovers:$left,steps:$steps,aicc_restore_report:$restore}' > "$REPORT"
-echo; echo "DRILL $([ "$OK" = true ] && echo PASSED || echo FAILED): RTO ${RTO}s (disaster declared $T0_ISO, proven $T1_ISO); fingerprint differences: $DIFFN; report: $REPORT"
+echo; echo "DRILL $([ "$OK" = true ] && echo PASSED || echo FAILED): RTO ${RTO}s (disaster declared $T0_ISO, proven $T1_ISO); off-host copy vs before (strict): $STRICT_DIFF differing lines; live after recovery differs in: ${DIFF_TABLES:-none} (unexpected: ${UNEXPECTED:-none}); report: $REPORT"
 [ "$OK" = true ]
