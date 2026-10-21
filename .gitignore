@@ -53,3 +53,6 @@ next-env.d.ts
 
 # throwaway release builds (infra/release/build-site-release.sh)
 /.release-build-*/
+
+__pycache__/
+*.pyc
