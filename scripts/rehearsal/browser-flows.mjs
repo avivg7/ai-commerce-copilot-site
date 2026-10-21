@@ -1162,7 +1162,7 @@ async function runDemo(R, ctx, { url, label, touch = false, full = false, locale
       await page.waitForFunction(() => { const v = document.querySelector("dialog[open] video"); return Math.abs(v.currentTime - 20) < 2 && !v.seeking; }, null, { timeout: 25000 }).catch(() => {});
       await page.waitForTimeout(500);
       const all = meter.where(MP4_RE, tOpen - 5);
-      R.check(`${label}: seeking forward (70 s) and back (20 s) works; ${all.length} video requests in total, all ranged and 206 through the edge`, all.length >= 2 && all.every((r) => /^bytes=\d+-/.test(r.range) && r.status === 206), JSON.stringify(all.map((r) => [r.range, r.status, r.enc, r.failed])));
+      R.check(`${label}: seeking forward (70 s) and back (20 s) works; ${all.length} video requests in total, all ranged; every one the edge answered is 206 (a request Chrome itself cancelled mid-seek has no response and is not an edge answer)`, all.length >= 2 && all.every((r) => /^bytes=\d+-/.test(r.range)) && all.every((r) => r.status === 206 || (r.status === 0 && /cancel|abort/i.test(String(r.failed)))), JSON.stringify(all.map((r) => [r.range, r.status, r.enc, r.failed])));
       out.network.afterSeek = { requests: all.length, totalBytes: meter.bytes(DEMO_RE, tOpen - 5), ranges: all.map((r) => r.range) };
     }
     // Escape
@@ -1947,7 +1947,13 @@ async function s11() {
     await goto(page, `${BASE}/wp-login.php`);
     R.check("operator listener, browser: wp-login.php renders the login form (no redirect, no 403)", (await page.locator("#user_login").count()) === 1 && (await page.locator("#loginform").count()) === 1, redact(page.url()));
     await shot(page, "11-operator-wp-login");
-    await page.fill("#user_login", creds.login); await page.fill("#user_pass", creds.password);
+    // WordPress's own login scripts (user-profile.js, password toggle) re-render the password field after "load": a value filled too early is discarded and the browser's `required` validation then blocks the submit (no POST at all). Let the page settle, then fill and verify, as a person typing would.
+    await page.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => {});
+    for (let attempt = 0; attempt < 4; attempt++) {
+      await page.fill("#user_login", creds.login); await page.fill("#user_pass", creds.password);
+      if ((await page.inputValue("#user_pass")) === creds.password && (await page.inputValue("#user_login")) === creds.login) break;
+      await page.waitForTimeout(500);
+    }
     await Promise.all([page.waitForNavigation({ waitUntil: "load" }), page.click("#wp-submit")]);
     R.check(`operator login as ${creds.login} lands on /wp-admin/ (dashboard) with the admin bar; no password in the URL`, new URL(page.url()).pathname === "/wp-admin/" && (await page.locator("#wpadminbar").count()) === 1 && !/pwd|pass/i.test(page.url()), `${page.url().replace(BASE, "")} in ${Date.now() - t0} ms`);
     const jarOp = await jar(ctx);
