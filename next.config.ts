@@ -22,6 +22,9 @@ const nextConfig: NextConfig = {
   },
   env: {
     NEXT_PUBLIC_BASE_PATH: basePath,
+    // SITE_URL is also read by CLIENT components (PlanFinder builds plan links at runtime): inline it so the browser bundle carries the build's origin instead of falling back to
+    // the production default (a stage build otherwise sends a visitor who changes the store count to the PRODUCTION account page). Empty = the code's own default applies.
+    SITE_URL: process.env.SITE_URL ?? "",
   },
   experimental: {
     // Unmatched URLs get a branded 404.html even though the root layout lives in a dynamic segment.

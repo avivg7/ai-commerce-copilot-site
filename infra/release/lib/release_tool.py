@@ -384,6 +384,15 @@ def cmd_site_check(a):
             problems.append("robots.txt does not disallow everything")
         if os.path.exists(os.path.join(a.tree, "sitemap.xml")):
             problems.append("sitemap.xml present in a staging tree")
+        # A staging page must never point a visitor at PRODUCTION (an account link or a client bundle that fell back to the default origin did exactly that once).
+        leaks = []
+        for rel, p, kind in walk_sorted(a.tree):
+            if kind == "f" and rel.lower().endswith((".html", ".htm", ".js", ".txt", ".json", ".xml", ".css")):
+                data = open(p, "rb").read()
+                if b"www.copilt.org" in data:
+                    leaks.append(rel)
+        if leaks:
+            problems.append("%d file(s) in the staging tree reference the production host www.copilt.org: %s" % (len(leaks), ", ".join(leaks[:4])))
     else:
         if os.path.exists(ident) or os.path.isdir(os.path.join(a.tree, ".well-known")) and any("stage" in n for n in os.listdir(os.path.join(a.tree, ".well-known"))):
             problems.append("a stage identity file exists in a production tree")
