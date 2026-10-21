@@ -3,6 +3,8 @@
 //
 //   node scripts/rehearsal/stage-load.mjs --stage-host stage.copilt.org --stage-ip IP --port 443 --stage-id ID [--duration 180] [--concurrency 4] [--out FILE.json]
 //        [--sampler-phase-file F --phase http-load] [--wp-json-per-min 15] [--urls /pricing/,/my-account/,/product/,/]
+//        [--sampler-csv FILE]   enables the SAFETY ABORT (checked every second): error rate > 20% (after >= 20 requests), the host's MemAvailable < 300 MB, or swap-in sustained > 200 pages/s
+//                               (3 consecutive samples), the last two read from the newest row of the running stage-sampler CSV. The abort is recorded in the output as `aborted` and exits 4.
 //
 // What it does: CONCURRENCY workers (default 4) each loop over the URL mix for DURATION seconds (default 180), one new curl process (one new TLS connection) per request, back to back.
 //   mix per worker cycle: /pricing/ (WordPress), /my-account/ (WordPress), / (static), /product/ (static), /pricing/, /my-account/, / , /product/ ; /wp-json/ is paced separately to
@@ -20,6 +22,7 @@ const { raw } = parseGuardArgs(args);
 const DURATION = Number(opt("duration", "180")), CONC = Number(opt("concurrency", "4")), WPJ = Number(opt("wp-json-per-min", "15"));
 const OUT = opt("out", "");
 const PHASE_FILE = opt("sampler-phase-file", ""), PHASE = opt("phase", "http-load");
+const SAMPLER_CSV = opt("sampler-csv", "");
 const MIX = (opt("urls", "") ? opt("urls", "").split(",") : ["/pricing/", "/my-account/", "/", "/product/", "/pricing/", "/my-account/", "/", "/product/"]).filter(Boolean);
 if (!(DURATION > 0 && DURATION <= 900) || !(CONC >= 1 && CONC <= 8)) { console.error("duration must be 1..900 s and concurrency 1..8"); process.exit(2); }
 
@@ -51,7 +54,23 @@ async function worker(id) {
 if (PHASE_FILE) fs.writeFileSync(PHASE_FILE, PHASE + "\n");
 console.log(`stage-load: ${CONC} workers x ${DURATION}s against ${HOST} (mix ${MIX.join(" ")} + /wp-json/ ${WPJ}/min)`);
 const timer = setTimeout(() => { stop = true; }, DURATION * 1000);
-const tick = setInterval(() => { const sec = Math.round((Date.now() - t0) / 1000); if (sec % 30 === 0) console.log(`  t=${sec}s requests=${results.length} errors=${results.filter((r) => r.status === 0 || r.status >= 500 || r.status === 429).length}`); }, 1000);
+let aborted = null; const swapHist = [];
+const lastRow = () => { try { const t = fs.readFileSync(SAMPLER_CSV, "utf8").trimEnd().split("\n"); const head = t[0].split(","); const rows = t.slice(-1)[0].split(","); return Object.fromEntries(head.map((h, i) => [h, rows[i]])); } catch { return null; } };
+const tick = setInterval(() => {
+  const sec = Math.round((Date.now() - t0) / 1000);
+  const errs = results.filter((r) => r.status === 0 || r.status >= 500 || r.status === 429).length;
+  if (sec % 30 === 0) console.log(`  t=${sec}s requests=${results.length} errors=${errs}`);
+  if (aborted) return;
+  let why = null;
+  if (results.length >= 20 && errs / results.length > 0.2) why = `error rate ${(100 * errs / results.length).toFixed(1)}% > 20% after ${results.length} requests`;
+  const row = SAMPLER_CSV ? lastRow() : null;
+  if (row && Date.now() - Date.parse(row.iso) < 10000) {
+    if (Number(row.mem_avail_mb) < 300) why = why || `host MemAvailable ${row.mem_avail_mb} MB < 300 MB`;
+    const key = row.epoch; if (swapHist.length === 0 || swapHist[swapHist.length - 1].k !== key) swapHist.push({ k: key, rate: Number(row.pswpin_d) / 2 });
+    const last3 = swapHist.slice(-3); if (last3.length === 3 && last3.every((x) => x.rate > 200)) why = why || `swap-in sustained > 200 pages/s (${last3.map((x) => x.rate).join(", ")})`;
+  }
+  if (why) { aborted = { at_s: sec, reason: why }; stop = true; console.error(`ABORT: ${why}`); }
+}, 1000);
 try { await Promise.all(Array.from({ length: CONC }, (_, i) => worker(i))); } catch (e) { stop = true; if (e && e.name === "GuardRefusal") { console.error(`GUARD REFUSED [${e.code}]: ${e.message}`); process.exit(EXIT_REFUSED); } throw e; }
 clearTimeout(timer); clearInterval(tick);
 const wall = (Date.now() - t0) / 1000;
@@ -70,9 +89,9 @@ const summarize = (rows) => ({
 const byUrl = {}; for (const u of [...new Set(results.map((r) => r.u))]) byUrl[u] = summarize(results.filter((r) => r.u === u));
 const byClass = {}; for (const k of ["static", "wordpress", "wp-json"]) { const rows = results.filter((r) => r.k === k); if (rows.length) byClass[k] = summarize(rows); }
 const timeline = []; for (let s = 0; s < Math.ceil(wall / 10); s++) { const rows = results.filter((r) => r.t >= s * 10 && r.t < (s + 1) * 10); const wp = rows.filter((r) => r.k === "wordpress"); timeline.push({ from_s: s * 10, requests: rows.length, wp_p50_s: pct(wp.map((r) => r.total), 0.5), wp_p95_s: pct(wp.map((r) => r.total), 0.95), errors: rows.filter((r) => r.status === 0 || r.status >= 500 || r.status === 429).length }); }
-const out = { stage: { host: HOST, ip: guard.cfg.stageIp }, config: { duration_s: DURATION, concurrency: CONC, mix: MIX, wp_json_per_min: WPJ }, started: new Date(t0).toISOString(), wall_s: Math.round(wall * 10) / 10, summary: { overall: summarize(results), byClass, byUrl }, timeline, errorsSample: results.filter((r) => r.status === 0 || r.status >= 500 || r.status === 429).slice(0, 15), guard: guard.summary() };
+const out = { aborted, stage: { host: HOST, ip: guard.cfg.stageIp }, config: { duration_s: DURATION, concurrency: CONC, mix: MIX, wp_json_per_min: WPJ }, started: new Date(t0).toISOString(), wall_s: Math.round(wall * 10) / 10, summary: { overall: summarize(results), byClass, byUrl }, timeline, errorsSample: results.filter((r) => r.status === 0 || r.status >= 500 || r.status === 429).slice(0, 15), guard: guard.summary() };
 if (OUT) { fs.mkdirSync(path.dirname(path.resolve(OUT)), { recursive: true }); fs.writeFileSync(OUT, JSON.stringify(out, null, 2) + "\n"); }
 if (PHASE_FILE) fs.writeFileSync(PHASE_FILE, "after-load\n");
 console.log(JSON.stringify({ wall_s: out.wall_s, overall: out.summary.overall, byClass: out.summary.byClass }, null, 1));
 console.log(`guard: ${out.guard.allowed} requests allowed, ${out.guard.violations} violations`);
-process.exit(out.guard.violations ? EXIT_REFUSED : 0);
+process.exit(out.guard.violations ? EXIT_REFUSED : aborted ? 4 : 0);

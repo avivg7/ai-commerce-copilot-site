@@ -71,9 +71,13 @@ const reqX = async (_inst, url, o = {}) => {
   if (!STAGE_MODE) return req(EDGE, url, o);
   await GUARD.ensureIdentity();
   const u = /^http:/i.test(url) ? url : url.replace(/^(https?:\/\/[^/?#:]+)(:\d+)?/, `$1:${GUARD.cfg.port}`); // an http:// URL must carry its own explicit port (--http-port)
-  const r = o.follow ? await GUARD.followAsync({ url: u, method: o.method || "GET", headers: o.headers, body: o.body, head: !!o.head, timeout: o.timeout || 30, compressed: o.compressed }) : await GUARD.curlAsync({ url: u, method: o.method || "GET", headers: o.headers, body: o.body, head: !!o.head, timeout: o.timeout || 30, compressed: o.compressed, bodyFile: o.bodyFile, extra: o.extra });
+  const wo = "\n@@SIZE=%{size_download}"; // bytes on the wire (the size checks of section 8 read it)
+  const r = o.follow ? await GUARD.followAsync({ url: u, method: o.method || "GET", headers: o.headers, body: o.body, head: !!o.head, timeout: o.timeout || 30, compressed: o.compressed, writeOut: wo }) : await GUARD.curlAsync({ url: u, method: o.method || "GET", headers: o.headers, body: o.body, head: !!o.head, timeout: o.timeout || 30, compressed: o.compressed, bodyFile: o.bodyFile, extra: o.extra, writeOut: wo });
+  const sm = /\n@@SIZE=(\d+)\s*$/.exec(r.body || "");
+  const bytes = sm ? Number(sm[1]) : (r.body || "").length;
+  if (sm) r.body = r.body.slice(0, sm.index);
   const h = {}; for (const l of (r.headerText.split(/\r?\n\r?\n/).pop() || "").split(/\r?\n/).slice(1)) { const i = l.indexOf(":"); if (i > 0) (h[l.slice(0, i).toLowerCase()] ||= []).push(l.slice(i + 1).trim()); }
-  return { status: r.status, headers: h, body: r.body, error: r.error, reqId: (h["x-request-id"] || [])[0] };
+  return { status: r.status, headers: h, body: r.body, bytes, error: r.error, reqId: (h["x-request-id"] || [])[0] };
 };
 let ABORTED = false;
 const onViolation = (rec) => { ABORTED = true; console.error(`GUARD VIOLATION: ${rec.reason}`); closeBrowser().catch(() => {}); };
@@ -88,6 +92,7 @@ const KEEP_USERS = flag("--keep-users");
 const NO_SHOTS = flag("--no-screenshots");
 const RUN_ID = crypto.randomBytes(3).toString("hex");
 const RUN_START = Math.floor(Date.now() / 1000);
+let COMING_SOON_PRIOR = null;
 
 /* ------------------------------------------------------------------ result collector */
 class Result {
@@ -102,7 +107,7 @@ class Result {
   info(name, detail = "", label = "VERIFIED") { this.rows.push({ name: this._n(name), status: "INFO", label, detail: String(detail).slice(0, 900) }); }
   note(t) { this.notes.push(this._n(t)); }
   /** On the real staging host the labels written for the production topology (www.copilt.org) name the staging host instead. */
-  _n(t) { return REMOTE ? String(t).replace(/https:\/\/www\.copilt\.org/g, BASE).replace(/\bwww\.copilt\.org\b/g, CANON_HOST).replace(/exact www https URL/g, "exact staging https URL").replace(/ are on www\b/g, " are on the staging host") : t; }
+  _n(t) { return REMOTE && !/^NO reference to/.test(String(t)) ? String(t).replace(/https:\/\/www\.copilt\.org/g, BASE).replace(/\bwww\.copilt\.org\b/g, CANON_HOST).replace(/exact www https URL/g, "exact staging https URL").replace(/ are on www\b/g, " are on the staging host") : t; }
   finding(severity, text) { this.findings.push({ severity, text }); }
   get failed() { return this.rows.filter((r) => r.status === "FAIL").length; }
   get passed() { return this.rows.filter((r) => r.status === "PASS").length; }
@@ -474,7 +479,7 @@ async function cookieFlow(R, loc, store) {
     store[loc] = { afterLogin: preLogoutJar, final: finalJar, setCookieHeaders: dedupeSetCookies(log.setCookies) };
     assertCookieHygiene(R, `${L} cookie hygiene`, [...preLogoutJar], log);
     // the apex/api scoping from the jar itself
-    R.check(`${L} the jar holds no cookie for copilt.org (apex) or api.copilt.org`, (await jar(ctx, [APEX + "/", "https://api.copilt.org/"])).length === 0);
+    R.check(`${L} the jar holds no cookie for copilt.org (apex) or api.copilt.org`, (APEX ? (await jar(ctx, [APEX + "/", "https://api.copilt.org/"])).length === 0 : (await ctx.cookies()).every((c) => c.domain === CANON_HOST)));
     return { ctx, log, page, user };
   } catch (e) {
     R.check(`${L} flow completed without an exception`, false, String(e.stack || e).slice(0, 500));
@@ -562,6 +567,11 @@ async function s1() {
 }
 
 /* ================================================================== 2. CSRF / NONCES / no-store / back button */
+/** History navigation that also works when the page is restored from the back/forward cache (a bfcache restore fires no `load` event, so waiting for it times out). */
+async function histNav(pg, dir) {
+  await (dir === "back" ? pg.goBack({ waitUntil: "commit" }) : pg.goForward({ waitUntil: "commit" }));
+  await pg.waitForLoadState("load", { timeout: 15000 }).catch(() => {});
+}
 const fetchIn = (page, url, init = {}) => page.evaluate(async ([u, i]) => {
   const r = await fetch(u, { credentials: "same-origin", ...i });
   const t = await r.text();
@@ -651,7 +661,7 @@ async function s2() {
     await goto(pg, `${BASE}/product/`);
     const m1 = await pg.evaluate(() => window.__marker);
     await goto(pg, `${BASE}/questions/`);
-    await pg.goBack({ waitUntil: "load" });
+    await histNav(pg, "back");
     await pg.waitForTimeout(800);
     const m2 = await pg.evaluate(() => ({ marker: window.__marker, shows: window.__shows }));
     R.info("control: bfcache availability in this Chrome (static /product/ -> /questions/ -> Back)", `restored from bfcache=${m2.marker === m1} pageshow.persisted=${JSON.stringify(m2.shows)}`);
@@ -662,7 +672,7 @@ async function s2() {
     await Promise.all([pg.waitForNavigation({ waitUntil: "load" }), pg.locator('a[href*="customer-logout"]').first().click()]);
     R.check("logout from the licenses page lands on the sign-in form", !(await isLoggedInPage(pg)) && (await pg.locator("form.login").count()) === 1, redact(pg.url()));
     nav.length = 0;
-    await pg.goBack({ waitUntil: "load" });
+    await histNav(pg, "back");
     await pg.waitForTimeout(800);
     const back = await pg.evaluate(() => ({ marker: window.__marker, shows: window.__shows, url: location.href }));
     const authed = await isLoggedInPage(pg);
@@ -672,14 +682,14 @@ async function s2() {
     R.info("what Back shows after logout", `${redact(back.url)}: ${body.replace(/\s+/g, " ").slice(0, 120)}`);
     R.data.backAfterLogout = { restoredFromBfcache: restored, persisted: back.shows, signedInNav: authed, navigationRequests: nav.map(redact) };
     await shot(pg, "02-back-after-logout");
-    await pg.goForward({ waitUntil: "load" });
+    await histNav(pg, "forward");
     R.check("FORWARD from there also shows the sign-in state", !(await isLoggedInPage(pg)));
     await login(pg, user);
     await goto(pg, `${BASE}/checkout/?add-to-cart=10`);
     await goto(pg, `${BASE}/my-account/`);
     await Promise.all([pg.waitForNavigation({ waitUntil: "load" }), pg.locator('a[href*="customer-logout"]').first().click()]);
-    await pg.goBack({ waitUntil: "load" });
-    await pg.goBack({ waitUntil: "load" });
+    await histNav(pg, "back");
+    await histNav(pg, "back");
     await pg.waitForTimeout(1200);
     const co = await text(pg, "body");
     R.check("BACK twice after logout to /checkout/: no email, no plan or address shown from cache (the checkout re-requests and demands sign-in)", !/@example\.test/.test(co) && !(await isLoggedInPage(pg)), `url=${redact(pg.url())} ${co.replace(/\s+/g, " ").slice(0, 120)}`);
@@ -836,6 +846,18 @@ async function s4() {
   PH("static-browsing");
   const extHosts = new Map(); const violations = []; const pageFacts = [];
   const crawl = { pages: 0, uniqueTargets: 0, byLocale: {}, dead: [], prefixViolations: [], langViolations: [] };
+  const prodRefs = []; // every attribute / URL in the rendered DOM and raw HTML that names a production host
+  const PROD_HOSTS = ["www.copilt.org", "copilt.org", "api.copilt.org"];
+  const scanDom = (page) => page.evaluate(() => {
+    const out = [];
+    const prod = (h) => ["www.copilt.org", "copilt.org", "api.copilt.org"].includes(h.toLowerCase());
+    for (const el of document.querySelectorAll("*")) for (const a of el.attributes) {
+      const v = a.value || "";
+      if (!/copilt\.org/i.test(v)) continue;
+      for (const m of v.matchAll(/(?:https?:)?\/\/([a-z0-9.-]+)/gi)) if (prod(m[1])) out.push(`${el.tagName.toLowerCase()}[${a.name}]=${v.slice(0, 120)}`);
+    }
+    return out;
+  });
 
   for (const loc of LOCALES) {
     const p = pre(loc), L = `[${loc}]`;
@@ -852,6 +874,7 @@ async function s4() {
         const f = await facts(page);
         const hdrs = await resp.allHeaders();
         const links = await allLinks(page);
+        for (const r of await scanDom(page)) prodRefs.push(`${p}${pth} :: ${r}`);
         const hf = links.filter((l) => l.where === "header" || l.where === "footer" || l.where === "nav");
         pageFacts.push({ loc, kind, url: pth, status: resp.status(), owner: ownerOf(hdrs), lang: f.lang, dir: f.dir, links: links.length, headerFooterLinks: hf.length });
         R.check(`${L} ${kind} ${p}${pth}: 200, html lang=${LANG_EXPECT[loc].lang.source}, dir=${LANG_EXPECT[loc].dir}, served by ${kind === "cp" ? "WordPress" : "the static site"}`, resp.status() === 200 && LANG_EXPECT[loc].lang.test(f.lang) && f.dir === LANG_EXPECT[loc].dir && ownerOf(hdrs) === (kind === "cp" ? "CP" : "static"), `${resp.status()} lang=${f.lang} dir=${f.dir} owner=${ownerOf(hdrs)}`);
@@ -1021,6 +1044,15 @@ async function s4() {
   R.data.directEntry = direct;
 
   /* ---- F. link audit over everything visited */
+  // raw HTML of more pages (all four locales, static + CP), fetched through the guard: any absolute URL naming a production host anywhere (links, scripts, JSON-LD, meta)
+  const rawPages = ["/", "/product/", "/data-and-trust/", "/questions/", "/privacy/", "/terms/", "/refund-policy/", "/accessibility/", "/pricing/", "/my-account/", "/my-account/lost-password/", "/cart/", "/data-processing-addendum/"];
+  let rawCount = 0;
+  for (const loc of LOCALES) for (const pth of rawPages) {
+    const r = await reqX(EDGE, `${BASE}${pre(loc)}${pth}`, { compressed: true, timeout: 40 }); rawCount++;
+    for (const m of r.body.matchAll(/(?:https?:)?\/\/([a-z0-9.-]+)[^\s"'<>)]*/gi)) if (PROD_HOSTS.includes(m[1].toLowerCase())) prodRefs.push(`${pre(loc)}${pth} (raw html, status ${r.status}) :: ${m[0].slice(0, 120)}`);
+  }
+  R.check(`NO reference to www.copilt.org, copilt.org or api.copilt.org on any stage page: rendered DOM attributes (href, src, action, data-*, meta, language menu, plan buttons, Watch demo dialog) of ${pageFacts.length} browser-crawled pages and the raw HTML (links, scripts, JSON-LD) of ${rawCount} pages in four languages`, prodRefs.length === 0, JSON.stringify([...new Set(prodRefs)].slice(0, 10)) + ` (${prodRefs.length})`);
+  R.data.productionReferences = prodRefs;
   R.check(`link audit over ${pageFacts.reduce((a, x) => a + x.links, 0)} anchors on ${pageFacts.length} crawled pages (4 locales, static+CP): no link to a non-www origin, the QA/local host, http://, javascript:, or the old GitHub Pages path`, violations.length === 0, JSON.stringify(violations.slice(0, 8)));
   R.check("browser network audit: no request left www.copilt.org (no third-party host contacted by any visited page)", extHosts.size === 0, JSON.stringify([...extHosts]));
   R.check(`crawl: ${crawl.uniqueTargets} unique header/footer targets in total, none dead`, crawl.dead.length === 0, JSON.stringify(crawl.dead.slice(0, 6)));
@@ -1847,7 +1879,7 @@ async function s10() {
 }
 
 /* ================================================================== 11. OPERATOR PATH (real staging host only): wp-login / wp-admin through the SSH tunnel to the loopback operator listener */
-const EXTERNAL_LOCAL_STUBS = /^https:\/\/(secure\.gravatar\.com|[0-2]\.gravatar\.com|gravatar\.com)\//; // answered locally (never sent): wp-admin's avatar images
+const EXTERNAL_LOCAL_STUBS = /^https:\/\/(secure\.gravatar\.com|[0-2]\.gravatar\.com|gravatar\.com|connect-js\.stripe\.com)\//; // answered locally (never sent): wp-admin's avatar images and the Stripe connect script of WooCommerce > Settings > Payments (found by the guard on the real host: GUARD VIOLATION, nothing sent)
 async function s11() {
   const R = new Result("11-operator-path", "Phase 2 / 11: operator path on the real staging host: wp-login / wp-admin only through the SSH tunnel to the loopback operator listener (public access refused), dashboard, WooCommerce admin pages, plugin list");
   if (!REMOTE) { R.info("section 11", "needs the real staging host (--stage-host with a public IP): not applicable to the Mac rehearsal"); R.save(); return R; }
@@ -1962,7 +1994,8 @@ async function s11() {
     R.check(`all ${pages.length} operator pages loaded without an uncaught JavaScript error`, errs.length === 0, JSON.stringify(errs.slice(0, 5)));
     R.info("browser console errors on operator pages (informational)", `${consoleErr.length}: ${JSON.stringify([...new Set(consoleErr)].slice(0, 6))}`);
     R.check("operator pages contacted no host other than the staging host through the tunnel (Gravatar avatar images, if referenced, were answered locally and never sent)", [...ext.keys()].filter((h) => !EXTERNAL_LOCAL_STUBS.test(`https://${h}/`)).length === 0, JSON.stringify({ requestedHosts: [...ext], answeredLocally: stubbed.length }));
-    if (stubbed.length) R.finding("low", `wp-admin pages reference ${stubbed.length} external avatar image request(s) to ${[...new Set(stubbed)].join(", ")} (Gravatar). Not sent by this run. On a real operator browser they would leak the operator's IP to Gravatar and break the "no third party contacted" property; set Settings > Discussion > Avatars off (option show_avatars = 0) on staging/production if that matters.`);
+    if (stubbed.some((h) => /stripe/.test(h))) R.finding("medium", "WooCommerce > Settings > Payments (wp-admin, operator listener) loads https://connect-js.stripe.com/v1.0/connect.js in the operator's browser (WooCommerce's Stripe onboarding suggestion). The guard blocked it on the first run (nothing was sent). It is a third-party script on an operator-only page; no payment gateway is configured.");
+    if (stubbed.some((h) => /gravatar/.test(h))) R.finding("low", `wp-admin pages reference ${stubbed.filter((h) => /gravatar/.test(h)).length} external avatar image request(s) to ${[...new Set(stubbed.filter((h) => /gravatar/.test(h)))].join(", ")} (Gravatar). Not sent by this run. On a real operator browser they would leak the operator's IP to Gravatar and break the "no third party contacted" property; set Settings > Discussion > Avatars off (option show_avatars = 0) on staging/production if that matters.`);
 
     // logout and Back: the session ends and wp-admin is closed again
     PH("operator-logout");
@@ -1986,6 +2019,113 @@ async function s11() {
   return R;
 }
 
+/* ================================================================== 12. MOBILE PASS (390x844, touch): navigation / menu, register / login / logout, cart, checkout */
+async function s12() {
+  const R = new Result("12-mobile-pass", "Phase 2 / 12: mobile pass 390x844 touch on the staging host: navigation and menu, language menu, account register / login / logout, cart, checkout (nothing submitted)");
+  PH("mobile-pass");
+  const ctx = await newCtx("mobile");
+  const log = instrument(ctx);
+  const page = await ctx.newPage();
+  const errs = []; page.on("pageerror", (e) => errs.push(String(e).slice(0, 100)));
+  const posts = []; page.on("request", (rq) => { if (rq.method() !== "GET" && /wc-ajax=checkout\b|wc\/store\/v1\/checkout/.test(rq.url()) && !/__experimental_calc_totals/.test(rq.url())) posts.push(rq.method() + " " + redact(rq.url())); });
+  const over = () => page.evaluate(() => document.documentElement.scrollWidth - innerWidth);
+  const tapNav = async (loc, label) => { await Promise.all([page.waitForNavigation({ waitUntil: "load", timeout: 30000 }), loc.tap()]); void label; };
+  const priorBacs = FX.wp(["option", "get", "woocommerce_bacs_settings", "--format=json"]);
+  const hadBacs = priorBacs.code === 0 && priorBacs.out.trim().startsWith("{");
+  const priorJson = hadBacs ? priorBacs.out.trim().split("\n").pop() : "";
+  try {
+    /* ---- navigation / menu on the static site */
+    await goto(page, `${BASE}/`);
+    const vp = await page.evaluate(() => ({ meta: document.querySelector('meta[name="viewport"]')?.content || "", w: innerWidth, dpr: devicePixelRatio, touch: navigator.maxTouchPoints }));
+    R.check("mobile profile is real: viewport 390 px wide, touch points present, viewport meta width=device-width", vp.w === 390 && vp.touch > 0 && /width=device-width/.test(vp.meta), JSON.stringify(vp));
+    R.check("static home: no horizontal overflow at 390 px", (await over()) <= 0, `overflow ${await over()} px`);
+    const btn = page.locator("[data-aicc-menu-btn]:visible").first();
+    const bb = await btn.boundingBox();
+    R.check("the menu button is visible on mobile and is a touch target of at least 24x24 px (WCAG 2.2)", !!bb && bb.width >= 24 && bb.height >= 24, JSON.stringify(bb && { w: Math.round(bb.width), h: Math.round(bb.height) }));
+    await btn.tap();
+    await page.waitForTimeout(400);
+    const menu = await page.evaluate(() => { const p = document.querySelector("[data-aicc-menu-panel]"); const b = document.querySelector("[data-aicc-menu-btn]"); const links = p ? [...p.querySelectorAll("a")].filter((a) => a.getBoundingClientRect().width > 0).map((a) => ({ t: (a.textContent || "").trim().slice(0, 30), h: a.getAttribute("href") })) : []; return { hidden: p ? p.hidden : null, expanded: b?.getAttribute("aria-expanded"), links }; });
+    R.check("tapping the menu button opens the panel (aria-expanded=true, panel not hidden) with Product, Pricing and Questions links", menu.hidden === false && menu.expanded === "true" && ["product", "pricing", "questions"].every((k) => menu.links.some((l) => new RegExp(k, "i").test(l.h || ""))), JSON.stringify(menu));
+    await shot(page, "12-mobile-menu-open");
+    await tapNav(page.locator('[data-aicc-menu-panel] a[href$="/pricing/"]').first(), "menu -> pricing");
+    R.check("tapping Pricing in the menu opens the Control Plane pricing page (static -> WordPress hop) in English", page.url() === `${BASE}/pricing/` && (await page.locator("h1").count()) >= 1, redact(page.url()));
+    R.check("pricing page: no horizontal overflow at 390 px; the three plan buttons are visible", (await over()) <= 0 && (await page.locator('a[href*="add-to-cart="]:visible').count()) >= 3, `overflow ${await over()} px, plan buttons ${await page.locator('a[href*="add-to-cart="]:visible').count()}`);
+    await shot(page, "12-mobile-pricing", { full: true });
+    const cpHdr = await page.evaluate(() => { const h = document.querySelector("header"); const vis = h ? [...h.querySelectorAll("a, button")].filter((a) => { const r = a.getBoundingClientRect(); return r.width > 0 && r.height > 0; }) : []; return { links: vis.length, labels: vis.map((a) => (a.getAttribute("aria-label") || a.textContent || "").trim().slice(0, 24)).slice(0, 8), overflowing: vis.filter((a) => a.getBoundingClientRect().right > innerWidth + 1).length }; });
+    R.check("CP header on mobile: controls are visible and none sticks out of the 390 px viewport", cpHdr.links >= 1 && cpHdr.overflowing === 0, JSON.stringify(cpHdr));
+    // language menu by touch
+    await page.locator(".aicc-lang__btn:visible").first().tap();
+    await Promise.all([page.waitForNavigation({ waitUntil: "load", timeout: 30000 }), page.locator('.aicc-lang__menu:visible a[data-lang="he"]').first().tap()]);
+    const fh = await facts(page);
+    R.check("language menu by touch on a CP page: Hebrew selected -> /he/pricing/, html lang he, dir rtl, no horizontal overflow", page.url() === `${BASE}/he/pricing/` && fh.dir === "rtl" && /^he/.test(fh.lang) && (await over()) <= 0, `${redact(page.url())} ${fh.lang}/${fh.dir} overflow ${await over()}`);
+    await goto(page, `${BASE}/`);
+    await page.evaluate(() => { try { document.cookie = "aicc_lang=; Max-Age=0; Path=/"; } catch { /* none */ } });
+
+    /* ---- register / login / logout by touch */
+    PH("mobile-register-login");
+    await goto(page, `${BASE}/my-account/`);
+    R.check("sign-in / register page: no horizontal overflow; the login and register forms are both visible", (await over()) <= 0 && (await page.locator("form.login:visible").count()) === 1 && (await page.locator("form.register:visible").count()) === 1, `overflow ${await over()} px`);
+    const email = `bf-mob-${RUN_ID}@example.test`;
+    await page.locator("#reg_email").fill(email);
+    await tapNav(page.locator("form.register button[type=submit]"), "register");
+    const { id: uid, login: ulogin } = lookupUser(email); trackUser(uid);
+    R.check("registration by touch logs the new customer in and lands on the account page (account navigation visible, no overflow)", (await isLoggedInPage(page)) && (await over()) <= 0 && page.url() === `${BASE}/my-account/`, redact(page.url()));
+    await shot(page, "12-mobile-registered");
+    const user = { id: uid, login: ulogin, email, password: `Bf-${rand(10)}-7a!` };
+    setPassword(user, user.password);
+    await goto(page, `${BASE}/my-account/`);
+    if (!(await isLoggedInPage(page))) await login(page, user);
+    await tapNav(page.locator('a[href*="customer-logout"]').first(), "logout");
+    R.check("logout by touch lands on the sign-in form (no account navigation)", !(await isLoggedInPage(page)) && (await page.locator("form.login").count()) === 1, redact(page.url()));
+    await page.locator("#username").fill(user.login); await page.locator("#password").fill(user.password);
+    await tapNav(page.locator("form.login button[type=submit]"), "login");
+    R.check("login by touch with the password works (account navigation visible)", await isLoggedInPage(page), redact(page.url()));
+    const jarM = await jar(ctx);
+    R.check("mobile session cookies: host-only, Secure, SameSite=Lax/none-not-None, wordpress_* HttpOnly; no tracking cookie", jarM.length > 0 && jarM.every((c) => c.domain === CANON_HOST && c.secure && c.sameSite !== "None") && jarM.filter((c) => /^wordpress_|^wp_woocommerce_session/.test(c.name)).every((c) => c.httpOnly) && !jarM.some((c) => /^sbjs_/.test(c.name)), jarM.map((c) => c.name).join(","));
+    await goto(page, `${BASE}/my-account/aicc-licenses/`);
+    R.check("Plans & Stores by touch: page loads in the mobile layout without overflow", (await over()) <= 0 && (await isLoggedInPage(page)), `overflow ${await over()} px`);
+
+    /* ---- cart + checkout by touch */
+    PH("mobile-cart-checkout");
+    await goto(page, `${BASE}/pricing/`);
+    await tapNav(page.locator('a[href*="add-to-cart=10"]:visible').first(), "add to cart");
+    await page.waitForSelector(".wc-block-checkout", { timeout: 25000 }).catch(() => {});
+    await page.waitForTimeout(2500);
+    R.check("add-to-cart by touch redirects to /checkout/ and the block checkout renders with the Solo plan ($99) at 390 px, no horizontal overflow", page.url() === `${BASE}/checkout/` && (await page.locator(".wc-block-checkout").count()) >= 1 && /99/.test(await text(page, "main")) && (await over()) <= 0, `${redact(page.url())} overflow ${await over()} px`);
+    await shot(page, "12-mobile-checkout", { full: true });
+    const cc = await (await page.goto(`${BASE}/cart/`, { waitUntil: "load" })).allHeaders();
+    const rows = await cartRows(page);
+    R.check("cart page on mobile: one line, no-store, no horizontal overflow", rows === 1 && /no-store/.test(cc["cache-control"] || "") && (await over()) <= 0, `rows=${rows} cc=${cc["cache-control"]} overflow ${await over()} px`);
+    await shot(page, "12-mobile-cart", { full: true });
+    await goto(page, `${BASE}/checkout/`);
+    await page.waitForSelector(".wc-block-checkout", { timeout: 25000 }).catch(() => {});
+    await page.waitForTimeout(2000);
+    const notice = (await page.locator(".wc-block-checkout__no-payment-methods-notice").first().innerText().catch(() => "")).replace(/\s+/g, " ");
+    R.check("checkout as deployed (no gateway enabled): the notice 'no payment methods available' is shown, no QA marker", /no payment methods/i.test(notice) && !/QA only/.test(await text(page, "body")), notice.slice(0, 100));
+    const en = FX.wp(["option", "update", "woocommerce_bacs_settings", JSON.stringify({ enabled: "yes", title: "Direct bank transfer", description: "Placeholder for QA.", instructions: "", account_details: "" }), "--format=json"]);
+    R.check("placeholder gateway (bacs) enabled temporarily for the marker pass", en.code === 0, en.out.trim().slice(0, 60));
+    await page.reload({ waitUntil: "load" });
+    await page.waitForSelector(".wc-block-components-radio-control", { timeout: 25000 }).catch(() => {});
+    await page.waitForTimeout(2000);
+    const body = await text(page, "body");
+    R.check("checkout on mobile with the placeholder enabled: 'QA only: not a real payment' shown on the method (staging host), no overflow", /QA only: not a real payment/i.test(body) && /Direct bank transfer/i.test(body) && (await over()) <= 0, (body.match(/QA only:[^\n]{0,60}/i) || ["no marker"])[0]);
+    const boxes = await page.evaluate(() => [...document.querySelectorAll(".wc-block-checkout input[type=checkbox]")].map((i) => { const r = i.getBoundingClientRect(); return { w: Math.round(r.width), h: Math.round(r.height), v: r.width > 0 && r.height > 0 }; }).filter((b) => b.v));
+    R.check(`every visible checkout checkbox is at least 24x24 px on mobile (${boxes.length} checkbox(es))`, boxes.length >= 1 && boxes.every((b) => b.w >= 24 && b.h >= 24), JSON.stringify(boxes));
+    await shot(page, "12-mobile-checkout-qa-marker", { full: true });
+    R.check("NOTHING was submitted in the whole mobile pass (no order-placing request)", posts.length === 0, JSON.stringify(posts));
+    R.check("no uncaught page error in the mobile pass", errs.length === 0, JSON.stringify(errs));
+    R.check("mobile cookies: no Set-Cookie with a Domain attribute, none outside the staging host", !log.setCookies.some((c) => c.domain !== null || c.host !== CANON_HOST), JSON.stringify(log.setCookies.filter((c) => c.domain !== null).map((c) => c.name)));
+  } catch (e) { R.check("mobile pass completed", false, String(e.stack || e).slice(0, 700)); }
+  finally {
+    if (hadBacs) FX.wp(["option", "update", "woocommerce_bacs_settings", priorJson, "--format=json"]); else FX.wp(["option", "delete", "woocommerce_bacs_settings"]);
+    await ctx.close().catch(() => {});
+  }
+  const st = FX.evalPhp('$g=WC()->payment_gateways()->payment_gateways()["bacs"]; echo "bacs enabled=".$g->enabled;');
+  R.check("staging payment state restored (bacs gateway disabled again)", /bacs enabled=no/.test(st.out), st.out.trim().split("\n").pop());
+  R.save();
+  return R;
+}
+
 /* ==== MAIN ==== */
 async function preflight() {
   const problems = [];
@@ -1997,6 +2137,12 @@ async function preflight() {
     if (!/wp-ok/.test(who.out) || !/fpm-ok/.test(who.out)) problems.push(`the host does not look like the staging host (${who.out.replace(/\n/g, " ")})`);
     if (!fs.existsSync(String(CP_REPO))) problems.push(`--cp-repo ${CP_REPO} not found`);
     await GUARD.ensureIdentity();
+    // WooCommerce "coming soon" mode is ON in the staging DB by default (it hides cart and checkout from customers). Sections that exercise the cart flip it OFF for the run only and main() restores the stored value.
+    if ((only || Object.keys(SECTION_FNS())).some((n) => ["1", "2", "6", "10", "12"].includes(String(n)))) {
+      const cs = FX.wp(["option", "get", "woocommerce_coming_soon"]);
+      COMING_SOON_PRIOR = cs.code === 0 ? cs.out.trim().split("\n").pop() : null;
+      if (COMING_SOON_PRIOR === "yes") { FX.wp(["option", "update", "woocommerce_coming_soon", "no"]); console.log("woocommerce_coming_soon: yes -> no for this run (restored at the end)"); }
+    }
   } else if (STAGE_MODE) {
     const refused = (only || Object.keys(SECTION_FNS())).filter((n) => FIXTURE_SECTIONS.has(String(n)) || ["4", "10", "11"].includes(String(n)));
     if (only && refused.length) { console.error(`GUARD REFUSED [stage-section]: section(s) ${refused.join(", ")} need the local CP fixture (wp-cli, captured mail, echo token) or the apex host and cannot run against a remote staging host. Read-only sections: 5, 7, 8. (Against the REAL staging host all sections run through the remote-stage adapter: omit --loopback-rehearsal.)\nNothing was sent.`); process.exit(EXIT_REFUSED); }
@@ -2011,7 +2157,7 @@ async function preflight() {
   if (!problems.length) { const r = await reqX(EDGE, `${BASE}/`); if (r.status !== 200) problems.push(`edge answered ${r.status} for /`); }
   if (problems.length) { console.error("PRE-FLIGHT FAILED:\n - " + problems.join("\n - ")); process.exit(2); }
 }
-const SECTION_FNS = () => ({ 11: typeof s11 === "function" && s11, 1: typeof s1 === "function" && s1, 2: typeof s2 === "function" && s2, 3: typeof s3 === "function" && s3, 4: typeof s4 === "function" && s4, 5: typeof s5 === "function" && s5, 6: typeof s6 === "function" && s6, 7: typeof s7 === "function" && s7, 8: typeof s8 === "function" && s8, 9: typeof s9 === "function" && s9, 10: typeof s10 === "function" && s10 });
+const SECTION_FNS = () => ({ 12: typeof s12 === "function" && s12, 11: typeof s11 === "function" && s11, 1: typeof s1 === "function" && s1, 2: typeof s2 === "function" && s2, 3: typeof s3 === "function" && s3, 4: typeof s4 === "function" && s4, 5: typeof s5 === "function" && s5, 6: typeof s6 === "function" && s6, 7: typeof s7 === "function" && s7, 8: typeof s8 === "function" && s8, 9: typeof s9 === "function" && s9, 10: typeof s10 === "function" && s10 });
 async function main() {
   if (STAGE_MODE && !REMOTE && !only) { process.stderr.write("GUARD: against a stage instance on this Mac choose the read-only sections explicitly: --only 5,7,8\n"); process.exit(2); }
   await preflight();
@@ -2028,8 +2174,12 @@ async function main() {
     }
   } finally {
     await closeBrowser();
+    PH("between-runs"); // idle time between sections must not be counted in the last section's phase
     try { cleanupUsers(); } catch (e) { console.error(`cleanup failed: ${e.message}`); }
-    if (REMOTE) { try { FX.closeAll(); } catch { /* best effort */ } }
+    if (REMOTE) {
+      if (COMING_SOON_PRIOR === "yes") { try { const r = FX.wp(["option", "update", "woocommerce_coming_soon", "yes"]); console.log(`woocommerce_coming_soon restored to yes (${r.code === 0 ? "ok" : "FAILED"})`); } catch (e) { console.error(`COULD NOT RESTORE woocommerce_coming_soon: ${e.message}`); } }
+      try { FX.closeAll(); } catch { /* best effort */ }
+    }
   }
   const summary = results.map((r) => ({ section: r.id, title: r.title, verdict: r.verdict(), passed: r.passed, failed: r.failed, findings: r.findings }));
   writeJson(path.join(OUT, only ? `00-summary-partial.json` : "00-summary.json"), { run: RUN_ID, finished: new Date().toISOString(), summary });

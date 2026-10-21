@@ -24,7 +24,9 @@
 //   pages counted once, the honest figure), fpm_max_rss_kb (biggest worker), mysql_rss_kb / mysql_pss_kb, caddy_rss_kb / caddy_pss_kb (the edge: the process running /etc/aicc-edge/Caddyfile),
 //   fpm_active / fpm_idle / fpm_total / fpm_max_active / fpm_listen_queue / fpm_max_listen_queue / fpm_max_children_reached / fpm_slow_requests / fpm_accepted_conn (the pool's own /fpm-status, asked over the
 //   FastCGI socket as root), mysql_threads_connected / mysql_threads_running / mysql_max_used / mysql_connections (cumulative) every 3rd sample (blank otherwise), self_cpu_pct (CPU the sampler itself
-//   used in the interval, so its overhead is on record), sample_ms (time the sampler spent collecting).
+//   used in the interval, so its overhead is on record), sample_ms (time the sampler spent collecting), cpu_fpm_pct / cpu_mysql_pct / cpu_caddy_pct / cpu_sampler_pct / cpu_other_pct (which process
+//   class consumed the CPU: utime+stime ticks of the php-fpm "pool aicc" workers, mysqld, the edge's caddy, this sampler (and its sudo/mysql children), and everything else = busy% minus the four, as % of the host's total CPU capacity in
+//   the interval; a worker that exits inside an interval loses its last ticks, so the classes slightly under-count when php-fpm recycles workers (pm.max_requests = 300)). cpu_steal_pct is the hypervisor steal (the 8th /proc/stat field).
 // The status request to /fpm-status is itself one short FastCGI request per sample (it is served by a pool worker, so it is a small, constant, DISCLOSED perturbation: ~0.5 request/s).
 //
 // SAFETY. Read-only on the host: /proc, one FastCGI GET of /fpm-status over the local socket, `mysql -N -e SHOW GLOBAL STATUS` (read only). sudo is used only to read other users' /proc/<pid>/smaps_rollup,
@@ -42,7 +44,7 @@ export const COLUMNS = ["epoch", "mem_total_mb", "mem_used_mb", "mem_avail_mb", 
   "cpu_busy_pct", "cpu_user_pct", "cpu_sys_pct", "cpu_iowait_pct", "cpu_steal_pct", "psi_cpu_some10", "psi_mem_some10", "psi_mem_full10", "psi_io_some10", "psi_io_full10",
   "psi_cpu_some_us_d", "psi_mem_some_us_d", "psi_io_some_us_d", "fpm_procs", "fpm_rss_kb", "fpm_pss_kb", "fpm_max_rss_kb", "mysql_rss_kb", "mysql_pss_kb", "caddy_rss_kb", "caddy_pss_kb",
   "fpm_active", "fpm_idle", "fpm_total", "fpm_max_active", "fpm_listen_queue", "fpm_max_listen_queue", "fpm_max_children_reached", "fpm_slow_requests", "fpm_accepted_conn",
-  "mysql_threads_connected", "mysql_threads_running", "mysql_max_used", "mysql_connections", "self_cpu_pct", "sample_ms"];
+  "mysql_threads_connected", "mysql_threads_running", "mysql_max_used", "mysql_connections", "self_cpu_pct", "sample_ms", "cpu_fpm_pct", "cpu_mysql_pct", "cpu_caddy_pct", "cpu_sampler_pct", "cpu_other_pct"];
 
 /** The host-side sampler (Python 3 stdlib). Printed lines: CSV with COLUMNS. Arguments: interval seconds, deadline seconds (0 = none). */
 const REMOTE_PY = String.raw`
@@ -93,6 +95,11 @@ def classify():
         except Exception: continue
         r[k].append((pid, rss))
     return r
+def ticks(pid):
+    p = rd("/proc/%d/stat" % pid).rsplit(")", 1)[-1].split()
+    return (int(p[11]) + int(p[12])) if len(p) > 13 else None
+NCPU = os.cpu_count() or 1
+PT = {}  # pid -> last utime+stime ticks
 def fcgi_status():
     try:
         s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM); s.settimeout(2); s.connect("/run/php/aicc-cp.sock")
@@ -143,6 +150,19 @@ while True:
     if DEADLINE and time.time() - T0 > DEADLINE: break
     t = time.time()
     mi = meminfo(); vm = vmstat(); st = stat(); pc = psi("cpu"); pm = psi("memory"); pi = psi("io"); cl = classify()
+    cls_delta = {}
+    seen = set()
+    for k, v in cl.items():
+        d_ = 0
+        for pid_, _r in v:
+            t_ = ticks(pid_)
+            if t_ is None: continue
+            seen.add(pid_)
+            d_ += t_ - PT.get(pid_, 0) if (pid_ in PT or prev) else 0
+            PT[pid_] = t_
+        cls_delta[k] = d_
+    for pid_ in list(PT):
+        if pid_ not in seen and pid_ not in (os.getpid(),): PT.pop(pid_, None)
     fs = fcgi_status()
     my = mysql_status() if n % 3 == 0 else [""] * 4
     ts = mi.get("MemTotal", 0); av = mi.get("MemAvailable", 0); fr = mi.get("MemFree", 0)
@@ -168,6 +188,14 @@ while True:
            pc.get("some", (0, 0))[0], pm.get("some", (0, 0))[0], pm.get("full", (0, 0))[0], pi.get("some", (0, 0))[0], pi.get("full", (0, 0))[0], pd[0], pd[1], pd[2],
            sums["fpm"][0], sums["fpm"][1], sums["fpm"][2], sums["fpm"][3], sums["mysql"][1], sums["mysql"][2], sums["caddy"][1], sums["caddy"][2]] + fs + my
     row += ["%.1f" % selfc, "%d" % int((time.time() - t) * 1000)]
+    if prev:
+        cap = HZ * max(cur[0] - prev[0], 0.001) * NCPU
+        cf, cm, cc = [100.0 * max(cls_delta.get(k, 0), 0) / cap for k in ("fpm", "mysql", "caddy")]
+        cs = max(selfc, 0.0) / NCPU
+        co = max(busy - cf - cm - cc - cs, 0.0)
+        row += ["%.1f" % cf, "%.1f" % cm, "%.1f" % cc, "%.1f" % cs, "%.1f" % co]
+    else:
+        row += ["0.0"] * 5
     sys.stdout.write(",".join(str(x) for x in row) + "\n"); sys.stdout.flush()
     prev = cur
     n += 1; nxt += IV
@@ -305,7 +333,8 @@ export function summarizeRows(rows) {
       swap_pages: { in: sum(c("pswpin_d")), out: sum(c("pswpout_d")), majfault: sum(c("pgmajfault_d")) },
       oom_kills: sum(c("oom_kill_d")),
       cpu_busy_pct: { mean: r1(avg(c("cpu_busy_pct"))), p95: r1(pct(c("cpu_busy_pct"), 0.95)), peak: mx(c("cpu_busy_pct")) },
-      cpu_iowait_pct_max: mx(c("cpu_iowait_pct")), cpu_steal_pct_max: mx(c("cpu_steal_pct")),
+      cpu_iowait_pct_max: mx(c("cpu_iowait_pct")), cpu_steal_pct_max: mx(c("cpu_steal_pct")), cpu_steal_pct: { mean: r1(avg(c("cpu_steal_pct"))), p95: r1(pct(c("cpu_steal_pct"), 0.95)), max: mx(c("cpu_steal_pct")) },
+      cpu_by_class_pct: { php_fpm: { mean: r1(avg(c("cpu_fpm_pct"))), peak: mx(c("cpu_fpm_pct")) }, mysqld: { mean: r1(avg(c("cpu_mysql_pct"))), peak: mx(c("cpu_mysql_pct")) }, caddy: { mean: r1(avg(c("cpu_caddy_pct"))), peak: mx(c("cpu_caddy_pct")) }, sampler: { mean: r1(avg(c("cpu_sampler_pct"))) }, other: { mean: r1(avg(c("cpu_other_pct"))), peak: mx(c("cpu_other_pct")) } },
       load1: { mean: r1(avg(c("load1"))), peak: mx(c("load1")) },
       psi: { cpu_some10_max: mx(c("psi_cpu_some10")), mem_some10_max: mx(c("psi_mem_some10")), mem_full10_max: mx(c("psi_mem_full10")), io_some10_max: mx(c("psi_io_some10")), io_full10_max: mx(c("psi_io_full10")), mem_stall_ms: r1(sum(c("psi_mem_some_us_d")) / 1000), cpu_stall_ms: r1(sum(c("psi_cpu_some_us_d")) / 1000), io_stall_ms: r1(sum(c("psi_io_some_us_d")) / 1000) },
       php_workers: { max: mx(c("fpm_procs")), mean: r1(avg(c("fpm_procs"))), max_active: mx(c("fpm_active")), pool_max_active: mx(c("fpm_max_active")), listen_queue_max: mx(c("fpm_listen_queue")), pool_max_listen_queue: mx(c("fpm_max_listen_queue")), max_children_reached_start: first("fpm_max_children_reached"), max_children_reached_end: last("fpm_max_children_reached"), slow_requests_delta: last("fpm_slow_requests") !== null && first("fpm_slow_requests") !== null ? last("fpm_slow_requests") - first("fpm_slow_requests") : null, requests_delta: last("fpm_accepted_conn") !== null && first("fpm_accepted_conn") !== null ? last("fpm_accepted_conn") - first("fpm_accepted_conn") : null },
@@ -324,8 +353,8 @@ export function summarizeRows(rows) {
 
 function mdTable(ph) {
   const f = (x, u = "") => (x === null || x === undefined ? "-" : `${x}${u}`);
-  const head = ["phase", "n", "s", "RAM used mean/p95/peak MB", "RAM avail min MB", "swap MB max", "swap in/out pages", "CPU busy mean/p95/peak %", "load1 peak", "PHP workers max (pool max active)", "PHP RSS/PSS MB (all workers)", "mysqld RSS MB", "caddy RSS MB", "MySQL threads conn/run max", "PSI cpu/mem/io some10 max"];
-  const rows = ph.map((p) => [p.phase, p.samples, p.seconds, `${f(p.ram_used_mb.mean)}/${f(p.ram_used_mb.p95)}/${f(p.ram_used_mb.peak)}`, f(p.ram_available_mb.min), f(p.swap_used_mb.max), `${p.swap_pages.in}/${p.swap_pages.out}`, `${f(p.cpu_busy_pct.mean)}/${f(p.cpu_busy_pct.p95)}/${f(p.cpu_busy_pct.peak)}`, f(p.load1.peak), `${f(p.php_workers.max)} (${f(p.php_workers.pool_max_active)})`, `${f(p.php_rss_mb.max_total)}/${f(p.php_pss_mb.max_total)}`, f(p.mysqld_rss_mb.max), f(p.caddy_rss_mb.max), `${f(p.mysql_threads.connected_max)}/${f(p.mysql_threads.running_max)}`, `${f(p.psi.cpu_some10_max)}/${f(p.psi.mem_some10_max)}/${f(p.psi.io_some10_max)}`]);
+  const head = ["phase", "n", "s", "RAM used mean/p95/peak MB", "RAM avail min MB", "swap MB max", "swap in/out pages", "CPU busy mean/p95/peak %", "load1 peak", "PHP workers max (pool max active)", "PHP RSS/PSS MB (all workers)", "mysqld RSS MB", "caddy RSS MB", "MySQL threads conn/run max", "PSI cpu/mem/io some10 max", "CPU steal mean/p95/max %", "CPU share mean % fpm/mysqld/caddy/other"];
+  const rows = ph.map((p) => [p.phase, p.samples, p.seconds, `${f(p.ram_used_mb.mean)}/${f(p.ram_used_mb.p95)}/${f(p.ram_used_mb.peak)}`, f(p.ram_available_mb.min), f(p.swap_used_mb.max), `${p.swap_pages.in}/${p.swap_pages.out}`, `${f(p.cpu_busy_pct.mean)}/${f(p.cpu_busy_pct.p95)}/${f(p.cpu_busy_pct.peak)}`, f(p.load1.peak), `${f(p.php_workers.max)} (${f(p.php_workers.pool_max_active)})`, `${f(p.php_rss_mb.max_total)}/${f(p.php_pss_mb.max_total)}`, f(p.mysqld_rss_mb.max), f(p.caddy_rss_mb.max), `${f(p.mysql_threads.connected_max)}/${f(p.mysql_threads.running_max)}`, `${f(p.psi.cpu_some10_max)}/${f(p.psi.mem_some10_max)}/${f(p.psi.io_some10_max)}`, `${f(p.cpu_steal_pct.mean)}/${f(p.cpu_steal_pct.p95)}/${f(p.cpu_steal_pct.max)}`, `${f(p.cpu_by_class_pct.php_fpm.mean)}/${f(p.cpu_by_class_pct.mysqld.mean)}/${f(p.cpu_by_class_pct.caddy.mean)}/${f(p.cpu_by_class_pct.other.mean)}`]);
   return ["| " + head.join(" | ") + " |", "|" + head.map(() => "---").join("|") + "|", ...rows.map((r) => "| " + r.join(" | ") + " |")].join("\n");
 }
 
@@ -336,7 +365,7 @@ function summarize() {
   const { rows, gaps } = parseCsv(csv);
   if (!rows.length) { console.error("no sample rows"); process.exit(1); }
   const s = summarizeRows(rows);
-  const load = opt("load-json") && fs.existsSync(opt("load-json")) ? JSON.parse(fs.readFileSync(opt("load-json"), "utf8")) : null;
+  const load = opt("load-json") ? Object.fromEntries(opt("load-json").split(",").filter((f) => fs.existsSync(f)).map((f) => [path.basename(f, ".json"), JSON.parse(fs.readFileSync(f, "utf8"))])) : null;
   const before = opt("before") ? JSON.parse(fs.readFileSync(opt("before"), "utf8")) : null, after = opt("after") ? JSON.parse(fs.readFileSync(opt("after"), "utf8")) : null;
   const diff = before && after ? { fpmMaxChildrenLogLines: { before: before.fpmMaxChildrenLogLines, after: after.fpmMaxChildrenLogLines, newLines: after.fpmMaxChildrenLog.filter((l) => !before.fpmMaxChildrenLog.includes(l)) }, slowlogEntries: { before: before.slowlogEntries, after: after.slowlogEntries }, mysql: { before: before.mysql, after: after.mysql }, oom: { before: before.oom, after: after.oom }, fail2ban: { before: before.fail2ban, after: after.fail2ban }, fail2banLogNew: after.fail2banLogTail.filter((l) => !before.fail2banLogTail.includes(l)) } : null;
   const result = { csv: path.resolve(csv), generated: new Date().toISOString(), reconnectGaps: gaps, ...s, load, hostLogDiff: diff };
@@ -344,7 +373,7 @@ function summarize() {
   fs.writeFileSync(path.join(outDir, `${name}.summary.json`), JSON.stringify(result, null, 2) + "\n");
   const md = [`# Resource sampling summary: ${name}`, "", `Source: ${path.resolve(csv)} (${s.overall.samples} samples, sampled every ~2 s from the host over one persistent SSH session; RSS = resident set (shared pages counted per process), PSS = proportional share; "RAM used" = total - free - buffers - page cache - reclaimable slab; "RAM avail" = MemAvailable).`, "", "Measurements only, no capacity verdict.", "", "## Overall", "", "```json", JSON.stringify(s.overall, null, 2), "```", "", "## Per phase", "", mdTable(s.phases), ""];
   if (gaps.length) md.push("Reconnect gaps in the sampler session:", ...gaps.map((g) => `- ${g}`), "");
-  if (load) md.push("## Controlled HTTP load phase", "", "```json", JSON.stringify(load.summary || load, null, 2), "```", "");
+  if (load && Object.keys(load).length) md.push("## Controlled HTTP load phases", "", ...Object.entries(load).flatMap(([n, l]) => [`### ${n}`, "", "```json", JSON.stringify({ config: l.config, aborted: l.aborted || null, wall_s: l.wall_s, byClass: l.summary.byClass, overall: l.summary.overall }, null, 2), "```", ""]));
   if (diff) md.push("## Host log / counter diff (before vs after)", "", "```json", JSON.stringify(diff, null, 2), "```", "");
   fs.writeFileSync(path.join(outDir, `${name}.summary.md`), md.join("\n"));
   console.log(`wrote ${path.join(outDir, name + ".summary.json")} and .md`);

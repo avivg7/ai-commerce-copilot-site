@@ -140,9 +140,9 @@ export class StageRemote {
     for (const f of files) { if (!/^[0-9TZ-]+-[0-9a-f]+\.eml$/.test(f)) continue; const r = this.exec(`sudo -n rm -f -- /var/lib/aicc-cp/mail/${f}`); if (r.code === 0) n++; this.mailFiles.delete(f); }
     return n;
   }
-  /** Remove every sink mail whose To: is a test address (a belt-and-braces sweep) and return how many were removed. */
+  /** Remove every sink mail addressed to a test address, or mentioning a test login (bf-<tag>-<runid>; WordPress also mails the ADMIN a "Password Changed" notice per reset), and return how many were removed. */
   purgeTestMail() {
-    const r = this.exec(`sudo -n bash -c 'n=0; for f in /var/lib/aicc-cp/mail/*.eml; do [ -e "$f" ] || continue; if head -n 40 "$f" | grep -i -q "^To:.*@example\\.test"; then rm -f -- "$f"; n=$((n+1)); fi; done; echo $n'`);
+    const r = this.exec(`sudo -n bash -c 'n=0; for f in /var/lib/aicc-cp/mail/*.eml; do [ -e "$f" ] || continue; if grep -i -q -E "^To:.*@example\\.test|user: bf-[a-z0-9-]+-[0-9a-f]{6}" "$f"; then rm -f -- "$f"; n=$((n+1)); fi; done; echo $n'`);
     return Number(r.out.trim()) || 0;
   }
   mailDirCount() { const r = this.exec("sudo -n bash -c 'ls -1 /var/lib/aicc-cp/mail | wc -l'"); return Number(r.out.trim()) || 0; }
