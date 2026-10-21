@@ -1,46 +1,103 @@
 <?php
 /**
- * AICC Control Plane PRODUCTION wp-config.php TEMPLATE -- *** NOT USABLE. DO NOT RENDER. DO NOT COPY. ***
+ * AICC Control Plane PRODUCTION wp-config.php TEMPLATE.            AICC_TEMPLATE: production
  *
- * AICC_TEMPLATE_STATUS: NOT-USABLE
+ * THIS FILE CONTAINS NO SECRETS. Upper-case tokens wrapped in double at-signs are replaced ON THE PRODUCTION HOST by `infra/provision/render-wp-config.sh --env production
+ * --confirm-production` from files in /etc/aicc/secrets (0600 root); the result is /srv/aicc/shared/wp-config.php (0640 root:aicc-cp), which every release symlinks to.
+ * Nothing rendered from this file is committed or copied off the host except inside the 0600 files archive of the backup.
  *
- * WHY THIS FILE EXISTS (architecture review B-3, 2026-10-21): there was no production configuration path at all, so nothing recorded that the Control Plane -> Backend
- * entitlement webhook needs a production-specific setting. The staging wp-config blocks every outbound request except its own host (WP_HTTP_BLOCK_EXTERNAL true,
- * WP_ACCESSIBLE_HOSTS "stage.copilt.org,localhost,127.0.0.1") and never sets AICC_ENTITLEMENT_WEBHOOK_URL, whose default is the docker-compose name
- * http://backend:8000/v1/internal/entitlement/webhook. Copying the staging settings to production would silently block every paid-licence entitlement delivery (the outbox
- * retries for ever). This template records the two settings production MUST have, so that the production path is not forgotten:
+ * It is the stage template (wp-config.stage.template.php) with exactly the environment-specific differences listed in infra/provision/README-production-config.md and
+ * enforced by infra:lint / test_provision.sh (the set of defines that differ between the two renders is pinned). Nothing here is activated by anything in this repository:
+ * the render script refuses to write a production file on a host whose identity file does not say AICC_ENV=production.
  *
- *   * AICC_ENTITLEMENT_WEBHOOK_URL = https://api.copilt.org/v1/internal/entitlement/webhook   (https, the API host only)
- *   * WP_HTTP_BLOCK_EXTERNAL true and WP_ACCESSIBLE_HOSTS = exactly "api.copilt.org"   (plus nothing else: no updates, no telemetry, no staging names)
- *
- * The Control Plane launch gate (scripts/check-launch-blockers.php in the Control Plane repository, enforced with AICC_PRODUCTION=1) refuses a configuration whose effective
- * webhook URL is not an https URL on the API host or whose outbound allow-list does not contain it.
- *
- * WHAT THIS FILE IS NOT: it is not wired into render-wp-config.sh, deploy-release.sh, install-stack.sh or any other script. render-wp-config.sh REFUSES it by name and by the
- * marker above (infra:lint and test_provision.sh check that refusal), and the PHP guard directly below stops any copy of this file from running as a wp-config. Producing a
- * production wp-config is a separate piece of work (production provisioning, secrets, database, DNS, the decision "new Droplet or convert staging") that is deliberately NOT
- * done here. When that work starts, replace the guard and the marker deliberately, in a reviewed change, and add the production host to the provisioning tests.
- *
- * Every value below that is not a webhook/outbound setting is a PLACEHOLDER to be decided with the production provisioning, not a decision.
+ * What production adds or changes compared with staging:
+ *   * WP_HOME / WP_SITEURL / WP_ENVIRONMENT_TYPE are the production ones.
+ *   * The Control Plane -> Backend entitlement webhook is delivered to the production API over https, and WordPress may reach EXACTLY that host and nothing else
+ *     (updates and telemetry stay blocked: code only ever arrives as a reviewed release). When a payment gateway is configured its API host must be added to
+ *     WP_ACCESSIBLE_HOSTS in a reviewed change.
+ *   * The two plugin secrets are NOT generated: AICC_ENTITLEMENT_WEBHOOK_SECRET must equal the Backend's value and AICC_ACTIVATION_PROOF_SECRET is the production
+ *     activation-proof key; the owner places both in /etc/aicc/secrets (0600) and the renderer refuses to continue without them.
+ *   * No mail sink is implied: transactional mail (lost-password, receipts) needs a real transport configured at the PHP-FPM pool / SMTP level (owner decision, see docs/cutover/dns-and-mail.md).
  */
 
-// GUARD: a copy of this file used as a real wp-config.php must not run.
-http_response_code( 500 );
-throw new RuntimeException( 'wp-config.production.template.php is a TEMPLATE and is not usable (AICC_TEMPLATE_STATUS: NOT-USABLE).' );
+// ---- database: UNIX SOCKET only (MySQL runs with skip-networking) --------------------------------------------------------------------------
+define( 'DB_NAME', '@@DB_NAME@@' );
+define( 'DB_USER', '@@DB_USER@@' );
+define( 'DB_PASSWORD', '@@DB_PASSWORD@@' );
+define( 'DB_HOST', 'localhost:/run/mysqld/mysqld.sock' );
+define( 'DB_CHARSET', 'utf8mb4' );
+define( 'DB_COLLATE', '' );
+$table_prefix = 'wp_';
 
-// ---- the settings production must carry (not reached while the guard above exists) -------------------------------------------------------------------------------------------------
+// ---- keys and salts (generated once on the host; re-rendering keeps them so logged-in sessions survive a re-render) ---------------------------
+@@SALTS@@
+
+// ---- identity and URLs -------------------------------------------------------------------------------------------------------------------------
 define( 'WP_ENVIRONMENT_TYPE', 'production' );
 define( 'WP_HOME', 'https://www.copilt.org' );
 define( 'WP_SITEURL', 'https://www.copilt.org' );
+define( 'FORCE_SSL_ADMIN', true );
 
-// CP -> Backend: deliver entitlements to the production API over https, and let WordPress reach exactly that host.
-define( 'AICC_ENTITLEMENT_WEBHOOK_URL', 'https://api.copilt.org/v1/internal/entitlement/webhook' );
+// HTTPS DETECTION: Caddy's php_fastcgi sets the FastCGI parameter HTTPS=on for TLS requests, PHP exposes it as $_SERVER['HTTPS'], and WordPress'
+// is_ssl() reads exactly that. Deliberately NOT done: trusting X-Forwarded-Proto / X-Forwarded-For. There is no proxy in front of PHP-FPM; those headers
+// are client-controlled here. (docs/cutover/Caddyfile.edge.template describes the HTTP-upstream variant, which this host does not use.)
+
+// ---- immutable code: no file changes from inside WordPress ------------------------------------------------------------------------------------
+// Code arrives only as a new release (infra/release). DISALLOW_FILE_MODS also blocks plugin/theme install, update and the editors, and hides the
+// update UI; auto-updates are off as well. Core, plugin and theme versions change only through a reviewed release.
+define( 'DISALLOW_FILE_MODS', true );
+define( 'DISALLOW_FILE_EDIT', true );
+define( 'AUTOMATIC_UPDATER_DISABLED', true );
+define( 'WP_AUTO_UPDATE_CORE', false );
+
+// ---- cron: system timer only ---------------------------------------------------------------------------------------------------------------------
+// aicc-wp-cron.timer runs `wp cron event run --due-now` every 2 minutes; /wp-cron.php is operator-only at the edge.
+define( 'DISABLE_WP_CRON', true );
+
+// OUTBOUND HTTP: blocked for every request except WordPress's own host and the single host listed below (no wordpress.org / woocommerce.com update or telemetry traffic,
+// no Gravatar, no payment host until one is configured in a reviewed change). Security review M1 applies here too: NO localhost / 127.0.0.1 (they would turn any
+// wp_remote_get() SSRF into a request to Caddy's admin API, the operator listener or AICC Ops); the cgroup network lock in infra/systemd/overrides/php8.3-fpm.service.d/aicc.conf
+// closes the same door for raw PHP sockets.
+// The edge serves the static /product/ page (the theme otherwise falls back to /#why when it is not behind the edge).
+define( 'AICC_PRODUCT_PAGE_ON_EDGE', true );
 define( 'WP_HTTP_BLOCK_EXTERNAL', true );
 define( 'WP_ACCESSIBLE_HOSTS', 'api.copilt.org' );
 
-// Secrets are generated on the production host by the (not yet written) production provisioning; never committed.
-define( 'AICC_ACTIVATION_PROOF_SECRET', '@@PRODUCTION_TEMPLATE_NOT_USABLE@@' );
-define( 'AICC_ENTITLEMENT_WEBHOOK_SECRET', '@@PRODUCTION_TEMPLATE_NOT_USABLE@@' );
+// ---- diagnostics: off (errors go to /var/log/aicc-cp/php-error.log through the pool; nothing is shown to visitors) -------------------------------
+define( 'WP_DEBUG', false );
+define( 'WP_DEBUG_LOG', false );
+define( 'WP_DEBUG_DISPLAY', false );
+define( 'SCRIPT_DEBUG', false );
 
-// Keep from the staging template (review them again for production): DISALLOW_FILE_MODS, DISALLOW_FILE_EDIT, AUTOMATIC_UPDATER_DISABLED, DISABLE_WP_CRON + aicc-wp-cron.timer,
-// WP_DEBUG off, empty AICC_LM_TRUSTED_PROXIES, AICC_LM_OPERATOR_CIDRS loopback only, FORCE_SSL_ADMIN. Never define AICC_LM_ALLOW_DEV_SECRET_BOOTSTRAP or AICC_LM_TEST_FIXTURE.
+// ---- memory: one ceiling, matching the pool (php_admin_value[memory_limit] = 192M) so wp-admin never asks for more than PHP would grant ----------
+define( 'WP_MEMORY_LIMIT', '128M' );
+define( 'WP_MAX_MEMORY_LIMIT', '192M' );
+define( 'WP_POST_REVISIONS', 5 );
+define( 'EMPTY_TRASH_DAYS', 14 );
+
+// ---- mail: configured at the PHP-FPM pool / SMTP relay level, never here --------------------------------------------------------------------------------
+// Production must NOT use infra/php's staging mail sink (aicc-mail-sink). The transactional mail transport is an owner decision that is still open; the production
+// host must not be treated as ready until lost-password mail can be delivered (docs/cutover/runbook.md, blockers).
+
+// ---- AICC Control Plane plugin ---------------------------------------------------------------------------------------------------------------------
+// Client IP: the plugin trusts X-Forwarded-For only from addresses listed here. EMPTY on purpose: PHP-FPM receives the real TCP peer as REMOTE_ADDR
+// from Caddy's FastCGI transport, so REMOTE_ADDR already IS the client (or 127.0.0.1 for an operator coming through the SSH tunnel).
+define( 'AICC_LM_TRUSTED_PROXIES', array() );
+// Operators exempt from the login throttle: loopback only (the SSH tunnel). Nobody on the public internet is exempt.
+define( 'AICC_LM_OPERATOR_CIDRS', array( '127.0.0.1/32', '::1/128' ) );
+// CP -> Backend entitlement webhook: https, the production API host only (the Control Plane launch gate scripts/check-launch-blockers.php, enforced with AICC_PRODUCTION=1,
+// refuses a configuration whose effective URL is not https on the API host or whose outbound allow-list does not contain it).
+define( 'AICC_ENTITLEMENT_WEBHOOK_URL', 'https://api.copilt.org/v1/internal/entitlement/webhook' );
+// Owner-provided production secrets (never generated by the renderer, never committed): the webhook secret must equal the Backend's.
+define( 'AICC_ACTIVATION_PROOF_SECRET', '@@AICC_ACTIVATION_PROOF_SECRET@@' );
+define( 'AICC_ENTITLEMENT_WEBHOOK_SECRET', '@@AICC_ENTITLEMENT_WEBHOOK_SECRET@@' );
+// AICC_LM_ALLOW_DEV_SECRET_BOOTSTRAP and AICC_LM_TEST_FIXTURE are intentionally NOT defined.
+
+// ---- bootstrap -----------------------------------------------------------------------------------------------------------------------------------------
+// ABSPATH is defined by wp-load.php (the real release directory) BEFORE this file is read, even though this file is reached through a symlink.
+// Using __DIR__ here would resolve to /srv/aicc/shared and break every path, so refuse instead of guessing.
+if ( ! defined( 'ABSPATH' ) ) {
+	http_response_code( 500 );
+	exit( 'wp-config.php must be loaded by WordPress (wp-load.php defines ABSPATH).' );
+}
+require_once ABSPATH . 'wp-settings.php';

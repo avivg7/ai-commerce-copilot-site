@@ -65,6 +65,7 @@ while :; do
   sleep "$SMOKE_INTERVAL"
 done
 [ "$KIND" = cp ] && [ "$NO_WARM" = 0 ] && rl_warm "$WARM_CMD"
+record_deployment manual_rollback "$KIND" "$TARGET" "${OLD_CUR:-}" "$RDIR/$TARGET.manifest.json"
 echo "ROLLED BACK: current -> $TARGET (healthy)."
 [ "$KIND" = cp ] && echo "NOTE: the database was NOT rolled back (see infra/release/README.md)."
 exit 0

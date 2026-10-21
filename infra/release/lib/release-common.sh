@@ -185,3 +185,21 @@ fresh_dump_ok() {
   echo "fresh dump OK: $file (${age}s old)"
   return 0
 }
+
+# release_identity <manifest>: "sha256=<16> commit=<id>" -- what exactly went live (the tarball hash and the source commit recorded at build time)
+release_identity() {
+  local m="$1"
+  [ -f "$m" ] || { echo "sha256=? commit=?"; return 0; }
+  printf 'sha256=%s commit=%s target=%s' "$(jq -r '.tarball.sha256 // "?"' "$m" | cut -c1-16)" "$(jq -r '.sources.cp_commit // .sources.site_commit // "?"' "$m" | cut -c1-12)" "$(jq -r '.sources.target // "n/a"' "$m")"
+}
+# record_deployment <outcome> <kind> <id> <previous-id> <manifest>: one JSON line in $AICC_DEPLOY_LOG (default /var/lib/aicc/deployments.jsonl, 0644). Never fails a release.
+record_deployment() {
+  local outcome="$1" kind="$2" id="$3" prev="$4" m="$5" log="${AICC_DEPLOY_LOG:-/var/lib/aicc/deployments.jsonl}" who="${SUDO_USER:-${USER:-unknown}}"
+  [ "${SANDBOX:-0}" = 1 ] && log="${AICC_DEPLOY_LOG:-$ROOT/deployments.jsonl}"
+  mkdir -p "$(dirname "$log")" 2>/dev/null || return 0
+  jq -n -c --arg ts "$(rl_ts)" --arg o "$outcome" --arg k "$kind" --arg id "$id" --arg p "$prev" --arg who "$who" \
+     --arg sha "$(jq -r '.tarball.sha256 // ""' "$m" 2>/dev/null)" --arg c "$(jq -r '.sources.cp_commit // .sources.site_commit // ""' "$m" 2>/dev/null)" \
+     --arg t "$(jq -r '.sources.target // ""' "$m" 2>/dev/null)" --arg h "$(hostname | tr -cd 'A-Za-z0-9.-')" \
+     '{ts:$ts,outcome:$o,kind:$k,release_id:$id,previous:$p,operator:$who,tarball_sha256:$sha,source_commit:$c,target:$t,host:$h}' >> "$log" 2>/dev/null || true
+  chmod 644 "$log" 2>/dev/null || true
+}

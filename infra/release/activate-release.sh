@@ -173,11 +173,13 @@ if [ "$healthy" = 0 ]; then
     reload_fpm || true
     if smoke_gate "rolled-back release $OLD_CUR"; then
       [ "$KIND" = cp ] && [ "$NO_WARM" = 0 ] && rl_warm "$WARM_CMD"
+      record_deployment rolled_back "$KIND" "$ID" "$OLD_CUR" "$RDIR/$ID.manifest.json"
       echo "ROLLED BACK to $OLD_CUR; the failed release stays in $RDIR/$ID for inspection ($RDIR/$ID.FAILED)." >&2
       [ "$KIND" = cp ] && echo "NOTE: the code was rolled back, the DATABASE was not. See infra/release/README.md (migration rules); restore from the pre-release dump only if the failed release changed the schema incompatibly." >&2
       exit 3
     fi
     alog "CRITICAL: the rolled-back release is ALSO unhealthy"
+    record_deployment critical "$KIND" "$ID" "$OLD_CUR" "$RDIR/$ID.manifest.json"
     exit 4
   fi
   rm -f "$CUR" "$PREV"
@@ -191,7 +193,8 @@ fi
 # ---- 10. prune -----------------------------------------------------------------------------------------------------------------------------------
 prune_releases "$RDIR" "$KEEP" "$ID" "$OLD_CUR" "$(link_target_id "$PREV")"
 find "$RDIR" -maxdepth 1 -name '.incoming-*' -mtime +1 -exec rm -rf {} + 2>/dev/null || true
-alog "OK: $KIND release $ID is live (previous: ${OLD_CUR:-none})"
+alog "OK: $KIND release $ID is live (previous: ${OLD_CUR:-none}) $(release_identity "$RDIR/$ID.manifest.json")"
+record_deployment ok "$KIND" "$ID" "${OLD_CUR:-}" "$RDIR/$ID.manifest.json"
 echo "current  -> $(readlink "$CUR")"
 echo "previous -> $( [ -L "$PREV" ] && readlink "$PREV" || echo '(none)')"
 echo "rollback: sudo aicc-rollback-release --kind $KIND"

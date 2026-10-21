@@ -318,6 +318,8 @@ step_scripts() {
   install_file "$INFRA/release/lib/release-common.sh" "$LIB_DIR/release/lib/release-common.sh" 0644 root:root
   ensure_symlink "$LIB_DIR/release/activate-release.sh" "$SBIN/aicc-activate-release"
   ensure_symlink "$LIB_DIR/release/rollback-release.sh" "$SBIN/aicc-rollback-release"
+  install_file "$INFRA/release/deploy-status.sh" "$LIB_DIR/release/deploy-status.sh" 0755 root:root
+  ensure_symlink "$LIB_DIR/release/deploy-status.sh" "$SBIN/aicc-deploy-status"
 }
 
 step_systemd() {

@@ -86,6 +86,18 @@ cp -R "$TMP/s6" "$R/site/releases/.incoming-$ID6"; cp "$R/site/releases/$ID6.man
 t_ok "uploading the same release id twice discards the second copy and succeeds" ACT "$R" site "$ID6" --keep 4
 t_fail "...no .incoming leftovers" test -e "$R/site/releases/.incoming-$ID6"
 
+echo "== deployment records and aicc-deploy-status (observable state, exact build identity) =="
+R="$(new_root deprec)"; make_site_tree "$TMP/dr1" dr1 1 c1; make_site_tree "$TMP/dr2" dr2 0 c2
+D1="$(stage_incoming "$R" site "$TMP/dr1" $EPOCH0)"; ACT "$R" site "$D1" >/dev/null 2>&1
+t_eq "a good activation is recorded as outcome ok with the tarball hash" "$(tail -1 "$R/deployments.jsonl" | jq -r '[.outcome,.kind,.release_id,(.tarball_sha256|length)]|join(",")')" "ok,site,$D1,64"
+D2="$(stage_incoming "$R" site "$TMP/dr2" $((EPOCH0 + 100)))"; ACT "$R" site "$D2" >/dev/null 2>&1 || true
+t_eq "a health-gate failure is recorded as rolled_back" "$(tail -1 "$R/deployments.jsonl" | jq -r '[.outcome,.release_id,.previous]|join(",")')" "rolled_back,$D2,$D1"
+t_contains "activation.log carries the exact build identity" "$(cat "$R/site/activation.log")" "sha256="
+OUTS="$(AICC_ROOT="$R" AICC_DEPLOY_LOG="$R/deployments.jsonl" bash "$REL/deploy-status.sh" 2>&1)"
+t_contains "deploy-status shows what is live" "$OUTS" "site  current : $D1"
+t_contains "deploy-status lists the recent deployments" "$OUTS" "rolled_back"
+t_eq "deploy-status --json is valid JSON" "$(AICC_ROOT="$R" AICC_DEPLOY_LOG="$R/deployments.jsonl" bash "$REL/deploy-status.sh" --json | jq -r '.recent|length')" "2"
+
 echo "== health gate and automatic rollback =="
 R="$(new_root rb)"
 make_site_tree "$TMP/g1" "G1" 1 g1.js; IDG1="$(stage_incoming "$R" site "$TMP/g1" $EPOCH0)"; ACT "$R" site "$IDG1" >/dev/null
@@ -315,7 +327,7 @@ cat > "$STUB/ssh" <<EOS
 #!/usr/bin/env bash
 echo "ssh \$*" >> "$CALLS"
 case "\$*" in
-  *"cat /etc/aicc-stage-identity"*) printf 'AICC_ENV=staging\nAICC_HOSTNAME=%s\nAICC_STAGE_ID=%s\n' "\${STUB_HOSTNAME:-stage.copilt.org}" "\${STUB_STAGE_ID:-$SID}" ;;
+  *"cat /etc/aicc-stage-identity"*) printf 'AICC_ENV=%s\nAICC_HOSTNAME=%s\nAICC_STAGE_ID=%s\n' "\${STUB_ENV:-staging}" "\${STUB_HOSTNAME:-stage.copilt.org}" "\${STUB_STAGE_ID:-$SID}" ;;
   *aicc-activate-release*) exit "\${STUB_ACTIVATE_RC:-0}" ;;
 esac
 exit 0
@@ -378,5 +390,50 @@ t_contains "--first-install passes --allow-uninstalled to the activation" "$(cat
 : > "$CALLS"
 STUB_ACTIVATE_RC=3 t_rc "a rolled-back activation makes deploy exit 3" 3 DEP --kind cp --artifact "$CPART" --stage-host stage.copilt.org --stage-ip 203.0.113.9 --stage-id "$SID"
 STUB_ACTIVATE_RC=4 t_rc "a critical activation makes deploy exit 4" 4 DEP --kind cp --artifact "$CPART" --stage-host stage.copilt.org --stage-ip 203.0.113.9 --stage-id "$SID"
+
+echo "== deploy-release.sh --env production: the gates (stubs; no production host exists, nothing leaves this machine) =="
+PK="$TMP/aicc_cp_prod_test"; cp "$FAKEKEY" "$PK"
+mkprod() { # mkprod <artifact> <kind> <dirty:true|false> <dest-dir>: a copy of a built artifact whose MANIFEST claims <dirty> (the tarball and its hash are untouched)
+  local a="$1" k="$2" d="$3" o="$4" id; id="$(jq -r .release_id "${a%.tar.gz}.manifest.json")"; mkdir -p "$o"
+  cp "$a" "$o/$k-$id.tar.gz"; cp "${a%.tar.gz}.SHA256SUMS" "$o/$k-$id.SHA256SUMS"
+  jq --argjson d "$d" '.sources.dirty = $d' "${a%.tar.gz}.manifest.json" > "$o/$k-$id.manifest.json"; echo "$id"
+}
+PID_="$(mkprod "$SP" site false "$TMP/pd-clean")"; PART="$TMP/pd-clean/site-$PID_.tar.gz"
+DID_="$(mkprod "$SP" site true "$TMP/pd-dirty")"; DART="$TMP/pd-dirty/site-$DID_.tar.gz"
+CID_="$(mkprod "$CPART" cp false "$TMP/pd-cp")"; PCP="$TMP/pd-cp/cp-$CID_.tar.gz"
+CDID_="$(mkprod "$CPART" cp true "$TMP/pd-cpd")"; PCPD="$TMP/pd-cpd/cp-$CDID_.tar.gz"
+PDEP() { PATH="$STUB:$PATH" bash "$REL/deploy-release.sh" --env production --key "$PK" "$@"; }
+PIP=198.51.100.7
+: > "$CALLS"
+t_rc "production: the staging host name is REFUSED" 3 PDEP --kind site --artifact "$PART" --stage-host stage.copilt.org --stage-ip "$PIP" --stage-id "$SID" --confirm-production "$PID_"
+t_rc "production: copilt.org (apex) as the target is REFUSED" 3 PDEP --kind site --artifact "$PART" --stage-host copilt.org --stage-ip "$PIP" --stage-id "$SID" --confirm-production "$PID_"
+t_rc "production: api.copilt.org is REFUSED" 3 PDEP --kind site --artifact "$PART" --stage-host api.copilt.org --stage-ip "$PIP" --stage-id "$SID" --confirm-production "$PID_"
+for ip in 139.59.157.231 185.199.108.153 157.230.110.211 206.189.248.204; do t_rc "production: the address $ip (API Droplet / GitHub Pages / STAGING Droplet or its Reserved IP) is REFUSED" 3 PDEP --kind site --artifact "$PART" --stage-host www.copilt.org --stage-ip $ip --stage-id "$SID" --confirm-production "$PID_"; done
+t_rc "production: a key not named aicc_cp_prod* is REFUSED" 3 env PATH="$STUB:$PATH" bash "$REL/deploy-release.sh" --env production --key "$FAKEKEY" --kind site --artifact "$PART" --stage-host www.copilt.org --stage-ip "$PIP" --stage-id "$SID" --confirm-production "$PID_"
+t_rc "production: the API Droplet's key is REFUSED" 3 env PATH="$STUB:$PATH" bash "$REL/deploy-release.sh" --env production --key "$PRODKEY" --kind site --artifact "$PART" --stage-host www.copilt.org --stage-ip "$PIP" --stage-id "$SID" --confirm-production "$PID_"
+t_rc "production: no --confirm-production is REFUSED" 3 PDEP --kind site --artifact "$PART" --stage-host www.copilt.org --stage-ip "$PIP" --stage-id "$SID"
+t_rc "production: a confirmation for ANOTHER release id is REFUSED" 3 PDEP --kind site --artifact "$PART" --stage-host www.copilt.org --stage-ip "$PIP" --stage-id "$SID" --confirm-production 20260101T000000Z-deadbeef
+t_rc "production: a STAGE site build is REFUSED" 3 PDEP --kind site --artifact "$SS" --stage-host www.copilt.org --stage-ip "$PIP" --stage-id "$SID" --confirm-production "$(jq -r .release_id "${SS%.tar.gz}.manifest.json")"
+t_rc "production: a site build from a DIRTY tree is REFUSED" 3 PDEP --kind site --artifact "$DART" --stage-host www.copilt.org --stage-ip "$PIP" --stage-id "$SID" --confirm-production "$DID_"
+t_rc "production: a cp build from a DIRTY tree is REFUSED" 3 PDEP --kind cp --artifact "$PCPD" --stage-host www.copilt.org --stage-ip "$PIP" --stage-id "$SID" --confirm-production "$CDID_"
+t_rc "stage mode refuses the production key name" 3 env PATH="$STUB:$PATH" bash "$REL/deploy-release.sh" --key "$PK" --kind site --artifact "$SS" --stage-host stage.copilt.org --stage-ip 203.0.113.9 --stage-id "$SID"
+t_rc "an unknown --env is a usage error" 2 env PATH="$STUB:$PATH" bash "$REL/deploy-release.sh" --env qa --key "$PK" --kind site --artifact "$PART" --stage-host www.copilt.org --stage-ip "$PIP" --stage-id "$SID"
+t_eq "no ssh/rsync/curl was invoked by any production refusal" "$(wc -l < "$CALLS" | tr -d ' ')" "0"
+t_ok "production --dry-run prints the plan and sends nothing" PDEP --kind site --artifact "$PART" --stage-host www.copilt.org --stage-ip "$PIP" --stage-id "$SID" --confirm-production "$PID_" --dry-run
+t_eq "...(zero calls)" "$(wc -l < "$CALLS" | tr -d ' ')" "0"
+STUB_ENV=staging STUB_HOSTNAME=www.copilt.org t_rc "production: a host whose identity says STAGING is refused before any upload" 3 PDEP --kind site --artifact "$PART" --stage-host www.copilt.org --stage-ip "$PIP" --stage-id "$SID" --confirm-production "$PID_"
+STUB_ENV=production STUB_HOSTNAME=stage.copilt.org t_rc "production: a production host claiming another hostname is refused" 3 PDEP --kind site --artifact "$PART" --stage-host www.copilt.org --stage-ip "$PIP" --stage-id "$SID" --confirm-production "$PID_"
+STUB_ENV=production STUB_HOSTNAME=www.copilt.org STUB_STAGE_ID=ffffffffffffffffffffffffffffffff t_rc "production: a host with a different id is refused" 3 PDEP --kind site --artifact "$PART" --stage-host www.copilt.org --stage-ip "$PIP" --stage-id "$SID" --confirm-production "$PID_"
+t_eq "...only read-only identity checks ran (no rsync)" "$(grep -c '^rsync' "$CALLS" || true)" "0"
+: > "$CALLS"
+STUB_ENV=production STUB_HOSTNAME=www.copilt.org t_ok "production site: happy path (stubs)" PDEP --kind site --artifact "$PART" --stage-host www.copilt.org --stage-ip "$PIP" --stage-id "$SID" --confirm-production "$PID_"
+t_eq "production site: the connection goes to the given address, never to a name" "$(grep -E '^(ssh|rsync)' "$CALLS" | grep -vc "@$PIP" || true)" "0"
+t_eq "production site: no curl (the staging identity probe is skipped)" "$(grep -c '^curl' "$CALLS" || true)" "0"
+t_contains "production site: activation command is sent" "$(cat "$CALLS")" "aicc-activate-release --kind site --release-id $PID_"
+: > "$CALLS"
+STUB_ENV=production STUB_HOSTNAME=www.copilt.org t_ok "production cp: happy path (stubs)" PDEP --kind cp --artifact "$PCP" --stage-host www.copilt.org --stage-ip "$PIP" --stage-id "$SID" --confirm-production "$CID_"
+t_contains "production cp: the pre-release dump is taken" "$(cat "$CALLS")" "aicc-backup --label pre-release"
+t_eq "production cp: backup happens BEFORE the first rsync" "$(grep -nE 'aicc-backup|^rsync' "$CALLS" | head -1 | grep -c aicc-backup)" "1"
+STUB_ENV=production STUB_HOSTNAME=www.copilt.org STUB_ACTIVATE_RC=3 t_rc "production cp: a rolled-back activation exits 3" 3 PDEP --kind cp --artifact "$PCP" --stage-host www.copilt.org --stage-ip "$PIP" --stage-id "$SID" --confirm-production "$CID_"
 
 t_summary

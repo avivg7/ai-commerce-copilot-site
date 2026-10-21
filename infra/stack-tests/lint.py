@@ -125,43 +125,52 @@ for p in SH:
         if "aicc_digitalocean_prod" in line and not re.search(r"(?i)refus|deny|never|case|production|PRODKEY|prod key|echo|#", line):
             fail(p, "line %d mentions the production key outside a refusal: %s" % (i, line.strip()[:100]))
 
-print("== production wp-config template is a NOT-USABLE record (architecture review B-3) ==")
+print("== production wp-config template: usable ONLY through the gated renderer (architecture review B-3, Phase 2B) ==")
 prod_tpl = os.path.join(INFRA, "provision/wp-config.production.template.php")
 if not os.path.exists(prod_tpl):
-    fail(prod_tpl, "missing: the production webhook / outbound allow-list requirement must stay recorded")
+    fail(prod_tpl, "missing: the production configuration path must stay recorded and tested")
 else:
     t = read(prod_tpl)
-    for needle, why in (("AICC_TEMPLATE_STATUS: NOT-USABLE", "the not-usable marker"), ("throw new RuntimeException(", "the PHP guard that stops a copy from running (a fatal error: exit status 255, HTTP 500)"),
+    code = re.sub(r"(?m)^\s*//.*$", "", re.sub(r"(?s)/\*.*?\*/", "", t))
+    for needle, why in (("AICC_TEMPLATE: production", "the production marker the renderer requires"),
+                        ("define( 'WP_ENVIRONMENT_TYPE', 'production' )", "production environment type"),
+                        ("define( 'WP_HOME', 'https://www.copilt.org' )", "the production home URL"), ("define( 'WP_SITEURL', 'https://www.copilt.org' )", "the production site URL"),
                         ("define( 'AICC_ENTITLEMENT_WEBHOOK_URL', 'https://api.copilt.org/", "the https webhook URL on the API host"),
-                        ("define( 'WP_ACCESSIBLE_HOSTS', 'api.copilt.org' )", "WP_ACCESSIBLE_HOSTS exactly the API host"), ("define( 'WP_HTTP_BLOCK_EXTERNAL', true )", "external requests blocked")):
+                        ("define( 'WP_ACCESSIBLE_HOSTS', 'api.copilt.org' )", "WP_ACCESSIBLE_HOSTS exactly the API host"), ("define( 'WP_HTTP_BLOCK_EXTERNAL', true )", "external requests blocked"),
+                        ("define( 'DISALLOW_FILE_MODS', true )", "immutable code"), ("define( 'DISABLE_WP_CRON', true )", "system cron only"), ("define( 'WP_DEBUG', false )", "debug off"),
+                        ("define( 'FORCE_SSL_ADMIN', true )", "admin over TLS"), ("localhost:/run/mysqld/mysqld.sock", "database over the unix socket"),
+                        ("'@@AICC_ENTITLEMENT_WEBHOOK_SECRET@@'", "webhook secret comes from the renderer"), ("'@@AICC_ACTIVATION_PROOF_SECRET@@'", "activation proof secret comes from the renderer")):
         if needle not in t:
             fail(prod_tpl, "lost %s (%s)" % (needle, why))
         else:
             ok()
-    if "stage.copilt.org" in re.sub(r"(?s)/\*.*?\*/", "", t):
-        fail(prod_tpl, "the staging host appears in the production template's code")
-    if os.access(prod_tpl, os.X_OK):
-        fail(prod_tpl, "the template must not be executable")
-    # the guard must come BEFORE the first define(): a copy used as wp-config.php dies immediately
-    if t.find("throw new RuntimeException(") > t.find("define("):
-        fail(prod_tpl, "the PHP guard must precede every define()")
+    if re.search(r"(?i)stage\.copilt|staging|stage_", code):
+        fail(prod_tpl, "a staging value appears in the production template's code")
     else:
         ok()
-    # nothing may use it: only the stage renderer's REFUSAL, the template itself, docs and the tests may name it
+    if re.search(r"AICC_LM_ALLOW_DEV_SECRET_BOOTSTRAP|AICC_LM_TEST_FIXTURE", code):
+        fail(prod_tpl, "the dev secret bootstrap / test fixture constants must never be defined")
+    if re.search(r"define\( '(AUTH|SECURE_AUTH|LOGGED_IN|NONCE)_(KEY|SALT)', '[A-Za-z0-9]{16,}'", t) or re.search(r"define\( '(DB_PASSWORD|AICC_[A-Z_]*SECRET)', '(?!@@)[^']{8,}'", t):
+        fail(prod_tpl, "a secret-looking value is committed in the production template")
+    if os.access(prod_tpl, os.X_OK):
+        fail(prod_tpl, "the template must not be executable")
+    # nothing may use it except the renderer: scripts, units, installers never reference it (docs and tests may)
     for q in files():
         rel = os.path.relpath(q, INFRA)
         if q == prod_tpl or rel.startswith("stack-tests/") or q.endswith((".md",)):
             continue
-        if "wp-config.production" in read(q) and rel != "provision/render-wp-config.sh" and rel != "provision/wp-config.stage.template.php" and rel != "release/deploy-release.sh":
-            fail(q, "references the production wp-config template: it is a record, not an input of any script")
+        if "wp-config.production" in read(q) and rel not in ("provision/render-wp-config.sh", "provision/wp-config.stage.template.php", "release/deploy-release.sh"):
+            fail(q, "references the production wp-config template: only provision/render-wp-config.sh may")
     rw = read(os.path.join(INFRA, "provision/render-wp-config.sh"))
-    if 'grep -q "AICC_TEMPLATE_STATUS: NOT-USABLE"' not in rw or "*production*) die" not in rw:
-        fail(os.path.join(INFRA, "provision/render-wp-config.sh"), "must refuse the production template (by name and by its NOT-USABLE marker)")
-    else:
-        ok()
+    for needle, why in (("--confirm-production", "an explicit confirmation flag"), ("AICC_ENV=production", "the host-identity gate"), ("never generated", "owner-provided shared secrets"),
+                        ("AICC_TEMPLATE: production", "the template marker check"), ("a staging host can never receive", "the staging-host refusal")):
+        if needle not in rw:
+            fail(os.path.join(INFRA, "provision/render-wp-config.sh"), "production gate lost: %s (%s)" % (needle, why))
+        else:
+            ok()
     dr = read(os.path.join(INFRA, "release/deploy-release.sh"))
-    if "wp-config.production" not in dr or "stage[a-z0-9-]*" not in dr or "never shipped in a release" not in dr:
-        fail(os.path.join(INFRA, "release/deploy-release.sh"), "must stay stage-only and refuse an artifact that carries a wp-config template")
+    if "wp-config.production" not in dr or "never shipped in a release" not in dr:
+        fail(os.path.join(INFRA, "release/deploy-release.sh"), "must refuse an artifact that carries a wp-config template")
     else:
         ok()
 print("== secrets and addresses ==")
