@@ -44,6 +44,13 @@ define( 'WP_AUTO_UPDATE_CORE', false );
 // aicc-wp-cron.timer runs `wp cron event run --due-now` every minute; /wp-cron.php is operator-only at the edge.
 define( 'DISABLE_WP_CRON', true );
 
+// STAGING MUST NOT TALK TO ANYTHING ELSE: block every outbound HTTP request from WordPress/WooCommerce/plugins except this host's own loopback
+// (WP-Cron spawns, Action Scheduler loopbacks, site health). This keeps the staging Control Plane from calling the production Backend
+// (api.copilt.org), wordpress.org/woocommerce.com update and telemetry endpoints, or any real customer system. Lesson from the macOS rehearsal:
+// a fixture whose home URL was the public name sent loopback requests to the real public site.
+define( 'WP_HTTP_BLOCK_EXTERNAL', true );
+define( 'WP_ACCESSIBLE_HOSTS', 'stage.copilt.org,localhost,127.0.0.1' );
+
 // ---- diagnostics: off (errors go to /var/log/aicc-cp/php-error.log through the pool; nothing is shown to visitors) -------------------------------
 define( 'WP_DEBUG', false );
 define( 'WP_DEBUG_LOG', false );
