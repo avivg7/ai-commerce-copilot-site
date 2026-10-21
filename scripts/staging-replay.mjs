@@ -94,7 +94,9 @@ const { guard, cfg } = await guarded(async () => {
 const STAGE_TOPOLOGY = !cfg.aliasHosts.includes(M.CANONICAL_HOST);
 const CANON = STAGE_TOPOLOGY ? cfg.stageHost : M.CANONICAL_HOST;
 const ORIGIN_R = `https://${CANON}`;
-const CASES = STAGE_TOPOLOGY ? M.retargetCases(M.CASES, cfg.stageHost) : M.CASES;
+// The STAGE build is noindex by design: build-site-release.sh removes sitemap.xml and serves a disallow-all robots.txt, so the sitemap is expected to be a static 404 on the staging host
+// (the production topology keeps the 200 case).
+const CASES = STAGE_TOPOLOGY ? M.retargetCases(M.CASES, cfg.stageHost).map((c) => (/^https:\/\/[^/]+\/sitemap\.xml$/.test(c.from) ? { ...c, status: 404, note: "stage build has no sitemap (noindex)" } : c)) : M.CASES;
 const notApplicable = M.CASES.length - CASES.length;
 const withPort = (u) => u.replace(/^(https?):\/\/(\[[^\]]+\]|[^/?#:]+)(?::\d+)?/i, (_, sch, h) => `${sch}://${h}:${sch.toLowerCase() === "https" ? cfg.port : cfg.httpPort ?? 80}`);
 const stdPort = (u) => (/^https/i.test(u) ? cfg.port === 443 : cfg.httpPort === 80);

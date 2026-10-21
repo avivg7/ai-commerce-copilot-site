@@ -132,6 +132,16 @@
 (aicc_stage_identity) {
 }
 
+# Liveness route for AICC Ops (loopback probe) and the external sentinel: answered by Caddy itself (no upstream, no PHP, no database, no cookies, never cached). It proves the EDGE and its TLS
+# certificate answer; it deliberately does NOT prove PHP-FPM or MySQL (probe an app page such as /pricing/ for that). Same in every render so the probe target does not change at cutover.
+(aicc_health) {
+	@aicc_healthz path /healthz
+	handle @aicc_healthz {
+		header Cache-Control "no-store"
+		respond "ok" 200
+	}
+}
+
 # Stage-only response header: the staging host must never be indexed (its pages carry the production canonical URL). EMPTY here and in the production render; the stage render fills it
 # (scripts/lib/edge-render.mjs). Imported by security_headers, so redirects, branded errors and the 421 catch-all carry it too.
 (aicc_stage_robots) {
@@ -736,6 +746,7 @@ www.copilt.org {
 	import security_headers
 	import hsts
 	import aicc_redirects
+	import aicc_health
 	import aicc_stage_identity
 
 	# WordPress admin surface (OWNER DECISIONS 2026-10-20 and 2026-10-21, implemented in the GENERATED routing below and proven by a real run, docs/cutover/rehearsal.md "wp-admin"):
@@ -892,6 +903,7 @@ www.copilt.org:{$AICC_OPERATOR_PORT:8443} {
 	import security_headers
 	import hsts
 	import aicc_redirects
+	import aicc_health
 	import aicc_stage_identity
 
 	# BEGIN GENERATED: routing operator
