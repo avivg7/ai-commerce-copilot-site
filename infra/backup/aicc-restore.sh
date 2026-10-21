@@ -9,7 +9,7 @@
 #                                                                 load the dump into a SCRATCH database next to the live one, fingerprint it, drop it.
 #                                                                 The live database, files and services are never touched.
 #   sudo aicc-restore live --dump FILE --files FILE|none --sha256 H --files-sha256 H --yes-replace-live
-#                          [--report FILE] [--no-safety-backup] [--no-health-gate] [--trust-sidecar] [--allow-no-identity]
+#                          [--report FILE] [--no-safety-backup] [--no-health-gate] [--trust-sidecar] [--allow-no-identity] [--allow-new-host-id]
 #                                                                 REPLACES the live database (and files): see the steps below.
 #
 # TRUST: for `live` the two hashes MUST be given out of band (--sha256, --files-sha256: take them from the copy that lives OFF the host, e.g. the Mac's
@@ -32,11 +32,11 @@ umask 077
 
 ACTION="${1:-}"; [ $# -gt 0 ] && shift
 DUMP=""; FILES=""; SHA=""; FSHA=""; REPORT=""; YES=0; SAFETY=1; HEALTH=1; OUT=""; SCRATCH="aicc_dr_scratch"; FPOUT=""
-DB="aicc_cp"; DBUSER="aicc_cp"; MYSQL_BIN="${MYSQL_BIN:-mysql}"; MY_CNF=""; SHARED="/srv/aicc/shared"; TRUST_SIDECAR=0; NO_IDENT=0; IDENT_FILE="/etc/aicc-stage-identity"
+DB="aicc_cp"; DBUSER="aicc_cp"; MYSQL_BIN="${MYSQL_BIN:-mysql}"; MY_CNF=""; SHARED="/srv/aicc/shared"; TRUST_SIDECAR=0; NO_IDENT=0; NEW_HOST_ID=0; IDENT_FILE="/etc/aicc-stage-identity"
 while [ $# -gt 0 ]; do
   case "$1" in
     --dump) DUMP="${2:-}"; shift 2 ;; --files) FILES="${2:-}"; shift 2 ;; --sha256) SHA="${2:-}"; shift 2 ;; --files-sha256) FSHA="${2:-}"; shift 2 ;;
-    --report) REPORT="${2:-}"; shift 2 ;; --yes-replace-live) YES=1; shift ;; --no-safety-backup) SAFETY=0; shift ;; --no-health-gate) HEALTH=0; shift ;; --trust-sidecar) TRUST_SIDECAR=1; shift ;; --allow-no-identity) NO_IDENT=1; shift ;;
+    --report) REPORT="${2:-}"; shift 2 ;; --yes-replace-live) YES=1; shift ;; --no-safety-backup) SAFETY=0; shift ;; --no-health-gate) HEALTH=0; shift ;; --trust-sidecar) TRUST_SIDECAR=1; shift ;; --allow-no-identity) NO_IDENT=1; shift ;; --allow-new-host-id) NEW_HOST_ID=1; shift ;;
     --out) OUT="${2:-}"; shift 2 ;; --scratch-db) SCRATCH="${2:-}"; shift 2 ;; --fingerprint-out) FPOUT="${2:-}"; shift 2 ;;
     --db) DB="${2:-}"; shift 2 ;; --mysql-defaults-file) MY_CNF="${2:-}"; shift 2 ;; --shared-dir) SHARED="${2:-}"; shift 2 ;;
     -h|--help) sed -n 2,28p "${BASH_SOURCE[0]}"; exit 0 ;;
@@ -45,7 +45,7 @@ while [ $# -gt 0 ]; do
 done
 case "$ACTION" in fingerprint|scratch|verify|live) ;; *) sed -n 2,13p "${BASH_SOURCE[0]}" >&2; exit 2 ;; esac
 refuse() { echo "REFUSED: $*" >&2; exit 3; }
-log() { printf '%s  %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*" >&2; }
+log() { printf '%s  %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*" >&2 || true; }   # a closed stderr (dropped ssh) must never abort a restore half way
 [[ "$DB" =~ ^aicc_[a-z0-9_]+$ ]] || refuse "database name must match ^aicc_[a-z0-9_]+\$"
 [[ "$SCRATCH" =~ ^aicc_dr_[a-z0-9_]+$ ]] || refuse "scratch database must be named aicc_dr_*"
 [ "$SCRATCH" != "$DB" ] || refuse "scratch database equals the live one"
@@ -101,7 +101,14 @@ verify_files() {
   have_id="$(tar -xOzf "$FILES" pointers.txt 2>/dev/null | sed -n 's/^host_identity //p' | head -1)"
   if [ -z "$have_id" ]; then
     [ "$NO_IDENT" = 1 ] || { echo "the archive carries no host_identity (taken before that was recorded): pass --allow-no-identity to accept it knowingly" >&2; return 1; }
-  elif [ "$have_id" != "$want_id" ]; then echo "the archive was taken on a different host/environment (identity differs): refusing" >&2; return 1; fi
+  elif [ "$have_id" != "$want_id" ]; then
+    # a REBUILT host of the same environment has a new random stage id: --allow-new-host-id accepts that (same AICC_ENV and AICC_HOSTNAME, id may differ); never another environment
+    local we wh he hh
+    we="$(printf '%s' "$want_id" | tr ' ' '\n' | sed -n 's/^AICC_ENV=//p')"; wh="$(printf '%s' "$want_id" | tr ' ' '\n' | sed -n 's/^AICC_HOSTNAME=//p')"
+    he="$(printf '%s' "$have_id" | tr ' ' '\n' | sed -n 's/^AICC_ENV=//p')"; hh="$(printf '%s' "$have_id" | tr ' ' '\n' | sed -n 's/^AICC_HOSTNAME=//p')"
+    if [ "$NEW_HOST_ID" = 1 ] && [ -n "$we" ] && [ "$we" = "$he" ] && [ -n "$wh" ] && [ "$wh" = "$hh" ]; then log "WARNING: archive from a previous incarnation of this host (same environment and name, different id): accepted by --allow-new-host-id"
+    else echo "the archive was taken on a different host/environment (identity differs): refusing" >&2; return 1; fi
+  fi
 }
 
 # scratch_load <dump> <scratch-db>: create the scratch database and load the dump into it as a DATA file: no client commands (--binary-mode), DEFINER clauses stripped so nothing in
@@ -133,7 +140,7 @@ if [ "$ACTION" = scratch ]; then
   trap 'my -e "DROP DATABASE IF EXISTS \`$SCRATCH\`" >/dev/null 2>&1 || true' EXIT
   scratch_load "$DUMP" "$SCRATCH" || { echo "the dump did not load into the scratch database" >&2; exit 1; }
   t1="$(now)"
-  fp="${FPOUT:-/tmp/aicc-dr-scratch.fp}"
+  fp="${FPOUT:-$(mktemp)}"
   fingerprint "$SCRATCH" "$fp"
   log "scratch restore ok: $(wc -l < "$fp" | tr -d ' ') tables in $(elapsed "$t0" "$t1") s; fingerprint -> $fp; scratch database dropped on exit"
   exit 0
@@ -148,6 +155,8 @@ if [ "$TRUST_SIDECAR" = 0 ]; then
 fi
 [ -n "$REPORT" ] || REPORT="/srv/aicc/backups/restore-report-$(date -u +%Y%m%dT%H%M%SZ).json"
 STEPS="[]"; T_START="$(now)"; FAILED=""
+# a dropped ssh session must not kill a restore half way (SIGHUP/SIGPIPE): ignore both and keep going; the report is written either way
+trap '' HUP PIPE
 step_done() { STEPS="$(jq -c --arg n "$1" --arg s "$2" --argjson d "$3" '. + [{step:$n,status:$s,seconds:$d}]' <<<"$STEPS")"; }
 run_step() { # run_step <name> <function>
   local n="$1" f="$2" a b
@@ -166,7 +175,7 @@ finish() {
 s_verify() { verify_dump && verify_files; }
 # the dump must load into a scratch database BEFORE anything live is dropped; a dump that cannot load aborts the restore with nothing changed
 s_preload() {
-  local fp="/tmp/aicc-dr-live-check.$$.fp" ok=0
+  local fp ok=0; fp="$(mktemp)"
   if scratch_load "$DUMP" aicc_dr_live_check && fingerprint aicc_dr_live_check "$fp"; then ok=1; fi
   my -e "DROP DATABASE IF EXISTS aicc_dr_live_check" >/dev/null 2>&1 || true
   [ "$ok" = 1 ] || { rm -f "$fp"; echo "the dump does not load (scratch check failed): nothing was changed" >&2; return 1; }

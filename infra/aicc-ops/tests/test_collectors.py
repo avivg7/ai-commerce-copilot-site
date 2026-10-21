@@ -651,3 +651,35 @@ class OffhostSetAge(unittest.TestCase):
         self.assertAlmostEqual(m["backup.offhost_set_age_s"], expect, places=3)
         ack["set_ts"] = "garbage"
         self.assertNotIn("backup.offhost_set_age_s", B.offhost_metrics(_j.dumps(ack), now))
+
+
+class FpmLogCollector(unittest.TestCase):
+    def run_c(self, content, now=1000.0, mtime_ok=True):
+        import tempfile, os as _os
+        from aicc_ops.collectors import fpmlog, CollectorError
+        d = tempfile.mkdtemp()
+        p = _os.path.join(d, "fpm-log.json")
+        if content is not None:
+            with open(p, "w") as fh:
+                fh.write(content)
+        try:
+            return fpmlog.collect({}, {"status_file": p}, {}, now), None
+        except CollectorError as e:
+            return None, str(e)
+
+    def test_fresh_file(self):
+        r, e = self.run_c('{"schema":1,"ts":990,"events_5m":2,"events_15m":7,"log_present":true}')
+        self.assertIsNone(e)
+        self.assertEqual((r.metrics["fpm.log_events_5m"], r.metrics["fpm.log_events_15m"], r.metrics["fpm.log_age_s"]), (2.0, 7.0, 10.0))
+
+    def test_stale_file_is_a_collector_problem_not_silence(self):
+        r, e = self.run_c('{"schema":1,"ts":100,"events_5m":0,"events_15m":0,"log_present":true}', now=1000.0)
+        self.assertIsNone(r)
+        self.assertIn("old", e)
+
+    def test_absent_malformed_and_bad_fields(self):
+        self.assertIn("absent", self.run_c(None)[1])
+        self.assertIn("unreadable", self.run_c("not json")[1])
+        self.assertIn("schema", self.run_c('{"schema":2,"ts":1}')[1])
+        self.assertIn("invalid", self.run_c('{"schema":1,"ts":990,"events_5m":"x","events_15m":1}')[1])
+        self.assertIn("invalid", self.run_c('{"schema":1,"ts":990,"events_5m":-1,"events_15m":1}')[1])

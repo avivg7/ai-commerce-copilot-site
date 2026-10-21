@@ -106,7 +106,8 @@ def offhost_metrics(text: str, now: float) -> dict:
         return m
     if not isinstance(d.get("dump_sha256"), str) or not HEX64.match(d["dump_sha256"]):
         return m
-    if d.get("files_sha256") not in (None, "") and not (isinstance(d["files_sha256"], str) and HEX64.match(d["files_sha256"])):
+    # a database-only pull records files as "-" / "-" (aicc-offhost-serve ack ... - -): valid
+    if d.get("files_sha256") not in (None, "", "-") and not (isinstance(d["files_sha256"], str) and HEX64.match(d["files_sha256"])):
         return m
     m["backup.offhost_verified"] = 1.0
     m["backup.offhost_reason"] = float(R_OK)

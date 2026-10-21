@@ -213,9 +213,13 @@ class RuleTests(unittest.TestCase):
         self.assertTrue(obs("db_conn_pressure", win(**{"mysql.conn_pressure_pct": [50]}))[0].clear)
 
     def test_backup_rules(self):
-        self.assertEqual(obs("backup_stale", win(**{"backup.newest_age_s": [40 * 3600]}))[0].severity, WARNING)
-        self.assertEqual(obs("backup_stale", win(**{"backup.newest_age_s": [80 * 3600]}))[0].severity, CRITICAL)
+        # defaults match the HOURLY backup timer: warn at 3 h without a new backup, critical at 12 h, clear below 2 h
+        self.assertEqual(obs("backup_stale", win(**{"backup.newest_age_s": [4 * 3600]}))[0].severity, WARNING)
+        self.assertEqual(obs("backup_stale", win(**{"backup.newest_age_s": [13 * 3600]}))[0].severity, CRITICAL)
+        self.assertFalse(obs("backup_stale", win(**{"backup.newest_age_s": [2.5 * 3600]}))[0].breach)
         self.assertTrue(obs("backup_stale", win(**{"backup.newest_age_s": [3600]}))[0].clear)
+        # review H5: the Mac lagging behind NEVER makes the HOST backup look stale
+        self.assertFalse(obs("backup_stale", win(**{"backup.newest_age_s": [3600], "backup.offhost_set_age_s": [40 * 3600]}))[0].breach)
         self.assertTrue(obs("backup_stale", win(**{"backup.dir_present": [0]}))[0].breach)
         self.assertTrue(obs("backup_failed", win(**{"backup.status_ok": [0]}))[0].breach)
         rc = [o for o in obs("backup_failed", win(**{"backup.status_ok": [1], "backup.restore_check_ok": [0]})) if o.scope == "restore-check"][0]
@@ -603,3 +607,27 @@ class CronCadence(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class FpmMaxChildren(unittest.TestCase):
+    """The pool ran out of workers: counts come from the root timer's JSON (the log itself is root-only)."""
+
+    def one(self, e15, e5=0):
+        return obs("fpm_max_children", win(**{"fpm.log_events_15m": [e15], "fpm.log_events_5m": [e5]}))
+
+    def test_thresholds(self):
+        self.assertFalse(self.one(0)[0].breach)
+        self.assertFalse(self.one(4)[0].breach)
+        o = self.one(5)[0]
+        self.assertTrue(o.breach)
+        self.assertEqual(o.severity, "WARNING")
+        self.assertEqual(self.one(40)[0].severity, "CRITICAL")
+        self.assertIn("pm.max_children", o.text)
+
+    def test_no_data_holds_state(self):
+        self.assertEqual(obs("fpm_max_children", Window(30, stale={})), [])
+
+    def test_sustained_then_recovered(self):
+        series = [{"fpm.log_events_15m": 12.0, "fpm.log_events_5m": 6.0}] * 3 + [{"fpm.log_events_15m": 0.0, "fpm.log_events_5m": 0.0}] * 12
+        notes, _ = run_rule("fpm_max_children", series)
+        self.assertEqual([n.kind for _, n in notes], [FIRING, RECOVERED])

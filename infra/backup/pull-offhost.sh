@@ -27,7 +27,7 @@
 set -euo pipefail
 umask 077
 
-STAGE_IP=""; STAGE_HOST="stage.copilt.org"; KEY="$HOME/.ssh/aicc_cp_stage_offhost"; USER_NAME="aicc-offhost"; DEST="$HOME/aicc-offhost-backups-stage"; KEEP=14
+STAGE_IP=""; STAGE_HOST="stage.copilt.org"; KEY="$HOME/.ssh/aicc_cp_stage_offhost"; USER_NAME="aicc-offhost"; DEST="$HOME/aicc-offhost-backups-stage"; KEEP=""
 WITH_FILES=1; DRY=0; ACK=1
 DENY_IPS="139.59.157.231 185.199.108.153 185.199.109.153 185.199.110.153 185.199.111.153"
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../provision/lib/ip-guard.sh"   # strict address check (security review L5)
@@ -58,7 +58,7 @@ case "$KEY" in *aicc_digitalocean_prod*) refuse "never use the production key." 
 [ -f "$KEY" ] || { echo "no such key file: $KEY" >&2; exit 2; }
 grep -q "PRIVATE KEY" "$KEY" 2>/dev/null || refuse "$KEY is not a private key file"
 [[ "$USER_NAME" =~ ^[a-z][a-z0-9_-]{0,31}$ ]] || refuse "bad --user"
-[[ "$KEEP" =~ ^[0-9]+$ ]] && [ "$KEEP" -ge 2 ] || { echo "--keep must be a number >= 2" >&2; exit 2; }
+[ -z "$KEEP" ] || { [[ "$KEEP" =~ ^[0-9]+$ ]] && [ "$KEEP" -ge 2 ]; } || { echo "--keep must be a number >= 2" >&2; exit 2; }
 [[ "$DEST" == /* ]] || { echo "--dest must be an absolute path" >&2; exit 2; }
 
 KH="$HOME/.ssh/known_hosts_aicc_stage"
@@ -69,7 +69,7 @@ LOG="$DEST/pull.log"
 # everything the server can influence is printable ASCII only and short before it reaches a log (no escape sequences, no log injection)
 clean() { printf '%s' "$*" | LC_ALL=C tr -cd '\040-\176' | cut -c1-300; }
 say() { local m; m="$(clean "$*")"; echo "$(ts)  $m"; [ "$DRY" = 1 ] || echo "$(ts)  $m" >> "$LOG"; }
-MAX_BYTES=$((2 * 1024 * 1024 * 1024))   # a backup set member larger than this is refused (a hostile host cannot fill the Mac's disk)
+MAX_BYTES=$((2 * 1024 * 1024 * 1024)); case "${AICC_PULL_MAX_BYTES:-}" in ""|*[!0-9]*) ;; *) MAX_BYTES="$AICC_PULL_MAX_BYTES" ;; esac   # the variable can only LOWER the ceiling in practice (tests)   # a backup set member larger than this is refused (a hostile host cannot fill the Mac's disk)
 # bounded transfer: at most MAX_BYTES and at most 900 s wall clock (perl alarm when available; ssh ServerAlive* already kills a dead link)
 bounded() { if command -v perl >/dev/null 2>&1; then perl -e 'alarm 900; exec @ARGV' -- "$@" | head -c "$MAX_BYTES"; else "$@" | head -c "$MAX_BYTES"; fi; }
 sha_of() { if command -v shasum >/dev/null 2>&1; then shasum -a 256 "$1" | awk '{print $1}'; else sha256sum "$1" | awk '{print $1}'; fi; }
@@ -96,7 +96,11 @@ echo "$ident" | grep -q '^AICC_ENV=staging$' || refuse "host does not present AI
 echo "$ident" | grep -q "^AICC_HOSTNAME=${STAGE_HOST}\$" || refuse "host identity AICC_HOSTNAME does not equal $STAGE_HOST"
 
 status="$(rem "status" 2>/dev/null)" || { say "FAILURE cannot read status.json"; exit 1; }
-[ "$(echo "$status" | jq -r '.status | tostring')" = "ok" ] || { say "FAILURE latest backup run on the host did not finish ok: $(echo "$status" | jq -r '.reason | tostring' | cut -c1-200)"; exit 1; }
+if [ "$(echo "$status" | jq -r '.status | tostring')" != "ok" ]; then
+  # the newest RUN failed, but last_success still names a complete, verified set: pull that one (a failing host must not also stop the off-host copies), and say so loudly
+  [ -n "$(echo "$status" | jq -r '.last_success.db_dump_file // empty')" ] || { say "FAILURE latest backup run on the host did not finish ok and no earlier success is recorded: $(echo "$status" | jq -r '.reason | tostring' | cut -c1-200)"; exit 1; }
+  say "WARNING the host's latest backup run FAILED ($(echo "$status" | jq -r '.reason | tostring' | cut -c1-120)); pulling the last good set"
+fi
 dump="$(echo "$status" | jq -r '.last_success.db_dump_file // empty')"
 farc="$(echo "$status" | jq -r '.last_success.files_archive_file // empty')"
 [[ "$dump" =~ ^aicc_cp-[0-9]{8}T[0-9]{6}Z-(scheduled|pre-release|manual)\.sql\.gz$ ]] || { say "FAILURE unexpected dump file name from server: '$dump'"; exit 1; }
@@ -151,11 +155,44 @@ if [ "$ACK" = 1 ]; then
 fi
 date -u +%s > "$DEST/.last-ok"; chmod 600 "$DEST/.last-ok"
 
-# retention: newest $KEEP of each kind (names sort chronologically because of the UTC timestamp); only files matching our patterns are touched
-prune() { # prune <pattern>
-  # shellcheck disable=SC2012
-  { ls -1 "$DEST"/$1 2>/dev/null || true; } | sort -r | tail -n +$((KEEP + 1)) | while IFS= read -r old; do rm -f -- "$old" "$old.sha256"; say "pruned $(basename "$old")"; done
-}
-prune 'aicc_cp-*.sql.gz'
-prune 'aicc-files-*.tar.gz'
+# retention. Default (tiered, matches an HOURLY backup): every set of the last 24 h, the newest set of each UTC day for 14 days, the newest of each ISO week for 8 weeks, and
+# never fewer than the newest 3. `--keep N` = simply the newest N of each kind. Only files matching our name patterns are touched; the timestamp in the name decides.
+python3 -I - "$DEST" "$KEEP" > "$DEST/.prune.list" <<'PY'
+import datetime, glob, os, re, sys, time
+d, keep = sys.argv[1], sys.argv[2]
+now = datetime.datetime.now(datetime.timezone.utc)
+rx = re.compile(r"-(\d{8}T\d{6}Z)-")
+for pat in ("aicc_cp-*.sql.gz", "aicc-files-*.tar.gz"):
+    files = sorted(glob.glob(os.path.join(d, pat)), reverse=True)
+    items = []
+    for f in files:
+        m = rx.search(os.path.basename(f))
+        if not m:
+            continue
+        t = datetime.datetime.strptime(m.group(1), "%Y%m%dT%H%M%SZ").replace(tzinfo=datetime.timezone.utc)
+        items.append((f, t))
+    if keep:
+        keepset = {f for f, _ in items[: int(keep)]}
+    else:
+        keepset = {f for f, _ in items[:3]}
+        days, weeks = set(), set()
+        for f, t in items:                       # newest first
+            age = now - t
+            if age <= datetime.timedelta(hours=24):
+                keepset.add(f)
+                continue
+            day = t.strftime("%Y%m%d"); wk = "%d-%02d" % t.isocalendar()[:2]
+            if age <= datetime.timedelta(days=14) and day not in days:
+                days.add(day); keepset.add(f)
+            if age <= datetime.timedelta(weeks=8) and wk not in weeks:
+                weeks.add(wk); keepset.add(f)
+    for f, _ in items:
+        if f not in keepset:
+            print(f)
+PY
+while IFS= read -r old; do
+  [ -n "$old" ] || continue
+  case "$(basename "$old")" in aicc_cp-*.sql.gz|aicc-files-*.tar.gz) rm -f -- "$old" "$old.sha256"; say "pruned $(basename "$old")" ;; esac
+done < "$DEST/.prune.list"
+rm -f "$DEST/.prune.list"
 say "off-host pull finished ok"

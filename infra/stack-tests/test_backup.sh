@@ -22,6 +22,43 @@ if [ -S "$FXSOCK" ] && [ -x "$LOCALMY/mysqldump" ]; then
   t_eq "status.json: 57 tables restored" "$(jq -r .db_dump.tables "$TMP/bk/status.json")" "$("$LOCALMY/mysql" --defaults-extra-file="$FXCNF" -N -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='aicc_rehearsal_cp'")"
   t_eq "status.json has the keys AICC Ops needs (status, finished_epoch, last_success)" "$(jq -r '[has("status"), has("finished_epoch"), has("last_success")] | all' "$TMP/bk/status.json")" "true"
   t_ok "restore test on the fixture dump" FX aicc-restore-test.sh --backup-dir "$TMP/bk"
+  # tiered retention: 10 days of hourly fake sets are pruned to: all of the last 24 h + the newest set of each of the 6 older days within 7 days (+ the real set just made)
+  RB="$TMP/bkret"; mkdir -p "$RB"
+  python3 - "$RB" <<'PY'
+import os, sys, time
+d = sys.argv[1]; now = int(time.time())
+for h in range(1, 240):                       # 1..239 hours ago
+    t = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime(now - h * 3600))
+    for n in ("aicc_rehearsal_cp-%s-scheduled.sql.gz" % t, "aicc-files-%s-scheduled.tar.gz" % t):
+        open(os.path.join(d, n), "w").write("x"); open(os.path.join(d, n + ".sha256"), "w").write("x")
+PY
+  BEFORE_N="$(ls "$RB"/aicc_rehearsal_cp-*.sql.gz | wc -l | tr -d ' ')"
+  t_ok "fixture backup with a pre-filled 10-day hourly history prunes it" FX aicc-backup.sh --backup-dir "$RB" --shared-dir "$TMP/shared" --edge-conf-dir "$TMP/edge" --release-root "$TMP/rel" --label manual
+  AFTER_N="$(ls "$RB"/aicc_rehearsal_cp-*.sql.gz | wc -l | tr -d ' ')"
+  t_eq "retention: the history shrank from $BEFORE_N hourly sets" "$([ "$AFTER_N" -lt 40 ] && [ "$AFTER_N" -gt 20 ] && echo yes || echo "no ($AFTER_N)")" "yes"
+  t_eq "retention: everything from the last 24 h is still there (23 hourly sets + the new one)" "$(find "$RB" -name 'aicc_rehearsal_cp-*.sql.gz' -newermt '-0 sec' >/dev/null 2>&1; python3 - "$RB" <<'PY'
+import os, sys, time
+d = sys.argv[1]; now = time.time(); n = 0
+for f in os.listdir(d):
+    if f.startswith("aicc_rehearsal_cp-") and f.endswith(".sql.gz"):
+        ts = f.split("-")[1]; ep = time.mktime(time.strptime(ts, "%Y%m%dT%H%M%SZ")) - time.timezone
+        if now - ep <= 86400: n += 1
+print("yes" if n >= 23 else "no (%d)" % n)
+PY
+)" "yes"
+  t_eq "retention: no file older than 7 days remains" "$(python3 - "$RB" <<'PY'
+import os, sys, time
+d = sys.argv[1]; now = time.time(); old = 0
+for f in os.listdir(d):
+    if f.endswith((".sql.gz", ".tar.gz")) and "-20" in f:
+        ts = f.split("-")[1] if f.startswith("aicc_rehearsal_cp-") else f.split("-")[2]
+        ep = time.mktime(time.strptime(ts, "%Y%m%dT%H%M%SZ")) - time.timezone
+        if now - ep > 7 * 86400 + 3600: old += 1
+print(old)
+PY
+)" "0"
+  t_eq "retention: sidecars of pruned files are gone too" "$(ls "$RB"/*.sha256 | wc -l | tr -d ' ')" "$(( $(ls "$RB"/*.sql.gz | wc -l | tr -d ' ') + $(ls "$RB"/*.tar.gz | wc -l | tr -d ' ') ))"
+
   t_eq "the fixture database is unchanged (same row count)" "$("$LOCALMY/mysql" --defaults-extra-file="$FXCNF" -N -e "SELECT COUNT(*) FROM aicc_rehearsal_cp.rhsl_options")" "$BEFORE"
   t_eq "the fixture server has no leftover throwaway database" "$("$LOCALMY/mysql" --defaults-extra-file="$FXCNF" -N -e "SHOW DATABASES LIKE 'aicc_rehearsal_restore_check'")" ""
   t_eq "the fixture server still has exactly its original databases" "$("$LOCALMY/mysql" --defaults-extra-file="$FXCNF" -N -e "SHOW DATABASES" | grep -vE '^(information_schema|mysql|performance_schema|sys)$' | tr '\n' ' ')" "aicc_rehearsal_cp "
@@ -51,7 +88,9 @@ echo "ssh \$*" >> "$CALLS"
 cmd="\${@: -1}"
 case "\$cmd" in
   identity) printf 'AICC_ENV=%s\nAICC_HOSTNAME=%s\n' "\${STUB_ENV:-staging}" "\${STUB_HOSTNAME:-stage.copilt.org}" ;;
-  get\ *|status|ack\ *)
+  ack\ *) [ "\${STUB_ACK_FAIL:-0}" = 1 ] && exit 1; AICC_TEST_HARNESS=1 AICC_BACKUP_DIR="$REMOTE" bash "$BKP/aicc-offhost-serve.sh" "\$cmd" ;;
+  get\ *.sha256) if [ -n "\${STUB_BAD_SIDE:-}" ]; then printf '%s\n' "\$STUB_BAD_SIDE"; else AICC_TEST_HARNESS=1 AICC_BACKUP_DIR="$REMOTE" bash "$BKP/aicc-offhost-serve.sh" "\$cmd"; fi ;;
+  get\ *|status)
      if [ "\${STUB_CORRUPT:-0}" = 1 ] && case "\$cmd" in get\ *.sql.gz) true;; *) false;; esac; then (AICC_TEST_HARNESS=1 AICC_BACKUP_DIR="$REMOTE" bash "$BKP/aicc-offhost-serve.sh" "\$cmd"; printf 'X')
      else AICC_TEST_HARNESS=1 AICC_BACKUP_DIR="$REMOTE" AICC_IDENTITY_FILE="$TMP/ident" bash "$BKP/aicc-offhost-serve.sh" "\$cmd"; fi ;;
   *) exit 1 ;;
@@ -123,6 +162,62 @@ PULL --stage-ip 203.0.113.9 >/dev/null 2>&1 || true
 t_eq "pull.log holds no control or escape character from the server" "$(LC_ALL=C grep -c "[^[:print:][:space:]]" "$TMP/dest/pull.log" || true)" "0"
 mkset 20261021T070000Z
 
+echo "== pull-offhost.sh: integrity, ack and retention gates (architecture/test review U1-U16) =="
+HASH0="$(printf '0%.0s' $(seq 64))"
+mkset 20260901T010000Z
+STUB_BAD_SIDE="$HASH0" t_rc "a sidecar that differs from the received bytes is refused" 1 PULL --stage-ip 203.0.113.9
+t_fail "...nothing was kept" test -f "$TMP/dest/aicc_cp-20260901T010000Z-scheduled.sql.gz"
+STUB_BAD_SIDE="zzz" t_rc "a malformed sidecar is refused" 1 PULL --stage-ip 203.0.113.9
+jq --arg h "$(printf 'a%.0s' $(seq 64))" '.db_dump.sha256 = $h' "$REMOTE/status.json" > "$REMOTE/status.json.n" && mv "$REMOTE/status.json.n" "$REMOTE/status.json"
+t_rc "a hash in status.json that differs from the bytes is refused (even if the sidecar agrees with the bytes)" 1 PULL --stage-ip 203.0.113.9
+mkset 20260901T020000Z
+printf 'this is not gzip data' > "$REMOTE/aicc_cp-20260901T020000Z-scheduled.sql.gz"; H="$(shasum -a 256 "$REMOTE/aicc_cp-20260901T020000Z-scheduled.sql.gz" | cut -d' ' -f1)"
+echo "$H  aicc_cp-20260901T020000Z-scheduled.sql.gz" > "$REMOTE/aicc_cp-20260901T020000Z-scheduled.sql.gz.sha256"; jq --arg h "$H" '.db_dump.sha256 = $h' "$REMOTE/status.json" > "$REMOTE/status.json.n" && mv "$REMOTE/status.json.n" "$REMOTE/status.json"
+t_rc "bytes that are not gzip are refused even when every hash agrees" 1 PULL --stage-ip 203.0.113.9
+mkset 20260901T030000Z
+jq '.status = "failed" | .reason = "disk guard"' "$REMOTE/status.json" > "$REMOTE/status.json.n" && mv "$REMOTE/status.json.n" "$REMOTE/status.json"
+t_ok "a failed LATEST run still pulls the last good set (with a warning)" PULL --stage-ip 203.0.113.9
+t_contains "...and the log says the host's latest run failed" "$(cat "$TMP/dest/pull.log")" "latest backup run FAILED"
+mkset 20260901T040000Z
+jq '.last_success.db_dump_file = "evil.sql.gz"' "$REMOTE/status.json" > "$REMOTE/status.json.n" && mv "$REMOTE/status.json.n" "$REMOTE/status.json"
+t_rc "a dump name outside the pattern is refused" 1 PULL --stage-ip 203.0.113.9
+mkset 20260901T050000Z
+jq --argjson e "$(( $(date -u +%s) + 200000 ))" '.last_success.finished_epoch = $e' "$REMOTE/status.json" > "$REMOTE/status.json.n" && mv "$REMOTE/status.json.n" "$REMOTE/status.json"
+t_rc "a backup time in the future is refused" 1 PULL --stage-ip 203.0.113.9
+mkset 20260901T060000Z
+t_rc "a transfer above the size ceiling is refused" 1 env AICC_PULL_MAX_BYTES=10 HOME="$TMP/home" PATH="$STUB:$PATH" bash "$BKP/pull-offhost.sh" --key "$FAKEKEY" --dest "$TMP/dest" --stage-ip 203.0.113.9
+STUB_ACK_FAIL=1 t_rc "a host that does not accept the ack makes the pull FAIL (but keeps the verified copy)" 1 PULL --stage-ip 203.0.113.9
+t_ok "...the verified copy was kept" test -f "$TMP/dest/aicc_cp-20260901T060000Z-scheduled.sql.gz"
+t_rc "--keep 1 is a usage error" 2 PULL --stage-ip 203.0.113.9 --keep 1
+t_rc "--keep abc is a usage error" 2 PULL --stage-ip 203.0.113.9 --keep abc
+mkdir -p "$TMP/dest/.pull.lock"; echo 999999 > "$TMP/dest/.pull.lock/pid"
+t_ok "a lock of a dead pid is taken over" PULL --stage-ip 203.0.113.9
+rm -rf "$TMP/dest/.pull.lock"; mkdir -p "$TMP/dest/.pull.lock"; sleep 30 & SLP=$!; echo $SLP > "$TMP/dest/.pull.lock/pid"
+t_rc "a live young lock makes the run exit 4 (skipped, counted by the runner)" 4 PULL --stage-ip 203.0.113.9
+touch -t 202601010000 "$TMP/dest/.pull.lock"
+t_ok "a lock older than 3 hours is stale even if its pid is alive (pid reuse)" PULL --stage-ip 203.0.113.9
+kill $SLP 2>/dev/null; wait $SLP 2>/dev/null
+rm -rf "$TMP/dest2"; mkdir -p "$TMP/dest2"; chmod 700 "$TMP/dest2"
+python3 - "$TMP/dest2" <<'PY'
+import os, sys, time
+d = sys.argv[1]; now = int(time.time())
+for h in range(2, 24 * 20):
+    t = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime(now - h * 3600))
+    for n in ("aicc_cp-%s-scheduled.sql.gz" % t, "aicc-files-%s-scheduled.tar.gz" % t):
+        open(os.path.join(d, n), "w").write("x"); open(os.path.join(d, n + ".sha256"), "w").write("x")
+PY
+mkset "$(date -u +%Y%m%dT%H%M%SZ)"
+env HOME="$TMP/home" PATH="$STUB:$PATH" bash "$BKP/pull-offhost.sh" --key "$FAKEKEY" --dest "$TMP/dest2" --stage-ip 203.0.113.9 >/dev/null 2>&1
+N2="$(ls "$TMP"/dest2/aicc_cp-*.sql.gz | wc -l | tr -d ' ')"
+t_eq "tiered retention: 20 days of hourly sets shrink to (24 h hourly + ~14 daily + ~8 weekly)" "$([ "$N2" -ge 30 ] && [ "$N2" -le 50 ] && echo yes || echo "no ($N2)")" "yes"
+t_eq "tiered retention: the sets of the last 24 h are still there" "$(ls "$TMP"/dest2/aicc_cp-*.sql.gz | python3 -c '
+import sys,time
+n=0
+for l in sys.stdin:
+    ts=l.strip().split("-")[-2]; ep=time.mktime(time.strptime(ts,"%Y%m%dT%H%M%SZ"))-time.timezone
+    n+= (time.time()-ep)<=86400
+print("yes" if n>=22 else "no (%d)"%n)')" "yes"
+
 echo "== aicc-offhost-serve.sh: what the restricted pull key may and may not do =="
 SV() { env AICC_TEST_HARNESS=1 AICC_BACKUP_DIR="$REMOTE" AICC_IDENTITY_FILE="$TMP/ident" bash "$BKP/aicc-offhost-serve.sh" "$@"; }
 mkset 20260830T033012Z
@@ -149,6 +244,11 @@ t_fail "...and wrote nothing" test -f "$REMOTE/offhost-ack.json"
 t_rc "ack naming a set that does not exist is refused" 3 SV "ack 20271111T000000Z aicc_cp-20271111T000000Z-manual.sql.gz $DS - -"
 t_rc "ack with a dump from another set is refused" 3 SV "ack 20261029T033012Z $D1 $DS - -"
 t_rc "ack with a malformed hash is refused" 3 SV "ack 20260830T033012Z $D1 zzz - -"
+t_rc "ack with a wrong FILES hash is refused" 3 SV "ack 20260830T033012Z $D1 $DS $F1 $HASH0"
+t_rc "ack naming a files archive of ANOTHER set is refused" 3 SV "ack 20260830T033012Z $D1 $DS aicc-files-20260829T033012Z-scheduled.tar.gz $FS"
+t_rc "ack with files '-' but a files hash is refused" 3 SV "ack 20260830T033012Z $D1 $DS - $FS"
+t_rc "ack naming a .sql.gz as the files archive is refused" 3 SV "ack 20260830T033012Z $D1 $DS $D1 $FS"
+t_rc "ack naming a .tar.gz as the dump is refused" 3 SV "ack 20260830T033012Z $F1 $FS - -"
 t_ok "a correct ack is recorded" SV "ack 20260830T033012Z $D1 $DS $F1 $FS"
 t_eq "...with the host's own timestamp and verified=true" "$(jq -r '[.verified,(.acked_at>1700000000)]|join(",")' "$REMOTE/offhost-ack.json")" "true,true"
 t_ok "a database-only ack (files -) is accepted" SV "ack 20260830T033012Z $D1 $DS - -"
@@ -218,6 +318,11 @@ t_ok "...but an archive without identity is accepted when the operator says so k
 t_rc "a wrong files hash is refused" 1 RV --dump "$DG" --sha256 "$DH" --files "$RS/good.tgz" --files-sha256 "$(printf '1%.0s' $(seq 64))"
 t_rc "live restore without --yes-replace-live is refused" 3 env AICC_TEST_HARNESS=1 AICC_IDENTITY_FILE="$IDF" bash "$BKP/aicc-restore.sh" live --dump "$DG" --files none
 t_rc "live restore without out-of-band hashes is refused (before anything runs)" 3 env AICC_TEST_HARNESS=1 AICC_IDENTITY_FILE="$IDF" bash "$BKP/aicc-restore.sh" live --dump "$DG" --files none --yes-replace-live
+t_rc "live restore WITH hashes but without --yes-replace-live is still refused" 3 env AICC_TEST_HARNESS=1 AICC_IDENTITY_FILE="$IDF" bash "$BKP/aicc-restore.sh" live --dump "$DG" --sha256 "$DH" --files none
+t_rc "live restore of a files archive needs --files-sha256 too" 3 env AICC_TEST_HARNESS=1 AICC_IDENTITY_FILE="$IDF" bash "$BKP/aicc-restore.sh" live --dump "$DG" --sha256 "$DH" --files "$RS/good.tgz" --yes-replace-live
+t_rc "a database name that is not aicc_* is refused" 3 env AICC_TEST_HARNESS=1 bash "$BKP/aicc-restore.sh" fingerprint --db 'mysql' --out "$RS/x.fp"
+t_rc "a database name with SQL metacharacters is refused" 3 env AICC_TEST_HARNESS=1 bash "$BKP/aicc-restore.sh" fingerprint --db 'aicc_x;drop' --out "$RS/x.fp"
+t_rc "without root and without the test harness the restore tool refuses (2)" 2 bash "$BKP/aicc-restore.sh" verify --dump "$DG" --sha256 "$DH"
 t_rc "a scratch database name outside aicc_dr_* is refused" 3 env AICC_TEST_HARNESS=1 bash "$BKP/aicc-restore.sh" scratch --dump "$DG" --scratch-db aicc_cp
 if [ -S "$FXSOCK" ] && [ -x "$LOCALMY/mysql" ]; then
   HOSTILE="aicc_rehearsal_dr_hostile"

@@ -61,7 +61,9 @@ else
 fi
 python3 -I "$HERE/lib/release_tool.py" scan --tree "$TREE" --kind site
 SHA="$(git -C "$SITE_REPO" rev-parse --short HEAD 2>/dev/null || echo unknown)"
+# fail closed: a build whose commit cannot be determined (not a git checkout, git missing) is NOT clean; a production deploy requires dirty == false
 DIRTYF=false; [ -n "$(git -C "$SITE_REPO" status --porcelain 2>/dev/null | head -1)" ] && DIRTYF=true
+[ "$SHA" != unknown ] || DIRTYF=true
 META="$(python3 -I - "$TARGET" "$SHA" "$DIRTYF" "$STAGE_HOST" <<'PY'
 import json, sys
 t, sha, dirty, host = sys.argv[1:5]

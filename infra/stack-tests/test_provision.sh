@@ -341,12 +341,75 @@ if [ -x "$LOCALMY/mysqld" ]; then
     t_rc "rendering the PRODUCTION template is refused (record only, not usable)" 1 env AICC_TEST_HARNESS=1 bash "$PROV/render-wp-config.sh" --template "$PROV/wp-config.production.template.php" --out "$WC/prod.php" --secrets-dir "$SEC"
     t_ok "... and the refusal says why" bash -c "env AICC_TEST_HARNESS=1 bash '$PROV/render-wp-config.sh' --template '$PROV/wp-config.production.template.php' --out '$WC/prod.php' --secrets-dir '$SEC' 2>&1 | grep -q 'production template'"
     t_ok "... and nothing was written" test ! -e "$WC/prod.php"
-    t_rc "a copy renamed to something innocent is still refused by its NOT-USABLE marker" 1 bash -c "cp '$PROV/wp-config.production.template.php' '$TMP/innocent.php' && env AICC_TEST_HARNESS=1 bash '$PROV/render-wp-config.sh' --template '$TMP/innocent.php' --out '$WC/prod2.php' --secrets-dir '$SEC'"
-    t_rc "the production template, run as PHP (a copy used as wp-config.php), exits with an error and defines nothing" 255 bash -c "php -r 'include \"$PROV/wp-config.production.template.php\";' >/dev/null 2>&1 || exit \$?" 
+    echo "== production wp-config path (rendered into a scratch dir only; the host is never touched) =="
+    PSEC="$TMP/psecrets"; mkdir -p "$PSEC"; chmod 700 "$PSEC"; cp "$SEC/db-cp.pass" "$PSEC/"
+    PW() { env AICC_TEST_HARNESS=1 bash "$PROV/render-wp-config.sh" --env production "$@" --out "$WC/prod.php" --secrets-dir "$PSEC"; }
+    t_rc "production render without --confirm-production is refused" 1 PW
+    t_ok "...and the refusal says why" bash -c "env AICC_TEST_HARNESS=1 bash '$PROV/render-wp-config.sh' --env production --out '$WC/prod.php' --secrets-dir '$PSEC' 2>&1 | grep -q 'confirm-production'"
+    t_rc "production render without the owner-provided secrets is refused" 1 PW --confirm-production
+    t_ok "...naming the missing file, never generating it" bash -c "env AICC_TEST_HARNESS=1 bash '$PROV/render-wp-config.sh' --env production --confirm-production --out '$WC/prod.php' --secrets-dir '$PSEC' 2>&1 | grep -q 'entitlement-webhook.secret is missing'"
+    t_fail "...and nothing was written" test -e "$WC/prod.php"
+    t_fail "...and the secrets directory gained no generated shared secret" test -e "$PSEC/entitlement-webhook.secret"
+    printf 'WEBHOOK-test-0123456789-0123456789-abcdef\n' > "$PSEC/entitlement-webhook.secret"; printf 'PROOF-test-0123456789-0123456789-abcdefgh\n' > "$PSEC/activation-proof.secret"; chmod 644 "$PSEC/entitlement-webhook.secret"; chmod 600 "$PSEC/activation-proof.secret"
+    t_rc "an owner secret with mode 0644 is refused" 1 PW --confirm-production
+    chmod 600 "$PSEC/entitlement-webhook.secret"
+    t_rc "a too-short owner secret is refused" 1 bash -c "printf 'short' > '$PSEC/activation-proof.secret'; env AICC_TEST_HARNESS=1 bash '$PROV/render-wp-config.sh' --env production --confirm-production --out '$WC/prod.php' --secrets-dir '$PSEC'"
+    printf 'PROOF-test-0123456789-0123456789-abcdefgh\n' > "$PSEC/activation-proof.secret"
+    t_rc "a secret containing a quote (would break the PHP string) is refused" 1 bash -c "printf \"WEBHOOK'quote-0123456789-0123456789-abcdef\" > '$PSEC/entitlement-webhook.secret'; env AICC_TEST_HARNESS=1 bash '$PROV/render-wp-config.sh' --env production --confirm-production --out '$WC/prod.php' --secrets-dir '$PSEC'"
+    t_rc "an owner secret of 40 identical characters (a placeholder) is refused" 1 bash -c "printf 'a%.0s' \$(seq 40) > '$PSEC/entitlement-webhook.secret'; env AICC_TEST_HARNESS=1 bash '$PROV/render-wp-config.sh' --env production --confirm-production --out '$WC/prod.php' --secrets-dir '$PSEC'"
+    printf 'WEBHOOK-test-0123456789-0123456789-abcdef\n' > "$PSEC/entitlement-webhook.secret"
+    t_rc "an owner secret with mode 0666 is refused" 1 bash -c "chmod 666 '$PSEC/activation-proof.secret'; env AICC_TEST_HARNESS=1 bash '$PROV/render-wp-config.sh' --env production --confirm-production --out '$WC/prod.php' --secrets-dir '$PSEC'"
+    chmod 600 "$PSEC/activation-proof.secret"
+    t_rc "a production template without its marker is refused" 1 bash -c "grep -v 'AICC_TEMPLATE: production' '$PROV/wp-config.production.template.php' > '$TMP/nomarker.php'; env AICC_TEST_HARNESS=1 bash '$PROV/render-wp-config.sh' --env production --confirm-production --template '$TMP/nomarker.php' --out '$WC/prod.php' --secrets-dir '$PSEC'"
+    t_rc "a production template whose WP_HOME is not www.copilt.org is refused" 1 bash -c "sed \"s#define( 'WP_HOME', 'https://www.copilt.org' )#define( 'WP_HOME', 'https://example.org' )#\" '$PROV/wp-config.production.template.php' > '$TMP/otherhome.php'; env AICC_TEST_HARNESS=1 bash '$PROV/render-wp-config.sh' --env production --confirm-production --template '$TMP/otherhome.php' --out '$WC/prod.php' --secrets-dir '$PSEC'"
+    t_rc "a production template that carries the staging host in code is refused" 1 bash -c "sed \"s#define( 'WP_ACCESSIBLE_HOSTS', 'api.copilt.org' )#define( 'WP_ACCESSIBLE_HOSTS', 'stage.copilt.org' )#\" '$PROV/wp-config.production.template.php' > '$TMP/badprod.php'; env AICC_TEST_HARNESS=1 bash '$PROV/render-wp-config.sh' --env production --confirm-production --template '$TMP/badprod.php' --out '$WC/prod.php' --secrets-dir '$PSEC'"
+    t_fail "none of the refused renders wrote a production file" test -e "$WC/prod.php"
+    t_rc "the PRODUCTION template cannot be used by the stage renderer" 1 env AICC_TEST_HARNESS=1 bash "$PROV/render-wp-config.sh" --template "$PROV/wp-config.production.template.php" --out "$WC/x1.php" --secrets-dir "$SEC"
+    t_rc "the STAGE template cannot be used with --env production" 1 env AICC_TEST_HARNESS=1 bash "$PROV/render-wp-config.sh" --env production --confirm-production --template "$PROV/wp-config.stage.template.php" --out "$WC/x2.php" --secrets-dir "$PSEC"
+    t_rc "without the test harness, production needs a production host identity (this machine has none)" 1 bash "$PROV/render-wp-config.sh" --env production --confirm-production --out "$WC/x4.php" --secrets-dir "$PSEC"
+    t_ok "--env production --dry-run changes nothing" bash "$PROV/render-wp-config.sh" --env production --confirm-production --dry-run --secrets-dir "$PSEC"
+    t_ok "with the confirmation and the owner secrets the production config renders" PW --confirm-production
+    t_eq "...mode 0640" "$(stat -f %Lp "$WC/prod.php" 2>/dev/null || stat -c %a "$WC/prod.php")" "640"
+    t_eq "...no placeholder left" "$(grep -c '@@' "$WC/prod.php" || true)" "0"
+    t_ok "...php -l clean" php -l "$WC/prod.php"
+    t_eq "the wp-secrets.env generated for production has NO shared secrets (those are the owner's)" "$(grep -c 'AICC_ENTITLEMENT_WEBHOOK_SECRET\|AICC_ACTIVATION_PROOF_SECRET' "$PSEC/wp-secrets.env" || true)" "0"
+    mkdir -p "$WC/abs2"; echo '<?php' > "$WC/abs2/wp-settings.php"
+    PCONF="$(php -r 'define("ABSPATH", $argv[2]); require $argv[1]; echo json_encode(array("home"=>WP_HOME,"siteurl"=>WP_SITEURL,"env"=>WP_ENVIRONMENT_TYPE,"hosts"=>WP_ACCESSIBLE_HOSTS,"block"=>WP_HTTP_BLOCK_EXTERNAL,"hook"=>AICC_ENTITLEMENT_WEBHOOK_URL,"fmods"=>DISALLOW_FILE_MODS,"fedit"=>DISALLOW_FILE_EDIT,"cron"=>DISABLE_WP_CRON,"debug"=>WP_DEBUG,"debuglog"=>WP_DEBUG_LOG,"debugdisp"=>WP_DEBUG_DISPLAY,"updater"=>AUTOMATIC_UPDATER_DISABLED,"ssl"=>FORCE_SSL_ADMIN,"dbhost"=>DB_HOST,"proxies"=>AICC_LM_TRUSTED_PROXIES,"ops"=>AICC_LM_OPERATOR_CIDRS,"devboot"=>defined("AICC_LM_ALLOW_DEV_SECRET_BOOTSTRAP"),"fixture"=>defined("AICC_LM_TEST_FIXTURE"),"cookiedom"=>defined("COOKIE_DOMAIN")));' "$WC/prod.php" "$WC/abs2/" 2>&1)"
+    t_eq "production: WP_HOME/WP_SITEURL are https://www.copilt.org" "$(echo "$PCONF" | jq -r '.home + " " + .siteurl')" "https://www.copilt.org https://www.copilt.org"
+    t_eq "production: environment type production, TLS admin" "$(echo "$PCONF" | jq -r '[.env,.ssl]|join(" ")')" "production true"
+    t_eq "production: outbound blocked, ONLY the API host allowed" "$(echo "$PCONF" | jq -r '[.block,.hosts]|join(" ")')" "true api.copilt.org"
+    t_eq "production: webhook URL is https on the API host" "$(echo "$PCONF" | jq -r .hook)" "https://api.copilt.org/v1/internal/entitlement/webhook"
+    t_eq "production: immutable code, no file editor, auto-updates off, system cron" "$(echo "$PCONF" | jq -r '[.fmods,.fedit,.updater,.cron]|join(" ")')" "true true true true"
+    t_eq "production: debug, debug log and debug display all off" "$(echo "$PCONF" | jq -r '[.debug,.debuglog,.debugdisp]|join(" ")')" "false false false"
+    t_eq "production: DB over the unix socket" "$(echo "$PCONF" | jq -r .dbhost)" "localhost:/run/mysqld/mysqld.sock"
+    t_eq "production: no trusted proxies, loopback-only operators" "$(echo "$PCONF" | jq -c '[.proxies,.ops]')" '[[],["127.0.0.1/32","::1/128"]]'
+    t_eq "production: dev bootstrap / fixture constants NOT defined, no COOKIE_DOMAIN (host-only cookies)" "$(echo "$PCONF" | jq -r '[.devboot,.fixture,.cookiedom]|join(" ")')" "false false false"
+    t_not_contains "the rendered production file names no staging host" "$(cat "$WC/prod.php")" "stage.copilt.org"
+    # PINNED: the constants that differ between the stage render and the production render are exactly the environment-specific ones (any other drift fails here)
+    DIFFK="$(php -r '$dump=function($f){ $code=file_get_contents($f); preg_match_all("/define\(\s*\x27([A-Z_]+)\x27,\s*(.*?)\s*\);/", $code, $m, PREG_SET_ORDER); $o=[]; foreach($m as $x){ if(preg_match("/^(AUTH|SECURE_AUTH|LOGGED_IN|NONCE)_(KEY|SALT)$/",$x[1])) continue; $o[$x[1]]=$x[2]; } return $o; }; $s=$dump($argv[1]); $p=$dump($argv[2]); $d=[]; foreach(array_unique(array_merge(array_keys($s),array_keys($p))) as $k){ if(($s[$k]??null)!==($p[$k]??null)) $d[]=$k; } sort($d); echo json_encode($d);' "$WC/shared/wp-config.php" "$WC/prod.php")"
+    t_eq "PINNED: only environment-specific constants differ between the stage and the production render" "$DIFFK" '["AICC_ACTIVATION_PROOF_SECRET","AICC_ENTITLEMENT_WEBHOOK_SECRET","AICC_ENTITLEMENT_WEBHOOK_URL","WP_ACCESSIBLE_HOSTS","WP_ENVIRONMENT_TYPE","WP_HOME","WP_SITEURL"]'
+    # mutation proof for the pin itself: a drifted production copy must change the set
+    sed "s#define( 'DISALLOW_FILE_EDIT', true )#define( 'DISALLOW_FILE_EDIT', false )#" "$WC/prod.php" > "$WC/prod.drift.php"
+    DRIFT="$(php -r '$dump=function($f){ $code=file_get_contents($f); preg_match_all("/define\(\s*\x27([A-Z_]+)\x27,\s*(.*?)\s*\);/", $code, $m, PREG_SET_ORDER); $o=[]; foreach($m as $x){ $o[$x[1]]=$x[2]; } return $o; }; $s=$dump($argv[1]); $p=$dump($argv[2]); echo (($s["DISALLOW_FILE_EDIT"]??null)!==($p["DISALLOW_FILE_EDIT"]??null)) ? "detected" : "missed";' "$WC/shared/wp-config.php" "$WC/prod.drift.php")"
+    t_eq "...and a drifted production copy (DISALLOW_FILE_EDIT false) is detected by the same comparison" "$DRIFT" "detected"
+    t_not_contains "the stale template says nothing about 'NOT usable' any more" "$(cat "$PROV/wp-config.stage.template.php")" "NOT usable"
     t_rc "rendering without the DB password file is refused" 1 env AICC_TEST_HARNESS=1 bash "$PROV/render-wp-config.sh" --out "$WC/x.php" --secrets-dir "$TMP/emptysecrets"
     t_rc "--dry-run prints nothing secret" 0 bash "$PROV/render-wp-config.sh" --dry-run
 
-    echo "== backup / restore as the REAL backup account against the throwaway server =="
+        echo "== aicc-fpm-log-status.sh (counts, never log text) =="
+    FL="$TMP/fpmlog"; mkdir -p "$FL/st"; NOWE=1792600000
+    mkl() { local off="$1"; date -u -r $((NOWE - off)) +"[%d-%b-%Y %H:%M:%S] WARNING: [pool aicc] server reached pm.max_children setting (3), consider raising it" 2>/dev/null || date -u -d "@$((NOWE - off))" +"[%d-%b-%Y %H:%M:%S] WARNING: [pool aicc] server reached pm.max_children setting (3), consider raising it"; }
+    { mkl 10; mkl 100; mkl 290; mkl 400; mkl 899; mkl 1200; mkl -5; echo "[01-Jan-2026 00:00:00] NOTICE: secret-looking text token=abc123 should never be copied"; echo "garbage line"; } > "$FL/php.log"
+    t_ok "the counter runs" env AICC_FPM_LOG="$FL/php.log" AICC_STATUS_DIR="$FL/st" AICC_NOW=$NOWE bash "$INFRA/systemd/aicc-fpm-log-status.sh"
+    t_eq "events in the last 5 minutes (10 s, 100 s, 290 s ago; a line dated in the future is ignored)" "$(jq -r .events_5m "$FL/st/fpm-log.json")" "3"
+    t_eq "events in the last 15 minutes (adds 400 s and 899 s; 1200 s is outside)" "$(jq -r .events_15m "$FL/st/fpm-log.json")" "5"
+    t_not_contains "the status file holds no log text" "$(cat "$FL/st/fpm-log.json")" "secret"
+    t_eq "...and its keys are exactly the documented ones" "$(jq -r 'keys|join(",")' "$FL/st/fpm-log.json")" "events_15m,events_5m,log_present,schema,ts"
+    t_ok "an absent log is reported as log_present=false (not a crash)" env AICC_FPM_LOG="$FL/none.log" AICC_STATUS_DIR="$FL/st" AICC_NOW=$NOWE bash "$INFRA/systemd/aicc-fpm-log-status.sh"
+    t_eq "...with zero events" "$(jq -r '[.log_present,.events_15m]|join(",")' "$FL/st/fpm-log.json")" "false,0"
+    t_rc "a non-numeric AICC_NOW is refused" 2 env AICC_FPM_LOG="$FL/php.log" AICC_STATUS_DIR="$FL/st" AICC_NOW=abc bash "$INFRA/systemd/aicc-fpm-log-status.sh"
+
+echo "== backup / restore as the REAL backup account against the throwaway server =="
     BKDIR="$TMP/bk"; SH="$TMP/shared"; EC="$TMP/edgeconf"; mkdir -p "$SH/uploads/2026" "$EC" "$TMP/rel/site" "$TMP/rel/cp"; echo img > "$SH/uploads/2026/a.jpg"; echo "<?php // x" > "$SH/wp-config.php"; echo cfg > "$EC/Caddyfile"
     ln -s "$TMP/rel/site/releases/R1" "$TMP/rel/site/current"
     BKP() { env AICC_TEST_HARNESS=1 MYSQL_BIN="$LOCALMY/mysql" MYSQLDUMP_BIN="$LOCALMY/mysqldump" bash "$INFRA/backup/aicc-backup.sh" --backup-dir "$BKDIR" --shared-dir "$SH" --edge-conf-dir "$EC" --release-root "$TMP/rel" --mysql-defaults-file "$BKCNF" "$@"; }

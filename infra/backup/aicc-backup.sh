@@ -14,10 +14,11 @@
 #   status.json                          for AICC Ops stale-backup alerts and for the release gate (see schema below)
 # Checks before anything is called "ok": gzip -t on both archives, the dump ends with "-- Dump completed", tar listing works, and (unless --quick) a RESTORE SMOKE:
 # the dump is loaded into the throwaway database aicc_restore_check, sanity SQL runs, the database is dropped again.
-# Safety: single instance (lock), refuses when the backup filesystem has < 15% free, a failure never deletes old backups (retention runs only after
-# success: 7 days, but always the newest 3 sets are kept), partial files carry a .partial suffix until verified, nothing secret is ever printed.
+# Safety: single instance (lock), refuses when the backup filesystem has < 15% free, partial files carry a .partial suffix until verified, nothing secret is ever printed.
+# Retention (tiered, so an hourly timer does not keep 168 full copies): every set of the last 24 h, then the newest set of each UTC day up to RETENTION_DAYS (7), and never
+# fewer than the newest 3 sets. Pruning runs after a successful run AND, when the disk guard would refuse, once before the guard (a full disk must not stay full forever).
 #
-# RPO: the timer gives <= 24 h (a missed run executes after boot: Persistent=true). Hourly option: add an OnCalendar=hourly drop-in; dumps are small.
+# RPO: the timer is HOURLY (minute 17 UTC; a missed run executes after boot: Persistent=true), so the on-host RPO is about 1 hour.
 # RTO: not measured yet; see README-backup.md (do not claim a restore time before aicc-restore-test and a full drill have run on the real host).
 #
 # status.json schema (schema 1):
@@ -27,7 +28,7 @@
 #    "files_archive":{"file":"...","bytes":N,"sha256":"...","gzip_test":"ok","paths":[...]},
 #    "last_success":{"finished_at":"...","finished_epoch":N,"label":"...","db_dump_file":"...","files_archive_file":"..."}}
 #   "last_success" survives a later failure; the release gate (activate-release.sh) uses it, AICC Ops alerts on "status" and on its age.
-# Exit codes: 0 ok, 1 failed, 2 usage, 3 another run holds the lock, 4 disk guard.
+# Exit codes: 0 ok, 1 failed, 2 usage, 3 another run holds the lock (a SCHEDULED run that finds the lock held exits 0: the other run is doing the job), 4 disk guard.
 #
 # Test/fixture flags (all explicit; defaults are the host layout): --backup-dir --shared-dir --edge-conf-dir --release-root --mysql-defaults-file --db --restore-db
 #   --fixture-test   fail-closed: both database names must start with aicc_rehearsal; runs without root; never touches anything outside --backup-dir except reading.
@@ -141,11 +142,39 @@ trap cleanup EXIT
 
 command -v jq >/dev/null 2>&1 || b_die "jq is required (installed by cloud-init)" 1
 command -v gzip >/dev/null 2>&1 || b_die "gzip missing" 1
-if ! acquire_lock "$LOCKDIR"; then b_log "another backup is running (lock $LOCKDIR): exiting"; trap - EXIT; exit 3; fi
+if ! acquire_lock "$LOCKDIR"; then b_log "another backup is running (lock $LOCKDIR): exiting"; trap - EXIT; [ "$LABEL" = scheduled ] && exit 0; exit 3; fi
 HAVE_LOCK=1
+
+# Retention (tiered): only files this script creates; keep every set of the last 24 h, the newest set of each UTC day older than that up to RETENTION_DAYS, and never
+# fewer than the newest KEEP_MIN_SETS. The timestamp in the file name (UTC) decides, not the mtime.
+prune() { # prune <glob-pattern>
+  local pat="$1" f base ts day now cutoff_day cutoff_h n=0 seen_days="" idx=0
+  now="$(date -u +%s)"; cutoff_h=$((now - 86400)); cutoff_day=$((now - RETENTION_DAYS * 86400))
+  # newest first by NAME (the UTC stamp sorts chronologically)
+  # shellcheck disable=SC2012
+  for f in $(ls -1 "$BACKUP_DIR"/$pat 2>/dev/null | sort -r); do
+    idx=$((idx + 1)); base="$(basename "$f")"
+    ts="$(printf '%s' "$base" | sed -n 's/.*-\([0-9]\{8\}\)T\([0-9]\{6\}\)Z-.*/\1\2/p')"
+    [ -n "$ts" ] || continue
+    ep="$(date -u -d "${ts:0:8} ${ts:8:2}:${ts:10:2}:${ts:12:2}" +%s 2>/dev/null || date -u -j -f '%Y%m%d%H%M%S' "$ts" +%s 2>/dev/null || echo 0)"
+    [ "$ep" -gt 0 ] || continue
+    [ "$idx" -le "$KEEP_MIN_SETS" ] && continue                      # the newest sets are never touched
+    if [ "$ep" -ge "$cutoff_h" ]; then continue; fi                   # last 24 h: keep all
+    day="${ts:0:8}"
+    if [ "$ep" -lt "$cutoff_day" ]; then rm -f -- "$f" "$f.sha256"; n=$((n + 1)); b_log "pruned $base (older than ${RETENTION_DAYS} days)"; continue; fi
+    case " $seen_days " in *" $day "*) rm -f -- "$f" "$f.sha256"; n=$((n + 1)); b_log "pruned $base (not the newest of $day)" ;; *) seen_days="$seen_days $day" ;; esac
+  done
+  return 0
+}
+prune_all() { prune "${DB}-*.sql.gz"; prune "aicc-files-*.tar.gz"; }
 
 # ---- disk guard ------------------------------------------------------------------------------------------------------------------------------
 FREE="$(free_pct "$BACKUP_DIR")"
+if [ "$FREE" -lt "$MIN_FREE_PCT" ]; then
+  # a full disk must not stay full for ever: retention normally runs only after a success, so apply it once before giving up
+  b_log "disk guard: ${FREE}% free (< ${MIN_FREE_PCT}%): applying retention before refusing"
+  prune_all; FREE="$(free_pct "$BACKUP_DIR")"
+fi
 if [ "$FREE" -lt "$MIN_FREE_PCT" ]; then REASON="disk guard: only ${FREE}% free on the backup filesystem (< ${MIN_FREE_PCT}%)"; b_log "$REASON"; exit 4; fi
 b_log "backup start: label=$LABEL db=$DB free=${FREE}% quick=$QUICK"
 
@@ -225,16 +254,6 @@ b_log "files archive ok: $FILES ($FILES_BYTES bytes)"
 RESULT=ok
 write_status ok
 b_log "status.json written: ok"
-# Retention: only files this script creates, older than N days, never one of the newest KEEP_MIN_SETS sets.
-prune() { # prune <glob-prefix> <suffix-regex>
-  local pat="$1" f n=0 now cutoff; now="$(date -u +%s)"; cutoff=$((now - RETENTION_DAYS * 86400))
-  # newest first; skip the newest KEEP_MIN_SETS
-  # shellcheck disable=SC2012
-  for f in $(ls -1t "$BACKUP_DIR"/$pat 2>/dev/null | tail -n +$((KEEP_MIN_SETS + 1))); do
-    if [ "$(file_mtime "$f")" -lt "$cutoff" ]; then rm -f -- "$f" "$f.sha256"; n=$((n + 1)); b_log "pruned $(basename "$f")"; fi
-  done
-}
-prune "${DB}-*.sql.gz"
-prune "aicc-files-*.tar.gz"
+prune_all
 b_log "backup finished: ok"
 exit 0

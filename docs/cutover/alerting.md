@@ -24,9 +24,9 @@ Rules shipped (thresholds are provisional; per-rule overrides in `/etc/aicc-ops/
 | Low RAM | `ram_available_low` (and `ram_high`) | available < 200 MiB / < 120 MiB; used 90 % / 96 % | 5 min |
 | Swap | `swap_activity` | swap-in 100 / 1000 pages/s, swap-out 300 | 10 min |
 | Disk | `disk_low`, `inodes_low` | 85 % / 93 % used | 2 samples |
-| PHP-FPM `max_children` | `fpm_saturation`, `fpm_down` | active/total ≥ 0.9 or a listen queue | 2 min |
+| PHP-FPM `max_children` | `fpm_max_children` (from the log, no socket access), `fpm_saturation`, `fpm_down` (need the pool status page: collector off by owner decision) | ≥ 5 / ≥ 40 `reached pm.max_children` events per 15 min | 2 samples |
 | MySQL | `db_down`, `db_conn_pressure` | unreachable on its socket; 80 % / 95 % of connections | 2 samples |
-| Backup | `backup_failed`, `backup_stale`, **`offhost_stale`** | last run failed; newest good backup older than 36 h / 72 h (**with the hourly timer a missed run is visible far sooner through the on-host age metric; tune `warn_h` to 3 and `crit_h` to 12 in the host config**); no verified off-host copy for 36 h / 96 h | 1-2 samples |
+| Backup | `backup_failed`, `backup_stale`, **`offhost_stale`** | last run failed; newest good backup older than **3 h / 12 h** (matches the hourly timer); no verified off-host copy for 36 h / 96 h, or an acknowledged set that lags the newest backup by that much (**a laptop that sleeps Friday to Monday exceeds 36 h: raise `warn_h`/`crit_h` of `offhost_stale` in the host config if that is the normal pattern**) | 1-2 samples |
 | TLS expiry | `cert_expiry` | 14 days / 5 days | 1 sample |
 | Unexpected restart/crash | `process_restart`, `unit_failed` | 3 / 6 restarts per hour; an `OnFailure=` hook fired | 1 sample |
 
@@ -75,3 +75,12 @@ The sentinel code and tests exist (`infra/sentinel`; targets `targets.stage.toml
 | (iii) the existing API Droplet | another Droplet in the same provider and region | yes | free | **not done**: it needs a separate owner approval to put anything on that host |
 
 Recommendation: install (i) now as the free extra observer and take (ii) if the repository is public, because that is the only free option that survives your Mac sleeping. Until (ii) or (iii) exists, **the "whole host/network/DNS down while the Mac is asleep" scenario is not covered**: the acceptance report states B-1 as partially closed for exactly that reason.
+
+## 5. Honest limits of this alerting design (from the independent review)
+
+* **One shared channel.** Layers A and C both send through the same Telegram bot and chat. A Telegram outage, a revoked token or a muted chat blinds both at once; neither raises an alarm for its own failed deliveries (they count them in their stats and logs only). DigitalOcean's email policies (layer B) are the only independent path.
+* **The Mac is shared by four controls**: the sentinel (i), the off-host pull, the release artifacts (`~/aicc-releases`) and the operator key. LaunchAgents run in the logged-in user's session: after a **logout** or a reboot that stops at the FileVault pre-login screen they do not run at all, and nothing says so. Both are silent gaps until the Mac is used again.
+* **The daily digest is OFF** (owner default), so "no digest" cannot serve as a dead-man signal for AICC Ops itself.
+* **No dedicated OOM-kill rule**: an OOM kill shows up as `process_restart` / `unit_failed` and as swap/RAM pressure.
+* `ram_available_low` and `ram_high` can fire for the same condition (two messages).
+* **The off-host acknowledgement proves the Mac's key could read the host's hashes, not that the Mac holds the bytes** (a buggy or compromised client could ack without a copy). A server-nonce challenge would close it; not implemented.

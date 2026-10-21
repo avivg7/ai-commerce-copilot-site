@@ -298,6 +298,7 @@ step_scripts() {
   require_root
   local ops="$BUNDLE/scripts/ops"
   install_file "$INFRA/systemd/aicc-unit-status.sh"          "$SBIN/aicc-unit-status" 0755 root:root
+  install_file "$INFRA/systemd/aicc-fpm-log-status.sh"       "$SBIN/aicc-fpm-log-status" 0755 root:root
   if [ -f "$ops/edge-preflight.sh" ]; then install_file "$ops/edge-preflight.sh" "$SBIN/aicc-edge-preflight" 0755 root:root
   else die "scripts/ops/edge-preflight.sh missing from the bundle ($ops)"; fi
   [ -f "$ops/cert-expiry-check.sh" ] && install_file "$ops/cert-expiry-check.sh" "$SBIN/aicc-cert-expiry-check" 0755 root:root || warn "cert-expiry-check.sh not in bundle"
@@ -459,8 +460,8 @@ step_enable_edge() {
 step_enable_timers() {
   step "enable-timers: wp-cron every 2 minutes, daily backup, daily certificate check"
   require_root
-  if is_dry; then would "systemctl enable --now aicc-wp-cron.timer aicc-backup.timer aicc-cert-expiry.timer"; return 0; fi
-  systemctl enable --now aicc-wp-cron.timer aicc-backup.timer aicc-cert-expiry.timer
+  if is_dry; then would "systemctl enable --now aicc-wp-cron.timer aicc-backup.timer aicc-cert-expiry.timer aicc-fpm-log-status.timer"; return 0; fi
+  systemctl enable --now aicc-wp-cron.timer aicc-backup.timer aicc-cert-expiry.timer aicc-fpm-log-status.timer
   systemctl list-timers 'aicc-*' --no-pager
 }
 

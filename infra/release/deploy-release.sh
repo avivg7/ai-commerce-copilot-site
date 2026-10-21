@@ -28,14 +28,14 @@ set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/release-common.sh
 . "$HERE/lib/release-common.sh"
-KIND=""; ART=""; SHOST=""; SIP=""; SID=""; KEY="$HOME/.ssh/aicc_cp_stage"; USER_NAME="aicc"; DRY=0; CHECK_ONLY=0; FIRST=0; ENVN="stage"; CONFIRM=""
+KIND=""; ART=""; SHOST=""; SIP=""; SID=""; KEY="$HOME/.ssh/aicc_cp_stage"; USER_NAME="aicc"; DRY=0; CHECK_ONLY=0; FIRST=0; ENVN="stage"; CONFIRM=""; KNOWN_HOSTS=""
 STAGE_IPS="157.230.110.211 206.189.248.204"
 DENY_IPS="139.59.157.231 185.199.108.153 185.199.109.153 185.199.110.153 185.199.111.153"
 . "$HERE/../provision/lib/ip-guard.sh"   # strict address check (security review L5)
 while [ $# -gt 0 ]; do
   case "$1" in
     --kind) KIND="${2:-}"; shift 2 ;; --artifact) ART="${2:-}"; shift 2 ;; --stage-host) SHOST="${2:-}"; shift 2 ;; --stage-ip) SIP="${2:-}"; shift 2 ;;
-    --stage-id) SID="${2:-}"; shift 2 ;; --key) KEY="${2:-}"; shift 2 ;; --user) USER_NAME="${2:-}"; shift 2 ;; --dry-run) DRY=1; shift ;; --check-only) CHECK_ONLY=1; shift ;; --first-install) FIRST=1; shift ;; --env) ENVN="${2:-}"; shift 2 ;; --confirm-production) CONFIRM="${2:-}"; shift 2 ;;
+    --stage-id) SID="${2:-}"; shift 2 ;; --key) KEY="${2:-}"; shift 2 ;; --user) USER_NAME="${2:-}"; shift 2 ;; --dry-run) DRY=1; shift ;; --check-only) CHECK_ONLY=1; shift ;; --first-install) FIRST=1; shift ;; --env) ENVN="${2:-}"; shift 2 ;; --known-hosts) KNOWN_HOSTS="${2:-}"; shift 2 ;; --confirm-production) CONFIRM="${2:-}"; shift 2 ;;
     -h|--help) sed -n 2,32p "${BASH_SOURCE[0]}"; exit 0 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
@@ -50,6 +50,9 @@ if [ "$ENVN" = production ]; then
   [ "$SHOST" = "www.copilt.org" ] || refuse "--env production deploys to the host named exactly www.copilt.org (got $SHOST)"
   for d in $DENY_IPS $STAGE_IPS; do [ "$SIP" = "$d" ] && refuse "$SIP is the API Droplet, a GitHub Pages address or the STAGING Droplet: none of them is the production Control Plane host."; done
   case "$(basename "$KEY")" in aicc_cp_prod*) ;; *) refuse "the production key file must be named aicc_cp_prod* (got $(basename "$KEY"))" ;; esac
+  # the production host key must be PINNED beforehand (verified out of band, e.g. in the DigitalOcean console): no trust-on-first-use for the host that takes customer data
+  [ -n "$KNOWN_HOSTS" ] && [ -s "$KNOWN_HOSTS" ] || refuse "--env production needs --known-hosts FILE holding the pinned host key of the production host (no trust on first use)"
+  grep -q "$SIP" "$KNOWN_HOSTS" || refuse "the pinned known-hosts file has no entry for $SIP"
 else
   for d in $DENY_IPS; do [ "$SIP" = "$d" ] && refuse "$SIP is a production/public address, not the staging Droplet."; done
   case "$SHOST" in www.copilt.org|copilt.org|api.copilt.org) refuse "$SHOST is a production hostname." ;; esac
@@ -75,7 +78,7 @@ if [ "$ENVN" = stage ]; then
   if [ "$KIND" = site ]; then [ "$(jq -r '.sources.target // empty' "$MAN")" = "stage" ] || refuse "this site artifact is not a stage build (target=$(jq -r '.sources.target // "none"' "$MAN")): production builds never go to staging"; fi
 else
   [ "$CONFIRM" = "$ID" ] || refuse "--confirm-production must be the release id $ID (typed for THIS release)"
-  [ "$(jq -r '.sources.dirty | if . == null then "true" else tostring end' "$MAN")" = "false" ] || refuse "the artifact was built from a dirty tree: a production release comes from a clean commit"
+  [ "$(jq -r 'if .sources.dirty == false then "clean" else "not-clean" end' "$MAN")" = "clean" ] || refuse "the artifact was built from a dirty tree: a production release comes from a clean commit"
   if [ "$KIND" = site ]; then
     [ "$(jq -r '.sources.target // empty' "$MAN")" = "production" ] || refuse "this site artifact is not a PRODUCTION build (target=$(jq -r '.sources.target // "none"' "$MAN"))"
   fi
@@ -96,7 +99,8 @@ if [ "$KIND" = site ] && [ "$ENVN" = production ]; then
 fi
 echo "artifact OK: $KIND $ID ($(jq -r '.file_count' "$MAN") files, tarball sha256 $(jq -r '.tarball.sha256' "$MAN" | cut -c1-16)...)"
 
-SSH_OPTS=(-i "$KEY" -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=15 -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile="$HOME/.ssh/known_hosts_aicc_stage")
+if [ "$ENVN" = production ]; then SHK=yes; KH="$KNOWN_HOSTS"; else SHK=accept-new; KH="$HOME/.ssh/known_hosts_aicc_stage"; fi
+SSH_OPTS=(-i "$KEY" -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=15 -o StrictHostKeyChecking="$SHK" -o UserKnownHostsFile="$KH")
 SSH=(ssh "${SSH_OPTS[@]}" "$USER_NAME@$SIP")
 RDIR="/srv/aicc/$KIND/releases"
 if [ "$DRY" = 1 ]; then

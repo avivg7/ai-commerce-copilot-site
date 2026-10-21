@@ -92,8 +92,8 @@ for k, fname in (("AICC_ACTIVATION_PROOF_SECRET", "activation-proof.secret"), ("
             v = open("%s/%s" % (secdir, fname)).read().strip()
         except OSError:
             sys.exit("REFUSED: %s/%s is missing (the owner places it; it is never generated)" % (secdir, fname))
-        if not re.fullmatch(r"[A-Za-z0-9._~+/=-]{32,}", v):
-            sys.exit("REFUSED: %s must be at least 32 characters from [A-Za-z0-9._~+/=-]" % fname)
+        if not re.fullmatch(r"[A-Za-z0-9._~+/=-]{32,}", v) or len(set(v)) < 12:
+            sys.exit("REFUSED: %s must be at least 32 characters from [A-Za-z0-9._~+/=-] with at least 12 distinct characters (not a placeholder)" % fname)
     else:
         v = env[k]
         assert re.fullmatch(r"[0-9a-f]{64}", v)

@@ -58,8 +58,21 @@ echo "$ident" | grep -q "^AICC_STAGE_ID=${STAGE_ID}\$" || refuse "host identity 
 echo "identity verified; services: $(rem 'systemctl is-active aicc-edge php8.3-fpm mysql aicc-ops | tr "\n" " "')"
 rem 'sudo mkdir -p /srv/aicc/restore-in && sudo chmod 700 /srv/aicc/restore-in'
 
+# Whatever happens after this point, bring the services back (the freeze must never leave staging down) -- unless the DISASTER phase has started: then the recovery is the job.
+DISASTER_STARTED=0
+unfreeze() {
+  [ "$DISASTER_STARTED" = 1 ] && return 0
+  rem 'sudo systemctl start php8.3-fpm aicc-wp-cron.timer aicc-backup.timer' >/dev/null 2>&1 || true
+}
+trap unfreeze EXIT
 echo "== phase 1: freeze + fresh backup (the rollback path) + fingerprint =="
-t=$(now); rem 'sudo systemctl stop aicc-wp-cron.timer aicc-wp-cron.service php8.3-fpm'; step freeze_writers "$(el "$t" "$(now)")"
+# the hourly backup timer is stopped for the drill: a scheduled run at :17 would otherwise become 'the newest set' and break the drill's manual-set check
+t=$(now); rem 'sudo systemctl stop aicc-backup.timer aicc-wp-cron.timer aicc-wp-cron.service php8.3-fpm'; step freeze_writers "$(el "$t" "$(now)")"
+# a marker file with random content proves that UPLOADED DATA (not just an empty directory) comes back byte for byte
+MARK="dr-marker-$STAMP.txt"; MARK_SUM="$(openssl rand -hex 24)"
+printf '%s\n' "$MARK_SUM" | rem "sudo -u aicc-cp tee /srv/aicc/shared/uploads/$MARK >/dev/null"
+MARK_BEFORE="$(rem "sudo sha256sum /srv/aicc/shared/uploads/$MARK | cut -d' ' -f1")"
+UPLOADS_BEFORE="$(rem 'sudo find /srv/aicc/shared/uploads -type f | wc -l' | tr -d ' ')"
 t=$(now); rem 'sudo /usr/local/sbin/aicc-backup --label manual' >/dev/null 2>&1; step fresh_backup "$(el "$t" "$(now)")"
 t=$(now); rem 'sudo /usr/local/sbin/aicc-restore fingerprint --out /srv/aicc/restore-in/pre.fp' >/dev/null 2>&1; step fingerprint_before "$(el "$t" "$(now)")"
 PRE_TABLES="$(rem 'sudo wc -l < /srv/aicc/restore-in/pre.fp' | tr -d ' ')"
@@ -78,6 +91,7 @@ LOCAL_D="$(shasum -a 256 "$DEST/$DUMP" | cut -d' ' -f1)"; LOCAL_F="$(shasum -a 2
 echo "the Mac holds $DUMP ($LOCAL_D) and $FARC"
 
 echo "== phase 3: DISASTER (RTO clock starts) =="
+DISASTER_STARTED=1
 T0="$(now)"; T0_ISO="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 rem 'sudo bash -s' <<'EOS'
 set -e
@@ -102,7 +116,11 @@ echo "== phase 5: prove the data came back =="
 t=$(now); rem 'sudo /usr/local/sbin/aicc-restore fingerprint --out /srv/aicc/restore-in/post.fp' >/dev/null 2>&1; step fingerprint_after "$(el "$t" "$(now)")"
 DIFFN="$(rem 'sudo diff /srv/aicc/restore-in/pre.fp /srv/aicc/restore-in/post.fp | grep -c "^[<>]" || true')"
 POST_TABLES="$(rem 'sudo wc -l < /srv/aicc/restore-in/post.fp' | tr -d ' ')"
-FILES_OK="$(rem 'test -d /srv/aicc/shared/uploads && sudo test -s /srv/aicc/shared/wp-config.php && echo yes || echo no')"
+UPLOADS_AFTER="$(rem 'sudo find /srv/aicc/shared/uploads -type f | wc -l' | tr -d ' ')"
+FILES_OK="$(rem 'sudo test -s /srv/aicc/shared/wp-config.php && echo yes || echo no')"
+MARK_AFTER="$(rem "sudo sha256sum /srv/aicc/shared/uploads/$MARK 2>/dev/null | cut -d' ' -f1")"
+[ -n "$MARK_BEFORE" ] && [ "$MARK_BEFORE" = "$MARK_AFTER" ] || FILES_OK=no          # the marker file is byte-identical after the recovery
+[ "$UPLOADS_BEFORE" = "$UPLOADS_AFTER" ] || FILES_OK=no          # the same NUMBER of uploaded files must be back, not just an empty directory
 HEALTH="$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 --resolve "$STAGE_HOST:443:$STAGE_IP" "https://$STAGE_HOST/healthz")"
 APP="$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 --resolve "$STAGE_HOST:443:$STAGE_IP" "https://$STAGE_HOST/pricing/")"
 T1="$(now)"; T1_ISO="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -110,6 +128,8 @@ RTO="$(el "$T0" "$T1")"
 
 echo "== phase 6: clean up =="
 rem 'sudo rm -rf /srv/aicc/restore-in'
+rem "sudo rm -f /srv/aicc/shared/uploads/$MARK"
+rem 'sudo systemctl start aicc-backup.timer' >/dev/null 2>&1 || true
 LEFT="$(rem 'sudo ls /srv/aicc/restore-in 2>/dev/null | wc -l | tr -d " "; mysql --no-defaults -N -e "SHOW DATABASES" 2>/dev/null | grep -c "^aicc_dr" || true' | tr '\n' ' ')"
 UNITS="$(rem 'systemctl is-active php8.3-fpm mysql aicc-edge aicc-ops aicc-wp-cron.timer aicc-backup.timer | tr "\n" " "')"
 
@@ -117,9 +137,9 @@ OK=true; { [ "$RC" = 0 ] && [ "$DIFFN" = 0 ] && [ "$PRE_TABLES" = "$POST_TABLES"
 mkdir -p "$(dirname "$REPORT")"
 jq -n --arg ok "$OK" --arg t0 "$T0_ISO" --arg t1 "$T1_ISO" --argjson rto "$RTO" --argjson steps "$STEPS" --argjson restore "$REPORT_REMOTE" \
   --arg pre "$PRE_TABLES" --arg post "$POST_TABLES" --arg diffn "$DIFFN" --arg files "$FILES_OK" --arg health "$HEALTH" --arg app "$APP" --arg units "$UNITS" --arg left "$LEFT" \
-  --arg dump "$DUMP" --arg farc "$FARC" --arg dsha "$LOCAL_D" --arg fsha "$LOCAL_F" --argjson total "$(el "$T_ALL0" "$(now)")" \
+  --arg dump "$DUMP" --arg farc "$FARC" --arg dsha "$LOCAL_D" --arg fsha "$LOCAL_F" --argjson total "$(el "$T_ALL0" "$(now)")" --argjson ub "${UPLOADS_BEFORE:-0}" --argjson ua "${UPLOADS_AFTER:-0}" \
   '{drill:"staging data-tier loss, recovery from the OFF-HOST (Mac) copy",passed:($ok=="true"),disaster_declared_at:$t0,recovered_and_proven_at:$t1,rto_seconds:$rto,drill_total_seconds:$total,
     backup_set:{dump:$dump,files:$farc,dump_sha256:$dsha,files_sha256:$fsha},data_correctness:{tables_before:($pre|tonumber),tables_after:($post|tonumber),differing_fingerprint_lines:($diffn|tonumber)},
-    uploads_and_wpconfig_present:$files,healthz_http:$health,pricing_http:$app,services_after:$units,leftovers:$left,steps:$steps,aicc_restore_report:$restore}' > "$REPORT"
+    uploads_and_wpconfig_present:$files,uploads_files_before:$ub,uploads_files_after:$ua,healthz_http:$health,pricing_http:$app,services_after:$units,leftovers:$left,steps:$steps,aicc_restore_report:$restore}' > "$REPORT"
 echo; echo "DRILL $([ "$OK" = true ] && echo PASSED || echo FAILED): RTO ${RTO}s (disaster declared $T0_ISO, proven $T1_ISO); fingerprint differences: $DIFFN; report: $REPORT"
 [ "$OK" = true ]

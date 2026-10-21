@@ -1,0 +1,27 @@
+# Writes /var/lib/aicc/status/fpm-log.json (counts of "server reached pm.max_children" in the PHP-FPM log) for AICC Ops, which has no access to the PHP socket or the root-only log.
+# Reads the log read-only, writes only the status directory, no network. Script: infra/systemd/aicc-fpm-log-status.sh.
+[Unit]
+Description=AICC PHP-FPM max_children event counter (for AICC Ops)
+
+[Service]
+Type=oneshot
+User=root
+ExecStart=/usr/local/sbin/aicc-fpm-log-status
+TimeoutStartSec=30s
+Nice=19
+IOSchedulingClass=idle
+MemoryMax=64M
+TasksMax=16
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_UNIX
+RestrictSUIDSGID=true
+LockPersonality=true
+SystemCallArchitectures=native
+ReadWritePaths=/var/lib/aicc/status

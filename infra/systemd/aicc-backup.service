@@ -1,4 +1,4 @@
-# Daily backup of the Control Plane: database dump (+ gzip test + sha256 + restore smoke into a throwaway DB), persistent files archive (0600),
+# Hourly backup of the Control Plane: database dump (+ gzip test + sha256 + restore smoke into a throwaway DB), persistent files archive (0600),
 # status JSON for AICC Ops. Runs as root because the archive of wp-config.php/uploads must read 0640/0750 files; the unit is hardened accordingly.
 # Script: infra/backup/aicc-backup.sh, installed as /usr/local/sbin/aicc-backup. Manual run (e.g. before a release): sudo systemctl start aicc-backup.service
 [Unit]

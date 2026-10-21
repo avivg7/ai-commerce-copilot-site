@@ -84,9 +84,12 @@ INCOMING="${INCOMING:-$RDIR/.incoming-$ID}"; MANIFEST="${MANIFEST:-$RDIR/.incomi
 if [ -z "$WARM_CMD" ] && [ "$SANDBOX" = 0 ] && [ "$KIND" = cp ]; then WARM_CMD="$HERE/warm-cp.sh"; fi
 if [ -z "$FPM_RELOAD" ]; then if [ "$SANDBOX" = 1 ]; then FPM_RELOAD="true"; else FPM_RELOAD="systemctl reload php8.3-fpm"; fi; fi
 # On the real host: a site release is also probed THROUGH the running edge (loopback, public SNI) and must carry this host's stage id.
-if [ "$SANDBOX" = 0 ] && [ "$KIND" = site ] && [ -r /etc/aicc-stage-identity ]; then
-  export AICC_EXPECT_STAGE_ID; AICC_EXPECT_STAGE_ID="$(sed -n 's/^AICC_STAGE_ID=//p' /etc/aicc-stage-identity | head -1)"
-  idhost="$(sed -n 's/^AICC_HOSTNAME=//p' /etc/aicc-stage-identity | head -1)"
+# The identity route exists ONLY in stage builds: on a PRODUCTION host (AICC_ENV=production in the identity file) the tree must not carry it and the gate must not demand it.
+IDENT_FILE=/etc/aicc-stage-identity
+if [ "$SANDBOX" = 1 ] && [ -n "${AICC_IDENTITY_FILE:-}" ]; then IDENT_FILE="$AICC_IDENTITY_FILE"; fi
+if { [ "$SANDBOX" = 0 ] || [ "$IDENT_FILE" != /etc/aicc-stage-identity ]; } && [ "$KIND" = site ] && [ -r "$IDENT_FILE" ]; then
+  if grep -q '^AICC_ENV=staging$' "$IDENT_FILE"; then export AICC_EXPECT_STAGE_ID; AICC_EXPECT_STAGE_ID="$(sed -n 's/^AICC_STAGE_ID=//p' "$IDENT_FILE" | head -1)"; fi
+  idhost="$(sed -n 's/^AICC_HOSTNAME=//p' "$IDENT_FILE" | head -1)"
   if [ -z "$SMOKE_URL" ] && [ -n "$idhost" ] && systemctl is-active --quiet aicc-edge.service 2>/dev/null; then SMOKE_URL="https://$idhost/"; SMOKE_RESOLVE="$idhost:443:127.0.0.1"; fi
 fi
 mkdir -p "$RDIR"

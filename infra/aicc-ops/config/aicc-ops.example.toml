@@ -53,6 +53,12 @@ socket = "/run/php/aicc-cp.sock"  # pool socket from infra/php/aicc-pool.conf
 status_path = "/fpm-status"      # pm.status_path of the pool (already set in infra/php/aicc-pool.conf)
 max_children = 3                 # pm.max_children of the pool; active/total uses max(total, this)
 
+[collectors.fpmlog]              # numbers from infra/systemd/aicc-fpm-log-status.sh (root timer, every minute); enable aicc-fpm-log-status.timer
+enabled = true
+interval_s = 60
+timeout_s = 5
+status_file = "/var/lib/aicc/status/fpm-log.json"
+
 [collectors.mysql]
 enabled = true
 interval_s = 30

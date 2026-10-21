@@ -7,7 +7,7 @@
  * symlink wp-config.php -> /srv/aicc/shared/wp-config.php, so a release can be replaced or rolled back without touching configuration or secrets.
  * Nothing rendered from this file is ever committed or copied off the host except inside the 0600 files archive of the backup (infra/backup).
  *
- * Production later uses the same file with another host name; do not add staging shortcuts here that a production build could inherit.
+ * The production template (wp-config.production.template.php) must differ from this file only in the environment-specific constants; test_provision.sh pins that set, so a change here needs the same change there.
  */
 
 // ---- database: UNIX SOCKET only (MySQL runs with skip-networking) --------------------------------------------------------------------------
@@ -81,7 +81,7 @@ define( 'AICC_LM_TRUSTED_PROXIES', array() );
 define( 'AICC_LM_OPERATOR_CIDRS', array( '127.0.0.1/32', '::1/128' ) );
 // CP -> Backend entitlement webhook: AICC_ENTITLEMENT_WEBHOOK_URL is deliberately NOT defined on staging. The plugin then falls back to its docker-compose default
 // (http://backend:8000/...), which the WP_HTTP_BLOCK_EXTERNAL allow-list above blocks: staging never delivers to a real Backend. PRODUCTION MUST differ: an https URL on
-// api.copilt.org and WP_ACCESSIBLE_HOSTS = exactly api.copilt.org (see wp-config.production.template.php, a record of the required settings, NOT usable; the Control Plane launch gate fails otherwise).
+// api.copilt.org and WP_ACCESSIBLE_HOSTS = exactly api.copilt.org (see wp-config.production.template.php, rendered only by `render-wp-config.sh --env production --confirm-production` on a production host; the Control Plane launch gate fails otherwise).
 // Staging-only random secrets generated on the host (they are NOT the production values and unlock nothing elsewhere).
 define( 'AICC_ACTIVATION_PROOF_SECRET', '@@AICC_ACTIVATION_PROOF_SECRET@@' );
 define( 'AICC_ENTITLEMENT_WEBHOOK_SECRET', '@@AICC_ENTITLEMENT_WEBHOOK_SECRET@@' );

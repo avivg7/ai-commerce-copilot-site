@@ -56,6 +56,10 @@ DEFAULTS: dict = {
             "status_path": "/fpm-status",
             "max_children": 3,           # pm.max_children of the pool (3 in infra/php/aicc-pool.conf); 0 = unknown
         },
+        "fpmlog": {           # counts of "server reached pm.max_children" written by infra/systemd/aicc-fpm-log-status.sh (root timer); needs no access to the PHP socket
+            "enabled": True, "interval_s": 60, "timeout_s": 5,
+            "status_file": "/var/lib/aicc/status/fpm-log.json",
+        },
         "mysql": {
             "enabled": True, "interval_s": 30, "timeout_s": 8,
             "client": "mysql",

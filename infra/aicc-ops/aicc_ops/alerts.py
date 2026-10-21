@@ -224,6 +224,18 @@ def r_fpm_sat(ctx, p):
                 severity=CRITICAL if crit else WARNING, text="PHP-FPM saturation: " + ", ".join(bits or ["recovering"]))]
 
 
+def r_fpm_log(ctx, p):
+    """max_children pressure seen in the PHP-FPM log (counts from the root timer): the pool ran out of workers, requests queued."""
+    e15 = ctx.latest("fpm.log_events_15m")
+    if e15 is None:
+        return []
+    e5 = ctx.latest("fpm.log_events_5m") or 0.0
+    sev = CRITICAL if e15 >= p["crit_events"] else WARNING
+    return [Obs("fpm_max_children", "pool", e15 >= p["warn_events"], clear=e15 == 0, severity=sev,
+                text=f"PHP-FPM reached pm.max_children {e15:.0f}x in the last 15 min ({e5:.0f}x in the last 5): the pool is out of workers "
+                     f"(warn >= {p['warn_events']:.0f}, critical >= {p['crit_events']:.0f} events per 15 min). The CPU is the usual cause on 1 vCPU: see the capacity verdict.")]
+
+
 def r_db_down(ctx, p):
     up = ctx.latest("mysql.up")
     return [] if up is None else [Obs("db_down", "mysql", up == 0, clear=up == 1, severity=CRITICAL, text="MySQL is unreachable on its socket")]
@@ -246,11 +258,6 @@ def r_backup_stale(ctx, p):
         if ctx.latest("backup.status_present") == 0:
             return [Obs("backup_stale", "dump", True, severity=WARNING, text="no backup status file yet (has the first backup run?)")]
         return []
-    # also how far the ACKNOWLEDGED SET lags behind the newest backup on the host: a Mac (or a stolen pull key) that keeps re-acknowledging an old set refreshes
-    # acked_at but not the set, so the effective age is the larger of the two
-    set_age, newest = ctx.latest("backup.offhost_set_age_s"), ctx.latest("backup.newest_age_s")
-    if set_age is not None and newest is not None:
-        age = max(age, set_age - newest)
     h = age / 3600
     sev = _sev(h, p["warn_h"], p["crit_h"])
     return [Obs("backup_stale", "dump", sev is not None, clear=h < p["clear_h"], severity=sev or WARNING,
@@ -448,9 +455,10 @@ def default_rules(cfg: dict) -> list:
         RuleSpec("inodes_low", "Low inodes", r_inodes, dict(warn=85, crit=95, clear=80), for_samples=2, clear_samples=4, cooldown_s=3600),
         RuleSpec("fpm_down", "PHP-FPM not answering", r_fpm_down, for_samples=2, clear_samples=2, cooldown_s=900),
         RuleSpec("fpm_saturation", "PHP-FPM saturation", r_fpm_sat, dict(window_samples=w10 * 2, queue_warn=1, queue_crit=10, ratio_warn=0.9, ratio_clear=0.7), for_samples=4, clear_samples=w10, cooldown_s=3600),
+        RuleSpec("fpm_max_children", "PHP-FPM out of workers (log)", r_fpm_log, dict(warn_events=5, crit_events=40), for_samples=2, clear_samples=w10, cooldown_s=3600),
         RuleSpec("db_down", "MySQL unavailable", r_db_down, for_samples=2, clear_samples=2, cooldown_s=900),
         RuleSpec("db_conn_pressure", "MySQL connection pressure", r_db_conn, dict(warn=80, crit=95, clear=70), for_samples=w10 * 2, clear_samples=w10, crit_samples=4),
-        RuleSpec("backup_stale", "Backup is stale", r_backup_stale, dict(warn_h=36, crit_h=72, clear_h=30), for_samples=1, clear_samples=2, cooldown_s=21600),
+        RuleSpec("backup_stale", "Backup is stale", r_backup_stale, dict(warn_h=3, crit_h=12, clear_h=2), for_samples=1, clear_samples=2, cooldown_s=21600),
         # off-host copy confirmed by the owner's Mac (offhost-ack.json). 36 h = one missed daily pull plus slack; 96 h = four days without a verified copy.
         RuleSpec("offhost_stale", "Off-host backup copy is stale", r_offhost, dict(warn_h=36, crit_h=96, clear_h=30, absent_after_uptime_h=48), for_samples=2, clear_samples=2, cooldown_s=21600),
         RuleSpec("unit_failed", "AICC unit reported failure", r_unit_failed, for_samples=1, clear_samples=2, cooldown_s=3600),

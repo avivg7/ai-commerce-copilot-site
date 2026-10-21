@@ -1,0 +1,11 @@
+[Unit]
+Description=Every minute: count PHP-FPM max_children events for AICC Ops
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=60s
+AccuracySec=5s
+Unit=aicc-fpm-log-status.service
+
+[Install]
+WantedBy=timers.target

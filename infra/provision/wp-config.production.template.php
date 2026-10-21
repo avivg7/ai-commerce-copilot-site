@@ -6,7 +6,7 @@
  * --confirm-production` from files in /etc/aicc/secrets (0600 root); the result is /srv/aicc/shared/wp-config.php (0640 root:aicc-cp), which every release symlinks to.
  * Nothing rendered from this file is committed or copied off the host except inside the 0600 files archive of the backup.
  *
- * It is the stage template (wp-config.stage.template.php) with exactly the environment-specific differences listed in infra/provision/README-production-config.md and
+ * It is the stage template (wp-config.stage.template.php) with exactly the environment-specific differences listed in docs/cutover/production-path.md and
  * enforced by infra:lint / test_provision.sh (the set of defines that differ between the two renders is pinned). Nothing here is activated by anything in this repository:
  * the render script refuses to write a production file on a host whose identity file does not say AICC_ENV=production.
  *
