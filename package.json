@@ -34,6 +34,7 @@
     "seo:check": "node scripts/seo-check.mjs",
     "test:redirects": "node scripts/test-redirects.mjs",
     "test:target-guard": "node scripts/test-target-guard.mjs",
+    "test:account-url": "node scripts/test-account-url.mjs",
     "rehearsal": "node scripts/rehearsal/rehearsal.mjs",
     "staging:replay": "node scripts/staging-replay.mjs",
     "infra:lint": "bash infra/stack-tests/lint.sh",

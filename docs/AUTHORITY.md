@@ -40,6 +40,6 @@ other side carries a **mirror**: the same facts and wording, flagged as a mirror
 
 ## At cutover
 
-1. Point `NEXT_PUBLIC_AICC_ACCOUNT_URL` at the real account page (default `https://www.copilt.org/my-account/`; this is the ENGLISH URL, he/es/ru insert their prefix before the last path segment: `/he/my-account/`).
+1. Point `NEXT_PUBLIC_AICC_ACCOUNT_URL` at the real account page (default `${SITE_URL}/my-account/`, i.e. `https://www.copilt.org/my-account/` for the production build and `https://stage.copilt.org/my-account/` for the stage build; this is the ENGLISH URL, he/es/ru insert their prefix before the last path segment: `/he/my-account/`).
 2. Remove the mirror routes here that WordPress owns, or keep them as redirects at the host; the sitemap and hreflang come from `src/lib/routes.ts` (the sitemap also lists `WORDPRESS_SITEMAP_PAGES`: the Control Plane's public `/data-processing-addendum/`, because the edge serves this one sitemap for the whole host).
 3. Build with `AICC_BASE_PATH=""` and `SITE_URL=https://www.copilt.org` for a domain-root deployment. **The canonical public host is `www.copilt.org`** (owner decision 2026-10-19); `copilt.org` 301s to it at the edge and `api.copilt.org` stays API-only. Run `npm run seo:check` on the build; edge rules are in `docs/cutover/redirect-matrix.md`.

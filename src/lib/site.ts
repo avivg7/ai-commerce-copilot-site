@@ -32,8 +32,11 @@ export function wordpressUrl(locale: Locale, path: string): string {
  * The English account URL: the single "Get started" / "Sign in" destination (the account area on the commerce site, WordPress).
  * Overridable at build time (NEXT_PUBLIC_AICC_ACCOUNT_URL stays the ENGLISH base). Same canonical host as the site, so the link is
  * never an apex-to-www redirect hop. Do not link to this constant directly: use getStartedUrl(locale) / planUrl(plan, locale).
+ * The default is `${SITE_URL}/my-account/`, NOT a hard-coded production host: a stage build (SITE_URL=https://stage.copilt.org) must keep its visitors on the staging
+ * host (found on the real staging host: every Sign in / Get started / plan button of the stage build pointed at https://www.copilt.org/my-account/). For the production build
+ * (SITE_URL unset or https://www.copilt.org) the value is unchanged: https://www.copilt.org/my-account/.
  */
-const ACCOUNT_URL_EN = process.env.NEXT_PUBLIC_AICC_ACCOUNT_URL || "https://www.copilt.org/my-account/";
+const ACCOUNT_URL_EN = process.env.NEXT_PUBLIC_AICC_ACCOUNT_URL || `${SITE_URL}/my-account/`;
 
 /**
  * The account area is language-prefixed on the Control Plane (/he/my-account/, handled by AICC_LM_I18n), and the prefix wins over the

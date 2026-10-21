@@ -194,7 +194,7 @@ AICC_BASE_PATH="" SITE_URL=https://www.copilt.org \
   NEXT_PUBLIC_LEGAL_REVIEW_APPROVED=<true only after counsel approval, else unset> \
   NEXT_PUBLIC_AICC_LEGAL_NAME=… NEXT_PUBLIC_AICC_ADDRESS=… NEXT_PUBLIC_AICC_SUPPORT_EMAIL=… \
   NEXT_PUBLIC_AICC_GOVERNING_LAW=… NEXT_PUBLIC_AICC_PAYMENT_PROCESSOR=… NEXT_PUBLIC_AICC_HOSTING_REGION=… \
-  npm run build                                  # NEXT_PUBLIC_AICC_ACCOUNT_URL stays unset: the default is https://www.copilt.org/my-account/
+  npm run build                                  # NEXT_PUBLIC_AICC_ACCOUNT_URL stays unset: the default is ${SITE_URL}/my-account/ = https://www.copilt.org/my-account/ (the stage build gets https://stage.copilt.org/my-account/)
 npm run seo:check && npm run test:redirects && npm run test:error-page && npm run launch:check   # fails on fake values, Offer/price JSON-LD, the payment placeholder, .DS_Store, pending lines, no payment processor, no /get-started/ route
 ```
 (Node 20; the owner-supplied `NEXT_PUBLIC_*` values are the ones from `docs/AUTHORITY.md`; record which were set in the release notes.)

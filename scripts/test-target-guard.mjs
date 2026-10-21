@@ -280,6 +280,75 @@ group("D. browser guard");
   ok(g.summary().browserBlocked === 2 && g.summary().browserChecked === 3, "browser egress audit counts: 3 checked, 2 blocked", JSON.stringify(g.summary()).slice(0, 160));
 }
 
+/* ================================================================== D2. operator tunnel (real staging host, SSH -L to the loopback operator listener) */
+group("D2. operator tunnel: the URL keeps :443, the connection is dialled at 127.0.0.1:<local tunnel port>");
+{
+  const TUN = { stageHost: "stage.copilt.org", stageIp: "127.0.0.1", port: 18443, stageId: "0123456789abcdef0123", operatorTunnel: { publicIp: "203.0.113.10" } };
+  const mkT = (over = {}) => { const s = spy(); return { g: new G.TargetGuard(G.buildConfig({ ...TUN, ...over, spawn: s.spawn, spawnSync: s.spawnSync })), s }; };
+  ok((() => { try { mkT(); return true; } catch { return false; } })(), "a valid operator-tunnel config builds (loopback expected IP, local port 18443, public IP 203.0.113.10)");
+  refusesBuild("tunnel: the public end is a known production address", { ...TUN, operatorTunnel: { publicIp: "139.59.157.231" } }, "known-production-ip");
+  refusesBuild("tunnel: the public end is a GitHub Pages address", { ...TUN, operatorTunnel: { publicIp: "185.199.108.153" } }, "known-production-ip");
+  refusesBuild("tunnel: the public end is loopback", { ...TUN, operatorTunnel: { publicIp: "127.0.0.1" } }, "operator-tunnel");
+  refusesBuild("tunnel: the public end is missing", { ...TUN, operatorTunnel: {} }, "operator-tunnel");
+  refusesBuild("tunnel: the public end is multicast", { ...TUN, operatorTunnel: { publicIp: "224.0.0.1" } }, "operator-tunnel");
+  refusesBuild("tunnel: the dialled end is not loopback", { ...TUN, stageIp: "203.0.113.10" }, "operator-tunnel");
+  refusesBuild("tunnel: local port 443", { ...TUN, port: 443 }, "operator-tunnel");
+  refusesBuild("tunnel: privileged local port 80", { ...TUN, port: 80 }, "operator-tunnel");
+  for (const qp of [8981, 8982, 8983, 9111, 9112, 9113, 9114]) refusesBuild(`tunnel: local port ${qp} (QA / owner fixture)`, { ...TUN, port: qp }, "operator-tunnel");
+  refusesBuild("tunnel: an http port", { ...TUN, httpPort: 80 }, "operator-tunnel");
+  refusesBuild("tunnel: an alias host", { ...TUN, aliasHosts: ["stage2.copilt.org"] }, "operator-tunnel");
+  refusesBuild("tunnel: combined with a rehearsal config", { ...TUN, rehearsal: true }, "operator-tunnel");
+  refusesBuild("tunnel: plain-http identity", { ...TUN, identityScheme: "http" }, "operator-tunnel");
+  for (const h of ["www.copilt.org", "copilt.org", "api.copilt.org"]) refusesBuild(`tunnel: the production name ${h} as the host`, { ...TUN, stageHost: h }, "production-host");
+  refusesBuild("tunnel: a missing stage id", { ...TUN, stageId: undefined }, "missing-marker");
+  // requests: the URL must carry the PUBLIC port 443; the local tunnel port in a URL is refused
+  { const { g, s } = mkT(); g.identity = { verified: true, via: "test", at: Date.now() };
+    const args = g.curlArgs({ url: "https://stage.copilt.org:443/wp-admin/" });
+    const ct = args[args.indexOf("--connect-to") + 1];
+    ok(ct === "stage.copilt.org:443:127.0.0.1:18443" && s.calls.length === 0, "tunnel: https://stage.copilt.org:443/... is dialled at 127.0.0.1:18443 (--connect-to stage.copilt.org:443:127.0.0.1:18443)", ct);
+    ok(args.filter((a) => a === "--connect-to").length === 1 && !args.includes("-L") && args.includes("--max-redirs"), "tunnel: exactly one connect-to mapping, redirects still never followed by curl");
+    let e = null; try { g.curlArgs({ url: "https://stage.copilt.org:18443/wp-admin/" }); } catch (x) { e = x; }
+    ok(e?.code === "url-port-mismatch", "tunnel: a URL carrying the local tunnel port (:18443) is refused [url-port-mismatch]: only the public :443 form is valid", e?.code);
+    let e2 = null; try { g.curlArgs({ url: "https://www.copilt.org:443/" }); } catch (x) { e2 = x; }
+    ok(e2?.code === "production-host", "tunnel: https://www.copilt.org:443/ is refused [production-host]", e2?.code);
+    let e3 = null; try { g.curlArgs({ url: "http://stage.copilt.org:80/" }); } catch (x) { e3 = x; }
+    ok(e3?.code === "scheme-not-allowed", "tunnel: plain http is refused [scheme-not-allowed]", e3?.code);
+    const sock = g.socketOptions("https://stage.copilt.org:443/wp-login.php");
+    ok(sock.host === "127.0.0.1" && sock.port === 18443 && sock.servername === "stage.copilt.org", "tunnel: a raw socket dials 127.0.0.1:18443 with SNI stage.copilt.org", JSON.stringify(sock));
+    const fresh = mkT().g;
+    let e4 = null; try { fresh.curlArgs({ url: "https://stage.copilt.org:443/wp-admin/" }); } catch (x) { e4 = x; }
+    ok(e4?.code === "identity-not-verified", "tunnel: nothing but the identity probe is sent before the identity is verified [identity-not-verified]", e4?.code);
+    let e5 = null; try { fresh.curlArgs({ url: "https://stage.copilt.org:443/wp-login.php", method: "POST" }); } catch (x) { e5 = x; }
+    ok(e5?.code === "destructive-before-identity", "tunnel: a POST before the identity is verified is refused [destructive-before-identity]", e5?.code);
+  }
+  // DNS: the PUBLIC address of the host is what must match, not the loopback end
+  { const mkD = (addrs) => { const s = spy(); return new G.TargetGuard(G.buildConfig({ ...TUN, resolver: async () => addrs, spawn: s.spawn, spawnSync: s.spawnSync })); };
+    const okR = await mkD(["203.0.113.10"]).verifyDns();
+    ok(okR.match === true, "tunnel DNS: the host resolves to the declared public IP -> accepted");
+    let e = null; try { await mkD(["198.51.100.7"]).verifyDns(); } catch (x) { e = x; }
+    ok(e?.code === "dns-mismatch" && /203\.0\.113\.10/.test(e.message), "tunnel DNS: the host resolves to another address -> refused [dns-mismatch] naming the expected public IP", e?.message?.slice(0, 160));
+    let e2 = null; try { await mkD(["127.0.0.1"]).verifyDns(); } catch (x) { e2 = x; }
+    ok(e2?.code === "dns-mismatch", "tunnel DNS: a host that resolves to loopback is NOT accepted just because the dialled end is loopback", e2?.code);
+  }
+  // browser: the page URL keeps :443 (WordPress's absolute URLs), the resolver maps it to the tunnel port; the local port itself is not a valid page URL
+  { const { g } = mkT();
+    for (const [u, want] of [["https://stage.copilt.org/wp-admin/", true], ["https://stage.copilt.org:443/wp-login.php", true], ["https://stage.copilt.org:18443/", false], ["https://stage.copilt.org:8443/", false], ["http://stage.copilt.org/", false], ["https://www.copilt.org/", false], ["https://api.copilt.org/", false], ["https://127.0.0.1:18443/", false], ["data:text/plain,x", true]]) ok(g.browserAllows(u) === want, `tunnel browserAllows(${u}) === ${want}`);
+    const a = g.browserArgs();
+    ok(a.some((x) => x === "--host-resolver-rules=MAP stage.copilt.org 127.0.0.1:18443, MAP * ~NOTFOUND"), "tunnel browser args: MAP stage.copilt.org 127.0.0.1:18443, everything else NOTFOUND", a.find((x) => /host-resolver/.test(x)));
+  }
+  // CLI flag
+  { const { raw } = G.parseGuardArgs(["--stage-host", "stage.copilt.org", "--stage-ip", "127.0.0.1", "--port", "18443", "--stage-id", "0123456789abcdef0123", "--operator-tunnel-of", "203.0.113.10"], {});
+    ok(raw.operatorTunnel?.publicIp === "203.0.113.10" && raw.port === "18443", "parseGuardArgs reads --operator-tunnel-of IP");
+    // existing non-tunnel behaviour is unchanged: the same loopback config WITHOUT the tunnel flag keeps requiring the DNS answer to be the (loopback) expected IP and the URL port to be the configured one
+    const s = spy(); const plain = new G.TargetGuard(G.buildConfig({ stageHost: "stage.copilt.org", stageIp: "127.0.0.1", port: 18443, stageId: "0123456789abcdef0123", resolver: async () => ["203.0.113.10"], spawn: s.spawn, spawnSync: s.spawnSync }));
+    let e = null; try { await plain.verifyDns(); } catch (x) { e = x; }
+    ok(e?.code === "dns-mismatch", "control: a loopback expected IP WITHOUT --operator-tunnel-of is still refused when public DNS says something else [dns-mismatch]", e?.code);
+    plain.identity = { verified: true, via: "t", at: Date.now() };
+    let e2 = null; try { plain.curlArgs({ url: "https://stage.copilt.org:443/" }); } catch (x) { e2 = x; }
+    ok(e2?.code === "url-port-mismatch", "control: without the tunnel flag a :443 URL on a :18443 config is still refused [url-port-mismatch]", e2?.code);
+  }
+}
+
 /* ================================================================== E. repo invariants */
 group("E. repo invariants");
 {
@@ -306,6 +375,16 @@ group("E. repo invariants");
   const libText = fs.readFileSync(path.join(REH, "lib.mjs"), "utf8");
   ok(/target-guard\.mjs/.test(libText) && /guardFor\(inst/.test(libText) && /socketOptions/.test(libText) && /curlAsync|followAsync/.test(libText), "scripts/rehearsal/lib.mjs (req, rawRequest, startProbe: every rehearsal request) goes through the target guard");
   for (const rel of ["scripts/staging-replay.mjs", "scripts/rehearsal/rcurl.mjs", "scripts/rehearsal/browser-flows.mjs", "scripts/rehearsal/run-tests.mjs", "scripts/rehearsal/edge.mjs"]) ok(usesGuard(rel), `${rel} imports the target guard (directly or through scripts/rehearsal/lib.mjs)`);
+  for (const rel of ["scripts/rehearsal/stage-load.mjs"]) ok(usesGuard(rel), `${rel} imports the target guard (its load requests all go through guard.curlAsync)`);
+  // the remote-stage adapter and the sampler reach the host ONLY through ~/aicc-rehearsal/bin/stage-ssh (hard-wired to the staging Droplet): no ssh/scp/rsync of their own, no production address or key, no network call
+  for (const rel of ["scripts/rehearsal/stage-remote.mjs", "scripts/rehearsal/stage-sampler.mjs"]) {
+    const t = fs.readFileSync(path.join(ROOT, rel), "utf8").split("\n").filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join("\n");
+    ok(!/\b(spawn|spawnSync|execFile|execFileSync|exec|execSync)\(\s*["'`](ssh|scp|sftp|rsync)["'`]/.test(t) && /STAGE_SSH/.test(t) && /aicc-rehearsal\/bin\/stage-ssh/.test(t), `${rel} runs remote commands only through stage-ssh (no direct ssh/scp/rsync process)`);
+    ok(!/139\.59\.157\.231|aicc_digitalocean_prod|api\.copilt\.org|\bwww\.copilt\.org|[^.\w]copilt\.org/.test(t) && !/\bfetch\(|https?\.(get|request)\(|curl /.test(t.replace(/`[^`]*`/g, "")), `${rel} contains no production address/key/name and sends no HTTP request of its own`);
+  }
+  { const t = fs.readFileSync(path.join(REH, "stage-remote.mjs"), "utf8");
+    ok(/localPort < 1024/.test(t) && /localPort === 443/.test(t) && /9111/.test(t) && /8981/.test(t), "stage-remote.mjs refuses a tunnel on a privileged port, 443 and the owner's QA / fixture ports (8981-8983, 9111-9114)");
+    ok(/--prompt=user_pass/.test(t) && !/--user_pass=/.test(t.split("\n").filter((l) => !/^\s*\/\//.test(l)).join("\n")), "stage-remote.mjs hands test passwords to wp-cli only through --prompt=user_pass on stdin (never --user_pass=<value> on a command line)"); }
   const bf = fs.readFileSync(path.join(REH, "browser-flows.mjs"), "utf8");
   ok(/guardBrowser\(/.test(bf) && /browserArgs\(/.test(bf), "browser-flows.mjs installs the browser egress guard (route handler + host-resolver allowlist)");
   ok(/installDnsGuard/.test(fs.readFileSync(path.join(ROOT, "scripts/staging-replay.mjs"), "utf8")) && /installDnsGuard/.test(libText), "the DNS tripwire (production names are never resolved in a run) is installed by staging-replay and the rehearsal library");

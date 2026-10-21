@@ -16,21 +16,28 @@
 // NOTFOUND), a black-hole proxy for literal addresses, and a route handler that ABORTS every request outside the allowed host:port set and records it as a violation: the run is ended with exit code 3. The
 // identity route of the edge (/.well-known/aicc-stage-identity) must prove the target before Chrome starts. Every curl-style request of this runner goes through the same guard (lib.req).
 // Targets:   default = the Mac rehearsal edge (www.copilt.org / copilt.org -> 127.0.0.1:443)     --rehearsal edge|public|stage = another rehearsal instance
-//            --stage-host H --stage-ip IP --port N --stage-id ID [--alias-host ...] [--cacert F]   = a REAL staging host (Linux). Only the read-only sections run there (4 locale routing and link crawl,
-//            5 Watch demo, 7 structured data / SEO, 8 performance, 10 public surface): sections 1-3, 6 and 9 need the local CP fixture (wp-cli, captured mail, echo token) and are refused with exit 3.
-//            Canonical host = the staging host; the apex/www rules are checked by `npm run staging:replay` (with --alias-host for a production-topology check), not by this runner.
+//            --stage-host H --stage-ip IP --port N --stage-id ID [--alias-host ...] [--cacert F]   = a stage instance. Against the Mac's own stage rehearsal instance (--loopback-rehearsal) only the read-only
+//            sections 5, 7, 8 run (the local CP fixture is not wired to it). Against the REAL Linux staging host (public IP, no --loopback-rehearsal) ALL sections run through the REMOTE-STAGE ADAPTER
+//            (scripts/rehearsal/stage-remote.mjs): disposable customers are created/deleted on the host with wp-cli over stage-ssh (password on the ssh stdin only), password-reset mails are read from the host's
+//            mail sink (only the link is returned, the file is deleted), section 9 proves the forged-header handling with a throwaway Caddy on a loopback port of the host, and section 11 drives wp-login /
+//            wp-admin through your own SSH tunnel to the loopback operator listener (--operator-tunnel-of PUBLIC_IP --operator-port N). Canonical host = the staging host; there is no apex and no www.
+//            Extra flags for the real host: --http-port 80, --sampler-phase-file F (phase labels for scripts/rehearsal/stage-sampler.mjs), --keep-users, --cp-repo DIR (for the CP launch gate),
+//            --echo-port N (local port of the throwaway-echo tunnel, default 19481).
 // SAFETY: no payment is ever submitted (checkout is only loaded; the block checkout's own load-time totals call is the only POST); no public DNS or
 // server is touched; only fake @example.test accounts are created in the disposable CP fixture, with random passwords that exist only in this process's
 // memory (never written to a file, a result, a screenshot or a log) and are deleted at the end. Cookie VALUES, reset keys, nonces and passwords never appear in
 // any output: cookies are reported by name/attributes only, reset keys only as the fact "present, N chars", and the edge log is searched for them.
 // Port 8982 (QA), 8981/8983, 9111-9114 are never used. REST traffic is kept low (the CP rate-limits REST routes per IP).
 import fs from "node:fs";
+import net from "node:net";
+import os from "node:os";
 import path from "node:path";
 import crypto from "node:crypto";
 import { chromium } from "playwright-core";
 import { P, REPO, INSTANCES, UPSTREAM_MODE, sleep, sh, req, cpEchoToken, writeJson, portListening, rehearsalConfig, verifyInstance, allGuards, loopbackCurl } from "./lib.mjs";
 const FCGI = UPSTREAM_MODE === "fastcgi"; // php_fastcgi (Linux architecture): PHP gets REMOTE_ADDR + HTTPS from Caddy and NO forwarding header at all
 import { TargetGuard, buildConfig, parseGuardArgs, guarded, installDnsGuard, EXIT_REFUSED } from "../lib/target-guard.mjs";
+import { StageRemote } from "./stage-remote.mjs";
 
 const args = process.argv.slice(2);
 const argOpt = (n, d) => { const i = args.indexOf(n); return i >= 0 ? args[i + 1] : d; };
@@ -39,6 +46,15 @@ const STAGE_MODE = !!GRAW.stageHost; // a staging host was named explicitly (rea
 const REHEARSAL_NAME = argOpt("--rehearsal", "edge");
 const EDGE = INSTANCES[REHEARSAL_NAME] || INSTANCES.edge;
 const FIXTURE_SECTIONS = new Set(["1", "2", "3", "6", "9"]);
+/** REMOTE = the real Linux staging host: the remote-stage adapter provides what the local fixture gives the Mac rehearsal. */
+const REMOTE = STAGE_MODE && !GRAW.rehearsal;
+const SAMPLER_PHASE_FILE = argOpt("--sampler-phase-file", "");
+const CP_REPO = argOpt("--cp-repo", "/Users/avivgerman/Local Sites/woo-recommendation-qa/aicc-control-plane-worktrees/cp2a-14-readiness-independence");
+const OP_PORT = Number(argOpt("--operator-port", "19443"));
+const ECHO_PORT = Number(argOpt("--echo-port", "19481"));
+const FX = REMOTE ? new StageRemote() : null;
+/** Phase label for the host resource sampler (a no-op without --sampler-phase-file). */
+const PH = (label) => { if (SAMPLER_PHASE_FILE) { try { fs.writeFileSync(SAMPLER_PHASE_FILE, label + "\n"); } catch { /* sampler optional */ } } };
 /** The run's guard: rehearsal instance (production-name aliases mapped to 127.0.0.1) or an explicit staging target. */
 const GUARD = await guarded(async () => {
   const cfg = STAGE_MODE ? buildConfig({ ...Object.fromEntries(Object.entries(GRAW).filter(([, v]) => v !== undefined && !(Array.isArray(v) && !v.length))), cacert: argOpt("--cacert", undefined), insecure: args.includes("--insecure") }) : buildConfig(rehearsalConfig(EDGE));
@@ -54,14 +70,14 @@ const APEX = STAGE_MODE || !GUARD.cfg.aliasHosts.includes("copilt.org") ? null :
 const reqX = async (_inst, url, o = {}) => {
   if (!STAGE_MODE) return req(EDGE, url, o);
   await GUARD.ensureIdentity();
-  const u = url.replace(/^(https?:\/\/[^/?#:]+)(:\d+)?/, `$1:${GUARD.cfg.port}`);
+  const u = /^http:/i.test(url) ? url : url.replace(/^(https?:\/\/[^/?#:]+)(:\d+)?/, `$1:${GUARD.cfg.port}`); // an http:// URL must carry its own explicit port (--http-port)
   const r = o.follow ? await GUARD.followAsync({ url: u, method: o.method || "GET", headers: o.headers, body: o.body, head: !!o.head, timeout: o.timeout || 30, compressed: o.compressed }) : await GUARD.curlAsync({ url: u, method: o.method || "GET", headers: o.headers, body: o.body, head: !!o.head, timeout: o.timeout || 30, compressed: o.compressed, bodyFile: o.bodyFile, extra: o.extra });
   const h = {}; for (const l of (r.headerText.split(/\r?\n\r?\n/).pop() || "").split(/\r?\n/).slice(1)) { const i = l.indexOf(":"); if (i > 0) (h[l.slice(0, i).toLowerCase()] ||= []).push(l.slice(i + 1).trim()); }
   return { status: r.status, headers: h, body: r.body, error: r.error, reqId: (h["x-request-id"] || [])[0] };
 };
 let ABORTED = false;
 const onViolation = (rec) => { ABORTED = true; console.error(`GUARD VIOLATION: ${rec.reason}`); closeBrowser().catch(() => {}); };
-const OUT = path.join(P.evidence, "phase2");
+const OUT = argOpt("--out-dir", REMOTE ? path.join(os.homedir(), "Downloads/AICC-cutover-evidence/linux-stage/phase2") : path.join(P.evidence, "phase2")); // the Mac rehearsal results are never overwritten by a run against the real host
 const SHOTS = path.join(OUT, "screenshots");
 const CHROME = process.env.AICC_CHROME || "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 const LOCALES = ["en", "he", "es", "ru"];
@@ -71,18 +87,22 @@ const only = (() => { const i = args.indexOf("--only"); return i >= 0 ? args[i +
 const KEEP_USERS = flag("--keep-users");
 const NO_SHOTS = flag("--no-screenshots");
 const RUN_ID = crypto.randomBytes(3).toString("hex");
+const RUN_START = Math.floor(Date.now() / 1000);
 
 /* ------------------------------------------------------------------ result collector */
 class Result {
   constructor(id, title) { this.id = id; this.title = title; this.rows = []; this.notes = []; this.data = {}; this.started = new Date().toISOString(); this.findings = []; }
   /** label: VERIFIED (observed in this run) | INFERRED | UNVERIFIED. */
   check(name, cond, detail = "", label = "VERIFIED") {
+    name = this._n(name);
     this.rows.push({ name, status: cond ? "PASS" : "FAIL", label, detail: String(detail).slice(0, 700) });
     if (!cond) console.error(`  FAIL [${this.id}] ${name}${detail ? "  -- " + String(detail).slice(0, 300) : ""}`);
     return !!cond;
   }
-  info(name, detail = "", label = "VERIFIED") { this.rows.push({ name, status: "INFO", label, detail: String(detail).slice(0, 900) }); }
-  note(t) { this.notes.push(t); }
+  info(name, detail = "", label = "VERIFIED") { this.rows.push({ name: this._n(name), status: "INFO", label, detail: String(detail).slice(0, 900) }); }
+  note(t) { this.notes.push(this._n(t)); }
+  /** On the real staging host the labels written for the production topology (www.copilt.org) name the staging host instead. */
+  _n(t) { return REMOTE ? String(t).replace(/https:\/\/www\.copilt\.org/g, BASE).replace(/\bwww\.copilt\.org\b/g, CANON_HOST).replace(/exact www https URL/g, "exact staging https URL").replace(/ are on www\b/g, " are on the staging host") : t; }
   finding(severity, text) { this.findings.push({ severity, text }); }
   get failed() { return this.rows.filter((r) => r.status === "FAIL").length; }
   get passed() { return this.rows.filter((r) => r.status === "PASS").length; }
@@ -114,23 +134,46 @@ async function shot(page, name, o = {}) {
   try { await page.screenshot({ path: path.join(SHOTS, `${name}.png`), fullPage: !!o.full, mask: [page.locator("input[type=password]"), page.locator("input[name=user_login], input[name=username], #reg_email, input[type=email]")], animations: "disabled" }); } catch (e) { void e; }
 }
 
-/** Disposable fake accounts in the CP fixture. The password exists only here (memory), is passed to wp-cli on the command line of a local process and is never logged. */
+/** Disposable fake accounts. The password exists only in this process's memory: the local fixture gets it on a wp-cli command line of a LOCAL process; the real staging host gets it ONLY on the stdin of the ssh channel
+ *  (wp-cli --prompt=user_pass), never in an argv/env/file on the host. It is never logged. */
 const createdUsers = [];
 function createUser(tag) {
   const login = `bf-${tag}-${RUN_ID}`.toLowerCase();
   const email = `${login}@example.test`;
   const password = `Bf-${rand(10)}-7a!`;
+  if (REMOTE) { const id = FX.createUser(login, email, password); createdUsers.push(id); return { id, login, email, password }; }
   const id = wpOut("user", "create", login, email, "--role=customer", `--user_pass=${password}`, "--porcelain");
   if (!/^\d+$/.test(id)) throw new Error(`could not create fixture user ${login}`);
   createdUsers.push(id);
   return { id, login, email, password };
 }
-function setPassword(user, password) { wp("user", "update", user.id, `--user_pass=${password}`); user.password = password; }
-function cleanupUsers() { if (KEEP_USERS) return; for (const id of createdUsers.splice(0)) wp("user", "delete", id, "--yes"); }
+function setPassword(user, password) { if (REMOTE) FX.setPassword(user.id, password); else wp("user", "update", user.id, `--user_pass=${password}`); user.password = password; }
+/** id and login of a user that registered itself through the form. */
+function lookupUser(email) { return REMOTE ? { id: FX.userField(email, "ID"), login: FX.userField(email, "user_login") } : { id: wpOut("user", "get", email, "--field=ID"), login: wpOut("user", "get", email, "--field=user_login") }; }
+function trackUser(id) { if (/^\d+$/.test(String(id))) createdUsers.push(String(id)); }
+function cleanupUsers() {
+  if (KEEP_USERS) return;
+  if (REMOTE) {
+    // every id this run created, plus any @example.test account left by a crashed earlier run; then the mail files
+    // the block checkout's own checkout-draft orders created during this run (not orders; WooCommerce would purge them in a day) go first
+    FX.evalPhp(`foreach ( wc_get_orders( array( "limit" => -1, "status" => array( "checkout-draft" ), "date_created" => ">=${RUN_START - 60}" ) ) as $o ) { $o->delete( true ); }`);
+    const ids = new Set([...createdUsers.splice(0), ...FX.listTestUsers()]);
+    const n = FX.deleteUsers([...ids]);
+    console.log(`remote cleanup: deleted ${n} test user(s); removed ${FX.deleteMail()} + ${FX.purgeTestMail()} sink mail file(s); mail sink holds ${FX.mailDirCount()} file(s)`);
+    return;
+  }
+  for (const id of createdUsers.splice(0)) wp("user", "delete", id, "--yes");
+}
 
-/* ------------------------------------------------------------------ the mailbox (captured .eml) */
+/* ------------------------------------------------------------------ the mailbox (captured .eml locally; the host's mail sink through the remote adapter) */
 function mailList() { try { return fs.readdirSync(P.mail).filter((f) => f.endsWith(".eml")).map((f) => ({ f, t: fs.statSync(path.join(P.mail, f)).mtimeMs })).sort((a, b) => a.t - b.t); } catch { return []; } }
+const mailLinks = (raw) => [...raw.matchAll(/href="([^"]+)"/g)].map((m) => m[1].replace(/&amp;/g, "&"));
+/** -> { file, head, subject, links[] } | null. The remote variant returns ONLY the decoded links (they carry the reset key; callers redact). */
 async function waitMail(to, since, subjectRe, ms = 20000) {
+  if (REMOTE) {
+    const m = await FX.waitMail(to, since, { timeout: ms, subjectRe });
+    return m ? { file: m.file, head: `To: ${m.to}\nSubject: ${m.subject}`, subject: m.subject, links: m.links } : null;
+  }
   const t0 = Date.now();
   while (Date.now() - t0 < ms) {
     for (const m of mailList().reverse()) {
@@ -139,13 +182,12 @@ async function waitMail(to, since, subjectRe, ms = 20000) {
       const head = raw.slice(0, raw.indexOf("\n\n") > 0 ? raw.indexOf("\n\n") : 800);
       if (!new RegExp(`^To:.*${to.replace(/[.+]/g, "\\$&")}`, "mi").test(head)) continue;
       if (subjectRe && !subjectRe.test(head)) continue;
-      return { file: m.f, raw, head };
+      return { file: m.f, raw, head, subject: (head.match(/^Subject:\s*(.*)$/mi) || [])[1] || "", links: mailLinks(raw) };
     }
     await sleep(400);
   }
   return null;
 }
-const mailLinks = (raw) => [...raw.matchAll(/href="([^"]+)"/g)].map((m) => m[1].replace(/&amp;/g, "&"));
 
 /* ------------------------------------------------------------------ cookies, sanitized */
 function parseSetCookie(h) {
@@ -165,13 +207,17 @@ function expiryClass(attrs, dateHeader) {
 function humanSecs(s) { if (s >= 86400 * 300) return `~${Math.round(s / 86400 / 365)}y`; if (s >= 86400) return `~${Math.round(s / 86400)}d`; if (s >= 3600) return `~${Math.round(s / 3600)}h`; return `~${Math.round(s / 60)}min`; }
 function jarExpiry(c) { if (!(c.expires > 0)) return "session"; return humanSecs(c.expires - Date.now() / 1000); }
 
+/** A URL on the site under test (the staging host; on the Mac rehearsal also the production-name aliases). */
+const ours = (u) => { try { const h = new URL(u).hostname; return h === CANON_HOST || (!REMOTE && (h === "www.copilt.org" || h === "copilt.org")); } catch { return false; } };
+const escRe = (x) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const STATIC_HOP_RE = new RegExp(`^${escRe(BASE)}(\\/(he|es|ru))?\\/(product|data-and-trust|questions)?\\/?$`);
 /** Wrap a browser context: records every Set-Cookie (sanitized: name + attributes, NEVER values) and the Cookie request header names per request. */
 function instrument(ctx) {
   const log = { setCookies: [], requests: [], responses: [] };
   ctx.on("response", async (res) => {
     try {
       const u = res.url();
-      if (!/^https?:\/\/(www\.)?copilt\.org/.test(u)) return;
+      if (!ours(u)) return;
       const hs = await res.headersArray();
       const date = hs.find((h) => h.name.toLowerCase() === "date")?.value;
       const sc = hs.filter((h) => h.name.toLowerCase() === "set-cookie").map((h) => ({ ...parseSetCookie(h.value), expiry: "" }));
@@ -183,7 +229,7 @@ function instrument(ctx) {
   ctx.on("request", async (rq) => {
     try {
       const u = rq.url();
-      if (!/^https?:\/\/(www\.)?copilt\.org/.test(u)) return;
+      if (!ours(u)) return;
       const hs = await rq.allHeaders();
       log.requests.push({ url: redact(u), host: new URL(u).host, cookieNames: (hs.cookie || "").split(/;\s*/).filter(Boolean).map((c) => normName(c.split("=")[0])) });
     } catch { /* closed */ }
@@ -306,6 +352,7 @@ async function cookieFlow(R, loc, store) {
   const page = await ctx.newPage();
   try {
     // anonymous: no cookie at all from static or CP pages
+    PH("static-browsing");
     for (const u of [`${p}/`, `${p}/product/`, `${p}/pricing/`, `${p}/my-account/`]) await goto(page, BASE + u);
     const anon = await ctx.cookies();
     R.check(`${L} anonymous visits (static home + product, CP pricing + sign-in) set no cookie at all`, anon.length === 0 && log.setCookies.length === 0, `jar=${anon.length} set-cookie headers=${log.setCookies.length}`);
@@ -314,17 +361,17 @@ async function cookieFlow(R, loc, store) {
     await shot(page, `01-${loc}-signin-anonymous`);
 
     // register through the real form
+    PH("register+login");
     const email = `bf-reg-${loc}-${RUN_ID}@example.test`;
     const t0 = Date.now();
     await page.fill("#reg_email", email);
     await Promise.all([page.waitForNavigation({ waitUntil: "load" }), page.click("form.register button[type=submit]")]);
     R.check(`${L} registration through ${p}/my-account/ logs the new customer in and lands on the localized account page`, (await isLoggedInPage(page)) && page.url() === `${BASE}${p}/my-account/`, redact(page.url()));
-    const uid = wpOut("user", "get", email, "--field=ID");
-    const ulogin = wpOut("user", "get", email, "--field=user_login");
-    if (/^\d+$/.test(uid)) createdUsers.push(uid);
+    const { id: uid, login: ulogin } = lookupUser(email);
+    trackUser(uid);
     const user = { id: uid, login: ulogin, email, password: `Bf-${rand(10)}-7a!` };
     const mail = await waitMail(email, t0, /account/i, 15000);
-    const mlinks = mail ? mailLinks(mail.raw).filter((h) => /lost-password/.test(h)) : [];
+    const mlinks = mail ? mail.links.filter((h) => /lost-password/.test(h)) : [];
     R.check(`${L} new-account email captured; its set-password link is https://www.copilt.org${p}/my-account/lost-password/?action=newaccount...`, mlinks.length > 0 && mlinks.every((h) => h.startsWith(`${BASE}${p}/my-account/lost-password/?`)), mlinks.map(redact).join(" "));
     await shot(page, `01-${loc}-registered-account`);
     const afterLogin = await jar(ctx);
@@ -347,16 +394,17 @@ async function cookieFlow(R, loc, store) {
     }
     const cpHops = hopRes.filter((h) => /my-account/.test(h.u));
     R.check(`${L} session persists static -> CP -> static -> CP: every /my-account/ hop is authenticated (${cpHops.length} hops)`, cpHops.every((h) => h.status === 200 && h.loggedNav), JSON.stringify(cpHops.map((h) => [h.u, h.status, h.loggedNav])));
-    const staticHops = log.responses.slice(logStart).filter((r) => /^https:\/\/www\.copilt\.org(\/(he|es|ru))?\/(product|data-and-trust|questions)?\/?$/.test(r.url));
+    const staticHops = log.responses.slice(logStart).filter((r) => STATIC_HOP_RE.test(r.url));
     R.check(`${L} static pages (served by Caddy) answered 200 with no Set-Cookie while logged in`, staticHops.length >= 3 && staticHops.every((r) => r.status === 200 && r.setCookieCount === 0), JSON.stringify(staticHops.map((r) => [r.url.replace(BASE, ""), r.status, r.setCookieCount])));
     const fp1 = await fingerprint(ctx, /^wordpress_logged_in_/);
     R.check(`${L} the login cookie is not rotated or rewritten by static/CP hops (fingerprint equal)`, fp0 === fp1);
     const jsAll = [...new Set(hopRes.flatMap((h) => h.js))];
     R.check(`${L} document.cookie on static + CP pages exposes only the deliberate JS-readable names (never wordpress_*, wp_woocommerce_session_*, aicc_plan)`, jsAll.every((n) => JS_READABLE_OK.has(n)), `seen: ${JSON.stringify(jsAll)}`);
-    const staticReq = log.requests.filter((r) => /^https:\/\/www\.copilt\.org(\/(he|es|ru))?\/(product|data-and-trust|questions)?\/?$/.test(r.url));
+    const staticReq = log.requests.filter((r) => STATIC_HOP_RE.test(r.url));
     R.info(`${L} cookie NAMES the browser sends to static pages`, JSON.stringify([...new Set(staticReq.flatMap((r) => r.cookieNames))]) + " (host-only cookies go to the same host; Caddy ignores them for static files)");
 
     // account navigation: Plans & Stores
+    PH("account/plans");
     await goto(page, `${BASE}${p}/my-account/`);
     await Promise.all([page.waitForNavigation({ waitUntil: "load" }), page.locator('.woocommerce-MyAccount-navigation a[href*="aicc-licenses"]').first().click()]);
     const fl = await facts(page);
@@ -364,6 +412,7 @@ async function cookieFlow(R, loc, store) {
     await shot(page, `01-${loc}-plans-and-stores`);
 
     // add a plan to the cart from the CP pricing page
+    PH("cart+checkout");
     await goto(page, `${BASE}${p}/pricing/`);
     const planLink = page.locator('a[href*="add-to-cart=10"]').first();
     const planHref = await planLink.getAttribute("href");
@@ -396,6 +445,7 @@ async function cookieFlow(R, loc, store) {
     R.check(`${L} no aicc_lang cookie after all of the above (it is only set by an explicit click on the language menu)`, langNow.length === 0 && !log.setCookies.some((c) => c.name === "aicc_lang"));
 
     // logout
+    PH("register+login");
     await goto(page, `${BASE}${p}/my-account/`);
     const logoutHref = redact((await page.locator('a[href*="customer-logout"]').first().getAttribute("href")) || "");
     R.check(`${L} logout link is the localized WooCommerce logout (${p}/my-account/customer-logout/?_wpnonce=...)`, logoutHref.startsWith(`${BASE}${p}/my-account/customer-logout/?`), logoutHref);
@@ -462,7 +512,7 @@ async function s1() {
     await page.locator(".aicc-lang__btn:visible").first().click();
     await Promise.all([page.waitForNavigation({ waitUntil: "load" }), page.locator('.aicc-lang__menu:visible a[data-lang="es"]').first().click()]);
     let lc = (await ctx.cookies()).filter((c) => c.name === "aicc_lang");
-    R.check("clicking Espanol in the STATIC language menu sets exactly one aicc_lang cookie: host-only www, Path=/, Secure, not HttpOnly (JS-set), SameSite=Lax, about 1 year", lc.length === 1 && lc[0].domain === "www.copilt.org" && lc[0].path === "/" && lc[0].secure && !lc[0].httpOnly && lc[0].sameSite === "Lax" && /y|~36\dd|~1y/.test(jarExpiry(lc[0])) && lc[0].value === "es", JSON.stringify(lc.map((c) => [c.name, c.domain, c.path, c.secure, c.httpOnly, c.sameSite, jarExpiry(c), c.value])));
+    R.check("clicking Espanol in the STATIC language menu sets exactly one aicc_lang cookie: host-only www, Path=/, Secure, not HttpOnly (JS-set), SameSite=Lax, about 1 year", lc.length === 1 && lc[0].domain === CANON_HOST && lc[0].path === "/" && lc[0].secure && !lc[0].httpOnly && lc[0].sameSite === "Lax" && /y|~36\dd|~1y/.test(jarExpiry(lc[0])) && lc[0].value === "es", JSON.stringify(lc.map((c) => [c.name, c.domain, c.path, c.secure, c.httpOnly, c.sameSite, jarExpiry(c), c.value])));
     R.check("... and it navigated to /es/product/ (the current page persisted in the new language)", page.url() === `${BASE}/es/product/`, page.url());
     // CP language menu: HE on a CP page
     await goto(page, `${BASE}/es/pricing/`);
@@ -485,10 +535,10 @@ async function s1() {
 
     // apex: one hop, no Set-Cookie on the redirect, no Cookie header sent to the apex
     const apexLog = [];
-    const onResp = async (res) => { const u = new URL(res.url()); if (u.host === "copilt.org" || u.host === "www.copilt.org") apexLog.push({ host: u.host, status: res.status(), loc: redact((await res.headerValue("location")) || ""), sc: (await res.headersArray()).filter((h) => h.name.toLowerCase() === "set-cookie").length, url: redact(res.url()) }); };
+    const onResp = async (res) => { const u = new URL(res.url()); if (u.host === "copilt.org" || u.host === "www.copilt.org" || u.host === CANON_HOST) apexLog.push({ host: u.host, status: res.status(), loc: redact((await res.headerValue("location")) || ""), sc: (await res.headersArray()).filter((h) => h.name.toLowerCase() === "set-cookie").length, url: redact(res.url()) }); };
     const onReq = async (rq) => { const u = new URL(rq.url()); if (u.host === "copilt.org") { const h = await rq.allHeaders(); apexLog.push({ host: "REQ copilt.org", cookieHeader: !!h.cookie }); } };
     page.on("response", onResp); page.on("request", onReq);
-    for (const [from, to] of [[`${APEX}/he/pricing/?x=1`, `${BASE}/he/pricing/?x=1`], [`${APEX}/`, `${BASE}/`], [`${APEX}/ru/my-account/`, `${BASE}/ru/my-account/`], [`${APEX}/es/product/`, `${BASE}/es/product/`]]) {
+    for (const [from, to] of APEX ? [[`${APEX}/he/pricing/?x=1`, `${BASE}/he/pricing/?x=1`], [`${APEX}/`, `${BASE}/`], [`${APEX}/ru/my-account/`, `${BASE}/ru/my-account/`], [`${APEX}/es/product/`, `${BASE}/es/product/`]] : []) { // the staging host has no apex
       apexLog.length = 0;
       await goto(page, from);
       const hopsToWww = apexLog.filter((x) => x.host === "copilt.org");
@@ -496,14 +546,14 @@ async function s1() {
       R.check(`apex ${from.replace(APEX, "https://copilt.org")} -> single 301/308 hop to ${to.replace(BASE, "www")}, no Set-Cookie on the redirect, no Cookie header sent to the apex, final URL correct`, hopsToWww.length === 1 && [301, 308].includes(hopsToWww[0].status) && hopsToWww[0].loc === to && hopsToWww[0].sc === 0 && reqs.length === 1 && !reqs[0].cookieHeader && page.url() === to, JSON.stringify({ hops: hopsToWww.map((h) => [h.status, h.loc, h.sc]), cookieSentToApex: reqs.map((r) => r.cookieHeader), final: redact(page.url()) }));
     }
     // plain http on the apex/www (browser has no HSTS pin for the apex)
-    for (const from of ["http://copilt.org/he/pricing/", "http://www.copilt.org/es/product/"]) {
+    for (const from of APEX ? ["http://copilt.org/he/pricing/", "http://www.copilt.org/es/product/"] : GUARD.cfg.httpPort ? [`http://${CANON_HOST}:${GUARD.cfg.httpPort}/he/pricing/`, `http://${CANON_HOST}:${GUARD.cfg.httpPort}/es/product/`] : []) {
       apexLog.length = 0;
       await goto(page, from);
       const sc = apexLog.reduce((n, x) => n + (x.sc || 0), 0);
       R.check(`${from} -> ends on https://www.copilt.org with the same path, no Set-Cookie on the way`, page.url() === `${BASE}${new URL(from).pathname}` && sc === 0, `${redact(page.url())} hops=${apexLog.filter((x) => x.status).map((x) => x.status).join(">")} set-cookie=${sc}`);
     }
     page.off("response", onResp); page.off("request", onReq);
-    R.check("after every apex/http visit the jar is still only aicc_lang on www.copilt.org (nothing leaked or duplicated)", (await jar(ctx)).length === 1 && (await ctx.cookies()).every((c) => c.domain === "www.copilt.org"));
+    R.check("after every apex/http visit the jar is still only aicc_lang on www.copilt.org (nothing leaked or duplicated)", (await jar(ctx)).length === 1 && (await ctx.cookies()).every((c) => c.domain === CANON_HOST));
   } catch (e) { R.check("language/apex cookie flow completed", false, String(e.stack || e).slice(0, 500)); }
   await ctx.close().catch(() => {});
   for (const r of live) await r.ctx.close().catch(() => {});
@@ -520,6 +570,7 @@ const fetchIn = (page, url, init = {}) => page.evaluate(async ([u, i]) => {
 
 async function s2() {
   const R = new Result("02-csrf-nonces", "Phase 2 / 2: CSRF and nonces, no-store, back button after logout");
+  PH("csrf-nonces-nostore");
   const user = createUser("csrf");
   const ctx = await newCtx("desktop");
   const page = await ctx.newPage();
@@ -644,6 +695,7 @@ const fileHas = (file, needle) => { try { return fs.readFileSync(file, "utf8").i
 function logCount(file, re) { try { return fs.readFileSync(file, "utf8").split("\n").filter((l) => re.test(l)).length; } catch { return -1; } }
 
 async function resetFlow(R, loc, keys) {
+  PH("password-reset");
   const p = pre(loc), L = `[${loc}]`;
   const user = createUser(`rst-${loc}`);
   const oldPassword = user.password;
@@ -666,13 +718,13 @@ async function resetFlow(R, loc, keys) {
     await shot(page, `03-${loc}-reset-link-sent`);
     const mail = await waitMail(user.email, t0, /password|סיסמ|contraseñ|парол/i, 20000);
     R.check(`${L} the reset email was captured`, !!mail, mail ? mail.head.split("\n").find((l) => /^Subject:/.test(l)) : "no mail");
-    const links = mail ? mailLinks(mail.raw).filter((h) => /lost-password/.test(h) && /key=/.test(h)) : [];
+    const links = mail ? mail.links.filter((h) => /lost-password/.test(h) && /key=/.test(h)) : [];
     const link = links[0] || "";
     const u = link ? new URL(link) : null;
     const key = u ? u.searchParams.get("key") || "" : "";
     if (key) keys.push(key);
     R.check(`${L} reset link is https://www.copilt.org${p}/my-account/lost-password/?... (host, scheme, prefix and path exact; has key and login/id params)`, !!u && u.origin === BASE && u.pathname === `${p}/my-account/lost-password/` && key.length >= 16 && (u.searchParams.has("login") || u.searchParams.has("id")), u ? `${u.origin}${u.pathname}?${[...u.searchParams.keys()].join("&")} (key ${key.length} chars)` : "no link");
-    R.check(`${L} no other link in the email points to another origin (mail host/prefix consistent)`, !!mail && mailLinks(mail.raw).filter((h) => /^https?:/.test(h)).every((h) => new URL(h).origin === BASE), mail ? [...new Set(mailLinks(mail.raw).filter((h) => /^https?:/.test(h)).map((h) => new URL(h).origin))].join(",") : "");
+    R.check(`${L} no other link in the email points to another origin (mail host/prefix consistent)`, !!mail && mail.links.filter((h) => /^https?:/.test(h)).every((h) => new URL(h).origin === BASE), mail ? [...new Set(mail.links.filter((h) => /^https?:/.test(h)).map((h) => new URL(h).origin))].join(",") : "");
     if (!link) throw new Error("no reset link");
 
     // open the link in the browser (fresh page in the same context)
@@ -681,7 +733,7 @@ async function resetFlow(R, loc, keys) {
     const rc = (await ctx.cookies()).filter((c) => /^wp-resetpass-/.test(c.name));
     R.check(`${L} opening the emailed link lands on the prefixed reset form with the key REMOVED from the address bar (WooCommerce redirect)`, page.url().startsWith(`${BASE}${p}/my-account/lost-password/`) && !/key=/.test(page.url()) && (await page.locator("#password_1").count()) === 1, `status ${resp.status()} -> ${redact(page.url())}`);
     R.check(`${L} the reset form is in the right language/direction (lang ${want[0]}, dir ${want[1]})`, f1.lang.toLowerCase().startsWith(want[0]) && f1.dir === want[1], `lang=${f1.lang} dir=${f1.dir} h1="${f1.h1}"`);
-    R.check(`${L} the wp-resetpass-* cookie: host-only, Secure, HttpOnly, Path covers the prefixed form (${p}/my-account/lost-password)`, rc.length === 1 && rc[0].domain === "www.copilt.org" && rc[0].secure && rc[0].httpOnly && `${p}/my-account/lost-password/`.startsWith(rc[0].path.endsWith("/") ? rc[0].path : rc[0].path + "/") && rc[0].path !== "/" , JSON.stringify(rc.map((c) => ({ name: normName(c.name), domain: c.domain, path: c.path, secure: c.secure, httpOnly: c.httpOnly, sameSite: c.sameSite, expiry: jarExpiry(c) }))));
+    R.check(`${L} the wp-resetpass-* cookie: host-only, Secure, HttpOnly, Path covers the prefixed form (${p}/my-account/lost-password)`, rc.length === 1 && rc[0].domain === CANON_HOST && rc[0].secure && rc[0].httpOnly && `${p}/my-account/lost-password/`.startsWith(rc[0].path.endsWith("/") ? rc[0].path : rc[0].path + "/") && rc[0].path !== "/" , JSON.stringify(rc.map((c) => ({ name: normName(c.name), domain: c.domain, path: c.path, secure: c.secure, httpOnly: c.httpOnly, sameSite: c.sameSite, expiry: jarExpiry(c) }))));
     R.data[`resetCookie_${loc}`] = rc.map(jarRow0);
     await shot(page, `03-${loc}-reset-form`);
     await page.fill("#password_1", newPassword);
@@ -706,7 +758,7 @@ async function resetFlow(R, loc, keys) {
     await goto(pg2, link);
     R.check(`${L} replaying the used reset link shows no reset form (key invalid/expired)`, (await pg2.locator("#password_1").count()) === 0, redact(pg2.url()));
     await ctx2.close();
-    R.check(`${L} no Set-Cookie of the reset flow has a Domain= attribute and none is sent from the apex`, !log.setCookies.some((c) => c.domain !== null || c.host !== "www.copilt.org"), JSON.stringify(log.setCookies.filter((c) => /resetpass/.test(c.name)).map((c) => [normName(c.name), c.path, c.secure, c.httpOnly, c.sameSite, c.expiry])));
+    R.check(`${L} no Set-Cookie of the reset flow has a Domain= attribute and none is sent from the apex`, !log.setCookies.some((c) => c.domain !== null || c.host !== CANON_HOST), JSON.stringify(log.setCookies.filter((c) => /resetpass/.test(c.name)).map((c) => [normName(c.name), c.path, c.secure, c.httpOnly, c.sameSite, c.expiry])));
   } catch (e) { R.check(`${L} reset flow completed`, false, String(e.stack || e).slice(0, 600)); }
   await ctx.close().catch(() => {});
 }
@@ -717,6 +769,20 @@ async function s3() {
   const keys = [];
   for (const loc of LOCALES) await resetFlow(R, loc, keys);
   // the reset keys must not appear in the edge access/error logs, nor in the CP upstream log (both redact); php -S's own access log is a fixture artifact
+  if (REMOTE) {
+    // on the host: the edge access log (redacts key= in the logged URI), the edge error log, the PHP-FPM master log, the CP's php error/slow logs and syslog. The keys go to grep on STDIN (-f -), never on a command line.
+    await sleep(2500);
+    const files = ["/var/log/aicc-edge/aicc-edge.log", "/var/log/aicc-edge/error.log", "/var/log/php8.3-fpm.log", "/var/log/aicc-cp/php-error.log", "/var/log/aicc-cp/php-slow.log", "/var/log/syslog", "/var/log/auth.log"];
+    const r = FX.exec(`sudo -n bash -c 'K=$(cat); for f in ${files.join(" ")}; do [ -e "$f" ] && echo "$f $(printf "%s\\n" "$K" | grep -c -F -f - "$f")"; done; true'`, { input: keys.join("\n") + "\n" });
+    const per = Object.fromEntries(r.out.split("\n").filter(Boolean).map((l) => l.split(" ")).map(([f, n]) => [f, Number(n)]));
+    R.check(`the host's edge access log and error log contain none of the ${keys.length} reset keys (searched with the key values on grep's stdin)`, keys.length === LOCALES.length && per["/var/log/aicc-edge/aicc-edge.log"] === 0 && per["/var/log/aicc-edge/error.log"] === 0, `keys=${keys.length} matches per file=${JSON.stringify(per)}`);
+    R.check("no reset key in the PHP-FPM log, the CP's PHP error/slow logs, syslog or auth.log either", ["/var/log/php8.3-fpm.log", "/var/log/aicc-cp/php-error.log", "/var/log/aicc-cp/php-slow.log", "/var/log/syslog", "/var/log/auth.log"].every((f) => !per[f]), JSON.stringify(per));
+    const red = FX.exec(`sudo -n grep -c 'lost-password[^"]*key=REDACTED' /var/log/aicc-edge/aicc-edge.log`);
+    R.check("the edge log does contain the reset requests, with key=REDACTED in the logged URI (so the redaction, not absence, is what protects it)", Number(red.out.trim()) >= LOCALES.length, `${red.out.trim()} log lines with lost-password ... key=REDACTED`);
+    R.info("PHP-FPM / origin access log", "PHP-FPM has no access log configured on the host (no access.log directive in the pool), so no origin log records the query string; only the edge log does, and it redacts key=.");
+    R.save();
+    return R;
+  }
   const edgeLog = path.join(P.logs, "aicc-edge.log"), errLog = path.join(P.logs, "error.log"), upLog = path.join(P.logs, "cp-upstream.log"), phpLog = path.join(P.logs, "cp-php-access.log");
   await sleep(1500);
   const leaksEdge = keys.filter((k) => fileHas(edgeLog, k) || fileHas(errLog, k));
@@ -743,7 +809,8 @@ function badHref(href) {
   if (/^\/ai[_-]?copilot/i.test(u.pathname)) return "old GitHub Pages path";
   return null;
 }
-const ownerOf = (headers) => ((headers["x-rehearsal-upstream"] || "") === "wordpress" ? "CP" : "static");
+// The Mac rehearsal's CP fixture stamps X-Rehearsal-Upstream: wordpress. The real host has no such header: the edge adds Content-Security-Policy-Report-Only to STATIC answers only (static_csp), WordPress answers carry none.
+const ownerOf = (headers) => (REMOTE ? ("content-security-policy-report-only" in (headers || {}) ? "static" : "CP") : ((headers["x-rehearsal-upstream"] || "") === "wordpress" ? "CP" : "static"));
 /** Follow redirects with curl through the edge (no browser), returning the chain and the final HTML head facts. */
 const httpCache = new Map();
 async function chase(url) {
@@ -766,6 +833,7 @@ async function chase(url) {
 
 async function s4() {
   const R = new Result("04-locale-routing", "Phase 2 / 4: locale routing, language menu, direct entry, apex, RTL and link crawl (EN, HE, ES, RU; static and CP)");
+  PH("static-browsing");
   const extHosts = new Map(); const violations = []; const pageFacts = [];
   const crawl = { pages: 0, uniqueTargets: 0, byLocale: {}, dead: [], prefixViolations: [], langViolations: [] };
 
@@ -833,6 +901,15 @@ async function s4() {
         page.on("request", h);
         try {
           const el = page.locator(sel).first();
+          if (STAGE_MODE) {
+            // never click a link that leaves the staging host: the guard would (rightly) abort the run. Record it as the defect it is (found on the real host: the stage build linked Sign in / plan buttons to the production origin).
+            const href = await el.getAttribute("href", { timeout: 5000 }).catch(() => null);
+            if (href && /^https?:\/\//i.test(href) && new URL(href).hostname !== CANON_HOST) {
+              R.check(`${L} click: ${label}`, false, `NOT CLICKED: the link points to ${new URL(href).host}, outside the staging host (${redact(href)})`);
+              page.off("request", h);
+              return;
+            }
+          }
           await Promise.all([page.waitForNavigation({ waitUntil: "load", timeout: 25000 }), el.click()]);
           const f = await facts(page);
           const okUrl = typeof expectUrl === "string" ? page.url() === expectUrl : expectUrl.test(page.url());
@@ -930,15 +1007,17 @@ async function s4() {
     chainA.length = 0;
     const rW = await goto(pageE, `${BASE}${p}${pth}`); const fW = await facts(pageE);
     chainW.push(...chainA); chainA.length = 0;
-    await goto(pageE, `${APEX}${p}${pth}`); const fA = await facts(pageE);
+    let fA = { url: "", lang: "" };
+    if (APEX) { await goto(pageE, `${APEX}${p}${pth}`); fA = await facts(pageE); } // the staging host has no apex
     pageE.off("response", h);
     const wwwOk = rW.status() === 200 && pageE && fW.url === `${BASE}${p}${pth}` && LANG_EXPECT[loc].lang.test(fW.lang) && fW.dir === LANG_EXPECT[loc].dir;
-    const apexOk = chainA.length === 2 && chainA[0].host === "copilt.org" && [301, 308].includes(chainA[0].status) && chainA[1].host === "www.copilt.org" && chainA[1].status === 200 && fA.url === `${BASE}${p}${pth}` && LANG_EXPECT[loc].lang.test(fA.lang);
+    const apexOk = !APEX || chainA.length === 2 && chainA[0].host === "copilt.org" && [301, 308].includes(chainA[0].status) && chainA[1].host === "www.copilt.org" && chainA[1].status === 200 && fA.url === `${BASE}${p}${pth}` && LANG_EXPECT[loc].lang.test(fA.lang);
     direct.push({ loc, path: pth, wwwOk, apexOk, www: `${rW.status()} ${fW.lang}/${fW.dir}`, apex: chainA.map((c) => `${c.host}:${c.status}`).join(">") });
   }
   await ctxE.close().catch(() => {});
   R.check(`direct entry to ${direct.length} language-prefixed URLs on www: all 200, right html lang/dir, URL unchanged (no prefix loop or silent fallback)`, direct.every((d) => d.wwwOk), JSON.stringify(direct.filter((d) => !d.wwwOk)));
-  R.check(`the same ${direct.length} URLs under the apex copilt.org: exactly one 301/308 hop to the same prefixed path on www, then 200 in the right language`, direct.every((d) => d.apexOk), JSON.stringify(direct.filter((d) => !d.apexOk)));
+  if (APEX) R.check(`the same ${direct.length} URLs under the apex copilt.org: exactly one 301/308 hop to the same prefixed path on www, then 200 in the right language`, direct.every((d) => d.apexOk), JSON.stringify(direct.filter((d) => !d.apexOk)));
+  else R.info("apex host", "not applicable on the staging host: one canonical name, no apex block (the apex/www rules are checked by `npm run staging:replay` in a production-topology check)");
   R.data.directEntry = direct;
 
   /* ---- F. link audit over everything visited */
@@ -1086,6 +1165,7 @@ async function runDemo(R, ctx, { url, label, touch = false, full = false, locale
 async function s5() {
   const R = new Result("05-watch-demo", "Phase 2 / 5: Watch demo through the real edge in Chrome (desktop, mobile touch, reduced motion, product page, he/es/ru)");
   const summary = {};
+  PH("watch-demo");
   // approved master: never touched; the served bytes are compared elsewhere (08-demo). Here only the browser behaviour.
   let ctx = await newCtx("desktop"); summary.desktop = await runDemo(R, ctx, { url: `${BASE}/`, label: "[desktop 1280x800 /]", full: true, shotName: "05-demo-desktop-open" }); await ctx.close();
   ctx = await newCtx("mobile"); summary.mobile = await runDemo(R, ctx, { url: `${BASE}/`, label: "[mobile 390x844 touch /]", touch: true, full: true, shotName: "05-demo-mobile-open" }); await ctx.close();
@@ -1109,10 +1189,10 @@ async function s5() {
   const probe = async (u) => { const r = await reqX(EDGE, u, { timeout: 40 }); return { status: r.status, trigger: (r.body.match(/data-aicc-demo-trigger/g) || []).length, demoLink: (r.body.match(/href="[^"]*#demo"/g) || []).length }; };
   const cpPages = {};
   for (const u of ["/pricing/", "/my-account/", "/cart/", "/he/pricing/"]) cpPages[u] = await probe(`${BASE}${u}`);
-  const direct = String((loopbackCurl("http://127.0.0.1:18982/", { headers: { Host: "www.copilt.org", "X-Forwarded-Proto": "https" } }).body.match(/data-aicc-demo-trigger/g) || []).length);
-  R.data.cpReach = { cpPagesThroughEdge: cpPages, cpFrontPageDirectToUpstream_triggers: Number(direct) };
+  const direct = REMOTE ? "n/a" : String((loopbackCurl("http://127.0.0.1:18982/", { headers: { Host: "www.copilt.org", "X-Forwarded-Proto": "https" } }).body.match(/data-aicc-demo-trigger/g) || []).length); // no direct-to-upstream port exists on the real host
+  R.data.cpReach = { cpPagesThroughEdge: cpPages, cpFrontPageDirectToUpstream_triggers: REMOTE ? null : Number(direct) };
   R.check("CP pages served by the edge (/pricing/, /my-account/, /cart/, /he/pricing/) contain NO Watch-demo dialog trigger; they link to the static home's #demo instead", Object.values(cpPages).every((c) => c.status === 200 && c.trigger === 0), JSON.stringify(cpPages));
-  R.info("what a visitor can actually reach", `The CP front page (which has its own Watch-demo button and /demo/* probe) is NOT served by the edge: / belongs to the static site. Through the edge the only working dialog is on the static pages (/, /product/ and their he/es/ru versions); CP pages reach it through a link to <prefix>/#demo, verified by click in section 4. Direct-to-upstream (bypassing the edge, comparison only) the CP front page has ${direct} trigger(s); its behaviour with and without /demo/* was proven in phase 1 (08-demo, variants cp-home and block-demo).`);
+  if (!REMOTE) R.info("what a visitor can actually reach", `The CP front page (which has its own Watch-demo button and /demo/* probe) is NOT served by the edge: / belongs to the static site. Through the edge the only working dialog is on the static pages (/, /product/ and their he/es/ru versions); CP pages reach it through a link to <prefix>/#demo, verified by click in section 4. Direct-to-upstream (bypassing the edge, comparison only) the CP front page has ${direct} trigger(s); its behaviour with and without /demo/* was proven in phase 1 (08-demo, variants cp-home and block-demo).`);
   R.data.summary = summary;
   R.save();
   return R;
@@ -1147,13 +1227,30 @@ async function checkoutFlow(R, loc, user, meterSink, mode = "prod-host") {
     await page.waitForTimeout(2500);
     const body = await text(page, "body");
     const hasMarker = /QA only: not a real payment/i.test(body);
+    if (mode === "stage-qa") {
+      // REAL staging host, placeholder gateway temporarily enabled: the home host is not the production host, so the marker logic applies
+      const label = await page.evaluate(() => [...document.querySelectorAll(".wc-block-components-radio-control__label, .wc-block-components-radio-control__description, .wc-block-components-payment-method-label")].map((e) => (e.textContent || "").trim()).filter(Boolean).slice(0, 6));
+      R.check(`${L} [staging host, placeholder gateway enabled] the block checkout shows "QA only: not a real payment" on the placeholder method (title and description): the QA marker applies off the production host`, hasMarker && /Direct bank transfer|העברה בנקאית/i.test(body), JSON.stringify(label));
+      const mk = body.match(/QA only:[^\n]{0,80}/gi) || [];
+      R.check(`${L} the marker appears in BOTH the method title and its description (${mk.length} occurrence(s))`, mk.length >= 2, JSON.stringify(mk));
+      const gwIn = await page.evaluate(() => [...document.querySelectorAll('input[name="radio-control-wc-payment-method-options"]')].map((i) => i.value));
+      R.info(`${L} payment method inputs on the checkout (gateway temporarily enabled)`, JSON.stringify(gwIn));
+      const submits0 = meter.all().filter((r) => r.method !== "GET" && (/wc-ajax=checkout\b/.test(r.url) || (/wc\/store\/v1\/checkout/.test(r.url) && !/__experimental_calc_totals/.test(r.url))));
+      R.check(`${L} NOTHING was submitted on the QA-marker checkout either (no order-placing request)`, submits0.length === 0, JSON.stringify(submits0.map((r) => r.url)));
+      await shot(page, `06-${loc}-checkout-stage-qa-marker`, { full: true });
+      await ctx.close().catch(() => {});
+      return;
+    }
     if (mode === "qa") {
       R.check(`${L} [QA host simulation] the block checkout shows "QA only: not a real payment" on the placeholder method (title and description)`, hasMarker && /Direct bank transfer|העברה בנקאית/i.test(body), body.match(/QA only:[^\n]{0,80}/i)?.[0] || "marker not found");
       await shot(page, `06-${loc}-checkout-qa-marker`, { full: true });
       await ctx.close().catch(() => {});
       return;
     }
-    R.check(`${L} on the rehearsal host (home = https://www.copilt.org = the production host) the placeholder is offered WITHOUT the QA marker (the marker is keyed to non-production hosts), so the launch gate is the only guard`, !hasMarker && /Direct bank transfer|העברה בנקאית/i.test(body), `marker present=${hasMarker}; "Direct bank transfer" shown=${/Direct bank transfer|העברה בנקאית/i.test(body)}`);
+    if (mode === "stage-nogw") {
+      const notice = (await page.locator(".wc-block-checkout__no-payment-methods-notice").first().innerText().catch(() => "")).replace(/\s+/g, " ");
+      R.check(`${L} [as deployed: no payment gateway enabled] checkout renders and offers NO payment method (nothing to pay with) and no QA marker`, !hasMarker && !/Direct bank transfer|העברה בנקאית/i.test(body) && (await page.locator('input[name="radio-control-wc-payment-method-options"]').count()) === 0, `notice="${notice.slice(0, 140)}" markerPresent=${hasMarker}`);
+    } else R.check(`${L} on the rehearsal host (home = https://www.copilt.org = the production host) the placeholder is offered WITHOUT the QA marker (the marker is keyed to non-production hosts), so the launch gate is the only guard`, !hasMarker && /Direct bank transfer|העברה בנקאית/i.test(body), `marker present=${hasMarker}; "Direct bank transfer" shown=${/Direct bank transfer|העברה בנקאית/i.test(body)}`);
     const gw = await page.evaluate(() => [...document.querySelectorAll('input[name="radio-control-wc-payment-method-options"]')].map((i) => i.value));
     R.info(`${L} payment method inputs on the checkout`, JSON.stringify(gw));
     // consent checkboxes: 24px targets
@@ -1183,7 +1280,59 @@ async function checkoutFlow(R, loc, user, meterSink, mode = "prod-host") {
   await ctx.close().catch(() => {});
 }
 
+async function s6Remote() {
+  const R = new Result("06-checkout-infra", "Phase 2 / 6: checkout infrastructure on the real staging host, no payment (EN, HE): as deployed (no gateway), QA payment marker with the placeholder temporarily enabled, launch gates");
+  PH("cart+checkout");
+  const orderCount = () => (FX.evalPhp('echo count(wc_get_orders(["limit"=>-1,"status"=>array_keys(wc_get_order_statuses())]));').out.trim().split("\n").pop());
+  const draftCount = () => (FX.evalPhp('echo count(wc_get_orders(["limit"=>-1,"status"=>["checkout-draft"]]));').out.trim().split("\n").pop());
+  const ordersBefore = orderCount(), draftsBefore = draftCount();
+  const prior = FX.wp(["option", "get", "woocommerce_bacs_settings", "--format=json"]);
+  const hadBacs = prior.code === 0 && prior.out.trim().startsWith("{");
+  const priorJson = hadBacs ? prior.out.trim().split("\n").pop() : "";
+  R.note(`State before: orders ${ordersBefore}, checkout-draft orders ${draftsBefore}, woocommerce_bacs_settings option ${hadBacs ? "present" : "absent"} (no gateway enabled). The placeholder is enabled only for the QA-marker pass below and restored afterwards.`);
+  const user = createUser("co");
+  const sink = {};
+  try {
+    for (const loc of ["en", "he"]) await checkoutFlow(R, loc, user, sink, "stage-nogw");
+    R.data.checkoutNetwork = sink;
+    // a gateway exists? enable the WooCommerce placeholder (Direct bank transfer) for the marker pass ONLY
+    const en = FX.wp(["option", "update", "woocommerce_bacs_settings", JSON.stringify({ enabled: "yes", title: "Direct bank transfer", description: "Placeholder for QA.", instructions: "", account_details: "" }), "--format=json"]);
+    R.check("placeholder gateway (bacs) enabled temporarily in the staging database for the marker pass", en.code === 0, en.out.trim().slice(0, 80));
+    for (const loc of ["en", "he"]) await checkoutFlow(R, loc, user, {}, "stage-qa");
+    // the same real signed-in DOM through the SITE gate's markup detector
+    const ctx = await newCtx("desktop"); const pg = await ctx.newPage();
+    await login(pg, user); await goto(pg, `${BASE}/checkout/?add-to-cart=10`);
+    await pg.waitForSelector(".wc-block-components-radio-control", { timeout: 25000 }).catch(() => {});
+    await pg.waitForTimeout(2000);
+    const html = await pg.content(); await ctx.close();
+    const { placeholderMarkup } = await import("../lib/payment-gate.mjs");
+    const found = placeholderMarkup(html);
+    R.check("the SITE gate's markup detector (placeholderMarkup) finds the placeholder / QA marker in the REAL rendered, signed-in staging checkout DOM", found.length >= 1, JSON.stringify(found));
+  } finally {
+    if (hadBacs) FX.wp(["option", "update", "woocommerce_bacs_settings", priorJson, "--format=json"]); else FX.wp(["option", "delete", "woocommerce_bacs_settings"]);
+  }
+  const st = FX.evalPhp('$g=WC()->payment_gateways()->payment_gateways()["bacs"]; echo "bacs enabled=".$g->enabled;');
+  R.check("staging payment state restored (bacs gateway disabled again, as deployed)", /bacs enabled=no/.test(st.out), st.out.trim().split("\n").pop());
+  const ordersAfter = orderCount(), draftsAfter = draftCount();
+  R.check("no real order exists after the run (any status: count unchanged and 0)", ordersBefore === ordersAfter && ordersAfter === "0", `before=${ordersBefore} after=${ordersAfter}; WooCommerce checkout-draft orders (the block checkout's own draft, not an order) ${draftsBefore} -> ${draftsAfter}`);
+  // the CP launch gate with the production flag: it must FAIL (read-only script, putenv inside the same PHP process)
+  const dir = FX.pushScripts(CP_REPO);
+  try {
+    const g = FX.evalFile(`${dir}/check-launch-blockers.php`, { AICC_PRODUCTION: "1" });
+    const out = g.out.split("\n").filter((l) => !/^(PHP |Deprecated|Warning)/.test(l));
+    R.check("CP scripts/check-launch-blockers.php on the staging database with AICC_PRODUCTION=1 FAILS (exit non-zero) and names the missing real payment gateway", g.code !== 0 && /gateway|placeholder|payment/i.test(g.out), `exit ${g.code}; ${out.filter((l) => /gateway|placeholder|payment|RESULT/i.test(l)).slice(0, 3).join(" | ").slice(0, 400)}`);
+    R.data.cpLaunchGateProductionTail = out.slice(-14);
+    const g0 = FX.evalFile(`${dir}/check-launch-blockers.php`);
+    const out0 = g0.out.split("\n").filter((l) => /BLOCKER|RESULT/.test(l));
+    R.info("CP launch gate with AICC_PRODUCTION unset (reports, does not enforce)", `exit ${g0.code}; ${out0.length} line(s): ${out0.map((l) => l.trim().slice(0, 110)).join(" || ")}`);
+    R.data.cpLaunchGateReport = out0;
+  } finally { FX.removeScripts(); }
+  R.info("SITE launch-check.mjs --strict --checkout-url", "not run against the staging host: it is an unguarded Node fetch of the public checkout URL (the production gate is meant for the production URL, which this run may not contact). The markup detector it uses is exercised on the real DOM above; the CP gate exercises the gateway list directly.", "UNVERIFIED");
+  R.save();
+  return R;
+}
 async function s6() {
+  if (REMOTE) return s6Remote();
   const R = new Result("06-checkout-infra", "Phase 2 / 6: checkout infrastructure through the edge, no payment (EN, HE) and the public launch gate");
   const ordersBefore = ordersCount(), draftsBefore = draftOrders();
   const prior = sh("bash", [P.cpFixture, "wp", "option", "get", "woocommerce_bacs_settings", "--format=json"]);
@@ -1246,6 +1395,7 @@ const NOINDEX_RE = /^(\/(he|es|ru))?\/(cart|checkout|my-account)(\/|$)/;
 const OFFER_RE = /"@type"\s*:\s*"(Offer|AggregateOffer|Product|ProductGroup)"|"offers"\s*:|"price"\s*:|"priceCurrency"\s*:|"lowPrice"|"highPrice"/;
 async function s7() {
   const R = new Result("07-structured-data-seo", "Phase 2 / 7: structured data and SEO signals in the browser through the edge (static and CP, four locales)");
+  PH("seo-structured-data");
   const ctx = await newCtx("desktop");
   const page = await ctx.newPage();
   const staticPaths = ["/", "/product/", "/data-and-trust/", "/privacy/", "/terms/", "/refund-policy/", "/questions/", "/accessibility/"];
@@ -1266,7 +1416,7 @@ async function s7() {
     const hreflangMap = Object.fromEntries(f.hreflang);
     const wantAlt = Object.fromEntries(["en", "he", "es", "ru"].map((l) => [l, `${BASE}${pre(l)}${pth}`]));
     const hreflangOk = noindexExpected ? true : ["en", "he", "es", "ru"].every((l) => hreflangMap[l] === wantAlt[l]) && hreflangMap["x-default"] === wantAlt.en;
-    rows.push({ loc, kind, path: p + pth, status: resp.status(), jsonldTypes: types, offers: offers || dom.itemprops > 0 || dom.metaPrice > 0, noindex, noindexExpected, canonical: f.canonical, canonOk: noindexExpected ? (f.canonical === "" || f.canonical.startsWith(BASE + "/")) : f.canonical === expectCanon, hreflangCount: f.hreflang.length, hreflangOk, ogOk: !dom.ogUrl || dom.ogUrl.startsWith(BASE + "/"), imgOk: !dom.ogImage || dom.ogImage.startsWith(BASE + "/") });
+    rows.push({ loc, kind, path: p + pth, status: resp.status(), jsonldTypes: types, offers: offers || dom.itemprops > 0 || dom.metaPrice > 0, noindex, hdrNoindex: /noindex/i.test(h["x-robots-tag"] || ""), hdrValue: h["x-robots-tag"] || "", metaNoindex: /noindex/i.test(f.robots), metaValue: f.robots, noindexExpected, canonical: f.canonical, canonOk: noindexExpected ? (f.canonical === "" || f.canonical.startsWith(BASE + "/")) : f.canonical === expectCanon, hreflangCount: f.hreflang.length, hreflangOk, ogOk: !dom.ogUrl || dom.ogUrl.startsWith(BASE + "/"), imgOk: !dom.ogImage || dom.ogImage.startsWith(BASE + "/") });
   }
   await ctx.close();
   R.data.pages = rows;
@@ -1277,9 +1427,23 @@ async function s7() {
   R.info("JSON-LD @type values present anywhere", JSON.stringify(allTypes));
   R.check("canonical is the exact www https URL of the page on every indexable page (and, where present, on noindex pages)", rows.every((r) => r.canonOk), JSON.stringify(rows.filter((r) => !r.canonOk).map((r) => [r.path, r.canonical])));
   R.check("hreflang en/he/es/ru + x-default are present and point at the same page in each language on every indexable page (static and CP)", rows.every((r) => r.hreflangOk), JSON.stringify(rows.filter((r) => !r.hreflangOk).map((r) => r.path)));
-  R.check("noindex is set on cart / checkout / my-account (all locales, meta robots or X-Robots-Tag) and on lost-password, and is NOT set on any indexable page", rows.every((r) => r.noindex === r.noindexExpected), JSON.stringify(rows.filter((r) => r.noindex !== r.noindexExpected).map((r) => [r.path, r.noindex])));
+  if (REMOTE) {
+    // the staging host must never be indexed: every response carries X-Robots-Tag (security_headers -> aicc_stage_robots), whatever the page is
+    R.check(`staging noindex: X-Robots-Tag "noindex, nofollow, noarchive" on every one of the ${rows.length} page responses (static and CP, four locales)`, rows.every((r) => r.hdrNoindex && /nofollow/i.test(r.hdrValue) && /noarchive/i.test(r.hdrValue)), JSON.stringify([...new Set(rows.map((r) => r.hdrValue))]));
+    R.check("the WordPress-side meta noindex still marks cart / checkout / my-account / lost-password (all locales), as on production", rows.filter((r) => r.noindexExpected).every((r) => r.metaNoindex), JSON.stringify(rows.filter((r) => r.noindexExpected && !r.metaNoindex).map((r) => r.path)));
+    const metaOnIndexable = rows.filter((r) => !r.noindexExpected && r.metaNoindex).map((r) => r.path);
+    R.info("pages that carry a meta noindex although production would index them (the stage build may add one; the header already covers every page)", JSON.stringify(metaOnIndexable.slice(0, 12)) + ` (${metaOnIndexable.length})`);
+  } else R.check("noindex is set on cart / checkout / my-account (all locales, meta robots or X-Robots-Tag) and on lost-password, and is NOT set on any indexable page", rows.every((r) => r.noindex === r.noindexExpected), JSON.stringify(rows.filter((r) => r.noindex !== r.noindexExpected).map((r) => [r.path, r.noindex])));
   R.check("og:url and og:image, where present, are on www", rows.every((r) => r.ogOk && r.imgOk), JSON.stringify(rows.filter((r) => !(r.ogOk && r.imgOk)).map((r) => r.path)));
   // robots.txt and sitemap.xml: served by the static site through the edge
+  if (REMOTE) {
+    const rb = await reqX(EDGE, `${BASE}/robots.txt`), sm = await reqX(EDGE, `${BASE}/sitemap.xml`);
+    R.check("robots.txt on the staging host: 200 text/plain, served by the static site, DISALLOW ALL (User-agent: * / Disallow: /) and no Sitemap line", rb.status === 200 && /^text\/plain/.test([].concat(rb.headers["content-type"] || []).join(",")) && /User-agent:\s*\*/i.test(rb.body) && /Disallow:\s*\/\s*$/m.test(rb.body) && !/Sitemap:/i.test(rb.body) && !/Allow:\s*\//i.test(rb.body.replace(/Disallow/gi, "")), `${rb.status} :: ${rb.body.replace(/\n/g, " | ").slice(0, 200)}`);
+    R.check("sitemap.xml: 404 on the staging host (the noindex stage build ships no sitemap)", sm.status === 404, `${sm.status}`);
+    R.check("robots.txt / sitemap.xml answers carry the staging X-Robots-Tag too", /noindex/i.test([].concat(rb.headers["x-robots-tag"] || []).join(",")), [].concat(rb.headers["x-robots-tag"] || []).join(","));
+    R.save();
+    return R;
+  }
   const rb = await reqX(EDGE, `${BASE}/robots.txt`), sm = await reqX(EDGE, `${BASE}/sitemap.xml`);
   const apexRb = await reqX(EDGE, `${APEX}/robots.txt`);
   R.check("robots.txt is served by the static site (no WordPress marker), text/plain, allows crawling, names the www sitemap", rb.status === 200 && !rb.headers["x-rehearsal-upstream"] && /^text\/plain/.test(rb.headers["content-type"] || "") && /Sitemap:\s*https:\/\/www\.copilt\.org\/sitemap\.xml/i.test(rb.body) && !/Disallow:\s*\/\s*$/m.test(rb.body), `${rb.status} ${rb.headers["content-type"]} :: ${rb.body.replace(/\n/g, " | ").slice(0, 300)}`);
@@ -1315,7 +1479,7 @@ async function perfLoad(label, profile, o = {}) {
   await goto(page, o.url || `${BASE}/`);
   await page.waitForTimeout(o.settle || 3500);
   const perf = await page.evaluate(() => { const n = performance.getEntriesByType("navigation")[0]; return { ...window.__perf, dcl: Math.round(n.domContentLoadedEventEnd), load: Math.round(n.loadEventEnd), hero: (() => { const v = document.querySelector(".aicc-reco-hero__video"); return v ? { src: v.getAttribute("src"), preload: v.preload, autoplay: v.autoplay, paused: v.paused, readyState: v.readyState, currentTime: Math.round(v.currentTime * 10) / 10, buffered: v.buffered.length ? Math.round(v.buffered.end(v.buffered.length - 1)) : 0 } : null; })() }; });
-  const all = meter.all().filter((r) => /^https:\/\/www\.copilt\.org/.test(r.url));
+  const all = meter.all().filter((r) => r.url.startsWith(BASE));
   const by = {};
   for (const r of all) { const t = r.type || "Other"; (by[t] ||= { n: 0, kb: 0 }); by[t].n++; by[t].kb += r.enc / 1024; }
   for (const t of Object.values(by)) t.kb = Math.round(t.kb * 10) / 10;
@@ -1327,6 +1491,7 @@ async function perfLoad(label, profile, o = {}) {
 
 async function s8() {
   const R = new Result("08-performance", "Phase 2 / 8: lightweight performance through the edge (Home EN: desktop, mobile, reduced motion; demo untouched until opened; compression)");
+  PH("performance-pages");
   R.note("Loopback, no network throttling except where labelled: LCP/FCP show render cost, not WAN latency. php -S and a Mac are not production capacity.");
   const runs = {};
   runs.desktop = await perfLoad("desktop 1280x800, cold cache", "desktop");
@@ -1361,7 +1526,7 @@ async function s8() {
   await ctx.close();
 
   // compression: compressed vs identity for HTML / JS / CSS (curl through the edge)
-  const res = runs.desktop.resources.filter((r) => /^https:\/\/www\.copilt\.org\/_next\/static\//.test(r.url) || r.url === `${BASE}/`);
+  const res = runs.desktop.resources.filter((r) => r.url.startsWith(`${BASE}/_next/static/`) || r.url === `${BASE}/`);
   const bigJs = res.filter((r) => /\.js(\?|$)/.test(r.url)).sort((a, b) => b.data - a.data)[0];
   const bigCss = res.filter((r) => /\.css(\?|$)/.test(r.url)).sort((a, b) => b.data - a.data)[0];
   const comp = [];
@@ -1381,7 +1546,117 @@ async function s8() {
 }
 
 /* ================================================================== 9. CLIENT IP IN THE BROWSER PATH */
+/* ---- section 9 on the REAL Linux host: no fixture echo endpoint exists, so the header handling is proven on a THROWAWAY second Caddy (stage-remote.mjs startEcho) that uses the live edge's wp_proxy_fastcgi snippet
+   verbatim in front of the same PHP-FPM pool, plus a CP-level proof on the LIVE public path (the failed-login throttle keys by the client address the CP resolved). */
+const spkiOfPem = (pem) => sh("bash", ["-c", `openssl x509 -pubkey -noout | openssl pkey -pubin -outform der | openssl dgst -sha256 -binary | base64`], { input: pem }).stdout.trim();
+async function s9Remote() {
+  const R = new Result("09-client-ip", "Phase 2 / 9: client IP and forged identity headers on the real Linux PHP-FPM (throwaway Caddy with the live fastcgi snippet, forged headers from a real browser through the SSH tunnel) and the CP's view on the live public path");
+  PH("client-ip-proof");
+  const STRIPPED = ["forwarded", "x-real-ip", "x-original-url", "x-rewrite-url", "true-client-ip", "cf-connecting-ip", "x-forwarded-port", "client-ip", "x-client-ip", "x-cluster-client-ip", "x-originating-ip", "fastly-client-ip", "forwarded-for", "x-forwarded", "x-forwarded-scheme", "x-forwarded-ssl", "front-end-https", "x-url-scheme", "x-forwarded-server"];
+  const FORGED = { "X-Forwarded-For": "203.0.113.9, 198.51.100.7", "X-Real-IP": "203.0.113.10", Forwarded: "for=203.0.113.11;proto=http;host=evil.example", "X-Forwarded-Host": "evil.example", "X-Forwarded-Proto": "http", "X-Original-URL": "/wp-admin/", "X-Rewrite-URL": "/wp-admin/", "True-Client-IP": "203.0.113.12", "CF-Connecting-IP": "203.0.113.13", "X-Forwarded-Port": "8080", "Client-IP": "203.0.113.14", "X-Client-IP": "203.0.113.15", "X-Cluster-Client-IP": "203.0.113.16", "X-Originating-IP": "203.0.113.17", "Fastly-Client-IP": "203.0.113.18", "Forwarded-For": "203.0.113.19", "X-Forwarded": "203.0.113.20", "X-Forwarded-Scheme": "http", "X-Forwarded-Ssl": "off", "Front-End-Https": "off", "X-Url-Scheme": "http", "X-Forwarded-Server": "evil.example" };
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "aicc-s9-"));
+  let b2 = null, gE = null;
+  try {
+    /* ---------------- A. the throwaway instance on a loopback port of the host */
+    const info = FX.startEcho({ stageHost: CANON_HOST, stageId: GUARD.cfg.stageId, hostPort: 18481 });
+    R.info("throwaway instance", `transient unit ${info.unit} (user aicc-edge, MemoryMax 96M, CPUQuota 30%, RuntimeMaxSec 1800) listening on host 127.0.0.1:${info.hostPort} ONLY; docroot ${info.dir}/docroot (not a release dir, not served by the public edge); same fastcgi socket/pool as the live site (/run/php/aicc-cp.sock, pool aicc)`);
+    R.info("host-side listener check", FX.echoStatus().split("\n").filter((l) => /LISTEN|Active|Memory/.test(l)).join(" | ").replace(/\s+/g, " "));
+    // it is NOT reachable from the internet: a TCP connect to the staging IP on that port must be refused/filtered
+    const open = await new Promise((res) => { const sk = net.connect({ host: GUARD.cfg.stageIp, port: info.hostPort }); const t = setTimeout(() => { sk.destroy(); res("filtered/timeout"); }, 4000); sk.on("connect", () => { clearTimeout(t); sk.destroy(); res("OPEN"); }); sk.on("error", (e) => { clearTimeout(t); res(e.code || "error"); }); });
+    R.check(`the throwaway port ${info.hostPort} is NOT reachable on the public address (TCP connect from this Mac to ${GUARD.cfg.stageIp}:${info.hostPort}: ${open})`, open !== "OPEN", open);
+    FX.openTunnel(ECHO_PORT, info.hostPort);
+    const certs = FX.echoCerts();
+    const bundle = path.join(tmp, "throwaway-ca.pem"); fs.writeFileSync(bundle, (certs.root || "") + (certs.intermediate || ""));
+    gE = GUARD.derive({ stageIp: "127.0.0.1", port: ECHO_PORT, httpPort: null, operatorTunnel: { publicIp: GUARD.cfg.stageIp }, cacert: bundle, insecure: false });
+    const idn = await gE.ensureIdentity();
+    R.check("the guard verified the throwaway instance through the tunnel (identity route {env: staging, host, id} matched; DNS of the host = the staging public IP)", idn.verified, `via ${idn.via}`);
+
+    /* curl-level (includes Via, which a browser page cannot set) */
+    const ec = async (headers) => { const r = await gE.curlAsync({ url: `https://${CANON_HOST}:443/echo.php`, headers, timeout: 30 }); let j = {}; try { j = JSON.parse(r.body); } catch { /* not json */ } return { status: r.status, j }; };
+    const clean = await ec({});
+    const cj = clean.j, ch = cj.headers || {};
+    R.check("clean request through the tunnel: PHP (real php-fpm, pool aicc) sees REMOTE_ADDR = the TCP peer of Caddy (127.0.0.1: the ssh daemon's loopback end), HTTPS=on from Caddy, request scheme https, host = the staging host without any port", clean.status === 200 && cj.remote_addr === "127.0.0.1" && cj.https_server_var === "on" && cj.request_scheme === "https" && cj.host === CANON_HOST && cj.sapi === "fpm-fcgi", JSON.stringify({ remote_addr: cj.remote_addr, https: cj.https_server_var, scheme: cj.request_scheme, host: cj.host, sapi: cj.sapi, php: cj.php }));
+    R.check("a clean request carries no X-Forwarded-*, Forwarded, Via or other identity header into PHP (fastcgi: PHP gets REMOTE_ADDR and HTTPS from Caddy, not from headers)", !Object.keys(ch).some((k) => /forward|via|real-ip|client|original|rewrite/.test(k)), JSON.stringify(Object.keys(ch)));
+    const fcurl = await ec({ ...FORGED, Via: "1.1 evil-proxy" });
+    const fh = fcurl.j.headers || {};
+    const leaked = [...STRIPPED, "via", "x-forwarded-for", "x-forwarded-host", "x-forwarded-proto"].filter((k) => k in fh);
+    R.check(`curl: ${Object.keys(FORGED).length + 1} FORGED identity/scheme headers sent to the throwaway instance (X-Forwarded-For/-Host/-Proto/-Port/-Scheme/-Ssl/-Server, Forwarded, X-Real-IP, Client-IP, CF-Connecting-IP, True-Client-IP, X-Cluster-Client-IP, X-Originating-IP, Fastly-Client-IP, Forwarded-For, X-Forwarded, Front-End-Https, X-Url-Scheme, X-Original-URL, X-Rewrite-URL, X-Client-IP, Via): NONE reaches PHP`, fcurl.status === 200 && leaked.length === 0, JSON.stringify({ leaked, received: Object.keys(fh) }));
+    R.check("... and the forged values did not change what PHP computes: REMOTE_ADDR is still the TCP peer (127.0.0.1), HTTPS still on, host unchanged, no server variable named FORWARD/REAL_IP/CLIENT/VIA exists", fcurl.j.remote_addr === "127.0.0.1" && fcurl.j.https_server_var === "on" && fcurl.j.host === CANON_HOST && Object.keys(fcurl.j.server_vars_matching_forward_real_client_via || {}).length === 0 && !/203\.0\.113|198\.51\.100|evil/.test(JSON.stringify(fcurl.j)), JSON.stringify(fcurl.j.server_vars_matching_forward_real_client_via));
+    R.data.cleanEcho = { remote_addr: cj.remote_addr, https: cj.https_server_var, host: cj.host, headers: Object.keys(ch) };
+    R.data.forgedEchoCurl = { remote_addr: fcurl.j.remote_addr, https: fcurl.j.https_server_var, receivedHeaders: Object.keys(fh) };
+
+    /* real browser (Chrome) on the same tunnel: forged headers from page JavaScript */
+    const leafPem = sh("bash", ["-c", `echo | openssl s_client -connect 127.0.0.1:${ECHO_PORT} -servername ${CANON_HOST} 2>/dev/null | openssl x509`]).stdout;
+    const pins = [certs.root, certs.intermediate, leafPem].filter(Boolean).map(spkiOfPem).filter(Boolean).join(",");
+    b2 = await chromium.launch({ executablePath: CHROME, args: [...gE.browserArgs(), `--ignore-certificate-errors-spki-list=${pins}`] });
+    const ctxE = await b2.newContext({ viewport: { width: 1280, height: 800 }, locale: "en-US" });
+    await gE.guardBrowser(ctxE, { onViolation });
+    const pg = await ctxE.newPage();
+    await goto(pg, `https://${CANON_HOST}/echo.php?browser=1`);
+    const echo = (extra) => pg.evaluate(async ([h]) => { const r = await fetch("/echo.php?x=" + Math.random().toString(36).slice(2), { credentials: "same-origin", headers: h }); return { status: r.status, body: await r.json() }; }, [extra || {}]);
+    const bClean = await echo();
+    R.check("browser (Chrome, page JavaScript) through the tunnel to the throwaway instance: 200 JSON from php-fpm, REMOTE_ADDR 127.0.0.1, HTTPS on", bClean.status === 200 && bClean.body.remote_addr === "127.0.0.1" && bClean.body.https_server_var === "on" && bClean.body.sapi === "fpm-fcgi", JSON.stringify({ remote_addr: bClean.body.remote_addr, https: bClean.body.https_server_var }));
+    const bForged = await echo(FORGED);
+    const bh = bForged.body.headers || {};
+    const bLeaked = [...STRIPPED, "x-forwarded-for", "x-forwarded-host", "x-forwarded-proto"].filter((k) => k in bh);
+    R.check(`browser: ${Object.keys(FORGED).length} FORGED headers set by page JavaScript (the same list the Mac run uses): none reaches PHP; X-Forwarded-For is absent (PHP's own client IP therefore cannot be forged by a header)`, bForged.status === 200 && bLeaked.length === 0 && !("x-forwarded-for" in bh), JSON.stringify({ leaked: bLeaked, received: Object.keys(bh) }));
+    R.check("browser: with the forged headers REMOTE_ADDR is unchanged (127.0.0.1) and HTTPS is still on (a forged X-Forwarded-Proto: http / X-Forwarded-Ssl: off / Front-End-Https: off did not downgrade it), host unchanged", bForged.body.remote_addr === "127.0.0.1" && bForged.body.https_server_var === "on" && bForged.body.host === CANON_HOST && !/203\.0\.113|198\.51\.100|evil/.test(JSON.stringify(bForged.body)), JSON.stringify({ remote: bForged.body.remote_addr, https: bForged.body.https_server_var }));
+    const ALLOWED = /^(host|user-agent|accept|accept-encoding|accept-language|referer|origin|sec-[a-z-]+|connection|content-length|content-type|cookie|priority|cache-control|pragma|dnt|upgrade-insecure-requests)$/;
+    const extra = Object.keys(bh).filter((k) => !ALLOWED.test(k));
+    R.check(`the header set PHP receives contains only ordinary browser headers (${Object.keys(bh).length} headers; unexpected: ${JSON.stringify(extra)})`, extra.length === 0, Object.keys(bh).join(","));
+    R.data.forgedEchoBrowser = { remote_addr: bForged.body.remote_addr, https: bForged.body.https_server_var, receivedHeaders: Object.keys(bh) };
+    await ctxE.close();
+  } catch (e) { R.check("throwaway-instance client-ip flow completed", false, String(e.stack || e).slice(0, 600)); }
+  finally {
+    if (b2) await b2.close().catch(() => {});
+    FX.closeTunnel(ECHO_PORT);
+    const gone = FX.stopEcho();
+    fs.rmSync(tmp, { recursive: true, force: true });
+    R.check("the throwaway instance is gone: transient unit inactive, temp dir removed, port closed on the host, tunnel closed", !!gone && gone.unitGone && gone.dirGone && gone.portClosed, gone ? gone.raw : "stopEcho not run");
+  }
+  R.info("what the throwaway instance proves and what it cannot", "PROVES (real Caddy 2.11.7 + the live edge's own wp_proxy_fastcgi text + the real PHP-FPM pool): none of the client-supplied forwarding/identity headers (including Forwarded, X-Real-IP, Client-IP, CF-Connecting-IP, True-Client-IP, X-Forwarded-*, Via) reaches PHP; PHP gets HTTPS=on from Caddy's TLS state and REMOTE_ADDR from the TCP peer. CANNOT prove: a non-loopback peer address (through the ssh tunnel the peer is 127.0.0.1); that part rests on the same Caddy mechanism and on the live-path evidence below. It also does not exercise the live site's other directives (e.g. request_header X-Request-Id), which the live-path checks below cover where observable.", "INFERRED");
+
+  /* ---------------- B. the LIVE public path: what the CP itself resolves as the client address */
+  try {
+    const sc = FX.exec("echo $SSH_CLIENT").out.trim().split(" ")[0];
+    const macIp = /^[0-9.]+$/.test(sc) ? sc : "";
+    R.info("this Mac's public address as the host sees it (SSH_CLIENT; assumed to be the same egress address as for https)", macIp || "unknown");
+    const ctx = await newCtx("desktop");
+    const page = await ctx.newPage();
+    const probe = `zz-ip-probe-${RUN_ID}`;
+    let rid = "", status = 0;
+    page.on("response", (r) => { if (r.request().method() === "POST" && /\/my-account\/?$/.test(new URL(r.url()).pathname)) { rid = r.headers()["x-request-id"] || rid; status = r.status(); } });
+    await goto(page, `${BASE}/my-account/`);
+    await page.setExtraHTTPHeaders({ "X-Forwarded-For": "203.0.113.77", "X-Real-IP": "203.0.113.78", Forwarded: "for=203.0.113.79", "X-Request-Id": "forged-browser-request-id", "CF-Connecting-IP": "203.0.113.80", "True-Client-IP": "203.0.113.81" });
+    await page.fill("#username", probe); await page.fill("#password", `Bf-${rand(8)}-x1!`);
+    await Promise.all([page.waitForNavigation({ waitUntil: "load" }), page.click("form.login button[type=submit]")]);
+    const failedShown = (await page.locator(".woocommerce-error").count()) > 0;
+    R.check("live public edge: a real browser submits a WRONG login for a made-up user while page-level headers forge X-Forwarded-For, X-Real-IP, Forwarded, CF-Connecting-IP, True-Client-IP and X-Request-Id (a counted failure)", failedShown, `HTTP ${status}, error notice shown=${failedShown}`);
+    await ctx.close();
+    const ph = (k) => `echo json_encode(["mac_ip_bucket"=>get_transient("aicc_lm_lt_i_".md5(${JSON.stringify(macIp || "unknown")})), "mac_user_bucket"=>get_transient("aicc_lm_lt_u_".md5(${JSON.stringify(macIp + "|" + probe)})), "forged_xff_bucket"=>get_transient("aicc_lm_lt_i_".md5("203.0.113.77")), "forged_xri_bucket"=>get_transient("aicc_lm_lt_i_".md5("203.0.113.78")), "loopback_bucket"=>get_transient("aicc_lm_lt_i_".md5("127.0.0.1")), "trusted_proxies"=>(defined("AICC_LM_TRUSTED_PROXIES")?AICC_LM_TRUSTED_PROXIES:"(undefined)"), "resolve_with_forged_xff_from_peer"=>AICC_LM_Client_IP::resolve(${JSON.stringify(macIp || "198.51.100.1")}, "203.0.113.77", AICC_LM_Client_IP::trusted_proxies())]);`;
+    const t = FX.evalPhp(ph());
+    let tj = {}; try { tj = JSON.parse(t.out.trim().split("\n").pop()); } catch { /* shown below */ }
+    R.check("the CP's failed-login bucket exists for THIS Mac's real public address (per-address and per-address+username), i.e. the CP resolved REMOTE_ADDR on the live path", !!macIp && !!tj.mac_ip_bucket && !!tj.mac_user_bucket, JSON.stringify({ ip_bucket: !!tj.mac_ip_bucket, user_bucket: !!tj.mac_user_bucket }));
+    R.check("... and NO bucket exists for any forged address (203.0.113.77 from X-Forwarded-For, 203.0.113.78 from X-Real-IP): the CP never trusted a forwarded header (AICC_LM_TRUSTED_PROXIES is empty on the host)", !tj.forged_xff_bucket && !tj.forged_xri_bucket && (tj.trusted_proxies === "(undefined)" || (Array.isArray(tj.trusted_proxies) && tj.trusted_proxies.length === 0)), JSON.stringify({ forged_xff: !!tj.forged_xff_bucket, forged_xri: !!tj.forged_xri_bucket, trusted_proxies: tj.trusted_proxies }));
+    R.check("AICC_LM_Client_IP::resolve(<this Mac's address>, forged X-Forwarded-For, the host's real trusted-proxy list) returns the peer address (pure function, host's real configuration)", tj.resolve_with_forged_xff_from_peer === (macIp || "198.51.100.1"), String(tj.resolve_with_forged_xff_from_peer));
+    // the edge's own record of the same request
+    if (rid) {
+      await sleep(1500);
+      const lg = FX.exec(`sudo -n grep -F ${JSON.stringify(rid)} /var/log/aicc-edge/aicc-edge.log | tail -n 1`);
+      let e = null; try { e = JSON.parse(lg.out.trim()); } catch { /* not found */ }
+      R.check("edge access log for that request: remote_ip / client_ip are this Mac's real address (the TCP peer), not a forged header value; the id in the response header is the edge's own (not the forged X-Request-Id)", !!e && (!macIp || (e.request.remote_ip === macIp && e.request.client_ip === macIp)) && rid !== "forged-browser-request-id" && /^[0-9a-f-]{36}$/.test(rid), e ? JSON.stringify({ remote_ip: e.request.remote_ip, client_ip: e.request.client_ip, status: e.status, listener: e.listener }) : "log line not found");
+      R.data.edgeLogEntry = e ? { remote_ip: e.request.remote_ip, client_ip: e.request.client_ip, status: e.status, listener: e.listener } : null;
+    }
+    FX.evalPhp(`foreach ([md5(${JSON.stringify(macIp || "unknown")}), md5(${JSON.stringify(macIp + "|" + probe)})] as $h) { delete_transient("aicc_lm_lt_i_".$h); delete_transient("aicc_lm_lt_u_".$h); }`);
+    R.info("throttle test data", "the two failed-login buckets created by this probe were deleted again (1 failure counted against the 10/15min and 30/15min limits meanwhile)");
+  } catch (e) { R.check("live-path client-ip proof completed", false, String(e.stack || e).slice(0, 600)); }
+  R.save();
+  return R;
+}
+
+
 async function s9() {
+  if (REMOTE) return s9Remote();
   const R = new Result("09-client-ip", "Phase 2 / 9: what the Control Plane receives for a real browser request through the edge (client IP, proto, host, spoofing)");
   const token = cpEchoToken();
   const ctx = await newCtx("desktop");
@@ -1432,6 +1707,7 @@ async function s9() {
 /* ================================================================== 10. ROUND 4a: public surface, footer, lang/dir, legal links, copy (through the edge) */
 async function s10() {
   const R = new Result("10-round4a-public-surface", "Phase 2 / 10: CORS, user enumeration, feeds, footer year, html lang/dir, privacy link, registration wording, Reco intro and home FAQ (real HTTP + browser through the edge)");
+  PH("public-surface");
   const plans = `${BASE}/wp-json/aicc-license/v1/plans`;
   const h1 = (r, k) => [].concat(r.headers[k] || []).join(",");
   // --- CORS (real HTTP through the edge)
@@ -1452,20 +1728,30 @@ async function s10() {
   await goto(page, `${BASE}/`);
   const same = await page.evaluate(async () => { const r = await fetch("/wp-json/aicc-license/v1/plans", { credentials: "include" }); return { status: r.status, ok: r.ok }; });
   R.check("a page on www.copilt.org still reads the CP REST route (same origin)", same.status === 200, JSON.stringify(same));
-  const cross = await page.evaluate(async () => { try { const r = await fetch("https://copilt.org/wp-json/aicc-license/v1/plans", { credentials: "include", mode: "cors" }); return { status: r.status }; } catch (e) { return { blocked: true, error: String(e).slice(0, 60) }; } });
-  R.check("the browser BLOCKS a credentialed cross-origin read from www to the apex origin (apex answers a redirect without CORS grants)", cross.blocked === true, JSON.stringify(cross));
+  if (!STAGE_MODE) {
+    const cross = await page.evaluate(async () => { try { const r = await fetch("https://copilt.org/wp-json/aicc-license/v1/plans", { credentials: "include", mode: "cors" }); return { status: r.status }; } catch (e) { return { blocked: true, error: String(e).slice(0, 60) }; } });
+    R.check("the browser BLOCKS a credentialed cross-origin read from www to the apex origin (apex answers a redirect without CORS grants)", cross.blocked === true, JSON.stringify(cross));
+  } else R.info("cross-origin read from the apex origin", "not applicable on the staging host (no apex) and never attempted: this run may not contact any production name");
 
   // --- user enumeration
   for (const u of ["/wp-json/wp/v2/users", "/wp-json/wp/v2/users/1", "/he/wp-json/wp/v2/users"]) {
     const r = await reqX(EDGE, `${BASE}${u}`);
     R.check(`anonymous GET ${u}: no user listing (404 or no login names in the body)`, r.status === 404 || !/"slug"|"name"/.test(r.body), `${r.status} ${r.body.slice(0, 60)}`);
   }
-  const au = await reqX(EDGE, `${BASE}/author/rehearsal-admin/`);
-  R.check("/author/<login>/ through the edge answers 404 and no login is echoed", au.status === 404 && !/rehearsal-admin/.test(au.body), `${au.status}`);
-  const direct = (p) => { const r = loopbackCurl(`http://127.0.0.1:18982${p}`, { headers: { Host: "www.copilt.org", "X-Forwarded-Proto": "https" } }); return [(r.headerText.split(/\r?\n/)[0] || "").trim(), ...(r.headerText.split(/\r?\n/).filter((l) => /^location:/i.test(l)))].join(" | "); };
-  const a1 = direct("/?author=1"), f1 = direct("/?feed=rss2"), f2 = direct("/feed/");
-  R.check("(CP upstream, bypassing the edge, which owns / for the static site) /?author=1 is 404 with no Location header leaking the login", /404/.test(a1) && !/location/i.test(a1), a1);
-  R.check("(CP upstream) /?feed=rss2 and /feed/ are 404", /404/.test(f1) && /404/.test(f2), `${f1} || ${f2}`);
+  const adminLogin = REMOTE ? "aicc-stage-admin" : "rehearsal-admin";
+  const au = await reqX(EDGE, `${BASE}/author/${adminLogin}/`);
+  R.check("/author/<login>/ through the edge answers 404 and no login is echoed", au.status === 404 && !new RegExp(adminLogin).test(au.body), `${au.status}`);
+  if (!REMOTE) {
+    const direct = (p) => { const r = loopbackCurl(`http://127.0.0.1:18982${p}`, { headers: { Host: "www.copilt.org", "X-Forwarded-Proto": "https" } }); return [(r.headerText.split(/\r?\n/)[0] || "").trim(), ...(r.headerText.split(/\r?\n/).filter((l) => /^location:/i.test(l)))].join(" | "); };
+    const a1 = direct("/?author=1"), f1 = direct("/?feed=rss2"), f2 = direct("/feed/");
+    R.check("(CP upstream, bypassing the edge, which owns / for the static site) /?author=1 is 404 with no Location header leaking the login", /404/.test(a1) && !/location/i.test(a1), a1);
+    R.check("(CP upstream) /?feed=rss2 and /feed/ are 404", /404/.test(f1) && /404/.test(f2), `${f1} || ${f2}`);
+  } else {
+    // there is no upstream port on the real host; ask the edge for the WordPress routes it does send to PHP (wc-ajax / rest_route keep the root a WordPress route)
+    const ra = await reqX(EDGE, `${BASE}/?rest_route=/wp/v2/users`);
+    R.check("(through the edge, root + rest_route) /?rest_route=/wp/v2/users shows no user listing (401/404 or no login names)", [401, 403, 404].includes(ra.status) || !/"slug"|"name"/.test(ra.body), `${ra.status} ${ra.body.slice(0, 60)}`);
+    R.info("direct-to-upstream author/feed probes", "not applicable on the real host (no upstream port; PHP-FPM is a unix socket). The feed routes are covered below through the edge (/feed/ 404) and the author probe by /author/<login>/.");
+  }
 
   // --- feeds and discovery links on CP pages (browser DOM + headers), four languages
   const feedBad = [];
@@ -1530,7 +1816,7 @@ async function s10() {
     await goto(pg, `${BASE}${p}/my-account/`);
     await pg.fill("#reg_email", `bf-r4a-${loc}-${RUN_ID}@example.test`);
     await Promise.all([pg.waitForNavigation({ waitUntil: "load" }), pg.click("form.register button[type=submit]")]);
-    const uid = wpOut("user", "get", `bf-r4a-${loc}-${RUN_ID}@example.test`, "--field=ID"); if (/^\d+$/.test(uid)) createdUsers.push(uid);
+    const uid = lookupUser(`bf-r4a-${loc}-${RUN_ID}@example.test`).id; trackUser(uid);
     const note = (await text(pg, "main")).replace(/\s+/g, " ");
     const old = { en: /temporary password/i, he: /סיסמה זמנית/ }[loc];
     const fresh = { en: /signed in with a password we generated\. We emailed you a link to set your own/, he: /סיסמה שנוצרה אוטומטית/ }[loc];
@@ -1560,13 +1846,160 @@ async function s10() {
   return R;
 }
 
+/* ================================================================== 11. OPERATOR PATH (real staging host only): wp-login / wp-admin through the SSH tunnel to the loopback operator listener */
+const EXTERNAL_LOCAL_STUBS = /^https:\/\/(secure\.gravatar\.com|[0-2]\.gravatar\.com|gravatar\.com)\//; // answered locally (never sent): wp-admin's avatar images
+async function s11() {
+  const R = new Result("11-operator-path", "Phase 2 / 11: operator path on the real staging host: wp-login / wp-admin only through the SSH tunnel to the loopback operator listener (public access refused), dashboard, WooCommerce admin pages, plugin list");
+  if (!REMOTE) { R.info("section 11", "needs the real staging host (--stage-host with a public IP): not applicable to the Mac rehearsal"); R.save(); return R; }
+  const pubHdr = (r, k) => [].concat(r.headers[k] || []).join(",");
+
+  /* ---------------- A. what the PUBLIC sees */
+  PH("operator-public-denials");
+  const denials = [["GET", "/wp-login.php"], ["GET", "/wp-admin/"], ["GET", "/wp-admin/admin.php?page=wc-admin"], ["GET", "/wp-admin/plugins.php"], ["GET", "/wp-cron.php"], ["GET", "/xmlrpc.php"], ["POST", "/wp-login.php"], ["POST", "/xmlrpc.php"], ["GET", "/wp-login.php?action=register"], ["GET", "/wp-login.php?action=lostpassword"]];
+  const dres = [];
+  for (const [m, u] of denials) {
+    const r = await reqX(EDGE, `${BASE}${u}`, { method: m, body: m === "POST" ? "log=x&pwd=x" : undefined, headers: m === "POST" ? { "Content-Type": "application/x-www-form-urlencoded" } : {} });
+    dres.push({ m, u, status: r.status, cc: pubHdr(r, "cache-control"), body: r.body.slice(0, 40) });
+  }
+  R.check(`public listener: wp-login.php, wp-admin/*, wp-cron.php and xmlrpc.php (GET and POST, ${denials.length} requests) answer 403 for everybody`, dres.every((d) => d.status === 403), JSON.stringify(dres.map((d) => `${d.m} ${d.u} ${d.status}`)));
+  R.check("the 403 answers are Cache-Control: no-store and carry no WordPress marker or login form", dres.every((d) => /no-store/.test(d.cc) && !/user_login|wp-submit|wordpress/i.test(d.body)), JSON.stringify(dres.map((d) => [d.u, d.cc])));
+  const ajax = await reqX(EDGE, `${BASE}/wp-admin/admin-ajax.php`, { method: "POST", body: "action=heartbeat", headers: { "Content-Type": "application/x-www-form-urlencoded" } });
+  R.info("public admin-ajax.php (stays public by design: Action Scheduler async runner, future gateway callbacks)", `POST action=heartbeat -> HTTP ${ajax.status}, ${pubHdr(ajax, "cache-control")}, body "${ajax.body.slice(0, 30)}"`);
+  const lo = await reqX(EDGE, `${BASE}/wp-login.php?loggedout=true`);
+  R.info("public logout landing shape (GET-only, stays public for customers' wp_logout_url)", `GET /wp-login.php?loggedout=true -> HTTP ${lo.status}`);
+  {
+    const ctx = await newCtx("desktop"); const pg = await ctx.newPage();
+    const resp = await goto(pg, `${BASE}/wp-admin/`);
+    const bodyTxt = (await text(pg, "body")).replace(/\s+/g, " ").slice(0, 80);
+    R.check("a visitor's browser opening /wp-admin/ on the public host gets the 403 page, no login form, no redirect to wp-login.php", resp.status() === 403 && (await pg.locator("#user_login").count()) === 0 && new URL(pg.url()).pathname === "/wp-admin/", `HTTP ${resp.status()} ${pg.url().replace(BASE, "")} "${bodyTxt}"`);
+    await shot(pg, "11-public-wp-admin-403");
+    await ctx.close();
+  }
+  // the operator port itself is not on the public address
+  for (const port of [8443, 12019]) {
+    const open = await new Promise((res) => { const sk = net.connect({ host: GUARD.cfg.stageIp, port }); const t = setTimeout(() => { sk.destroy(); res("filtered/timeout"); }, 4000); sk.on("connect", () => { clearTimeout(t); sk.destroy(); res("OPEN"); }); sk.on("error", (e) => { clearTimeout(t); res(e.code || "error"); }); });
+    R.check(`TCP ${GUARD.cfg.stageIp}:${port} (operator listener / Caddy admin API) is not reachable from the internet (${open})`, open !== "OPEN", open);
+  }
+
+  /* ---------------- B. the operator path through our own tunnel */
+  const creds = FX.adminCredentials(); // memory only
+  FX.openTunnel(OP_PORT, 8443);
+  let browserOp = null;
+  const stubbed = [];
+  try {
+    const gOp = GUARD.derive({ stageIp: "127.0.0.1", port: OP_PORT, httpPort: null, operatorTunnel: { publicIp: GUARD.cfg.stageIp }, aliasHosts: [] });
+    const idn = await gOp.ensureIdentity();
+    R.check("the guard verified the OPERATOR listener through the tunnel (identity route env staging, host and id match; the host's public DNS = the staging public IP)", idn.verified, `via ${idn.via}`);
+    R.info("tunnel", `ssh -L 127.0.0.1:${OP_PORT} -> host 127.0.0.1:8443 (own control socket, loopback on both ends); Chrome maps ${CANON_HOST} -> 127.0.0.1:${OP_PORT}; URLs keep the public form https://${CANON_HOST}/ (WordPress's absolute URLs)`);
+    const cl = await gOp.curlAsync({ url: `https://${CANON_HOST}:443/wp-login.php`, method: "GET" });
+    R.check("curl through the tunnel: GET /wp-login.php answers 200 with the login form (the same path is 403 on the public listener)", cl.status === 200 && /id="user_login"/.test(cl.body), `HTTP ${cl.status}`);
+    const hd = cl.headerText;
+    R.info("operator listener login page headers", `${(hd.match(/^cache-control:.*$/im) || [""])[0]} | ${(hd.match(/^x-robots-tag:.*$/im) || [""])[0]} | ${(hd.match(/^strict-transport-security:.*$/im) || [""])[0]}`);
+
+    browserOp = await chromium.launch({ executablePath: CHROME, args: [...gOp.browserArgs()] });
+    const ctx = await browserOp.newContext({ viewport: { width: 1280, height: 800 }, locale: "en-US" });
+    await gOp.guardBrowser(ctx, { onViolation });
+    // wp-admin shows avatar images from a Gravatar host: answer them locally (nothing is sent) so a harmless <img> does not end the run as an egress violation. Every OTHER outside request still does.
+    await ctx.route(EXTERNAL_LOCAL_STUBS, (route) => { stubbed.push(new URL(route.request().url()).hostname); return route.fulfill({ status: 204, body: "" }); });
+    ctx.setDefaultTimeout(30000); ctx.setDefaultNavigationTimeout(60000);
+    const log = instrument(ctx);
+    const page = await ctx.newPage();
+    const errs = []; page.on("pageerror", (e) => errs.push(String(e).slice(0, 100)));
+    const consoleErr = []; page.on("console", (m) => { if (m.type() === "error") consoleErr.push(m.text().slice(0, 100)); });
+    const ext = new Map(); ctx.on("request", (rq) => { try { const h = new URL(rq.url()).hostname; if (h !== CANON_HOST && !/^(data|blob|about):/.test(rq.url())) ext.set(h, (ext.get(h) || 0) + 1); } catch { /* noop */ } });
+
+    PH("wp-admin-dashboard");
+    const t0 = Date.now();
+    await goto(page, `${BASE}/wp-login.php`);
+    R.check("operator listener, browser: wp-login.php renders the login form (no redirect, no 403)", (await page.locator("#user_login").count()) === 1 && (await page.locator("#loginform").count()) === 1, redact(page.url()));
+    await shot(page, "11-operator-wp-login");
+    await page.fill("#user_login", creds.login); await page.fill("#user_pass", creds.password);
+    await Promise.all([page.waitForNavigation({ waitUntil: "load" }), page.click("#wp-submit")]);
+    R.check(`operator login as ${creds.login} lands on /wp-admin/ (dashboard) with the admin bar; no password in the URL`, new URL(page.url()).pathname === "/wp-admin/" && (await page.locator("#wpadminbar").count()) === 1 && !/pwd|pass/i.test(page.url()), `${page.url().replace(BASE, "")} in ${Date.now() - t0} ms`);
+    const jarOp = await jar(ctx);
+    const nonHttp = [...new Set(jarOp.filter((c) => !c.httpOnly).map((c) => c.name))];
+    R.check("operator cookies: all host-only on the staging host, all Secure, no Domain attribute in any Set-Cookie, no SameSite=None, no tracking cookie", jarOp.length > 0 && jarOp.every((c) => c.domain === CANON_HOST && c.secure && c.sameSite !== "None") && !log.setCookies.some((c) => c.domain !== null) && !jarOp.some((c) => /^sbjs_/.test(c.name)), jarOp.map(jarRow).join("; "));
+    R.check("operator cookies: every cookie is HttpOnly except WordPress's own admin UI preference cookies (wp-settings-*)", nonHttp.every((n) => /^wp-settings(-time)?-\d+$/.test(n)), `non-HttpOnly: ${JSON.stringify(nonHttp)}`);
+    R.data.operatorCookieJar = jarOp.map(jarRow);
+    R.data.operatorSetCookie = dedupeSetCookies(log.setCookies).filter((c) => !c.cleared).map((c) => `${c.name} ${c.path} S=${c.secure} H=${c.httpOnly} SS=${c.sameSite} ${c.expiry}`);
+
+    const pages = [];
+    const visit = async (phase, label, url, expect) => {
+      PH(phase);
+      const t = Date.now(); const startErr = errs.length, startCon = consoleErr.length;
+      let resp = null, ok = false, detail = "";
+      try {
+        resp = await goto(page, url);
+        await page.waitForLoadState("networkidle", { timeout: 25000 }).catch(() => {});
+        const f = await page.evaluate(() => ({ adminBar: !!document.querySelector("#wpadminbar"), bodyAdmin: document.body.classList.contains("wp-admin"), fatal: /critical error on this website|There has been a critical error|Fatal error:|Parse error:|Stack trace:/i.test(document.body.innerText), h1: (document.querySelector("h1, .wp-heading-inline")?.textContent || "").trim().slice(0, 60), text: document.body.innerText.slice(0, 20000) }));
+        const hdr = await resp.allHeaders();
+        const dt = Date.now() - t;
+        ok = resp.status() === 200 && f.adminBar && f.bodyAdmin && !f.fatal && (!expect || expect.test(f.text)) && /no-store|private/.test(hdr["cache-control"] || "");
+        detail = JSON.stringify({ status: resp.status(), ms: dt, h1: f.h1, cc: hdr["cache-control"], fatal: f.fatal, expectMatched: expect ? expect.test(f.text) : null, pageErrors: errs.length - startErr, consoleErrors: consoleErr.length - startCon });
+        pages.push({ label, url: url.replace(BASE, ""), status: resp.status(), ms: dt, ok, pageErrors: errs.length - startErr, consoleErrors: consoleErr.length - startCon });
+        await shot(page, `11-operator-${label.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}`);
+      } catch (e) { detail = String(e.message).slice(0, 200); pages.push({ label, url: url.replace(BASE, ""), status: resp ? resp.status() : 0, ok: false }); }
+      R.check(`operator: ${label} (${url.replace(BASE, "")}) loads: HTTP 200, admin bar, no PHP fatal / critical-error page, Cache-Control no-store/private${expect ? ", expected content present" : ""}`, ok, detail);
+    };
+    await visit("wp-admin-dashboard", "dashboard", `${BASE}/wp-admin/`, /Dashboard/);
+    await visit("wp-admin-dashboard", "dashboard again (warm)", `${BASE}/wp-admin/index.php`, /Dashboard/);
+    // the admin menu tells which AICC / WooCommerce pages exist
+    const menu = await page.evaluate(() => [...document.querySelectorAll("#adminmenu a[href]")].map((a) => ({ t: (a.textContent || "").trim().replace(/\s+/g, " ").slice(0, 40), h: a.getAttribute("href") })));
+    const aiccLinks = menu.filter((m) => /aicc/i.test(m.h) || /aicc|license/i.test(m.t)).slice(0, 4);
+    R.info("admin menu entries naming AICC / license", JSON.stringify(aiccLinks));
+    await visit("wp-admin-woocommerce", "WooCommerce Home (wc-admin)", `${BASE}/wp-admin/admin.php?page=wc-admin`, /WooCommerce|Home|Store|Setup/i);
+    await visit("wp-admin-woocommerce", "WooCommerce Products list", `${BASE}/wp-admin/edit.php?post_type=product`, /AICC Solo/);
+    await visit("wp-admin-woocommerce", "WooCommerce Orders", `${BASE}/wp-admin/admin.php?page=wc-orders`, /Orders|No orders yet|orders/i);
+    await visit("wp-admin-woocommerce", "WooCommerce Settings > Payments", `${BASE}/wp-admin/admin.php?page=wc-settings&tab=checkout`, /Payment|Payments/i);
+    await visit("wp-admin-woocommerce", "WooCommerce Settings > Accounts & Privacy", `${BASE}/wp-admin/admin.php?page=wc-settings&tab=account`, /Account|Guest/i);
+    for (const m of aiccLinks.filter((x) => /\.php\?page=/.test(x.h)).slice(0, 2)) await visit("wp-admin-woocommerce", `AICC admin page "${m.t}"`, `${BASE}/wp-admin/${m.h.replace(/^\/?wp-admin\//, "")}`, null);
+    await visit("wp-admin-plugins", "Plugins list", `${BASE}/wp-admin/plugins.php`, /AICC License Manager|AICC/i);
+    const plug = await page.evaluate(() => [...document.querySelectorAll("#the-list tr[data-slug]")].map((tr) => ({ slug: tr.getAttribute("data-slug"), active: tr.classList.contains("active"), actions: [...tr.querySelectorAll(".row-actions a")].map((a) => (a.textContent || "").trim()).join("/") })));
+    R.check("plugin list: exactly the two expected plugins (AICC License Manager and WooCommerce), both active; file modifications are disabled (no Install / Delete / Edit actions: DISALLOW_FILE_MODS)", plug.length === 2 && plug.every((x) => x.active) && plug.some((x) => /aicc-license-manager/.test(x.slug)) && plug.some((x) => /woocommerce/.test(x.slug)) && !plug.some((x) => /Delete|Edit|Install/i.test(x.actions)), JSON.stringify(plug));
+    PH("wp-admin-dashboard");
+    await visit("wp-admin-dashboard", "Users", `${BASE}/wp-admin/users.php`, /aicc-stage-admin/);
+    R.data.operatorPages = pages;
+    R.check(`all ${pages.length} operator pages loaded without an uncaught JavaScript error`, errs.length === 0, JSON.stringify(errs.slice(0, 5)));
+    R.info("browser console errors on operator pages (informational)", `${consoleErr.length}: ${JSON.stringify([...new Set(consoleErr)].slice(0, 6))}`);
+    R.check("operator pages contacted no host other than the staging host through the tunnel (Gravatar avatar images, if referenced, were answered locally and never sent)", [...ext.keys()].filter((h) => !EXTERNAL_LOCAL_STUBS.test(`https://${h}/`)).length === 0, JSON.stringify({ requestedHosts: [...ext], answeredLocally: stubbed.length }));
+    if (stubbed.length) R.finding("low", `wp-admin pages reference ${stubbed.length} external avatar image request(s) to ${[...new Set(stubbed)].join(", ")} (Gravatar). Not sent by this run. On a real operator browser they would leak the operator's IP to Gravatar and break the "no third party contacted" property; set Settings > Discussion > Avatars off (option show_avatars = 0) on staging/production if that matters.`);
+
+    // logout and Back: the session ends and wp-admin is closed again
+    PH("operator-logout");
+    await page.hover("#wp-admin-bar-my-account").catch(() => {});
+    const logoutHref = await page.locator("#wp-admin-bar-logout a").first().getAttribute("href").catch(() => null);
+    if (logoutHref) {
+      await goto(page, logoutHref.startsWith("http") ? logoutHref : `${BASE}${logoutHref}`);
+      const confirm = await page.locator("a:has-text('log out')").first().getAttribute("href").catch(() => null);
+      if (confirm) await goto(page, confirm.startsWith("http") ? confirm : `${BASE}${confirm}`);
+    }
+    await goto(page, `${BASE}/wp-admin/`);
+    const after = await jar(ctx);
+    R.check("after the operator logs out, /wp-admin/ redirects to the login form again and the auth cookies are gone", (await page.locator("#loginform").count()) === 1 && !after.some((c) => /^wordpress_(logged_in|sec)_/.test(c.name)), `${redact(page.url()).replace(BASE, "")} cookies=${after.map((c) => c.name).join(",")}`);
+    await ctx.close();
+  } catch (e) { R.check("operator flow completed", false, String(e.stack || e).slice(0, 700)); }
+  finally {
+    if (browserOp) await browserOp.close().catch(() => {});
+    FX.closeTunnel(OP_PORT);
+  }
+  R.save();
+  return R;
+}
+
 /* ==== MAIN ==== */
 async function preflight() {
   const problems = [];
   if (!fs.existsSync(CHROME)) problems.push(`Chrome not found at ${CHROME} (set AICC_CHROME)`);
-  if (STAGE_MODE) {
-    const refused = (only || Object.keys(SECTION_FNS())).filter((n) => FIXTURE_SECTIONS.has(String(n)) || ["4", "10"].includes(String(n)));
-    if (only && refused.length) { console.error(`GUARD REFUSED [stage-section]: section(s) ${refused.join(", ")} need the local CP fixture (wp-cli, captured mail, echo token) or the apex host and cannot run against a remote staging host. Read-only sections: 5, 7, 8.\nNothing was sent.`); process.exit(EXIT_REFUSED); }
+  if (REMOTE) {
+    // the real Linux staging host: the remote-stage adapter stands in for the local fixture. Everything still goes through the fail-closed guard.
+    FX.start();
+    const who = FX.exec("hostname; test -x /usr/local/sbin/aicc-wp && echo wp-ok; test -S /run/php/aicc-cp.sock && echo fpm-ok");
+    if (!/wp-ok/.test(who.out) || !/fpm-ok/.test(who.out)) problems.push(`the host does not look like the staging host (${who.out.replace(/\n/g, " ")})`);
+    if (!fs.existsSync(String(CP_REPO))) problems.push(`--cp-repo ${CP_REPO} not found`);
+    await GUARD.ensureIdentity();
+  } else if (STAGE_MODE) {
+    const refused = (only || Object.keys(SECTION_FNS())).filter((n) => FIXTURE_SECTIONS.has(String(n)) || ["4", "10", "11"].includes(String(n)));
+    if (only && refused.length) { console.error(`GUARD REFUSED [stage-section]: section(s) ${refused.join(", ")} need the local CP fixture (wp-cli, captured mail, echo token) or the apex host and cannot run against a remote staging host. Read-only sections: 5, 7, 8. (Against the REAL staging host all sections run through the remote-stage adapter: omit --loopback-rehearsal.)\nNothing was sent.`); process.exit(EXIT_REFUSED); }
     if (!fs.existsSync(String(GUARD.cfg.cacert || "")) && !GUARD.cfg.insecure && GUARD.cfg.rehearsal) problems.push("no --cacert for a rehearsal-style target");
     await GUARD.ensureIdentity(); // exits 3 through guarded() semantics: GuardRefusal propagates to main's catch
   } else {
@@ -1578,9 +2011,9 @@ async function preflight() {
   if (!problems.length) { const r = await reqX(EDGE, `${BASE}/`); if (r.status !== 200) problems.push(`edge answered ${r.status} for /`); }
   if (problems.length) { console.error("PRE-FLIGHT FAILED:\n - " + problems.join("\n - ")); process.exit(2); }
 }
-const SECTION_FNS = () => ({ 1: typeof s1 === "function" && s1, 2: typeof s2 === "function" && s2, 3: typeof s3 === "function" && s3, 4: typeof s4 === "function" && s4, 5: typeof s5 === "function" && s5, 6: typeof s6 === "function" && s6, 7: typeof s7 === "function" && s7, 8: typeof s8 === "function" && s8, 9: typeof s9 === "function" && s9, 10: typeof s10 === "function" && s10 });
+const SECTION_FNS = () => ({ 11: typeof s11 === "function" && s11, 1: typeof s1 === "function" && s1, 2: typeof s2 === "function" && s2, 3: typeof s3 === "function" && s3, 4: typeof s4 === "function" && s4, 5: typeof s5 === "function" && s5, 6: typeof s6 === "function" && s6, 7: typeof s7 === "function" && s7, 8: typeof s8 === "function" && s8, 9: typeof s9 === "function" && s9, 10: typeof s10 === "function" && s10 });
 async function main() {
-  if (STAGE_MODE && !only) { process.stderr.write("GUARD: against a remote staging host choose the read-only sections explicitly: --only 5,7,8\n"); process.exit(2); }
+  if (STAGE_MODE && !REMOTE && !only) { process.stderr.write("GUARD: against a stage instance on this Mac choose the read-only sections explicitly: --only 5,7,8\n"); process.exit(2); }
   await preflight();
   fs.mkdirSync(SHOTS, { recursive: true });
   const fns = SECTION_FNS();
@@ -1595,7 +2028,8 @@ async function main() {
     }
   } finally {
     await closeBrowser();
-    cleanupUsers();
+    try { cleanupUsers(); } catch (e) { console.error(`cleanup failed: ${e.message}`); }
+    if (REMOTE) { try { FX.closeAll(); } catch { /* best effort */ } }
   }
   const summary = results.map((r) => ({ section: r.id, title: r.title, verdict: r.verdict(), passed: r.passed, failed: r.failed, findings: r.findings }));
   writeJson(path.join(OUT, only ? `00-summary-partial.json` : "00-summary.json"), { run: RUN_ID, finished: new Date().toISOString(), summary });

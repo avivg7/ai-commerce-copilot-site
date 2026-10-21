@@ -16,6 +16,11 @@
 //   * the macOS rehearsal maps the production NAMES to 127.0.0.1 (alias hosts). That is allowed only when the expected IP is loopback (`rehearsal` config): the guard dials 127.0.0.1 only and
 //     never resolves those names, so nothing can leave the machine. A stage host may also serve the production names for an explicit "production topology check" (alias hosts on a stage IP);
 //     that needs --alias-host and a verified identity, and the names are still never resolved.
+//   * the OPERATOR TUNNEL (real staging host only): `operatorTunnel: { publicIp }` (CLI --operator-tunnel-of IP) describes an `ssh -L 127.0.0.1:<local>:127.0.0.1:8443` forward to the edge's loopback
+//     operator listener. The expected IP is then loopback (the tunnel's local end) and --port is the LOCAL tunnel port, while every URL keeps the PUBLIC port :443 (WordPress's absolute URLs never carry
+//     a port) and is mapped to the tunnel port by the connect-to / host-resolver rule. Nothing is loosened: the identity route must still answer {env:"staging", host, id=--stage-id} through the tunnel,
+//     the public DNS answer of the staging host must still equal --operator-tunnel-of (a real public staging IP, never loopback or a known production address), the tunnel port must not be 443 or a QA/owner
+//     fixture port, no alias hosts and no plain http.
 //   * redirects are NEVER followed by curl; `follow` is implemented here hop by hop and refuses (and records a violation for) any hop that leaves the allowed host:port set.
 //
 // Exit code on any refusal: 3. Exported API is deliberately small; scripts/test-target-guard.mjs tests every refusal.
@@ -142,6 +147,19 @@ export function buildConfig(c = {}) {
     if (a === "api.copilt.org") refuse("alias-host", "api.copilt.org is never an alias: it is not served by this edge");
     if (ak === "production-domain") refuse("alias-host", `alias '${a}' is an unknown name under ${PRODUCTION_DOMAIN}`);
   }
+  if (c.operatorTunnel) {
+    const t = c.operatorTunnel;
+    const pub = normIp(t.publicIp);
+    if (c.rehearsal) refuse("operator-tunnel", "an operator tunnel is for the real staging host, not for a rehearsal config");
+    if (!net.isIP(pub) || isLoopbackIp(pub) || /^(0\.0\.0\.0|::|::0)$/.test(pub) || /^(22[4-9]|2[3-5]\d)\./.test(pub)) refuse("operator-tunnel", `--operator-tunnel-of must be the staging host's public unicast IP (got '${t.publicIp ?? ""}')`);
+    if (isKnownProductionIp(pub)) refuse("known-production-ip", `${pub} is a known PRODUCTION / public-site address: never the public end of an operator tunnel`);
+    if (!isLoopbackIp(ip)) refuse("operator-tunnel", `an operator tunnel dials its LOCAL end: the expected IP must be loopback (got ${ip})`);
+    if (cfg.port === 443 || cfg.port < 1024 || QA_PORTS(cfg.port)) refuse("operator-tunnel", `the tunnel's local port ${cfg.port} must be an unprivileged port that is not 443 and not a QA / owner-fixture port`);
+    if (cfg.httpPort) refuse("operator-tunnel", "the operator listener serves https only: no --http-port");
+    if (cfg.aliasHosts.length) refuse("operator-tunnel", "an operator tunnel takes no alias hosts");
+    if (cfg.identityScheme !== "https") refuse("operator-tunnel", "the operator tunnel identity check is https only");
+    cfg.operatorTunnel = { publicIp: pub };
+  }
   if (c.rehearsal) {
     if (!isLoopbackIp(ip)) refuse("known-production-ip", `a rehearsal config must dial loopback only (got ${ip})`);
     cfg.rehearsal = true; cfg.identityEnv = "rehearsal";
@@ -171,6 +189,7 @@ export function parseGuardArgs(argv, env = process.env) {
     else if (name === "--allow-dns-mismatch") out.allowDnsMismatch = true;
     else if (name === "--production-readonly") out.productionReadonly = true;
     else if (name === "--alias-production-names") out.aliasProductionNames = true;
+    else if (name === "--operator-tunnel-of") { out.operatorTunnel = { publicIp: val() }; adv(); } // --port is then the tunnel's LOCAL port; see the header comment
     else if (name === "--loopback-rehearsal") out.rehearsal = true; // the Mac rehearsal edges answer env "rehearsal"; allowed only with a loopback --stage-ip
     else rest.push(a);
   }
@@ -181,6 +200,9 @@ export function parseGuardArgs(argv, env = process.env) {
 
 /* ------------------------------------------------------------------ the guard */
 const CURL_FORBIDDEN = new Set(["--resolve", "--connect-to", "-x", "--proxy", "--preproxy", "--proxy-user", "-U", "-L", "--location", "--location-trusted", "--max-redirs", "-K", "--config", "--interface", "--dns-servers", "--dns-interface", "--dns-ipv4-addr", "--dns-ipv6-addr", "--doh-url", "--unix-socket", "--abstract-unix-socket", "--haproxy-protocol", "--socks4", "--socks4a", "--socks5", "--socks5-hostname", "--next", "-:", "--url", "--proto", "--proto-default", "--proto-redir", "--noproxy", "--alt-svc", "--hsts", "-q", "--disable"]);
+
+/** The https port a URL must carry. Normally the configured port; through an operator tunnel the URL keeps the PUBLIC port 443 and the configured (local) port is only where the connection is dialled. */
+const urlPortHttps = (cfg) => (cfg.operatorTunnel ? 443 : cfg.port);
 
 export class TargetGuard {
   constructor(cfg, { shared } = {}) {
@@ -249,7 +271,7 @@ export class TargetGuard {
         refuse(k === "production" || k === "production-domain" ? "production-host" : "url-host-not-allowed", `${u.host} is not an allowed host for this run (allowed: ${this.allowedHosts.join(", ")})${k === "production" ? "; it is a PRODUCTION name" : ""}`);
       }
       if (u.port === null) refuse("url-no-port", `the URL has no explicit port: ${u.raw.slice(0, 120)} (every URL must say :${u.scheme === "https" ? cfg.port : cfg.httpPort ?? "<port>"} so a missing mapping can never fall back to the default port and to public DNS)`);
-      const want = u.scheme === "https" ? cfg.port : cfg.httpPort;
+      const want = u.scheme === "https" ? urlPortHttps(cfg) : cfg.httpPort;
       if (u.scheme === "http" && !cfg.httpPort && !(cfg.identityScheme === "http" && (purpose === "identity" || purpose === "precheck"))) refuse("scheme-not-allowed", "plain http was not configured (--http-port)");
       const wantPort = u.scheme === "http" && cfg.identityScheme === "http" && (purpose === "identity" || purpose === "precheck") && !cfg.httpPort ? cfg.port : want;
       if (u.port !== wantPort) refuse("url-port-mismatch", `${u.scheme}:// port ${u.port} is not the expected ${wantPort}`);
@@ -267,7 +289,9 @@ export class TargetGuard {
         if (!this.identity.verified) refuse(safe ? "identity-not-verified" : "destructive-before-identity", `${method} ${u.host}:${u.port} refused: the staging identity was not verified in this run (call ensureIdentity() first${safe ? "" : "; state-changing requests are never sent before that"})`);
       }
       rec.decision = "allow";
-      return { scheme: u.scheme, host: u.host, port: u.port, dialIp };
+      const dialPort = cfg.operatorTunnel && u.scheme === "https" ? cfg.port : u.port; // the tunnel's LOCAL port; the URL keeps :443
+      rec.dialPort = dialPort;
+      return { scheme: u.scheme, host: u.host, port: u.port, dialIp, dialPort };
     } catch (e) {
       if (e instanceof GuardRefusal) {
         rec.decision = "refuse"; rec.code = e.code; rec.reason = e.message.slice(0, 300);
@@ -291,10 +315,11 @@ export class TargetGuard {
     const resolver = cfg.resolver ?? (async (name) => (await dns.promises.lookup(name, { all: true })).map((a) => a.address));
     let addrs = [];
     try { addrs = (await resolver(cfg.stageHost)).map(normIp); } catch (e) { addrs = []; this._dnsErr = e.code || e.message; }
-    const match = addrs.includes(cfg.stageIp);
-    const rec = { kind: "dns", purpose: "dns", method: "-", host: cfg.stageHost, port: null, dialIp: null, decision: match ? "allow" : cfg.allowDnsMismatch ? "allow" : "refuse", resolved: addrs, expected: cfg.stageIp, allowDnsMismatch: !!cfg.allowDnsMismatch };
+    const expected = cfg.operatorTunnel ? cfg.operatorTunnel.publicIp : cfg.stageIp; // through an operator tunnel the PUBLIC address of the host is what DNS must say
+    const match = addrs.includes(expected);
+    const rec = { kind: "dns", purpose: "dns", method: "-", host: cfg.stageHost, port: null, dialIp: null, decision: match ? "allow" : cfg.allowDnsMismatch ? "allow" : "refuse", resolved: addrs, expected, allowDnsMismatch: !!cfg.allowDnsMismatch };
     if (!match) {
-      if (!cfg.allowDnsMismatch) { rec.code = "dns-mismatch"; rec.reason = `system/public DNS for ${cfg.stageHost} is [${addrs.join(", ") || "no answer"}], expected ${cfg.stageIp}`; this._record(rec); refuse("dns-mismatch", `${rec.reason}. Abort. (Pre-DNS testing needs the explicit --allow-dns-mismatch; it still forces every connection to ${cfg.stageIp} and still needs a verified identity.)`); }
+      if (!cfg.allowDnsMismatch) { rec.code = "dns-mismatch"; rec.reason = `system/public DNS for ${cfg.stageHost} is [${addrs.join(", ") || "no answer"}], expected ${expected}`; this._record(rec); refuse("dns-mismatch", `${rec.reason}. Abort. (Pre-DNS testing needs the explicit --allow-dns-mismatch; it still forces every connection to ${cfg.stageIp} and still needs a verified identity.)`); }
       rec.note = "pre-DNS testing: explicit --allow-dns-mismatch; connections are forced to the expected IP and the identity is still required";
     }
     this._record(rec);
@@ -311,7 +336,7 @@ export class TargetGuard {
     const via = [cfg.identityVia, cfg.stageHost, ...cfg.aliasHosts].filter(Boolean);
     const seen = [];
     for (const name of [...new Set(via)]) {
-      const url = `${scheme}://${name}:${scheme === "https" ? cfg.port : cfg.httpPort ?? cfg.port}${IDENTITY_PATH}`;
+      const url = `${scheme}://${name}:${scheme === "https" ? urlPortHttps(cfg) : cfg.httpPort ?? cfg.port}${IDENTITY_PATH}`;
       const r = await this._curl({ url, method: "GET", timeout: 15, purpose: "identity" }, { async: true });
       if (r.status === 0) { seen.push(`${name}: no response (${(r.error || "").slice(0, 120)})`); continue; }
       if (r.status !== 200) { seen.push(`${name}: HTTP ${r.status}`); continue; }
@@ -345,7 +370,7 @@ export class TargetGuard {
     const args = ["-q", "--noproxy", "*", "-sS", "--max-redirs", "0", "--proto", "=http,https", "--max-time", String(spec.timeout || 30)];
     if (spec.pathAsIs !== false) args.push("--path-as-is");
     const mapped = new Set();
-    if (a.dialIp) { args.push("--connect-to", `${a.host}:${a.port}:${brackets(a.dialIp)}:${a.port}`); mapped.add(`${a.host}:${a.port}`); }
+    if (a.dialIp) { args.push("--connect-to", `${a.host}:${a.port}:${brackets(a.dialIp)}:${a.dialPort ?? a.port}`); mapped.add(`${a.host}:${a.port}`); }
     const extra = spec.extra || [];
     for (let i = 0; i < extra.length; i++) {
       const x = String(extra[i]);
@@ -355,7 +380,7 @@ export class TargetGuard {
       if (/^[a-z][a-z0-9+.-]*:\/\//i.test(x)) { const prev = String(extra[i - 1] || ""); if (!/^(-d|--data|--data-binary|--data-raw|--data-urlencode|-H|--header|-e|--referer|-F|--form|-w|--write-out|-A|--user-agent)$/.test(prev)) {
           // a second URL in the arguments is a second request: checked like the first AND mapped to the expected IP like the first (an unmapped name would be resolved through DNS)
           const b = this.assertRequest({ method, url: x, purpose: spec.purpose || "request", kind: "curl-extra-url", dialIp: spec.dialIp });
-          if (b.dialIp && !mapped.has(`${b.host}:${b.port}`)) { args.push("--connect-to", `${b.host}:${b.port}:${brackets(b.dialIp)}:${b.port}`); mapped.add(`${b.host}:${b.port}`); }
+          if (b.dialIp && !mapped.has(`${b.host}:${b.port}`)) { args.push("--connect-to", `${b.host}:${b.port}:${brackets(b.dialIp)}:${b.dialPort ?? b.port}`); mapped.add(`${b.host}:${b.port}`); }
         } }
       args.push(x);
     }
@@ -438,7 +463,7 @@ export class TargetGuard {
   socketOptions(url, { method = "GET", purpose = "request", dialIp } = {}) {
     const a = this.assertRequest({ method, url, purpose, kind: "socket", dialIp });
     if (!a.dialIp) refuse("raw-socket-readonly", "raw sockets are not available in --production-readonly mode");
-    return { host: a.dialIp, port: a.port, servername: a.host, scheme: a.scheme, hostHeader: a.host };
+    return { host: a.dialIp, port: a.dialPort ?? a.port, servername: a.host, scheme: a.scheme, hostHeader: a.host };
   }
 
   /* ---------- the browser */
@@ -451,7 +476,7 @@ export class TargetGuard {
     if (!this.allowedHosts.includes(host)) return false;
     const https = u.protocol === "https:" || u.protocol === "wss:";
     const eff = Number(u.port || (https ? 443 : 80));
-    return eff === (https ? this.cfg.port : this.cfg.httpPort);
+    return eff === (https ? urlPortHttps(this.cfg) : this.cfg.httpPort);
   }
   /** Chromium launch arguments: allowlist resolver (everything else NOTFOUND), black-hole proxy for literal addresses, no background traffic. */
   browserArgs({ port, ip: ipOverride } = {}) {

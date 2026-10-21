@@ -48,6 +48,8 @@ define( 'DISABLE_WP_CRON', true );
 // (WP-Cron spawns, Action Scheduler loopbacks, site health). This keeps the staging Control Plane from calling the production Backend
 // (api.copilt.org), wordpress.org/woocommerce.com update and telemetry endpoints, or any real customer system. Lesson from the macOS rehearsal:
 // a fixture whose home URL was the public name sent loopback requests to the real public site.
+// The edge serves the static /product/ page (the theme otherwise falls back to /#why when it is not behind the edge): keeps the header 'Product' link identical to the site's.
+define( 'AICC_PRODUCT_PAGE_ON_EDGE', true );
 define( 'WP_HTTP_BLOCK_EXTERNAL', true );
 define( 'WP_ACCESSIBLE_HOSTS', 'stage.copilt.org,localhost,127.0.0.1' );
 
