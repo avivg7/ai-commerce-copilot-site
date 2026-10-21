@@ -1,0 +1,124 @@
+#!/usr/bin/env bash
+# TIMED disaster-recovery drill for the STAGING Control Plane. Runs ON THE OWNER'S MAC and drives the host over SSH. It simulates the loss of the data tier
+# (database, uploads, wp-config.php), then recovers it from the OFF-HOST copy that lives on the Mac, and measures every step.
+#
+#   infra/backup/dr-drill.sh --stage-ip <IPV4> --stage-host stage.copilt.org --stage-id <32 hex> --i-understand-this-wipes-staging-data \
+#       [--key ~/.ssh/aicc_cp_stage] [--offhost-key ~/.ssh/aicc_cp_stage_offhost] [--dest ~/aicc-offhost-backups-stage] [--report FILE] [--dry-run]
+#
+# Phases (T = wall clock on this Mac):
+#   0 prepare   verify the staging identity (host + id), refuse production addresses/names/keys, record the live state
+#   1 freeze    stop the cron timer and PHP-FPM so nothing writes; take a fresh backup on the host (the ROLLBACK PATH for this drill); fingerprint the live DB
+#   2 offhost   pull that backup to the Mac with the RESTRICTED key (verified checksums, ack) -- the copy the recovery will use is the one that LIVES OFF the host
+#   3 disaster  DROP the database, delete uploads and wp-config.php on the host (the simulated loss)           <== RTO clock T0 starts here
+#   4 recover   copy the Mac's verified copy back, `aicc-restore live` (verify, quiesce, DB, files, perms, start, health gate, sanity)
+#   5 prove     fingerprint the recovered DB and compare it table by table with the pre-disaster fingerprint (rows + CHECKSUM TABLE); uploads/config present
+#                                                                                                             <== RTO clock T1 stops here
+#   6 clean up  remove the temporary restore-input directory and fingerprint files; verify services/timers/listeners; write the report
+# The report (JSON) holds start/end times, every step in seconds, the RTO, and the fingerprints' comparison result. A failed comparison is a FAILED drill.
+# Not covered (stated in README-backup.md): loss of the whole Droplet (needs a new host: install-stack + this restore), loss of the Mac copy, a corrupted
+# backup that passes its checksum, point-in-time recovery (binary logging is off).
+set -euo pipefail
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+. "$HERE/../provision/lib/ip-guard.sh"
+STAGE_IP=""; STAGE_HOST=""; STAGE_ID=""; KEY="$HOME/.ssh/aicc_cp_stage"; OKEY="$HOME/.ssh/aicc_cp_stage_offhost"; DEST="$HOME/aicc-offhost-backups-stage"; REPORT=""; YES=0; DRY=0
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --stage-ip) STAGE_IP="${2:-}"; shift 2 ;; --stage-host) STAGE_HOST="${2:-}"; shift 2 ;; --stage-id) STAGE_ID="${2:-}"; shift 2 ;;
+    --key) KEY="${2:-}"; shift 2 ;; --offhost-key) OKEY="${2:-}"; shift 2 ;; --dest) DEST="${2:-}"; shift 2 ;; --report) REPORT="${2:-}"; shift 2 ;;
+    --i-understand-this-wipes-staging-data) YES=1; shift ;; --dry-run) DRY=1; shift ;;
+    -h|--help) sed -n 2,24p "${BASH_SOURCE[0]}"; exit 0 ;;
+    *) echo "unknown argument: $1" >&2; exit 2 ;;
+  esac
+done
+refuse() { echo "REFUSED: $*" >&2; exit 3; }
+[ -n "$STAGE_IP" ] && [ -n "$STAGE_HOST" ] && [ -n "$STAGE_ID" ] || { echo "usage: --stage-ip --stage-host --stage-id (nothing is defaulted)" >&2; exit 2; }
+[[ "$STAGE_IP" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]] || refuse "--stage-ip must be a literal IPv4 address"
+for d in 139.59.157.231 185.199.108.153 185.199.109.153 185.199.110.153 185.199.111.153; do [ "$STAGE_IP" = "$d" ] && refuse "$STAGE_IP is a production/public address"; done
+aicc_ip_guard "$STAGE_IP" "--stage-ip " || exit 3
+[[ "$STAGE_HOST" =~ ^stage[a-z0-9-]*\.copilt\.org$ ]] || refuse "--stage-host must be a stage*.copilt.org name"
+[[ "$STAGE_ID" =~ ^[0-9a-f]{32}$ ]] || refuse "--stage-id must be 32 hex characters"
+case "$KEY$OKEY" in *aicc_digitalocean_prod*|*aicc_cp_prod*) refuse "never use a production key" ;; esac
+[ -f "$KEY" ] && [ -f "$OKEY" ] || { echo "key files not found" >&2; exit 2; }
+[ "$YES" = 1 ] || [ "$DRY" = 1 ] || refuse "this drill DELETES the staging database, uploads and wp-config.php before restoring them: pass --i-understand-this-wipes-staging-data"
+STAMP="$(date -u +%Y%m%dT%H%M%SZ)"; [ -n "$REPORT" ] || REPORT="$HOME/Downloads/AICC-cutover-evidence/linux-stage/dr-drill-$STAMP.json"
+KH="$HOME/.ssh/known_hosts_aicc_stage"
+SSHO=(-i "$KEY" -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=15 -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile="$KH" -o NumberOfPasswordPrompts=0)
+rem() { ssh "${SSHO[@]}" "aicc@$STAGE_IP" "$@"; }
+if [ "$DRY" = 1 ]; then echo "DRY-RUN: would run phases 0-6 against $STAGE_HOST ($STAGE_IP); report $REPORT. Nothing sent."; exit 0; fi
+
+now() { python3 -c 'import time;print("%.3f"%time.time())'; }
+el() { python3 -c "print('%.1f'%($2-$1))"; }
+STEPS="[]"; step() { STEPS="$(jq -c --arg n "$1" --argjson s "$2" '. + [{step:$n,seconds:$s}]' <<<"$STEPS")"; echo "  [$1] $2 s"; }
+T_ALL0="$(now)"
+echo "== phase 0: prepare =="
+ident="$(rem 'cat /etc/aicc-stage-identity')" || { echo "cannot read the host identity" >&2; exit 1; }
+echo "$ident" | grep -q '^AICC_ENV=staging$' || refuse "host does not say AICC_ENV=staging"
+echo "$ident" | grep -q "^AICC_HOSTNAME=${STAGE_HOST}\$" || refuse "host identity hostname differs"
+echo "$ident" | grep -q "^AICC_STAGE_ID=${STAGE_ID}\$" || refuse "host identity id differs"
+echo "identity verified; services: $(rem 'systemctl is-active aicc-edge php8.3-fpm mysql aicc-ops | tr "\n" " "')"
+rem 'sudo mkdir -p /srv/aicc/restore-in && sudo chmod 700 /srv/aicc/restore-in'
+
+echo "== phase 1: freeze + fresh backup (the rollback path) + fingerprint =="
+t=$(now); rem 'sudo systemctl stop aicc-wp-cron.timer aicc-wp-cron.service php8.3-fpm'; step freeze_writers "$(el "$t" "$(now)")"
+t=$(now); rem 'sudo /usr/local/sbin/aicc-backup --label manual' >/dev/null 2>&1; step fresh_backup "$(el "$t" "$(now)")"
+t=$(now); rem 'sudo /usr/local/sbin/aicc-restore fingerprint --out /srv/aicc/restore-in/pre.fp' >/dev/null 2>&1; step fingerprint_before "$(el "$t" "$(now)")"
+PRE_TABLES="$(rem 'sudo wc -l < /srv/aicc/restore-in/pre.fp' | tr -d ' ')"
+
+echo "== phase 2: off-host pull to the Mac (restricted key) =="
+t=$(now)
+bash "$HERE/pull-offhost.sh" --stage-ip "$STAGE_IP" --stage-host "$STAGE_HOST" --key "$OKEY" --dest "$DEST" >/dev/null
+step offhost_pull "$(el "$t" "$(now)")"
+STATUS="$(rem 'sudo cat /srv/aicc/backups/status.json')"
+DUMP="$(jq -r '.last_success.db_dump_file' <<<"$STATUS")"; FARC="$(jq -r '.last_success.files_archive_file' <<<"$STATUS")"
+[[ "$DUMP" =~ ^aicc_cp-[0-9]{8}T[0-9]{6}Z-manual\.sql\.gz$ ]] || { echo "the newest backup is not the drill's manual one ($DUMP)" >&2; exit 1; }
+[ -f "$DEST/$DUMP" ] && [ -f "$DEST/$FARC" ] || { echo "the Mac does not hold the drill's backup set" >&2; exit 1; }
+LOCAL_D="$(shasum -a 256 "$DEST/$DUMP" | cut -d' ' -f1)"; LOCAL_F="$(shasum -a 256 "$DEST/$FARC" | cut -d' ' -f1)"
+echo "the Mac holds $DUMP ($LOCAL_D) and $FARC"
+
+echo "== phase 3: DISASTER (RTO clock starts) =="
+T0="$(now)"; T0_ISO="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+rem 'sudo bash -s' <<'EOS'
+set -e
+mysql --no-defaults -e "DROP DATABASE aicc_cp"
+rm -rf /srv/aicc/shared/uploads /srv/aicc/shared/wp-config.php
+echo "data tier destroyed: database dropped, uploads and wp-config.php removed"
+EOS
+step disaster "$(el "$T0" "$(now)")"
+
+echo "== phase 4: recover from the Mac's copy =="
+t=$(now)
+SCPO=(-i "$KEY" -o IdentitiesOnly=yes -o BatchMode=yes -o UserKnownHostsFile="$KH")
+scp "${SCPO[@]}" "$DEST/$DUMP" "$DEST/$FARC" "aicc@$STAGE_IP:/tmp/" >/dev/null
+rem "sudo install -m 600 /tmp/$DUMP /tmp/$FARC /srv/aicc/restore-in/ && rm -f /tmp/$DUMP /tmp/$FARC"
+step copy_back_to_host "$(el "$t" "$(now)")"
+t=$(now)
+RC=0
+rem "sudo /usr/local/sbin/aicc-restore live --dump /srv/aicc/restore-in/$DUMP --sha256 $LOCAL_D --files /srv/aicc/restore-in/$FARC --files-sha256 $LOCAL_F --yes-replace-live --no-safety-backup --report /srv/aicc/restore-in/restore-report.json" >/dev/null || RC=$?
+step aicc_restore_live "$(el "$t" "$(now)")"
+REPORT_REMOTE="$(rem 'sudo cat /srv/aicc/restore-in/restore-report.json')"
+
+echo "== phase 5: prove the data came back =="
+t=$(now); rem 'sudo /usr/local/sbin/aicc-restore fingerprint --out /srv/aicc/restore-in/post.fp' >/dev/null 2>&1; step fingerprint_after "$(el "$t" "$(now)")"
+DIFFN="$(rem 'sudo diff /srv/aicc/restore-in/pre.fp /srv/aicc/restore-in/post.fp | grep -c "^[<>]" || true')"
+POST_TABLES="$(rem 'sudo wc -l < /srv/aicc/restore-in/post.fp' | tr -d ' ')"
+FILES_OK="$(rem 'test -d /srv/aicc/shared/uploads && sudo test -s /srv/aicc/shared/wp-config.php && echo yes || echo no')"
+HEALTH="$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 --resolve "$STAGE_HOST:443:$STAGE_IP" "https://$STAGE_HOST/healthz")"
+APP="$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 --resolve "$STAGE_HOST:443:$STAGE_IP" "https://$STAGE_HOST/pricing/")"
+T1="$(now)"; T1_ISO="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+RTO="$(el "$T0" "$T1")"
+
+echo "== phase 6: clean up =="
+rem 'sudo rm -rf /srv/aicc/restore-in'
+LEFT="$(rem 'sudo ls /srv/aicc/restore-in 2>/dev/null | wc -l | tr -d " "; mysql --no-defaults -N -e "SHOW DATABASES" 2>/dev/null | grep -c "^aicc_dr" || true' | tr '\n' ' ')"
+UNITS="$(rem 'systemctl is-active php8.3-fpm mysql aicc-edge aicc-ops aicc-wp-cron.timer aicc-backup.timer | tr "\n" " "')"
+
+OK=true; { [ "$RC" = 0 ] && [ "$DIFFN" = 0 ] && [ "$PRE_TABLES" = "$POST_TABLES" ] && [ "$FILES_OK" = yes ] && [ "$HEALTH" = 200 ] && [ "$APP" = 200 ]; } || OK=false
+mkdir -p "$(dirname "$REPORT")"
+jq -n --arg ok "$OK" --arg t0 "$T0_ISO" --arg t1 "$T1_ISO" --argjson rto "$RTO" --argjson steps "$STEPS" --argjson restore "$REPORT_REMOTE" \
+  --arg pre "$PRE_TABLES" --arg post "$POST_TABLES" --arg diffn "$DIFFN" --arg files "$FILES_OK" --arg health "$HEALTH" --arg app "$APP" --arg units "$UNITS" --arg left "$LEFT" \
+  --arg dump "$DUMP" --arg farc "$FARC" --arg dsha "$LOCAL_D" --arg fsha "$LOCAL_F" --argjson total "$(el "$T_ALL0" "$(now)")" \
+  '{drill:"staging data-tier loss, recovery from the OFF-HOST (Mac) copy",passed:($ok=="true"),disaster_declared_at:$t0,recovered_and_proven_at:$t1,rto_seconds:$rto,drill_total_seconds:$total,
+    backup_set:{dump:$dump,files:$farc,dump_sha256:$dsha,files_sha256:$fsha},data_correctness:{tables_before:($pre|tonumber),tables_after:($post|tonumber),differing_fingerprint_lines:($diffn|tonumber)},
+    uploads_and_wpconfig_present:$files,healthz_http:$health,pricing_http:$app,services_after:$units,leftovers:$left,steps:$steps,aicc_restore_report:$restore}' > "$REPORT"
+echo; echo "DRILL $([ "$OK" = true ] && echo PASSED || echo FAILED): RTO ${RTO}s (disaster declared $T0_ISO, proven $T1_ISO); fingerprint differences: $DIFFN; report: $REPORT"
+[ "$OK" = true ]
