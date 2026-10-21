@@ -14,6 +14,7 @@ import re
 import sys
 import threading
 import time
+import unicodedata
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -40,10 +41,11 @@ def scan_pii(text: str) -> list:
 
 
 def sanitize(text: str) -> str:
-    """Defence in depth: redact anything that matches a PII/secret pattern, strip control chars, cap the length."""
+    """Defence in depth: strip control and zero-width/format characters FIRST (so an invisible character cannot split a token or address past the patterns),
+    redact anything that matches a PII/secret pattern, cap the length."""
+    text = "".join(ch for ch in text if (ch == "\n" or ch >= " ") and unicodedata.category(ch) not in ("Cf", "Cc", "Cs"))
     for name, rx in PII_PATTERNS.items():
         text = rx.sub(f"[redacted:{name}]", text)
-    text = "".join(ch for ch in text if ch == "\n" or ch >= " ")
     return text[:MAX_LEN]
 
 
@@ -267,6 +269,9 @@ class TelegramAdapter:
                 self.log(f"telegram: send failed ({type(e).__name__}) attempt {attempt}")  # never log URL (it holds the token)
                 if attempt < self.cfg["retries"]:
                     self.sleep(min(delay, 60))
+            except Exception as e:  # noqa: BLE001 - e.g. http.client.InvalidURL embeds the request path (= the token) in its message: the TYPE only, never retry a malformed request
+                self.log(f"telegram: send failed ({type(e).__name__}), not retrying")
+                break
             delay *= 2
         self.stats["failed"] += 1
         return False

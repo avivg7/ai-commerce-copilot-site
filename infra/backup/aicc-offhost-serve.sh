@@ -14,6 +14,8 @@
 # Test seams (only with AICC_TEST_HARNESS=1): AICC_BACKUP_DIR, AICC_IDENTITY_FILE.
 set -euo pipefail
 umask 022
+# a fixed environment: sshd may forward LANG/LC_* and sudo keeps some of them
+export LC_ALL=C PATH=/usr/sbin:/usr/bin:/sbin:/bin
 BACKUP_DIR="/srv/aicc/backups"; IDENT="/etc/aicc-stage-identity"
 if [ "${AICC_TEST_HARNESS:-0}" = "1" ]; then BACKUP_DIR="${AICC_BACKUP_DIR:-$BACKUP_DIR}"; IDENT="${AICC_IDENTITY_FILE:-$IDENT}"; fi
 log() { logger -t aicc-offhost-serve -- "$*" 2>/dev/null || true; }

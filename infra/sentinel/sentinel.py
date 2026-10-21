@@ -29,6 +29,7 @@ import subprocess
 import sys
 import threading
 import time
+import unicodedata
 import tomllib
 import urllib.error
 import urllib.parse
@@ -153,6 +154,29 @@ def resolve(host: str, port: int, timeout: float) -> list:
     return sorted({str(ipaddress.ip_address(ai[4][0].split("%")[0])) for ai in box["r"]})
 
 
+class _Deadline(Exception):
+    """Raised by SIGALRM when a probe exceeds its overall deadline."""
+
+
+def _probe_deadline(t: dict) -> int:
+    return int(min(60, max(10, 2 * t["timeout_s"] + 5)))
+
+
+def _arm_deadline(seconds: float) -> None:
+    """Overall wall-clock limit for one probe (main thread only; elsewhere the per-socket timeouts are all there is). 0 disarms."""
+    try:
+        import signal
+        if not hasattr(signal, "setitimer") or threading.current_thread() is not threading.main_thread():
+            return
+        if seconds:
+            def _h(_sig, _frm):
+                raise _Deadline()
+            signal.signal(signal.SIGALRM, _h)
+        signal.setitimer(signal.ITIMER_REAL, seconds)
+    except (ValueError, OSError):
+        pass
+
+
 def probe(t: dict, now: float | None = None) -> dict:
     """One check. Returns {ok, stage, reason, status, latency_ms, tls_days, dns}. Never raises.
 
@@ -182,6 +206,7 @@ def probe(t: dict, now: float | None = None) -> dict:
         if not addrs or unexpected:
             return fail("dns", f"DNS answer differs from expect_ip ({len(unexpected)} of {len(addrs)} resolved address(es) not expected)")
     stage = "connect"
+    _arm_deadline(_probe_deadline(t))      # one hard wall-clock deadline for the whole exchange: a server that drips bytes cannot hold the round (or starve other targets)
     try:
         for hop in range(MAX_REDIRECTS + 1):
             u = urllib.parse.urlsplit(url)
@@ -223,8 +248,15 @@ def probe(t: dict, now: float | None = None) -> dict:
         return fail("dns", "DNS resolution failed")
     except ConnectionRefusedError:
         return fail("connect", "connection refused")
+    except _Deadline:
+        return fail(stage, f"overall probe deadline exceeded ({_probe_deadline(t)} s)")
+    except (ValueError, UnicodeError):
+        # a hostile Location/response (port 99999999, unterminated IPv6, bad encodings) is a failed check, never a crash that silences the monitor
+        return fail("http", "malformed redirect or response")
     except (OSError, http.client.HTTPException) as e:
         return fail(stage, f"connection error ({type(e).__name__})")
+    finally:
+        _arm_deadline(0)
     res["latency_ms"] = (time.monotonic() - t0) * 1000.0
     res["status"] = status
     bodies = as_list(t["expect_body"])
@@ -306,9 +338,11 @@ PII = [re.compile(p) for p in (r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,
 
 
 def sanitize(text: str) -> str:
+    # strip control and zero-width/format characters FIRST: a token or address split by an invisible character must still match the patterns below
+    text = "".join(c for c in text if (c == "\n" or c >= " ") and unicodedata.category(c) not in ("Cf", "Cc", "Cs"))
     for rx in PII:
         text = rx.sub("[redacted]", text)
-    return "".join(c for c in text if c == "\n" or c >= " ")[:3500]
+    return text[:3500]
 
 
 def load_secrets(path: str, environ=None):
@@ -329,7 +363,7 @@ def load_secrets(path: str, environ=None):
                 return env["TELEGRAM_BOT_TOKEN"], env["TELEGRAM_CHAT_ID"]
         except OSError:
             continue
-    tok, chat = environ.get("TELEGRAM_BOT_TOKEN", ""), environ.get("TELEGRAM_CHAT_ID", "")   # CI: secrets injected through env:
+    tok, chat = environ.get("TELEGRAM_BOT_TOKEN", "").strip(), environ.get("TELEGRAM_CHAT_ID", "").strip()   # CI: secrets injected through env:
     return (tok, chat) if tok and chat else (None, None)
 
 
@@ -375,6 +409,9 @@ class Notifier:
                     break
             except (urllib.error.URLError, OSError):
                 pass
+            except Exception as e:      # noqa: BLE001 - e.g. http.client.InvalidURL embeds the request path (= the token) in its message: log the TYPE only
+                self.log(f"sentinel: Telegram send failed ({type(e).__name__})")
+                break
             if attempt < self.retries:
                 self.sleep(min(delay, 60))
                 delay *= 2
@@ -504,7 +541,11 @@ class Sentinel:
                 ts.setdefault(k, v)
             if due_only and not self._due(t, ts, now):
                 continue
-            todo.append((t, ts, probe(t, now)))
+            try:
+                todo.append((t, ts, probe(t, now)))
+            except Exception as e:      # noqa: BLE001 - one broken probe must never skip the state save, the heartbeat or the other targets
+                self.log(f"{t['name']}: probe error ({type(e).__name__}); counted as a failed check")
+                todo.append((t, ts, {"ok": False, "stage": "http", "reason": f"probe error ({type(e).__name__})", "status": None, "latency_ms": None, "tls_days": None, "dns": []}))
         # Observer-offline guard: dns/connect failures are only believed if a bare handshake to the control host works from here.
         netfail = any(not r["ok"] and r["stage"] in ("dns", "connect") for _, _, r in todo)
         self.observer_offline = bool(netfail and self.control is not None and not self.control())

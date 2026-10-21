@@ -246,6 +246,11 @@ def r_backup_stale(ctx, p):
         if ctx.latest("backup.status_present") == 0:
             return [Obs("backup_stale", "dump", True, severity=WARNING, text="no backup status file yet (has the first backup run?)")]
         return []
+    # also how far the ACKNOWLEDGED SET lags behind the newest backup on the host: a Mac (or a stolen pull key) that keeps re-acknowledging an old set refreshes
+    # acked_at but not the set, so the effective age is the larger of the two
+    set_age, newest = ctx.latest("backup.offhost_set_age_s"), ctx.latest("backup.newest_age_s")
+    if set_age is not None and newest is not None:
+        age = max(age, set_age - newest)
     h = age / 3600
     sev = _sev(h, p["warn_h"], p["crit_h"])
     return [Obs("backup_stale", "dump", sev is not None, clear=h < p["clear_h"], severity=sev or WARNING,
@@ -279,6 +284,11 @@ def r_offhost(ctx, p):
     age = ctx.latest("backup.offhost_age_s")
     if age is None:
         return []
+    # also how far the ACKNOWLEDGED SET lags behind the newest backup on the host: a Mac (or a stolen pull key) that keeps re-acknowledging an old set refreshes
+    # acked_at but not the set, so the effective age is the larger of the two
+    set_age, newest = ctx.latest("backup.offhost_set_age_s"), ctx.latest("backup.newest_age_s")
+    if set_age is not None and newest is not None:
+        age = max(age, set_age - newest)
     h = age / 3600
     sev = _sev(h, p["warn_h"], p["crit_h"])
     return [Obs("offhost_stale", "offhost", sev is not None, clear=h < p["clear_h"], severity=sev or WARNING,

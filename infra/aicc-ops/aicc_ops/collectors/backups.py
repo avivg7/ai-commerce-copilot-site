@@ -5,7 +5,9 @@ file is the primary source. Directory scanning is only a fallback for hosts wher
 from __future__ import annotations
 
 import fnmatch
+import calendar
 import json
+import time
 import os
 import re
 
@@ -108,6 +110,13 @@ def offhost_metrics(text: str, now: float) -> dict:
         return m
     m["backup.offhost_verified"] = 1.0
     m["backup.offhost_reason"] = float(R_OK)
+    # age of the SET that was acknowledged (from its UTC timestamp): re-acknowledging an old set must not look fresh (security review F10)
+    st = d.get("set_ts")
+    if isinstance(st, str) and re.fullmatch(r"\d{8}T\d{6}Z", st):
+        try:
+            m["backup.offhost_set_age_s"] = max(now - calendar.timegm(time.strptime(st, "%Y%m%dT%H%M%SZ")), 0.0)
+        except (ValueError, OverflowError):
+            pass
     return m
 
 

@@ -323,3 +323,26 @@ class PiiTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ReviewFixTests(TmpCase):
+    """Independent security review of Phase 2B: F9 (exception text can embed the token) and the sanitiser order."""
+
+    def test_invalid_url_from_a_token_with_a_control_character_never_reaches_the_log(self):
+        logs = []
+        secrets = os.path.join(self.tmp, "s.env")
+        put(secrets, "TELEGRAM_BOT_TOKEN=123456789:AAAA-BBBB CCCC-dddd-EEEE-ffff-GGGG\nTELEGRAM_CHAT_ID=-100123\n")
+        os.chmod(secrets, 0o640)
+        c = load_config(None, {"telegram": {"secrets_file": secrets, "retries": 3, "backoff_s": 0, "min_interval_s": 0}})["telegram"]
+        a = tg.TelegramAdapter(c, "h", out=io.StringIO(), log=logs.append, sleep=lambda s: None)
+        self.assertTrue(a.enabled)
+        self.assertFalse(a._deliver("hello\n"))          # a space in the token: http.client raises InvalidURL('... /bot<token>/sendMessage ...')
+        joined = " ".join(logs)
+        self.assertNotIn("AAAA", joined)
+        self.assertNotIn("GGGG", joined)
+        self.assertIn("InvalidURL", joined)
+
+    def test_a_token_split_by_a_zero_width_character_is_still_redacted(self):
+        out = tg.sanitize("tok 123456789:ABCdefGhIJKl​mNoPQRsTUVwxyZ0123456789 end")
+        self.assertNotIn("ABCdef", out)
+        self.assertNotIn("123456789:", tg.sanitize("x 123456789:ABCdefGhIJKlmNoPQRsTUV\x01wxyZ0123456789 y"))

@@ -4,26 +4,32 @@
 
 | Piece | Where | Runs | Purpose |
 |---|---|---|---|
-| `aicc-backup.sh` (installed as `/usr/local/sbin/aicc-backup`) | host | `aicc-backup.timer` daily 03:30 UTC (+ up to 2 min jitter, `Persistent=true`), and `--label pre-release` before every Control Plane release | DB dump + files archive + restore smoke + `status.json` |
-| `aicc-restore-test.sh` (`aicc-restore-test`) | host | by hand, after any change to the backup, and as a drill | restores a dump into a throwaway database and runs sanity SQL |
-| `pull-offhost.sh` | **the owner's Mac** | by hand or launchd/cron the owner sets up | pulls the latest dump + archive over SSH, verifies checksums, keeps 14 |
-| `lib/backup-common.sh` | host (next to the scripts) | sourced | shared functions, fixture guard |
+| `aicc-backup.sh` (`/usr/local/sbin/aicc-backup`) | host | `aicc-backup.timer` **hourly at :17 UTC** (+ up to 2 min jitter, `Persistent=true`), and `--label pre-release` before every Control Plane release | DB dump + files archive + restore smoke + `status.json` |
+| `aicc-restore-test.sh` (`aicc-restore-test`) | host | by hand, after any change to the backup | restores a dump into a throwaway database and runs sanity SQL |
+| `aicc-restore.sh` (`aicc-restore`) | host | by hand (real incident) and by `dr-drill.sh` | `fingerprint` / `scratch` / `live`: the restore procedure as ONE verified, timed tool |
+| `aicc-offhost-serve.sh` (`/usr/local/sbin/aicc-offhost-serve`) | host | only through the restricted SSH account `aicc-offhost` | `identity` / `status` / `get <backup file>` / `ack ...`, nothing else |
+| `install-offhost-access.sh` | host, once | by the operator | creates that account (owner-approved model), sudoers rule for that one script, sshd `Match` block, the pull key's `authorized_keys` line |
+| `pull-offhost.sh` | **the owner's Mac** | by hand, or hourly by the LaunchAgent (`macos/install-launchd.sh`) | pulls the newest verified set, keeps 14, then tells the host (`ack`) |
+| `macos/` | the owner's Mac | launchd | `StartInterval` 3600 + `RunAtLoad`; the runner counts consecutive failures and shows ONE macOS notification (at most every 12 h) after 26 h without a verified pull |
+| `dr-drill.sh` | the owner's Mac | by hand | timed drill: freeze, backup, pull off-host, destroy the data tier, recover from the Mac copy, compare fingerprints |
+| `lib/backup-common.sh` | host | sourced | shared functions, fixture guard |
 
 Files in `/srv/aicc/backups` (directory `0751 root:root`, so AICC Ops can open `status.json` by name but cannot list it; every dump and archive is `0600 root`):
 
 * `aicc_cp-<UTC>-<label>.sql.gz` + `.sha256` : `mysqldump --single-transaction --quick --routines --triggers --events --no-tablespaces`, through the MySQL unix socket, account `aicc_backup` (SELECT, SHOW VIEW, TRIGGER, EVENT, LOCK TABLES on `aicc_cp`; `SHOW_ROUTINE` global; ALL only on `aicc_restore_check`). Credentials live in `/etc/aicc/backup.cnf` (`0600 root`), never on a command line.
-* `aicc-files-<UTC>-<label>.tar.gz` + `.sha256` : **separate `0600` archive** of `shared/uploads`, `shared/wp-config.php` (secrets: this is why it is separate from the DB dump), `/etc/aicc-edge` and `pointers.txt` (which release `current`/`previous` pointed to). Caddy's certificate storage is deliberately not included: certificates are re-issuable and their private keys stay on the host (`aicc-caddy-storage-backup` exists for a deliberate encrypted copy).
+* `aicc-files-<UTC>-<label>.tar.gz` + `.sha256` : **separate `0600` archive** of `shared/uploads`, `shared/wp-config.php` (secrets: this is why it is separate from the DB dump), `/etc/aicc-edge`, `/etc/aicc-ops/aicc-ops.toml` (thresholds and host label; its `secrets.env` is deliberately NOT included) and `pointers.txt` (which release `current`/`previous` pointed to, every release manifest's tarball hash and source commit, and the host identity line). Caddy's certificate storage is deliberately not included: certificates are re-issuable and their private keys stay on the host (`aicc-caddy-storage-backup` exists for a deliberate encrypted copy).
 * `status.json` : schema documented at the top of `aicc-backup.sh`. Top-level `"status": "ok|failed"` (what AICC Ops' backup collector parses), `last_success` (survives a later failure; used by the release gate), per-file sha256 and sizes, `restore_check`, `disk_free_pct`.
 * `restore-test.json` : result of the last restore test. `backup.log` : the job's log (no secrets).
 
 Checks before a run is called ok: single instance (lock), `>= 15%` free disk (otherwise exit 4, status failed, nothing written), `gzip -t` on both archives, dump ends with `-- Dump completed`, tar listing, and (not with `--quick`) the **restore smoke**: the dump is loaded into `aicc_restore_check`, table counts must equal the source and the `*_options` table must have rows, then the database is dropped (also on failure). The smoke strips `DEFINER=` clauses because the backup account must not hold `SET_ANY_DEFINER`; a real restore as root keeps them.
 
-Retention: files older than 7 days are deleted **only after a successful run** and **never one of the newest three sets**, so a streak of failures cannot empty the directory.
+Retention (host): files older than 7 days are deleted **only after a successful run** and **never one of the newest three sets**, so a streak of failures cannot empty the directory. With the hourly timer that is up to ~168 sets of ~100 KB on the staging data; re-check the arithmetic (and consider `--quick` for the hourly runs) when the database grows.
 
-## RPO and RTO (stated, not promised)
+## RPO and RTO (what is measured, what is not)
 
-* **RPO (data you can lose): up to 24 hours** with the daily timer (a missed run executes after boot). **Hourly option:** `systemctl edit aicc-backup.timer` and add `OnCalendar=` (reset) then `OnCalendar=hourly`; a dump of a store this size takes seconds; the restore smoke can be skipped for the hourly runs by adding `--quick` to a copy of the service. Binary logging is OFF, so there is no point-in-time recovery: the last dump is the recovery point.
-* **RTO (time to be back):** **not yet measured.** A restore of the database on the same host has been exercised only against disposable databases (this repository's tests, and the rehearsal fixture). A full disaster-recovery drill (new Droplet, install, restore, deploy) has **not** been run. Do not quote a number until it has: the first drill on the real host should time each step in the runbook and replace this paragraph. Expect minutes for the restore itself and the better part of an hour for rebuilding a host, but that is an estimate, not a measurement.
+* **On-host RPO: about 1 hour** (hourly timer; a missed run executes after boot). Binary logging is OFF, so there is no point-in-time recovery: the last dump is the recovery point.
+* **Off-host RPO: the time since the Mac last pulled** (normally within the hour, but only while the Mac is awake and online). The host knows: every verified pull writes `offhost-ack.json` through `aicc-offhost-serve ack`, and AICC Ops alerts `offhost_stale` (WARNING after 36 h, CRITICAL after 96 h without an acknowledged verified copy; a brand-new host with no ack warns only after 48 h uptime). **When the Mac sleeps or is offline no copy leaves the host**; the data on the host is then protected only by the host's own disk. This is the honest limit of a free off-host mechanism that depends on the owner's Mac. A second pull location (another always-on machine of the owner's, or a paid object store) is the way to remove it: an owner decision, not made.
+* **RTO: measured by `dr-drill.sh`**, see "Disaster-recovery drill" below. The figure covers loss of the data tier on the same Droplet (database, uploads, wp-config) recovered from the Mac's copy. It does **not** cover loss of the whole Droplet.
 
 ## Restore procedure (database), on the host, as root
 
@@ -47,12 +53,36 @@ Files: `tar -xzpf aicc-files-<ts>-<label>.tar.gz -C /` restores uploads, `wp-con
 
 ## Off-host copy (runs on the Mac)
 
-`infra/backup/pull-offhost.sh --stage-ip <IPV4>` pulls `last_success` from `status.json`, verifies the sha256 sidecar, the hash recorded in `status.json` and `gzip -t`, keeps the newest 14 sets in `~/aicc-offhost-backups-stage` (`0700`, files `0600`). It is a **pull** (modelled on the proven API-host pull in the Backend repo, `docs/digitalocean-infrastructure.md` section 14): the server holds no credentials for the Mac, so a compromised server cannot delete the Mac's copies. It refuses a host that is not given on the command line, `139.59.157.231`, any hostname that is not `stage*.copilt.org`, and the production key; it uses only `~/.ssh/aicc_cp_stage` and verifies the host's `/etc/aicc-stage-identity` first.
+`infra/backup/pull-offhost.sh --stage-ip <IPV4>` connects as the restricted account `aicc-offhost` with the dedicated key `~/.ssh/aicc_cp_stage_offhost`, reads `status` (the newest successful set), pulls the dump and the files archive with `get`, and accepts a file only if the received bytes hash to the host's own `.sha256` sidecar **and** to the hash recorded in `status.json` **and** `gzip -t` passes; then it sends `ack`, which the host re-checks against its own sidecars before writing `offhost-ack.json`. It keeps the newest 14 sets in `~/aicc-offhost-backups-stage` (`0700`, files `0600`), takes a lock (one pull at a time) and writes `.last-ok`.
 
-* The files archive contains `wp-config.php` (database password, salts, staging-only plugin secrets): keep the folder on FileVault-encrypted storage. `--no-files-archive` pulls the database dump only.
-* Scheduling is the owner's choice (launchd/cron); nothing is installed on the Mac by these scripts.
-* An off-host copy that is never restored is a hope, not a backup: run `gzip -dc <dump> | mysql` into a scratch database on the Mac at least once and record it here.
+**Access model (owner-approved 2026-10-21).** The server holds no credential for the Mac. The Mac holds a key that can only run `aicc-offhost-serve` (sshd `ForceCommand` for the account + `restrict,command=` on the key + a sudoers rule naming that one script). It cannot log in interactively, forward ports, read anything but files matching `aicc_cp-/aicc-files-<UTC>-<label>.{sql.gz,tar.gz}[.sha256]`, or write anything but `offhost-ack.json`. The operator key (`aicc_cp_stage`) is never used unattended. Remove the whole path with `sudo infra/backup/install-offhost-access.sh --remove`.
+
+**Setup** (once): `ssh-keygen -t ed25519 -N "" -f ~/.ssh/aicc_cp_stage_offhost -C aicc-offhost-pull`; copy the `.pub` to the host; `sudo bash infra/backup/install-offhost-access.sh --pubkey-file <that file>` (it validates `sshd -t`, `visudo -cf` and the effective config before reloading `ssh`, and reverts on any failure); then on the Mac `infra/backup/macos/install-launchd.sh --stage-ip <IPV4>` (dry-run) and `--apply`. Uninstall: `--uninstall --apply` (backups and logs are kept).
+
+**What happens when the Mac is asleep/offline:** launchd runs one catch-up pull at wake; until then nothing is pulled; after 36 h the host raises `offhost_stale`; the runner shows one macOS notification after 26 h without a verified pull if the Mac is awake but the pull keeps failing. The files archive contains `wp-config.php` (database password, salts, plugin secrets): keep the folder on FileVault-encrypted storage. `--no-files-archive` pulls the database dump only.
+
+An off-host copy that is never restored is a hope, not a backup: the drill below restores from the Mac's copy, and `aicc-restore scratch` loads any dump into a scratch database and fingerprints it without touching the live data.
+
+## Disaster-recovery drill (`dr-drill.sh`)
+
+Scenario: the data tier of the Droplet is lost (database dropped, uploads and `wp-config.php` deleted). Recovery source: the verified copy that lives on the Mac. Steps and timings are in the JSON report; the pass criteria are (1) `aicc-restore live` ends with its health gate and sanity checks green, (2) the per-table fingerprint (row count + `CHECKSUM TABLE`) of the recovered database equals the fingerprint taken before the disaster, (3) uploads and `wp-config.php` exist again, (4) `/healthz` and `/pricing/` answer 200 through the edge, (5) no restore directory, scratch database or stray listener remains.
+
+DRILL_RESULT_PLACEHOLDER
+
+## Covered and not covered by this procedure
+
+| Failure | Covered | How |
+|---|---|---|
+| Corrupted/dropped database, deleted uploads or wp-config on the same Droplet | yes | `aicc-restore live` from the newest verified set (host copy or Mac copy) |
+| Bad release | yes | `aicc-rollback-release` (code only; the database is restored from the pre-release dump only if the schema changed incompatibly) |
+| Loss of the whole Droplet (host destroyed, disk lost, account problem) | **only with manual work, time not measured by the drill** | new Droplet: cloud-init, `install-stack.sh`, `create-staging-db.sh`/production DB step, restore the DB + files archive (it brings `wp-config.php` and the edge env), re-deploy the release tarballs from the Mac (`~/aicc-releases`; `pointers.txt` lists which), re-issue the certificate (Caddy does it) |
+| Secrets in `/etc/aicc/secrets` (DB passwords, admin password, AICC Ops Telegram token) | no | regenerable (DB account, salts: users are logged out) or owner-held (Telegram token, production webhook secrets); never in a backup |
+| Caddy certificate storage | no | re-issued automatically (rate limits apply) |
+| AICC Ops history (SQLite) | no | monitoring data, rebuilt from zero |
+| A backup that is corrupt but passes its checksum | partly | the restore smoke at backup time loads every dump into a throwaway database; the drill proves one recovery end to end |
+| Point-in-time recovery, accidental data change noticed days later | no | binary logging off; hourly dumps kept 7 days on the host and 14 sets on the Mac |
+| The Mac copy lost at the same time as the Droplet | no | a second off-host location is the fix (owner decision) |
 
 ## What is proven and what is not
 
-Proven by `infra:test` (no server needed): the scripts work against the rehearsal fixture database and against a throwaway MySQL server with the real `aicc_backup` account and its exact grants (including triggers, routines, events, views), corrupt/truncated/mismatched dumps are rejected, the lock, retention, disk guard and fixture guard behave, `status.json` has the fields AICC Ops and the release gate read, and the off-host pull verifies checksums and refuses wrong hosts/keys. **Not proven until run on the real host:** the same on Ubuntu with MySQL 8.0 (tests ran on MySQL 8.4), the systemd timer firing, `SHOW_ROUTINE` sufficing on 8.0 for `--routines`, a full disaster-recovery drill, and the RTO.
+Proven by `infra:test` (no server needed): the scripts work against the rehearsal fixture database and against a throwaway MySQL server with the real `aicc_backup` account and its exact grants (including triggers, routines, events, views), corrupt/truncated/mismatched dumps are rejected, the lock, retention, disk guard and fixture guard behave, `status.json` has the fields AICC Ops and the release gate read, and the off-host pull verifies checksums and refuses wrong hosts/keys. **Proven on the real host (2026-10-21):** the backup on Ubuntu with MySQL 8.0 with `SHOW_ROUTINE` sufficing for `--routines`; the restricted pull and ack from the Mac; the timed drill (above). **Not proven:** several consecutive scheduled runs over days (the hourly timer was introduced in this phase), loss of the whole Droplet, a second renewal cycle.

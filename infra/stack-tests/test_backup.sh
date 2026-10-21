@@ -91,23 +91,42 @@ t_eq "ack: verified true, puller mac-pull, set timestamp of the pulled set" "$(j
 t_eq "ack: carries the sha256 of the pulled dump" "$(jq -r .dump_sha256 "$REMOTE/offhost-ack.json")" "$(shasum -a 256 "$TMP/dest/aicc_cp-20261021T033012Z-scheduled.sql.gz" | cut -d' ' -f1)"
 t_ok "the pull wrote a .last-ok marker (0600)" test "$(stat -f %Lp "$TMP/dest/.last-ok" 2>/dev/null || stat -c %a "$TMP/dest/.last-ok")" = 600
 t_eq "no lock directory is left behind" "$(ls -d "$TMP"/dest/.pull.lock 2>/dev/null | wc -l | tr -d ' ')" "0"
-for ts in 20261022T033012Z 20261023T033012Z 20261024T033012Z; do mkset "$ts"; PULL --stage-ip 203.0.113.9 --keep 2 >/dev/null 2>&1; done
+for ts in 20260822T033012Z 20260823T033012Z 20260824T033012Z; do mkset "$ts"; PULL --stage-ip 203.0.113.9 --keep 2 >/dev/null 2>&1; done
 t_eq "retention: only the newest 2 dumps are kept (--keep 2)" "$(ls "$TMP"/dest/aicc_cp-*.sql.gz | wc -l | tr -d ' ')" "2"
 t_eq "retention: the sidecars of pruned dumps are gone too" "$(ls "$TMP"/dest/aicc_cp-*.sha256 | wc -l | tr -d ' ')" "2"
-t_ok "the newest dump is kept" test -f "$TMP/dest/aicc_cp-20261024T033012Z-scheduled.sql.gz"
-mkset 20261025T033012Z
+t_ok "the newest dump is kept" test -f "$TMP/dest/aicc_cp-20260824T033012Z-scheduled.sql.gz"
+mkset 20260825T033012Z
 STUB_CORRUPT=1 t_rc "a corrupted transfer is rejected (exit 1)" 1 PULL --stage-ip 203.0.113.9
-t_fail "...the corrupted copy was NOT kept" test -f "$TMP/dest/aicc_cp-20261025T033012Z-scheduled.sql.gz"
+t_fail "...the corrupted copy was NOT kept" test -f "$TMP/dest/aicc_cp-20260825T033012Z-scheduled.sql.gz"
 t_eq "...and no partial file remains" "$(ls "$TMP"/dest/*.partial 2>/dev/null | wc -l | tr -d ' ')" "0"
 echo '{"schema":1,"status":"ok","last_success":{"finished_epoch":1,"db_dump_file":"../../etc/passwd","files_archive_file":"x"}}' > "$REMOTE/status.json"
 t_rc "a hostile status.json naming a path outside the backup dir is rejected" 1 PULL --stage-ip 203.0.113.9
 echo '{"schema":1,"status":"failed","reason":"disk guard","last_success":{"finished_epoch":1}}' > "$REMOTE/status.json"
 t_rc "a failed latest run on the host is reported (exit 1)" 1 PULL --stage-ip 203.0.113.9
 
+echo "== pull-offhost.sh against a HOSTILE server (security review F1/F7) =="
+mkset 20261021T040000Z
+PWNED="$TMP/pwned.flag"; rm -f "$PWNED"
+jq --arg c "KEEP[\$(touch $PWNED)]" '.last_success.finished_epoch = $c' "$REMOTE/status.json" > "$REMOTE/status.json.n" && mv "$REMOTE/status.json.n" "$REMOTE/status.json"
+t_rc "a finished_epoch carrying a command substitution is rejected (exit 1)" 1 PULL --stage-ip 203.0.113.9
+t_fail "...and the command substitution NEVER ran" test -e "$PWNED"
+mkset 20261021T040000Z
+jq '.last_success.finished_epoch = 99999999999999' "$REMOTE/status.json" > "$REMOTE/status.json.n" && mv "$REMOTE/status.json.n" "$REMOTE/status.json"
+t_rc "an out-of-range finished_epoch is rejected" 1 PULL --stage-ip 203.0.113.9
+mkset 20991231T000000Z
+t_rc "a far-future set name (eviction attack) is rejected" 1 PULL --stage-ip 203.0.113.9
+t_fail "...the far-future file was not kept" test -f "$TMP/dest/aicc_cp-20991231T000000Z-scheduled.sql.gz"
+mkset 20261021T050000Z; jq '.db_dump.sha256 = "not-a-hash"' "$REMOTE/status.json" > "$REMOTE/status.json.n" && mv "$REMOTE/status.json.n" "$REMOTE/status.json"
+t_rc "a malformed hash in status.json is rejected" 1 PULL --stage-ip 203.0.113.9
+mkset 20261021T060000Z; jq '.reason = "\u001b[31mREDALERT\u001b]0;x\u0007"' "$REMOTE/status.json" | jq '.status = "failed"' > "$REMOTE/status.json.n" && mv "$REMOTE/status.json.n" "$REMOTE/status.json"
+PULL --stage-ip 203.0.113.9 >/dev/null 2>&1 || true
+t_eq "pull.log holds no control or escape character from the server" "$(LC_ALL=C grep -c "[^[:print:][:space:]]" "$TMP/dest/pull.log" || true)" "0"
+mkset 20261021T070000Z
+
 echo "== aicc-offhost-serve.sh: what the restricted pull key may and may not do =="
 SV() { env AICC_TEST_HARNESS=1 AICC_BACKUP_DIR="$REMOTE" AICC_IDENTITY_FILE="$TMP/ident" bash "$BKP/aicc-offhost-serve.sh" "$@"; }
-mkset 20261030T033012Z
-D1="aicc_cp-20261030T033012Z-scheduled.sql.gz"; F1="aicc-files-20261030T033012Z-scheduled.tar.gz"
+mkset 20260830T033012Z
+D1="aicc_cp-20260830T033012Z-scheduled.sql.gz"; F1="aicc-files-20260830T033012Z-scheduled.tar.gz"
 DS="$(awk '{print $1}' "$REMOTE/$D1.sha256")"; FS="$(awk '{print $1}' "$REMOTE/$F1.sha256")"
 echo secret > "$REMOTE/wp-config.php"; echo log > "$REMOTE/backup.log"
 t_ok "identity works" SV identity
@@ -123,16 +142,16 @@ t_rc "shell metacharacters are refused" 3 SV "get $D1; id"
 t_rc "command substitution is refused" 3 SV 'get $(id)'
 t_rc "a newline in the command is refused" 3 SV "$(printf 'status\nid')"
 t_rc "get with two files is refused" 3 SV "get $D1 $F1"
-t_rc "a pre-existing symlink under a valid name is refused" 3 bash -c "ln -sf /etc/passwd '$REMOTE/aicc_cp-20261031T033012Z-manual.sql.gz'; AICC_TEST_HARNESS=1 AICC_BACKUP_DIR='$REMOTE' bash '$BKP/aicc-offhost-serve.sh' 'get aicc_cp-20261031T033012Z-manual.sql.gz'"
+t_rc "a pre-existing symlink under a valid name is refused" 3 bash -c "ln -sf /etc/passwd '$REMOTE/aicc_cp-20260831T033012Z-manual.sql.gz'; AICC_TEST_HARNESS=1 AICC_BACKUP_DIR='$REMOTE' bash '$BKP/aicc-offhost-serve.sh' 'get aicc_cp-20260831T033012Z-manual.sql.gz'"
 rm -f "$REMOTE/offhost-ack.json"
-t_rc "ack with a wrong dump hash is refused" 3 SV "ack 20261030T033012Z $D1 $(printf '0%.0s' $(seq 64)) $F1 $FS"
+t_rc "ack with a wrong dump hash is refused" 3 SV "ack 20260830T033012Z $D1 $(printf '0%.0s' $(seq 64)) $F1 $FS"
 t_fail "...and wrote nothing" test -f "$REMOTE/offhost-ack.json"
 t_rc "ack naming a set that does not exist is refused" 3 SV "ack 20271111T000000Z aicc_cp-20271111T000000Z-manual.sql.gz $DS - -"
 t_rc "ack with a dump from another set is refused" 3 SV "ack 20261029T033012Z $D1 $DS - -"
-t_rc "ack with a malformed hash is refused" 3 SV "ack 20261030T033012Z $D1 zzz - -"
-t_ok "a correct ack is recorded" SV "ack 20261030T033012Z $D1 $DS $F1 $FS"
+t_rc "ack with a malformed hash is refused" 3 SV "ack 20260830T033012Z $D1 zzz - -"
+t_ok "a correct ack is recorded" SV "ack 20260830T033012Z $D1 $DS $F1 $FS"
 t_eq "...with the host's own timestamp and verified=true" "$(jq -r '[.verified,(.acked_at>1700000000)]|join(",")' "$REMOTE/offhost-ack.json")" "true,true"
-t_ok "a database-only ack (files -) is accepted" SV "ack 20261030T033012Z $D1 $DS - -"
+t_ok "a database-only ack (files -) is accepted" SV "ack 20260830T033012Z $D1 $DS - -"
 t_eq "...and records files as -" "$(jq -r .files "$REMOTE/offhost-ack.json")" "-"
 
 echo "== install-offhost-access.sh (file generation only, --root seam) =="
@@ -142,7 +161,7 @@ if [ "$OK_KEY" = 1 ]; then
   t_ok "installs into a scratch root" env AICC_TEST_HARNESS=1 bash "$BKP/install-offhost-access.sh" --root "$IO" --pubkey-file "$TMP/okey.pub"
   t_contains "authorized_keys: restrict + forced sudo of the one script" "$(cat "$IO/var/lib/aicc-offhost/.ssh/authorized_keys")" 'restrict,command="/usr/bin/sudo -n /usr/local/sbin/aicc-offhost-serve'
   t_not_contains "authorized_keys holds no private material" "$(cat "$IO/var/lib/aicc-offhost/.ssh/authorized_keys")" "PRIVATE"
-  t_eq "authorized_keys is 0600" "$(stat -f %Lp "$IO/var/lib/aicc-offhost/.ssh/authorized_keys" 2>/dev/null || stat -c %a "$IO/var/lib/aicc-offhost/.ssh/authorized_keys")" "600"
+  t_eq "authorized_keys is 0644 (root-owned on a real host: the account can read it, not change it)" "$(stat -f %Lp "$IO/var/lib/aicc-offhost/.ssh/authorized_keys" 2>/dev/null || stat -c %a "$IO/var/lib/aicc-offhost/.ssh/authorized_keys")" "644"
   t_contains "sudoers: exactly the one script" "$(cat "$IO/etc/sudoers.d/aicc-offhost")" "aicc-offhost ALL=(root) NOPASSWD: /usr/local/sbin/aicc-offhost-serve *"
   t_eq "sudoers has no ALL command grant" "$(grep -c 'NOPASSWD: ALL' "$IO/etc/sudoers.d/aicc-offhost" || true)" "0"
   t_eq "sudoers is 0440" "$(stat -f %Lp "$IO/etc/sudoers.d/aicc-offhost" 2>/dev/null || stat -c %a "$IO/etc/sudoers.d/aicc-offhost")" "440"
@@ -159,8 +178,64 @@ if [ "$OK_KEY" = 1 ]; then
   t_fail "...the sudoers file is gone" test -e "$IO/etc/sudoers.d/aicc-offhost"
 else t_skip "install-offhost-access tests" "ssh-keygen unavailable"; fi
 
+echo "== aicc-restore.sh verify: hostile archives and dumps (security review F3/F4) =="
+RS="$TMP/restore"; mkdir -p "$RS"; IDF="$RS/ident"; printf 'AICC_ENV=staging\nAICC_HOSTNAME=stage.copilt.org\nAICC_STAGE_ID=%s\n' "$(printf 'a%.0s' $(seq 32))" > "$IDF"
+WANTID="$(tr '\n' ' ' < "$IDF" | sed 's/ *$//')"
+python3 - "$RS" "$WANTID" <<'PY'
+import io, sys, tarfile, gzip, hashlib, os
+d, ident = sys.argv[1], sys.argv[2]
+def add(t, name, data=b"x", typ=tarfile.REGTYPE, link=""):
+    ti = tarfile.TarInfo(name); ti.type = typ; ti.linkname = link; ti.mode = 0o644
+    if typ == tarfile.REGTYPE: ti.size = len(data); t.addfile(ti, io.BytesIO(data))
+    else: t.addfile(ti)
+def make(fn, members, pointers):
+    with tarfile.open(os.path.join(d, fn), "w:gz") as t:
+        for m in members: add(t, *m)
+        if pointers is not None: add(t, "pointers.txt", pointers.encode())
+good = [("srv/aicc/shared/wp-config.php", b"<?php"), ("srv/aicc/shared/uploads/a.jpg", b"img")]
+make("good.tgz", good, "# x\nhost_identity " + ident + "\n")
+make("hardlink.tgz", good + [("srv/aicc/shared/uploads/h", b"", tarfile.LNKTYPE, "etc/shadow")], "host_identity " + ident + "\n")
+make("symlink.tgz", good + [("srv/aicc/shared/uploads/l", b"", tarfile.SYMTYPE, "/etc")], "host_identity " + ident + "\n")
+make("abspath.tgz", good + [("/etc/cron.d/x", b"x")], "host_identity " + ident + "\n")
+make("dotdot.tgz", good + [("srv/aicc/shared/uploads/../../../../etc/x", b"x")], "host_identity " + ident + "\n")
+make("outside.tgz", good + [("etc/passwd", b"x")], "host_identity " + ident + "\n")
+make("foreign.tgz", good, "host_identity AICC_ENV=production AICC_HOSTNAME=www.copilt.org AICC_STAGE_ID=" + "b"*32 + "\n")
+make("noident.tgz", good, "# no identity line\n")
+for n, body in (("good.sql.gz", b"CREATE TABLE t (i int);\n-- Dump completed on x\n"), ("notrailer.sql.gz", b"CREATE TABLE t (i int);\n")):
+    with gzip.open(os.path.join(d, n), "wb") as f: f.write(body)
+PY
+RV() { env AICC_TEST_HARNESS=1 AICC_IDENTITY_FILE="$IDF" bash "$BKP/aicc-restore.sh" verify "$@"; }
+sha() { shasum -a 256 "$1" | cut -d' ' -f1; }
+DG="$RS/good.sql.gz"; DH="$(sha "$DG")"
+t_ok "a clean dump and archive verify" RV --dump "$DG" --sha256 "$DH" --files "$RS/good.tgz" --files-sha256 "$(sha "$RS/good.tgz")"
+t_rc "verify without an out-of-band hash is refused" 1 RV --dump "$DG" --files none
+t_rc "a wrong dump hash is refused" 1 RV --dump "$DG" --sha256 "$(printf '0%.0s' $(seq 64))" --files none
+t_rc "a dump without the completion trailer is refused" 1 RV --dump "$RS/notrailer.sql.gz" --sha256 "$(sha "$RS/notrailer.sql.gz")" --files none
+for bad in hardlink symlink abspath dotdot outside foreign noident; do
+  t_rc "a $bad archive is refused" 1 RV --dump "$DG" --sha256 "$DH" --files "$RS/$bad.tgz" --files-sha256 "$(sha "$RS/$bad.tgz")"
+done
+t_ok "...but an archive without identity is accepted when the operator says so knowingly" RV --dump "$DG" --sha256 "$DH" --files "$RS/noident.tgz" --files-sha256 "$(sha "$RS/noident.tgz")" --allow-no-identity
+t_rc "a wrong files hash is refused" 1 RV --dump "$DG" --sha256 "$DH" --files "$RS/good.tgz" --files-sha256 "$(printf '1%.0s' $(seq 64))"
+t_rc "live restore without --yes-replace-live is refused" 3 env AICC_TEST_HARNESS=1 AICC_IDENTITY_FILE="$IDF" bash "$BKP/aicc-restore.sh" live --dump "$DG" --files none
+t_rc "live restore without out-of-band hashes is refused (before anything runs)" 3 env AICC_TEST_HARNESS=1 AICC_IDENTITY_FILE="$IDF" bash "$BKP/aicc-restore.sh" live --dump "$DG" --files none --yes-replace-live
+t_rc "a scratch database name outside aicc_dr_* is refused" 3 env AICC_TEST_HARNESS=1 bash "$BKP/aicc-restore.sh" scratch --dump "$DG" --scratch-db aicc_cp
+if [ -S "$FXSOCK" ] && [ -x "$LOCALMY/mysql" ]; then
+  HOSTILE="aicc_rehearsal_dr_hostile"
+  M() { "$LOCALMY/mysql" --defaults-extra-file="$FXCNF" "$@"; }
+  { echo "DROP DATABASE IF EXISTS $HOSTILE; CREATE DATABASE $HOSTILE;"; echo 'CREATE TABLE '"$HOSTILE"'.`ok_table` (i int);'; echo 'CREATE TABLE '"$HOSTILE"'.`x``;select 1;--` (i int);'; } > "$RS/h.sql"
+  M < "$RS/h.sql" 2>/dev/null
+  t_eq "(the hostile test database really holds the odd table name)" "$(M -N -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='$HOSTILE'")" "2"
+  t_rc "fingerprint REFUSES a table whose name could break out of the SQL (backtick/semicolon)" 1 env AICC_TEST_HARNESS=1 MYSQL_BIN="$LOCALMY/mysql" bash "$BKP/aicc-restore.sh" fingerprint --db "$HOSTILE" --mysql-defaults-file "$FXCNF" --out "$RS/h.fp"
+  M -e "DROP DATABASE IF EXISTS $HOSTILE" 2>/dev/null
+  t_ok "fingerprint works on a normal database (the rehearsal fixture, read-only)" env AICC_TEST_HARNESS=1 MYSQL_BIN="$LOCALMY/mysql" bash "$BKP/aicc-restore.sh" fingerprint --db aicc_rehearsal_cp --mysql-defaults-file "$FXCNF" --out "$RS/f.fp"
+  t_eq "...every table has three columns (name, rows, checksum)" "$(awk -F'\t' 'NF==3' "$RS/f.fp" | wc -l | tr -d ' ')" "$(M -N -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='aicc_rehearsal_cp' AND table_type='BASE TABLE'")"
+  t_eq "...and the throwaway database is gone" "$(M -N -e "SHOW DATABASES LIKE 'aicc_rehearsal_dr_hostile'")" ""
+else t_skip "fingerprint tests against MySQL" "rehearsal MySQL fixture not running"; fi
+
 echo "== RPO/RTO documentation exists and does not claim an unproven restore time =="
 t_ok "README-backup.md documents RPO and RTO" bash -c "grep -q 'RPO' '$BKP/README-backup.md' && grep -q 'RTO' '$BKP/README-backup.md'"
-t_ok "README-backup.md says the RTO is not yet measured" grep -qi 'not yet measured\|not measured' "$BKP/README-backup.md"
+t_ok "README-backup.md states what the RTO figure does NOT cover (whole-Droplet loss)" grep -qi 'does \*\*not\*\* cover loss of the whole Droplet' "$BKP/README-backup.md"
+t_ok "README-backup.md names the Mac-offline limit of the off-host copy" grep -qi 'When the Mac sleeps or is offline no copy leaves the host' "$BKP/README-backup.md"
+t_fail "README-backup.md has no unfilled drill placeholder" grep -q 'DRILL_RESULT_PLACEHOLDER' "$BKP/README-backup.md"
 
 t_summary

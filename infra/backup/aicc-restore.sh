@@ -4,15 +4,19 @@
 # command is what an operator types in a real incident.
 #
 #   sudo aicc-restore fingerprint --out FILE                      per-table row count + CHECKSUM TABLE of the live database (data-correctness proof)
+#   sudo aicc-restore verify   --dump FILE [--files FILE] --sha256 H [--files-sha256 H]       checks only (hashes, gzip, trailer, archive member types/paths/identity); changes nothing
 #   sudo aicc-restore scratch  --dump FILE [--sha256 H] [--scratch-db aicc_dr_scratch] [--fingerprint-out FILE]
 #                                                                 load the dump into a SCRATCH database next to the live one, fingerprint it, drop it.
 #                                                                 The live database, files and services are never touched.
-#   sudo aicc-restore live --dump FILE --files FILE|none [--sha256 H] [--files-sha256 H] --yes-replace-live
-#                          [--report FILE] [--no-safety-backup] [--no-health-gate]
+#   sudo aicc-restore live --dump FILE --files FILE|none --sha256 H --files-sha256 H --yes-replace-live
+#                          [--report FILE] [--no-safety-backup] [--no-health-gate] [--trust-sidecar] [--allow-no-identity]
 #                                                                 REPLACES the live database (and files): see the steps below.
 #
+# TRUST: for `live` the two hashes MUST be given out of band (--sha256, --files-sha256: take them from the copy that lives OFF the host, e.g. the Mac's
+# .sha256 files). A sidecar next to the data proves nothing against someone who can alter the data (--trust-sidecar accepts it anyway, loudly).
 # live steps (each is timed; the report is JSON):
-#   verify          sha256 (sidecar next to the dump, or --sha256), gzip -t, "-- Dump completed" trailer, archive listing
+#   verify          sha256, gzip -t, "-- Dump completed" trailer; archive listing: only regular files and directories under the allowed roots (no links, devices, absolute or ..
+#                   names); the archive must say it was taken on THIS host (host_identity in pointers.txt); a scratch load of the dump into aicc_dr_live_check BEFORE anything is dropped
 #   safety_backup   aicc-backup --label manual  (what exists now is never destroyed without a copy; --no-safety-backup only for a drill that already has one)
 #   quiesce         stop aicc-wp-cron.timer/service and php8.3-fpm (no writer while the database is replaced)
 #   db_restore      DROP/CREATE the database, load the dump as root over the socket (definers kept), re-grant the application user
@@ -28,27 +32,30 @@ umask 077
 
 ACTION="${1:-}"; [ $# -gt 0 ] && shift
 DUMP=""; FILES=""; SHA=""; FSHA=""; REPORT=""; YES=0; SAFETY=1; HEALTH=1; OUT=""; SCRATCH="aicc_dr_scratch"; FPOUT=""
-DB="aicc_cp"; DBUSER="aicc_cp"; MYSQL_BIN="${MYSQL_BIN:-mysql}"; MY_CNF=""; SHARED="/srv/aicc/shared"
+DB="aicc_cp"; DBUSER="aicc_cp"; MYSQL_BIN="${MYSQL_BIN:-mysql}"; MY_CNF=""; SHARED="/srv/aicc/shared"; TRUST_SIDECAR=0; NO_IDENT=0; IDENT_FILE="/etc/aicc-stage-identity"
 while [ $# -gt 0 ]; do
   case "$1" in
     --dump) DUMP="${2:-}"; shift 2 ;; --files) FILES="${2:-}"; shift 2 ;; --sha256) SHA="${2:-}"; shift 2 ;; --files-sha256) FSHA="${2:-}"; shift 2 ;;
-    --report) REPORT="${2:-}"; shift 2 ;; --yes-replace-live) YES=1; shift ;; --no-safety-backup) SAFETY=0; shift ;; --no-health-gate) HEALTH=0; shift ;;
+    --report) REPORT="${2:-}"; shift 2 ;; --yes-replace-live) YES=1; shift ;; --no-safety-backup) SAFETY=0; shift ;; --no-health-gate) HEALTH=0; shift ;; --trust-sidecar) TRUST_SIDECAR=1; shift ;; --allow-no-identity) NO_IDENT=1; shift ;;
     --out) OUT="${2:-}"; shift 2 ;; --scratch-db) SCRATCH="${2:-}"; shift 2 ;; --fingerprint-out) FPOUT="${2:-}"; shift 2 ;;
     --db) DB="${2:-}"; shift 2 ;; --mysql-defaults-file) MY_CNF="${2:-}"; shift 2 ;; --shared-dir) SHARED="${2:-}"; shift 2 ;;
     -h|--help) sed -n 2,28p "${BASH_SOURCE[0]}"; exit 0 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
 done
-case "$ACTION" in fingerprint|scratch|live) ;; *) sed -n 2,13p "${BASH_SOURCE[0]}" >&2; exit 2 ;; esac
+case "$ACTION" in fingerprint|scratch|verify|live) ;; *) sed -n 2,13p "${BASH_SOURCE[0]}" >&2; exit 2 ;; esac
 refuse() { echo "REFUSED: $*" >&2; exit 3; }
 log() { printf '%s  %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*" >&2; }
 [[ "$DB" =~ ^aicc_[a-z0-9_]+$ ]] || refuse "database name must match ^aicc_[a-z0-9_]+\$"
 [[ "$SCRATCH" =~ ^aicc_dr_[a-z0-9_]+$ ]] || refuse "scratch database must be named aicc_dr_*"
 [ "$SCRATCH" != "$DB" ] || refuse "scratch database equals the live one"
+if [ "${AICC_TEST_HARNESS:-0}" = "1" ]; then IDENT_FILE="${AICC_IDENTITY_FILE:-$IDENT_FILE}"; fi
 if [ "${AICC_TEST_HARNESS:-0}" != "1" ]; then
   [ "$(id -u)" = "0" ] || { echo "must run as root (sudo). Refusing." >&2; exit 2; }
   grep -q '^AICC_ENV=staging$' /etc/aicc-stage-identity 2>/dev/null || refuse "/etc/aicc-stage-identity does not say AICC_ENV=staging (production restores are a separate, owner-gated procedure)"
 fi
+# `--binary-mode` turns off the client's interpretation of backslash commands (\! system, \. source) in a piped dump: a dump is data, never a script for a shell
+mysql_load() { local d="$1"; if [ -n "$MY_CNF" ]; then "$MYSQL_BIN" --defaults-extra-file="$MY_CNF" --binary-mode --database="$d"; else "$MYSQL_BIN" --no-defaults --binary-mode --database="$d"; fi; }
 my() { if [ -n "$MY_CNF" ]; then "$MYSQL_BIN" --defaults-extra-file="$MY_CNF" --batch --skip-column-names "$@"; else "$MYSQL_BIN" --no-defaults --batch --skip-column-names "$@"; fi; }
 now() { date +%s.%N 2>/dev/null | grep -E '^[0-9]+\.[0-9]+$' || date +%s; }
 elapsed() { awk -v a="$1" -v b="$2" 'BEGIN{printf "%.2f", b-a}'; }
@@ -58,6 +65,8 @@ fingerprint() { # fingerprint <db> <outfile>: "table<TAB>rows<TAB>checksum" sort
   : > "$o.tmp"
   while IFS= read -r t; do
     [ -n "$t" ] || continue
+    # a table name comes from the database (WordPress plugins can create tables): refuse anything that is not a plain identifier before it is placed in SQL run as root
+    [[ "$t" =~ ^[A-Za-z0-9_$]+$ ]] || { echo "REFUSED: table name with unexpected characters in $d: $(printf '%s' "$t" | LC_ALL=C tr -cd '[:print:]' | cut -c1-60)" >&2; return 1; }
     printf '%s\t%s\t%s\n' "$t" "$(my -e "SELECT COUNT(*) FROM \`$d\`.\`$t\`")" "$(my -e "CHECKSUM TABLE \`$d\`.\`$t\`" | awk '{print $2}')" >> "$o.tmp"
   done < <(my -e "SELECT table_name FROM information_schema.tables WHERE table_schema='$d' AND table_type='BASE TABLE' ORDER BY table_name")
   LC_ALL=C sort "$o.tmp" > "$o"; rm -f "$o.tmp"
@@ -66,8 +75,8 @@ fingerprint() { # fingerprint <db> <outfile>: "table<TAB>rows<TAB>checksum" sort
 verify_dump() {
   [ -f "$DUMP" ] || { echo "no such dump: $DUMP" >&2; return 1; }
   local want="$SHA" got
-  if [ -z "$want" ] && [ -f "$DUMP.sha256" ]; then want="$(awk '{print $1}' "$DUMP.sha256" | head -1)"; fi
-  [[ "$want" =~ ^[0-9a-f]{64}$ ]] || { echo "no usable sha256 for the dump (give --sha256 or keep the .sha256 sidecar)" >&2; return 1; }
+  if [ -z "$want" ] && [ "$TRUST_SIDECAR" = 1 ] && [ -f "$DUMP.sha256" ]; then want="$(awk '{print $1}' "$DUMP.sha256" | head -1)"; log "WARNING: trusting the sidecar next to the dump (no out-of-band hash)"; fi
+  [[ "$want" =~ ^[0-9a-f]{64}$ ]] || { echo "no usable sha256 for the dump (give --sha256 from the OFF-HOST copy; --trust-sidecar accepts the sidecar next to it)" >&2; return 1; }
   got="$(sha256sum "$DUMP" | awk '{print $1}')"; [ "$got" = "$want" ] || { echo "dump sha256 mismatch" >&2; return 1; }
   gzip -t "$DUMP" || { echo "gzip -t failed on the dump" >&2; return 1; }
   gzip -dc "$DUMP" | tail -n 1 | grep -q '^-- Dump completed' || { echo "dump has no completion trailer" >&2; return 1; }
@@ -76,13 +85,31 @@ verify_files() {
   [ "$FILES" = "none" ] && return 0
   [ -f "$FILES" ] || { echo "no such files archive: $FILES" >&2; return 1; }
   local want="$FSHA" got
-  if [ -z "$want" ] && [ -f "$FILES.sha256" ]; then want="$(awk '{print $1}' "$FILES.sha256" | head -1)"; fi
+  if [ -z "$want" ] && [ "$TRUST_SIDECAR" = 1 ] && [ -f "$FILES.sha256" ]; then want="$(awk '{print $1}' "$FILES.sha256" | head -1)"; log "WARNING: trusting the sidecar next to the files archive"; fi
   [[ "$want" =~ ^[0-9a-f]{64}$ ]] || { echo "no usable sha256 for the files archive" >&2; return 1; }
   got="$(sha256sum "$FILES" | awk '{print $1}')"; [ "$got" = "$want" ] || { echo "files archive sha256 mismatch" >&2; return 1; }
   gzip -t "$FILES" || return 1
-  # only these roots may be written (uploads, wp-config.php, /etc/aicc-edge, the AICC Ops toml); no absolute paths, no .., no links pointing outside
+  # Only regular files and directories under these roots may be written: no links (a hardlink to /etc/shadow would be re-owned by the perms step, a symlink would redirect later
+  # members), no devices, no absolute or .. names. `tar -tvz` prefixes every member with its type character.
+  local listing; listing="$(tar -tvzf "$FILES")" || return 1
+  if printf '%s\n' "$listing" | cut -c1 | grep -qvE '^[-d]$'; then echo "the archive contains members that are not plain files or directories (links, devices...)" >&2; return 1; fi
   if tar -tzf "$FILES" | grep -vE '^(srv/aicc/shared/(uploads|wp-config\.php)|etc/aicc-edge|etc/aicc-ops/aicc-ops\.toml|pointers\.txt)(/|$)' | grep -q .; then echo "the archive contains paths outside the allowed roots" >&2; return 1; fi
   if tar -tzf "$FILES" | grep -qE '(^|/)\.\.(/|$)|^/'; then echo "the archive contains unsafe paths" >&2; return 1; fi
+  # the archive must have been taken on THIS host: a files archive from another environment would replace wp-config.php with that environment's configuration
+  local want_id have_id
+  want_id="$(tr '\n' ' ' < "$IDENT_FILE" 2>/dev/null | sed 's/ *$//')"
+  have_id="$(tar -xOzf "$FILES" pointers.txt 2>/dev/null | sed -n 's/^host_identity //p' | head -1)"
+  if [ -z "$have_id" ]; then
+    [ "$NO_IDENT" = 1 ] || { echo "the archive carries no host_identity (taken before that was recorded): pass --allow-no-identity to accept it knowingly" >&2; return 1; }
+  elif [ "$have_id" != "$want_id" ]; then echo "the archive was taken on a different host/environment (identity differs): refusing" >&2; return 1; fi
+}
+
+# scratch_load <dump> <scratch-db>: create the scratch database and load the dump into it as a DATA file: no client commands (--binary-mode), DEFINER clauses stripped so nothing in
+# the dump can create objects owned by another account. The caller drops the database.
+scratch_load() {
+  local dump="$1" sdb="$2"
+  my -e "DROP DATABASE IF EXISTS \`$sdb\`; CREATE DATABASE \`$sdb\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_520_ci" || return 1
+  gzip -dc "$dump" | LC_ALL=C sed -e 's/DEFINER=`[^`]*`@`[^`]*`//g' | mysql_load "$sdb" || return 1
 }
 
 if [ "$ACTION" = fingerprint ]; then
@@ -90,14 +117,21 @@ if [ "$ACTION" = fingerprint ]; then
   fingerprint "$DB" "$OUT"; log "fingerprint of $DB: $(wc -l < "$OUT" | tr -d ' ') tables -> $OUT"; exit 0
 fi
 
+if [ "$ACTION" = verify ]; then
+  [ -n "$DUMP" ] || { echo "--dump is required" >&2; exit 2; }
+  [ -n "$FILES" ] || FILES=none
+  verify_dump || exit 1
+  verify_files || exit 1
+  log "verify ok"; exit 0
+fi
+
 if [ "$ACTION" = scratch ]; then
   [ -n "$DUMP" ] || { echo "--dump is required" >&2; exit 2; }
+  [ -n "$SHA" ] || TRUST_SIDECAR=1        # a scratch load touches no live data and loads the dump as data only
   verify_dump || exit 1
   t0="$(now)"
-  my -e "DROP DATABASE IF EXISTS \`$SCRATCH\`; CREATE DATABASE \`$SCRATCH\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_520_ci"
   trap 'my -e "DROP DATABASE IF EXISTS \`$SCRATCH\`" >/dev/null 2>&1 || true' EXIT
-  # a scratch load has no business creating definers for other accounts: strip them (same rule as the backup's own restore smoke)
-  gzip -dc "$DUMP" | LC_ALL=C sed -e 's/DEFINER=`[^`]*`@`[^`]*`//g' | { if [ -n "$MY_CNF" ]; then "$MYSQL_BIN" --defaults-extra-file="$MY_CNF" --database="$SCRATCH"; else "$MYSQL_BIN" --no-defaults --database="$SCRATCH"; fi; }
+  scratch_load "$DUMP" "$SCRATCH" || { echo "the dump did not load into the scratch database" >&2; exit 1; }
   t1="$(now)"
   fp="${FPOUT:-/tmp/aicc-dr-scratch.fp}"
   fingerprint "$SCRATCH" "$fp"
@@ -108,6 +142,10 @@ fi
 # ---- live ------------------------------------------------------------------------------------------------------------------------------------------------
 [ "$YES" = 1 ] || refuse "live restore REPLACES the live database: pass --yes-replace-live (and read the steps in --help first)"
 [ -n "$DUMP" ] && [ -n "$FILES" ] || { echo "--dump and --files (a file, or the word none) are required" >&2; exit 2; }
+if [ "$TRUST_SIDECAR" = 0 ]; then
+  [ -n "$SHA" ] || refuse "live restore needs --sha256 of the dump from the OFF-HOST copy (or --trust-sidecar, which accepts the sidecar next to the data)"
+  [ "$FILES" = none ] || [ -n "$FSHA" ] || refuse "live restore needs --files-sha256 of the files archive from the OFF-HOST copy (or --trust-sidecar)"
+fi
 [ -n "$REPORT" ] || REPORT="/srv/aicc/backups/restore-report-$(date -u +%Y%m%dT%H%M%SZ).json"
 STEPS="[]"; T_START="$(now)"; FAILED=""
 step_done() { STEPS="$(jq -c --arg n "$1" --arg s "$2" --argjson d "$3" '. + [{step:$n,status:$s,seconds:$d}]' <<<"$STEPS")"; }
@@ -126,27 +164,37 @@ finish() {
 }
 
 s_verify() { verify_dump && verify_files; }
+# the dump must load into a scratch database BEFORE anything live is dropped; a dump that cannot load aborts the restore with nothing changed
+s_preload() {
+  local fp="/tmp/aicc-dr-live-check.$$.fp" ok=0
+  if scratch_load "$DUMP" aicc_dr_live_check && fingerprint aicc_dr_live_check "$fp"; then ok=1; fi
+  my -e "DROP DATABASE IF EXISTS aicc_dr_live_check" >/dev/null 2>&1 || true
+  [ "$ok" = 1 ] || { rm -f "$fp"; echo "the dump does not load (scratch check failed): nothing was changed" >&2; return 1; }
+  [ "$(wc -l < "$fp" | tr -d ' ')" -ge 1 ] || { rm -f "$fp"; echo "the dump holds no tables" >&2; return 1; }
+  rm -f "$fp"
+}
 s_safety() { [ "$SAFETY" = 0 ] && return 0; /usr/local/sbin/aicc-backup --label manual >/dev/null; }
-s_quiesce() { systemctl stop aicc-wp-cron.timer aicc-wp-cron.service 2>/dev/null || true; systemctl stop php8.3-fpm; }
+s_quiesce() { systemctl stop aicc-wp-cron.timer aicc-wp-cron.service 2>/dev/null || true; systemctl stop php8.3-fpm || return 1; }
+# NOTE: run_step calls these inside `if`, where errexit is suppressed: every command that matters carries an explicit `|| return 1`.
 s_db() {
-  my -e "DROP DATABASE IF EXISTS \`$DB\`; CREATE DATABASE \`$DB\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_520_ci"
-  gzip -dc "$DUMP" | { if [ -n "$MY_CNF" ]; then "$MYSQL_BIN" --defaults-extra-file="$MY_CNF" --database="$DB"; else "$MYSQL_BIN" --no-defaults --database="$DB"; fi; }
-  my -e "GRANT ALL PRIVILEGES ON \`$DB\`.* TO '$DBUSER'@'localhost'" 2>/dev/null || true
+  my -e "DROP DATABASE IF EXISTS \`$DB\`; CREATE DATABASE \`$DB\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_520_ci" || return 1
+  gzip -dc "$DUMP" | mysql_load "$DB" || return 1          # pipefail: a failed decompression or a failed load fails the step
+  my -e "GRANT ALL PRIVILEGES ON \`$DB\`.* TO '$DBUSER'@'localhost'" || return 1
 }
 s_files() {
   [ "$FILES" = "none" ] && return 0
-  rm -rf "$SHARED/uploads"; rm -f "$SHARED/wp-config.php"
-  tar -xzpf "$FILES" -C / --no-same-owner --exclude=pointers.txt
+  rm -rf "$SHARED/uploads" || return 1; rm -f "$SHARED/wp-config.php" || return 1
+  tar -xzpf "$FILES" -C / --no-same-owner --exclude=pointers.txt || return 1
 }
 s_perms() {
   [ "$FILES" = "none" ] && return 0
-  mkdir -p "$SHARED/uploads"
-  chown -R aicc-cp:aicc-edge "$SHARED/uploads"; chmod 2750 "$SHARED/uploads"
-  setfacl -m "u:aicc:rx,g:aicc-edge:rx" "$SHARED/uploads"; setfacl -d -m "u:aicc:rx,g:aicc-edge:rx,o::---" "$SHARED/uploads"
-  [ -f "$SHARED/wp-config.php" ] && { chown root:aicc-cp "$SHARED/wp-config.php"; chmod 640 "$SHARED/wp-config.php"; }
-  chown -R root:aicc-edge /etc/aicc-edge 2>/dev/null || true
-  chown root:aicc-ops /etc/aicc-ops/aicc-ops.toml 2>/dev/null && chmod 640 /etc/aicc-ops/aicc-ops.toml || true
-  chmod 750 /etc/aicc-edge 2>/dev/null || true
+  mkdir -p "$SHARED/uploads" || return 1
+  find "$SHARED/uploads" -perm /6000 ! -type d -exec chmod ug-s {} + || return 1        # a setuid/setgid file from an archive is never kept
+  chown -R aicc-cp:aicc-edge "$SHARED/uploads" || return 1; chmod 2750 "$SHARED/uploads" || return 1
+  setfacl -m "u:aicc:rx,g:aicc-edge:rx" "$SHARED/uploads" || return 1; setfacl -d -m "u:aicc:rx,g:aicc-edge:rx,o::---" "$SHARED/uploads" || return 1
+  if [ -f "$SHARED/wp-config.php" ]; then chown root:aicc-cp "$SHARED/wp-config.php" || return 1; chmod 640 "$SHARED/wp-config.php" || return 1; fi
+  chown -R root:aicc-edge /etc/aicc-edge || return 1; chmod 750 /etc/aicc-edge || return 1
+  if [ -f /etc/aicc-ops/aicc-ops.toml ]; then chown root:aicc-ops /etc/aicc-ops/aicc-ops.toml && chmod 640 /etc/aicc-ops/aicc-ops.toml || return 1; fi
 }
 s_start() { systemctl start php8.3-fpm; systemctl start aicc-wp-cron.timer 2>/dev/null || true; }
 s_health() {
@@ -168,12 +216,13 @@ s_sanity() {
 }
 
 run_step verify s_verify || { finish 1; exit 1; }
+run_step preload_check s_preload || { finish 1; exit 1; }
 run_step safety_backup s_safety || { finish 1; exit 1; }
 run_step quiesce s_quiesce || { finish 1; exit 1; }
 rc=0
 run_step db_restore s_db || rc=1
 if [ $rc = 0 ]; then run_step files_restore s_files || rc=1; fi
-if [ $rc = 0 ]; then run_step perms s_perms || rc=1; fi
+run_step perms s_perms || rc=1      # even after a failed extraction: ownership/setuid cleanup must not be skipped
 run_step start s_start || rc=1     # always try to bring the application back, even after a failed step
 if [ $rc = 0 ]; then run_step health_gate s_health || rc=1; fi
 if [ $rc = 0 ]; then run_step sanity s_sanity || rc=1; fi

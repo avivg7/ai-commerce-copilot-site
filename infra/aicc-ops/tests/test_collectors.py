@@ -636,3 +636,18 @@ class PostgresDisabled(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class OffhostSetAge(unittest.TestCase):
+    def test_set_age_is_derived_from_the_set_timestamp(self):
+        import json as _j
+        from aicc_ops.collectors import backups as B
+        now = 1792600000.0
+        ack = {"schema": 1, "acked_at": now - 60, "set_ts": "20261021T080000Z", "dump": "d", "dump_sha256": "a" * 64, "verified": True}
+        m = B.offhost_metrics(_j.dumps(ack), now)
+        self.assertEqual(m["backup.offhost_verified"], 1.0)
+        import calendar, time as _t
+        expect = now - calendar.timegm(_t.strptime("20261021T080000Z", "%Y%m%dT%H%M%SZ"))
+        self.assertAlmostEqual(m["backup.offhost_set_age_s"], expect, places=3)
+        ack["set_ts"] = "garbage"
+        self.assertNotIn("backup.offhost_set_age_s", B.offhost_metrics(_j.dumps(ack), now))

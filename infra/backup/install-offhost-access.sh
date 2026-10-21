@@ -92,8 +92,10 @@ fi
 mkdir -p "$(P $HOMEDIR)/.ssh" "$(P /usr/local/sbin)" "$(P /etc/sudoers.d)" "$(P /etc/ssh/sshd_config.d)"
 install -m 0755 "$SELF/aicc-offhost-serve.sh" "$(P $SERVE)"
 printf '%s\n' "$AUTH_LINE" > "$(P $HOMEDIR)/.ssh/authorized_keys.new"; mv -f "$(P $HOMEDIR)/.ssh/authorized_keys.new" "$(P $HOMEDIR)/.ssh/authorized_keys"
-chmod 700 "$(P $HOMEDIR)" "$(P $HOMEDIR)/.ssh"; chmod 600 "$(P $HOMEDIR)/.ssh/authorized_keys"
-[ -n "$ROOT" ] || chown -R "$U:$U" "$HOMEDIR"
+# the home, .ssh and authorized_keys are owned by ROOT and read-only for the account: nothing that ever runs as aicc-offhost can remove the `command=` restriction
+# (sshd StrictModes accepts a root-owned authorized_keys; the account only needs to read it)
+chmod 755 "$(P $HOMEDIR)" "$(P $HOMEDIR)/.ssh"; chmod 644 "$(P $HOMEDIR)/.ssh/authorized_keys"
+[ -n "$ROOT" ] || chown -R root:root "$HOMEDIR"
 printf '%s\n' "$SUDOERS_TXT" > "$(P $SUDOERS).new"; chmod 0440 "$(P $SUDOERS).new"
 if [ -z "$ROOT" ]; then visudo -cf "$SUDOERS.new" >/dev/null || { rm -f "$SUDOERS.new"; echo "visudo rejected the sudoers file: nothing installed" >&2; exit 1; }; fi
 mv -f "$(P $SUDOERS).new" "$(P $SUDOERS)"
@@ -106,7 +108,12 @@ if [ -z "$ROOT" ]; then
   echo "$eff" | grep -q '^forcecommand ' || { revert; echo "ForceCommand is not effective for $U: reverted" >&2; exit 1; }
   echo "$eff" | grep -q '^permittty no$' || { revert; echo "PermitTTY is not effective for $U: reverted" >&2; exit 1; }
   echo "$eff" | grep -qE '^allowusers .*aicc-offhost' || { revert; echo "AllowUsers lacks $U: reverted" >&2; exit 1; }
-  sshd -T -C "user=aicc,host=localhost,addr=127.0.0.1" 2>/dev/null | grep -qE '^allowusers (.* )?aicc( |$)' || { revert; echo "AllowUsers no longer lists aicc: reverted" >&2; exit 1; }
+  echo "$eff" | grep -qF "forcecommand /usr/bin/sudo -n $SERVE" || { revert; echo "ForceCommand for $U is not ours: reverted" >&2; exit 1; }
+  effa="$(sshd -T -C "user=aicc,host=localhost,addr=127.0.0.1" 2>/dev/null || true)"
+  echo "$effa" | grep -qE '^allowusers (.* )?aicc( |$)' || { revert; echo "AllowUsers no longer lists aicc: reverted" >&2; exit 1; }
+  # the Match block must NOT leak to the operator account (it would lock the operator out)
+  echo "$effa" | grep -qE '^forcecommand none$' || { revert; echo "ForceCommand leaks to the operator account: reverted" >&2; exit 1; }
+  echo "$effa" | grep -qE '^permittty yes$' || { revert; echo "PermitTTY no leaks to the operator account: reverted" >&2; exit 1; }
   systemctl reload ssh
 fi
 say "installed: user $U, $SERVE, sudoers, sshd Match block. Existing sessions untouched."

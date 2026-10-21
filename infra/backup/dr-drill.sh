@@ -70,7 +70,9 @@ bash "$HERE/pull-offhost.sh" --stage-ip "$STAGE_IP" --stage-host "$STAGE_HOST" -
 step offhost_pull "$(el "$t" "$(now)")"
 STATUS="$(rem 'sudo cat /srv/aicc/backups/status.json')"
 DUMP="$(jq -r '.last_success.db_dump_file' <<<"$STATUS")"; FARC="$(jq -r '.last_success.files_archive_file' <<<"$STATUS")"
-[[ "$DUMP" =~ ^aicc_cp-[0-9]{8}T[0-9]{6}Z-manual\.sql\.gz$ ]] || { echo "the newest backup is not the drill's manual one ($DUMP)" >&2; exit 1; }
+# names from the host are validated with the same strict patterns the pull uses BEFORE they touch a path or a remote command
+[[ "$DUMP" =~ ^aicc_cp-[0-9]{8}T[0-9]{6}Z-manual\.sql\.gz$ ]] || { echo "the newest backup is not the drill's manual one" >&2; exit 1; }
+[[ "$FARC" =~ ^aicc-files-[0-9]{8}T[0-9]{6}Z-manual\.tar\.gz$ ]] || { echo "the newest files archive name is not the drill's manual one" >&2; exit 1; }
 [ -f "$DEST/$DUMP" ] && [ -f "$DEST/$FARC" ] || { echo "the Mac does not hold the drill's backup set" >&2; exit 1; }
 LOCAL_D="$(shasum -a 256 "$DEST/$DUMP" | cut -d' ' -f1)"; LOCAL_F="$(shasum -a 256 "$DEST/$FARC" | cut -d' ' -f1)"
 echo "the Mac holds $DUMP ($LOCAL_D) and $FARC"
@@ -87,9 +89,8 @@ step disaster "$(el "$T0" "$(now)")"
 
 echo "== phase 4: recover from the Mac's copy =="
 t=$(now)
-SCPO=(-i "$KEY" -o IdentitiesOnly=yes -o BatchMode=yes -o UserKnownHostsFile="$KH")
-scp "${SCPO[@]}" "$DEST/$DUMP" "$DEST/$FARC" "aicc@$STAGE_IP:/tmp/" >/dev/null
-rem "sudo install -m 600 /tmp/$DUMP /tmp/$FARC /srv/aicc/restore-in/ && rm -f /tmp/$DUMP /tmp/$FARC"
+# stream the Mac's verified copy back through ssh into the root-only restore directory (no world-writable /tmp staging path)
+for f in "$DUMP" "$FARC"; do rem "sudo tee /srv/aicc/restore-in/$f >/dev/null && sudo chmod 600 /srv/aicc/restore-in/$f" < "$DEST/$f"; done
 step copy_back_to_host "$(el "$t" "$(now)")"
 t=$(now)
 RC=0

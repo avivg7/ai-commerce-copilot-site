@@ -66,7 +66,12 @@ SSH=(ssh -i "$KEY" -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=15 -
 rem() { "${SSH[@]}" "$@"; }
 ts() { date -u +%Y-%m-%dT%H:%M:%SZ; }
 LOG="$DEST/pull.log"
-say() { echo "$(ts)  $*"; [ "$DRY" = 1 ] || echo "$(ts)  $*" >> "$LOG"; }
+# everything the server can influence is printable ASCII only and short before it reaches a log (no escape sequences, no log injection)
+clean() { printf '%s' "$*" | LC_ALL=C tr -cd '\040-\176' | cut -c1-300; }
+say() { local m; m="$(clean "$*")"; echo "$(ts)  $m"; [ "$DRY" = 1 ] || echo "$(ts)  $m" >> "$LOG"; }
+MAX_BYTES=$((2 * 1024 * 1024 * 1024))   # a backup set member larger than this is refused (a hostile host cannot fill the Mac's disk)
+# bounded transfer: at most MAX_BYTES and at most 900 s wall clock (perl alarm when available; ssh ServerAlive* already kills a dead link)
+bounded() { if command -v perl >/dev/null 2>&1; then perl -e 'alarm 900; exec @ARGV' -- "$@" | head -c "$MAX_BYTES"; else "$@" | head -c "$MAX_BYTES"; fi; }
 sha_of() { if command -v shasum >/dev/null 2>&1; then shasum -a 256 "$1" | awk '{print $1}'; else sha256sum "$1" | awk '{print $1}'; fi; }
 
 if [ "$DRY" = 1 ]; then
@@ -79,7 +84,9 @@ mkdir -p "$DEST"; chmod 700 "$DEST"; : >> "$LOG"; chmod 600 "$LOG"
 LOCK="$DEST/.pull.lock"
 if ! mkdir "$LOCK" 2>/dev/null; then
   lp="$(cat "$LOCK/pid" 2>/dev/null || true)"
-  if [ -n "$lp" ] && kill -0 "$lp" 2>/dev/null; then say "another pull is running (pid $lp): exiting"; exit 0; fi
+  lage=$(( $(date -u +%s) - $(stat -f %m "$LOCK" 2>/dev/null || stat -c %Y "$LOCK" 2>/dev/null || echo 0) ))
+  # a live pid younger than 3 hours is a real concurrent pull; an older lock is stale even if the pid was reused by an unrelated process
+  if [ -n "$lp" ] && kill -0 "$lp" 2>/dev/null && [ "$lage" -lt 10800 ]; then say "another pull is running (pid $lp): skipped"; exit 4; fi
   rm -rf "$LOCK"; mkdir "$LOCK"
 fi
 echo $$ > "$LOCK/pid"; trap 'rm -rf "$LOCK"' EXIT
@@ -89,28 +96,42 @@ echo "$ident" | grep -q '^AICC_ENV=staging$' || refuse "host does not present AI
 echo "$ident" | grep -q "^AICC_HOSTNAME=${STAGE_HOST}\$" || refuse "host identity AICC_HOSTNAME does not equal $STAGE_HOST"
 
 status="$(rem "status" 2>/dev/null)" || { say "FAILURE cannot read status.json"; exit 1; }
-[ "$(echo "$status" | jq -r '.status')" = "ok" ] || { say "FAILURE latest backup run on the host did not finish ok: $(echo "$status" | jq -r '.reason')"; exit 1; }
+[ "$(echo "$status" | jq -r '.status | tostring')" = "ok" ] || { say "FAILURE latest backup run on the host did not finish ok: $(echo "$status" | jq -r '.reason | tostring' | cut -c1-200)"; exit 1; }
 dump="$(echo "$status" | jq -r '.last_success.db_dump_file // empty')"
 farc="$(echo "$status" | jq -r '.last_success.files_archive_file // empty')"
 [[ "$dump" =~ ^aicc_cp-[0-9]{8}T[0-9]{6}Z-(scheduled|pre-release|manual)\.sql\.gz$ ]] || { say "FAILURE unexpected dump file name from server: '$dump'"; exit 1; }
 if [ "$WITH_FILES" = 1 ]; then [[ "$farc" =~ ^aicc-files-[0-9]{8}T[0-9]{6}Z-(scheduled|pre-release|manual)\.tar\.gz$ ]] || { say "FAILURE unexpected archive file name from server: '$farc'"; exit 1; }; fi
-if [ "$status" != "" ]; then
-  fin="$(echo "$status" | jq -r '.last_success.finished_epoch // 0')"; age=$(( $(date -u +%s) - fin ))
-  say "server's latest good backup is ${age}s old ($dump)"
-  [ "$age" -le $((26 * 3600)) ] || say "WARNING that backup is older than 26 hours: the server's backup job may be stale"
-fi
+# EVERY server-derived value is validated against a strict pattern BEFORE it is used in arithmetic, a path, a comparison or a remote command (bash evaluates the
+# value of a variable inside $(( )) as an expression, so an unvalidated string from the server would be code execution on this Mac).
+fin="$(echo "$status" | jq -r '.last_success.finished_epoch | tostring')"
+[[ "$fin" =~ ^[0-9]{9,11}$ ]] || { say "FAILURE bad finished_epoch from the server"; exit 1; }
+now_e="$(date -u +%s)"; age=$(( now_e - fin ))
+[ "$fin" -le $(( now_e + 86400 )) ] || { say "FAILURE the server's backup time is in the future"; exit 1; }
+say "server's latest good backup is ${age}s old ($dump)"
+[ "$age" -le $((26 * 3600)) ] || say "WARNING that backup is older than 26 hours: the server's backup job may be stale"
+# the timestamp in the file names must be plausible too: a hostile host cannot outrank genuine copies with far-future names
+for nm in "$dump" "$([ "$WITH_FILES" = 1 ] && echo "$farc")"; do
+  [ -n "$nm" ] || continue
+  nts="$(echo "$nm" | sed -n 's/.*-\([0-9]\{8\}\)T\([0-9]\{6\}\)Z-.*/\1\2/p')"
+  nep="$(date -u -j -f '%Y%m%d%H%M%S' "$nts" +%s 2>/dev/null || date -u -d "${nts:0:8} ${nts:8:2}:${nts:10:2}:${nts:12:2}" +%s 2>/dev/null || echo 0)"
+  [[ "$nep" =~ ^[0-9]+$ ]] && [ "$nep" -gt 1700000000 ] && [ "$nep" -le $(( now_e + 86400 )) ] || { say "FAILURE implausible timestamp in file name from the server: $nm"; exit 1; }
+done
 
 # the server records the sha256 of every file it wrote; pick it for the dump (and the archive) from status.json
-want_dump="$(echo "$status" | jq -r 'if .db_dump.file == "'"$dump"'" then .db_dump.sha256 else empty end')"
-want_farc="$(echo "$status" | jq -r 'if .files_archive.file == "'"$farc"'" then .files_archive.sha256 else empty end')"
+want_dump="$(echo "$status" | jq -r --arg f "$dump" 'if .db_dump.file == $f then (.db_dump.sha256 | tostring) else empty end')"
+want_farc="$(echo "$status" | jq -r --arg f "$farc" 'if .files_archive.file == $f then (.files_archive.sha256 | tostring) else empty end')"
+[[ -z "$want_dump" || "$want_dump" =~ ^[0-9a-f]{64}$ ]] || { say "FAILURE bad dump hash in status.json"; exit 1; }
+[[ -z "$want_farc" || "$want_farc" =~ ^[0-9a-f]{64}$ ]] || { say "FAILURE bad archive hash in status.json"; exit 1; }
 
 pull_one() { # pull_one <name> <sha-from-status>
   local name="$1" want="$2" tmp="$DEST/$1.partial" side got sc
   if [ -f "$DEST/$name" ] && [ -f "$DEST/$name.sha256" ] && [ "$(sha_of "$DEST/$name")" = "$want" ]; then say "already have $name (checksum verified)"; return 0; fi
-  rem "get $name" > "$tmp" || { rm -f "$tmp"; say "FAILURE transfer of $name"; return 1; }
-  side="$(rem "get $name.sha256" 2>/dev/null | awk '{print $1}' | head -1)"
+  bounded "${SSH[@]}" "get $name" > "$tmp" || { rm -f "$tmp"; say "FAILURE transfer of $name"; return 1; }
+  if [ "$(wc -c < "$tmp" | tr -d ' ')" -ge "$MAX_BYTES" ]; then rm -f "$tmp"; say "FAILURE $name reached the size ceiling"; return 1; fi
+  side="$(rem "get $name.sha256" 2>/dev/null | head -c 200 | awk '{print $1}' | head -1)"
+  [[ "$side" =~ ^[0-9a-f]{64}$ ]] || { rm -f "$tmp"; say "FAILURE bad sidecar hash for $name"; return 1; }
   got="$(sha_of "$tmp")"
-  if [ -z "$side" ] || [ "$got" != "$side" ]; then rm -f "$tmp"; say "FAILURE checksum mismatch for $name (received $got, server sidecar '${side:-none}')"; return 1; fi
+  if [ "$got" != "$side" ]; then rm -f "$tmp"; say "FAILURE checksum mismatch for $name (received $got, server sidecar '${side:-none}')"; return 1; fi
   if [ -n "$want" ] && [ "$got" != "$want" ]; then rm -f "$tmp"; say "FAILURE $name differs from the hash recorded in status.json"; return 1; fi
   gzip -t "$tmp" || { rm -f "$tmp"; say "FAILURE gzip -t failed for $name"; return 1; }
   mv -f "$tmp" "$DEST/$name"; chmod 600 "$DEST/$name"

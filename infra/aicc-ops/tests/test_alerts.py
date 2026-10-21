@@ -391,8 +391,10 @@ class RamAvailableLow(unittest.TestCase):
 H = 3600
 
 
-def off(age_h=None, *, present=1, verified=1, reason=None, up_h=None, newest_h=None):
+def off(age_h=None, *, present=1, verified=1, reason=None, up_h=None, newest_h=None, set_age_h=None):
     m = {"backup.offhost_present": present, "backup.offhost_verified": verified}
+    if set_age_h is not None:
+        m["backup.offhost_set_age_s"] = set_age_h * H
     if age_h is not None:
         m["backup.offhost_age_s"] = age_h * H
     if reason is not None:
@@ -407,6 +409,15 @@ def off(age_h=None, *, present=1, verified=1, reason=None, up_h=None, newest_h=N
 class OffhostStale(unittest.TestCase):
     def one(self, **kw):
         return obs("offhost_stale", win(**{k: [v] for k, v in off(**kw).items()}))
+
+    def test_re_acknowledging_an_old_set_does_not_look_fresh(self):
+        # the ack is 10 minutes old, but it names a set that is 40 h older than the newest backup on the host (review F10)
+        o = self.one(age_h=0.2, set_age_h=41, newest_h=1)
+        self.assertTrue(o[0].breach)
+        self.assertEqual(o[0].severity, "WARNING")
+        # an ack of the newest set (or one a couple of hours behind) is fine
+        self.assertFalse(self.one(age_h=0.2, set_age_h=1.2, newest_h=1)[0].breach)
+        self.assertFalse(self.one(age_h=0.2, set_age_h=4, newest_h=1)[0].breach)
 
     def test_thresholds(self):
         self.assertFalse(self.one(age_h=35.9)[0].breach)
