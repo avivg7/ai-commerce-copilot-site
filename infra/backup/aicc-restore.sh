@@ -20,7 +20,7 @@
 #   safety_backup   aicc-backup --label manual  (what exists now is never destroyed without a copy; --no-safety-backup only for a drill that already has one)
 #   quiesce         stop aicc-wp-cron.timer/service and php8.3-fpm (no writer while the database is replaced)
 #   db_restore      DROP/CREATE the database, load the dump as root over the socket (definers kept), re-grant the application user
-#   files_restore   extract uploads, wp-config.php and /etc/aicc-edge from the archive (paths are checked first: only those three roots are accepted)
+#   files_restore   extract uploads, wp-config.php, /etc/aicc-edge and /etc/aicc-ops/aicc-ops.toml from the archive (paths are checked first: only those four roots are accepted; pointers.txt is read, never extracted)
 #   perms           ownership, modes, setgid, ACLs exactly as install-stack.sh creates them
 #   start           start php8.3-fpm and the cron timer
 #   health_gate     smoke-cp.sh (PHP + wp-config + DB + WordPress + WooCommerce + plugin), loopback /healthz through the edge, WordPress siteurl read back

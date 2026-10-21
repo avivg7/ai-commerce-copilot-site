@@ -11,7 +11,7 @@ Two environments share one code path and differ only through reviewed, enumerate
 | What | File | Used by |
 |---|---|---|
 | Stage wp-config template | `infra/provision/wp-config.stage.template.php` | `render-wp-config.sh` (default `--env stage`) |
-| Production wp-config template | `infra/provision/wp-config.production.template.php` | `render-wp-config.sh --env production --confirm-production` ONLY (infra:lint fails if any other script names it) |
+| Production wp-config template | `infra/provision/wp-config.production.template.php` | `render-wp-config.sh --env production --confirm-production` ONLY (infra:lint fails if any script other than the renderer, the stage template's comment and the refusal in `deploy-release.sh` names it) |
 | Renderer | `infra/provision/render-wp-config.sh` | the host, as root |
 | Deploy client (Mac) | `infra/release/deploy-release.sh` (`--env stage` default, `--env production`) | the operator |
 | Activation / rollback / status (host) | `activate-release.sh`, `rollback-release.sh`, `deploy-status.sh` → `aicc-activate-release`, `aicc-rollback-release`, `aicc-deploy-status` | env-agnostic |
@@ -57,11 +57,11 @@ Identical in both: socket-only database, `DISALLOW_FILE_MODS`/`DISALLOW_FILE_EDI
                --key ~/.ssh/aicc_cp_prod* --known-hosts <pinned file> --confirm-production <the release id>
 4. host:     pre-release backup (cp; the activation refuses without a dump younger than 15 minutes) -> rsync to .incoming-<id> -> aicc-activate-release:
              verify every file against SHA256SUMS -> atomic swap -> PHP-FPM reload (cp) -> health gate (smoke-cp / smoke-site, 2 successes) -> OPcache warm-up -> prune
-5. record:   /var/lib/aicc/deployments.jsonl (outcome, release id, previous, tarball sha256, source commit, target, operator account) and
+5. record:   /var/lib/aicc/deployments.jsonl (timestamp, outcome, kind, release id, previous, tarball sha256, source commit, target, host, and the sudo user, which over the deploy path is always the shared `aicc` account, not a person; a FIRST release that fails its health gate writes no record) and
              aicc-deploy-status (what is live, what is the rollback target, last N deployments)
 ```
 
-Production refusals (all tested against stubs, `test_release.sh`): host name other than `www.copilt.org`; an address that is the staging Droplet/Reserved IP, the API Droplet or a GitHub Pages address; a key not named `aicc_cp_prod*`; no pinned `--known-hosts` (or without an entry for the address); a missing or wrong `--confirm-production <id>`; a manifest that is not `dirty == false` (strict boolean); a site build whose target is not `production`, that contains the staging identity route, a `noindex` meta outside the error pages or a blanket `Disallow`; an artifact carrying a wp-config template; a host whose identity does not say `AICC_ENV=production` with this name and id; a failed pre-release backup.
+Production refusals (all tested against stubs, `test_release.sh`): host name other than `www.copilt.org`; an address that is the staging Droplet/Reserved IP, the API Droplet or a GitHub Pages address; a key not named `aicc_cp_prod*`; no pinned `--known-hosts` (or one without an entry for the address, checked with `ssh-keygen -F`, so hashed files work too); a missing or wrong `--confirm-production <id>`; a manifest that is not `dirty == false` (strict boolean); a site build whose target is not `production`, that contains the staging identity route, a `noindex` meta outside the error pages or a blanket `Disallow`; an artifact carrying a wp-config template; a host whose identity does not say `AICC_ENV=production` with this name and id; a failed pre-release backup.
 
 **Honest limits:** the manifest facts (`dirty`, `target`, release id) are asserted by the same directory that supplies the tarball: the gates guard against accidents, not against a hostile artifact. There is no signing, no branch/tag check and no two-person gate yet. `--confirm-production <id>` proves a conscious per-release step, not provenance.
 

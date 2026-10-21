@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # OFF-HOST backup pull. Runs ON THE OWNER'S MAC (not on the server). Pulls the latest database dump + files archive of the STAGING Control Plane over SSH,
-# verifies the checksums, keeps the 14 newest copies, and then tells the host (ack) that a verified copy exists off-host so AICC Ops can alert when the
+# verifies the checksums, applies tiered retention (24 h hourly, daily for 14 days, weekly for 8 weeks, minimum 3 sets), and then tells the host (ack) that a verified copy exists off-host so AICC Ops can alert when the
 # copies go stale. Modeled on the proven API-host pull (Backend repo docs/digitalocean-infrastructure.md section 14): a PULL, so the server holds no
 # credentials for the Mac and a compromised server cannot delete the Mac's copies.
 #
 #   infra/backup/pull-offhost.sh --stage-ip <IPV4> [--stage-host stage.copilt.org] [--key ~/.ssh/aicc_cp_stage_offhost] [--user aicc-offhost]
-#                                [--dest ~/aicc-offhost-backups-stage] [--keep 14] [--no-files-archive] [--no-ack] [--dry-run]
+#                                [--dest ~/aicc-offhost-backups-stage] [--keep N] [--no-files-archive] [--no-ack] [--dry-run]
 #
 # TRANSPORT: the default key/user is the RESTRICTED pull account (install-offhost-access.sh): sshd forces every login of that account into
 # /usr/local/sbin/aicc-offhost-serve, which only understands `identity`, `status`, `get <backup file>` and `ack ...`. This script therefore sends those four
@@ -23,7 +23,7 @@
 #     folder on an encrypted disk (FileVault). --no-files-archive pulls the database dump only.
 # Output files in --dest: aicc_cp-<UTC>-<label>.sql.gz(+.sha256), aicc-files-<UTC>-<label>.tar.gz(+.sha256), pull.log.
 # Schedule it yourself if you want (launchd/cron); this script does not install anything.
-# Exit codes: 0 ok, 1 pull/verification failed, 2 usage, 3 refused by a safety rule.
+# Exit codes: 0 ok, 1 pull/verification failed, 2 usage, 3 refused by a safety rule, 4 another pull is running (skipped).
 set -euo pipefail
 umask 077
 

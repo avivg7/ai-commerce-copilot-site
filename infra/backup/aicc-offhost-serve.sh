@@ -10,7 +10,7 @@
 #                                    The hashes must equal the host's own .sha256 sidecars: an ack cannot name a set that does not exist.
 #
 # The command text arrives as ONE argument ($1 = $SSH_ORIGINAL_COMMAND). It is split on spaces, never evaluated, never passed to a shell.
-# Everything is logged to the journal (tag aicc-offhost-serve): operation and file name only, never file contents.
+# `get`, `ack` and every refusal are logged to the journal (tag aicc-offhost-serve): operation and file name only, never file contents.
 # Test seams (only with AICC_TEST_HARNESS=1): AICC_BACKUP_DIR, AICC_IDENTITY_FILE.
 set -euo pipefail
 umask 022

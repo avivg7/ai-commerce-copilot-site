@@ -13,8 +13,9 @@ Status: **decision review for production, staging unchanged.** The existing prod
 | `aicc` | operator, key-only, `sudo` (passwordless; a key compromise = root) |
 | `aicc-offhost` | forced command only: `identity`, `status`, `get <backup>`, `ack ...`; no TTY, no forwarding (`Match User` block + `restrict` key option + a sudoers rule for that one script) |
 | `/root/.ssh/authorized_keys` | 1 key (the DigitalOcean-injected provisioning key); unusable while root login is off |
-| Firewall | UFW and the Cloud Firewall both allow 22/80/443 from anywhere (IPv4 and IPv6) |
-| fail2ban `sshd` | 5 failures in 10 min → 1 h ban (increasing for repeat offenders) |
+| Crypto / limits | `06-aicc-stage3-crypto.conf` (cipher/KEX/MAC allow-list, `harden-stage3.sh`), LoginGraceTime 30, ClientAlive 300 x 2, agent forwarding off |
+| Firewall | UFW (confirmed in cloud-init) and the Cloud Firewall (console observation 2026-10-21) both allow 22/80/443 from anywhere (IPv4 and IPv6) |
+| fail2ban `sshd` | 5 failures in 10 min → fixed 1 h ban (cloud-init; the ban time does NOT increase for repeat offenders on this jail; only the two web jails do) |
 | Observed | the internet scans port 22 constantly: 10 scanner addresses were banned at one moment (most within hours of the Droplet going up) |
 | Self-lockout | **happened to us:** a mis-quoted test command produced several failed logins from the owner's own address and fail2ban banned it for an hour; an already-open session was dropped too. Recovery was waiting (or the DigitalOcean web console). |
 

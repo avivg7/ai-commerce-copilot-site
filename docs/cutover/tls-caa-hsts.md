@@ -48,7 +48,7 @@ Verification of issuance with the CAA in place needs no extra step on staging: C
 
 ## 4. HSTS: production ramp (decision)
 
-The edge sends `Strict-Transport-Security: max-age=300` on every response on **both** the stage and the production render (`(hsts)` snippet in `docs/cutover/Caddyfile.edge.template`). Staging keeps `max-age=300` permanently.
+The edge sends `Strict-Transport-Security: max-age=300` on the responses of its HTTPS site blocks, the apex redirects and the branded error pages (not on the plain-http catch-all that answers 421) on **both** the stage and the production render (`(hsts)` snippet in `docs/cutover/Caddyfile.edge.template`). Staging keeps `max-age=300` permanently.
 
 Production ramp: a change of that one number in the template, re-rendered, deployed and reloaded, with the previous step observed clean first.
 

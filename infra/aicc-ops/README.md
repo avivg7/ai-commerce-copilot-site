@@ -5,7 +5,7 @@ A tiny, first-party, **operator-only** observability service for the AICC stagin
 * Python 3.12 **standard library only** (sqlite3, http.server, urllib, subprocess, ssl, tomllib). No pip, no npm, nothing downloaded on the host.
 * One process, one SQLite file, one loopback web UI. No Prometheus, Grafana or Netdata.
 * Targets (measured on a Mac with fixtures; see "Measured overhead"): <= 40 MB RSS, < 1% CPU, <= 150 MB disk.
-* **Status: built and tested locally against fixtures. Nothing is deployed. The real host does not exist yet.** Section "What is not verified" lists everything that can only be proven on the host.
+* **Status: built and tested locally against fixtures. Deployed on the staging host `aicc-cp-stage` (2026-10-21); there is no production host yet.** Section "What is not verified" lists everything that can only be proven on the host.
 
 Labels: **VERIFIED** = exercised by tests/runs in this repo; **INFERRED** = follows from design/docs but not run against the real thing; **UNVERIFIED** = needs the real host or a provider's current terms.
 
@@ -90,6 +90,7 @@ Sustain = consecutive 30 s evaluations before FIRING; clear = consecutive evalua
 | `disk_low` (per mount) | used >= 85% / >= 93%; clears < 80% | WARN/CRIT | 1 min / 2 min | 1 h |
 | `inodes_low` | inodes >= 85% / >= 95% | WARN/CRIT | 1 min / 2 min | 1 h |
 | `fpm_down` | FPM status page not answering | CRITICAL | 1 min / 1 min | 15 min |
+| `fpm_max_children` | the PHP-FPM log reported `server reached pm.max_children` >= 5 times in 15 min (WARN) / >= 40 (CRIT); counts come from the root timer `aicc-fpm-log-status` (`fpmlog` collector: `fpm.log_events_5m`, `fpm.log_events_15m`, `fpm.log_age_s`, `fpm.log_present`), so no socket access is needed; a stale file is a collector failure, never silence | WARN/CRIT | 1 min / 5 min | 1 h |
 | `fpm_saturation` | max_children reached (last 10 min), listen queue >= 1, or active/total >= 0.9; queue >= 10 is CRITICAL | WARN/CRIT | 2 min / 5 min | 1 h |
 | `db_down` | MySQL unreachable | CRITICAL | 1 min / 1 min | 15 min |
 | `db_conn_pressure` | threads_connected/max_connections >= 80% / >= 95% | WARN/CRIT | 10 min / 5 min | 30 min |
@@ -142,7 +143,7 @@ The bot token is a password for the bot. **Never paste it in chat, a ticket, a s
 * **Remove**: `sudo aicc-ops-secrets remove-telegram` (removes only the two Telegram keys, deletes the file if nothing else is in it), `/revoke` the token in BotFather, `sudo systemctl restart aicc-ops`.
 * **Safety rules the code enforces**: a secrets file that is group-writable or world-accessible is refused by the daemon and by every command above (fix with `chmod 0640` / `chown root:aicc-ops`); the commands never print the token, part of it or the request URL; `getMe`/`getUpdates`/`sendMessage` run in-process with `urllib` (the token is in no argv); the helper ignores its test overrides unless `AICC_OPS_TEST_HARNESS=1`.
 * **If you did paste a token somewhere**: treat it as burned: `/revoke` it in BotFather and run `set-telegram` with the new one.
-* Exit codes: `0` ok, `1` the API call failed, `3` unusable credentials / refused (no secrets, unsafe mode, not root).
+* Exit codes: `0` ok, `1` the API call failed (for `set-telegram`: written but `telegram-check` failed), `2` invalid input (token/chat-id format, usage), `3` unusable credentials / refused (no secrets, unsafe mode, not root, no TTY).
 
 ## Off-host backup acknowledgement (`offhost-ack.json`)
 
@@ -153,9 +154,9 @@ The server cannot know that a copy of its backups exists somewhere else. The own
  "files": "<files archive name>", "files_sha256": "<64 hex>", "puller": "mac-pull", "verified": true}
 ```
 
-`acked_at` is Unix seconds on the host's clock (a value more than 1 h in the future is still treated as invalid). `files`/`files_sha256` may be omitted for database-only pulls. Anything else (unknown `schema`, `verified` not literally `true`, missing/non-hex `dump_sha256`, malformed JSON) makes the ack **invalid**: `backup.offhost_verified = 0` and the rule raises a WARNING with the reason. The file must be readable by the `aicc-ops` user (the backup directory is 0751, so it is opened by name, like `status.json`). The path is `collectors.backups.offhost_ack_file`. A malformed file is not a collector failure (no double alert); an unreadable one is (`collector_failure` names `PermissionError`).
+`acked_at` is Unix seconds on the host's clock (a value more than 1 h in the future is still treated as invalid). `files`/`files_sha256` are `-` for database-only pulls (omitted or empty is accepted too). Anything else (unknown `schema`, `verified` not literally `true`, missing/non-hex `dump_sha256`, malformed JSON) makes the ack **invalid**: `backup.offhost_verified = 0` and the rule raises a WARNING with the reason. The file must be readable by the `aicc-ops` user (the backup directory is 0751, so it is opened by name, like `status.json`). The path is `collectors.backups.offhost_ack_file`. A malformed file is not a collector failure (no double alert); an unreadable one is (`collector_failure` names `PermissionError`).
 
-Tuning: `[alerts.rules.offhost_stale]` accepts `warn_h` (36), `crit_h` (96), `clear_h` (30), `absent_after_uptime_h` (48) plus the usual `enabled`, `for_samples`, `clear_samples`, `cooldown_s`. **Writer:** this package only reads the file; the writer is `infra/backup/aicc-offhost-serve.sh` (`ack`), invoked by `pull-offhost.sh` after each verified pull. Until the first ack exists the rule (correctly) warns after 48 h of uptime that no off-host copy has ever been confirmed. What the rule proves is only that a verified-copy confirmation is recent; it does not compare `set_ts` with the newest backup on the host.
+Tuning: `[alerts.rules.offhost_stale]` accepts `warn_h` (36), `crit_h` (96), `clear_h` (30), `absent_after_uptime_h` (48) plus the usual `enabled`, `for_samples`, `clear_samples`, `cooldown_s`. **Writer:** this package only reads the file; the writer is `infra/backup/aicc-offhost-serve.sh` (`ack`), invoked by `pull-offhost.sh` after each verified pull. Until the first ack exists the rule (correctly) warns after 48 h of uptime that no off-host copy has ever been confirmed.
 
 ## Privacy statement
 

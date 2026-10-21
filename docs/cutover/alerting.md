@@ -4,15 +4,15 @@ Status (2026-10-21, Phase 2B): the **code and procedures are in place**; **live 
 
 | Layer | What it is | Sees | Cannot see | Delivery | State |
 |---|---|---|---|---|---|
-| A. AICC Ops (on the Droplet) | `infra/aicc-ops`: 30 s collectors, alert engine, capacity engine, loopback UI `127.0.0.1:9190` | services, RAM/swap/CPU/disk, PHP-FPM, MySQL, 5xx, backups (incl. off-host copy), TLS expiry, restarts | its own host being dead, DNS/firewall/TLS problems on the public path | Telegram (outbound) | engine + adapter tested; **dry-run until credentials exist** |
+| A. AICC Ops (on the Droplet) | `infra/aicc-ops`: 30 s collectors, alert engine, capacity engine, loopback UI `127.0.0.1:9190` | services, RAM/swap/CPU/disk, PHP-FPM, MySQL, 5xx, backups (incl. off-host copy), TLS expiry, restarts | its own host being dead, DNS/firewall/TLS problems on the public path | Telegram (outbound) | deployed on the staging Droplet; engine + adapter tested; **the Telegram adapter is disabled (alerts are recorded locally only) until credentials exist** |
 | B. DigitalOcean Monitoring | free Droplet metric alert policies | CPU, memory, disk, load, bandwidth from the hypervisor agent | processes, the application, the public path | **email / Slack only** (no Telegram) | **owner creates the policies in the console** (section 3) |
-| C. External sentinel | `infra/sentinel`: outbound HTTPS checks of the public name | DNS, TCP, TLS validity/expiry, `/healthz`, host identity, an app page, latency | resource pressure, internals | Telegram (+ macOS notification) | Mac LaunchAgent (intermittent) installable; 24/7 variant needs an owner decision (section 4) |
+| C. External sentinel | `infra/sentinel`: outbound HTTPS checks of the public name | DNS, TCP, TLS validity/expiry, `/healthz`, host identity, an app page, latency | resource pressure, internals | Telegram (+ macOS notification) | Mac LaunchAgent **installed and running on the owner's Mac** (Telegram disabled: no secrets file; macOS notifications on); intermittent; the 24/7 variant needs an owner decision (section 4) |
 
-A single transient error never pages: AICC Ops needs a sustained window (rule-specific, typically 2-10 samples of 30 s), the sentinel needs 3 failures in its last 5 checks.
+A single transient error never pages: AICC Ops needs a sustained window (1 to 40 samples of 30 s depending on the rule, see the table), the sentinel needs 3 failures in its last 5 checks.
 
 ## 1. AICC Ops to Telegram
 
-Messages (plain text, no parse mode): `[WARNING]`, `[CRITICAL]`, `[RECOVERED]`, `[TEST]`, flapping notices. Each carries the host label **`aicc-cp-stage (staging)`**, the rule title, the current value against the threshold, a UTC time, and (RECOVERED) the duration. A RECOVERED message exists only for a condition that had a sent FIRING notice. Dedupe/cooldown per rule (15 min to 12 h), flap suppression (more than 4 transitions in 30 min), at most 30 messages per hour in total. The text never contains an IP, email, URL, cookie, order number or token (scrubbed and tested). The **daily digest is OFF** (`telegram.digest_enabled = false`).
+Messages (plain text, no parse mode): `[WARNING]`, `[CRITICAL]`, `[RECOVERED]`, `[TEST]`, flapping notices. Each carries the host label **`aicc-cp-stage (staging)`**, the rule title, the current value against the threshold, a UTC time, and (RECOVERED) the duration. A RECOVERED message exists only for a condition that had a sent FIRING notice. Dedupe/cooldown per rule (15 min to 24 h), flap suppression (4 or more state changes in 30 min: further notices for that rule are suppressed until it is stable, which also means that a REAL outage shortly after a noisy period, for example right after a restore drill, can be recorded locally but not sent), at most 30 messages per hour in total. The text contains only rule titles, numbers, the host label and fixed words: an IP, email, cookie, order number, bearer/long token or Telegram token is scrubbed (tested); there is no URL pattern because messages carry no URLs by construction. The **daily digest is OFF** (`telegram.digest_enabled = false`).
 
 Rules shipped (thresholds are provisional; per-rule overrides in `/etc/aicc-ops/aicc-ops.toml` under `[alerts.rules.<id>]`):
 
@@ -20,12 +20,13 @@ Rules shipped (thresholds are provisional; per-rule overrides in `/etc/aicc-ops/
 |---|---|---|---|
 | Caddy / site unhealthy | `edge_probe`, `service_down`, `caddy_admin` | probe not 200 / unit not active | 3 / 2 / 4 samples |
 | Repeated 5xx | `http_5xx` | 5 % / 25 % of requests (min 20 requests) | 2 samples over a 5 min window |
-| High CPU | `cpu_saturation` | 90 % / 98 % | 10 min (WARNING), 40 min (CRITICAL) |
-| Low RAM | `ram_available_low` (and `ram_high`) | available < 200 MiB / < 120 MiB; used 90 % / 96 % | 5 min |
+| High CPU | `cpu_saturation` | 90 % / 98 % | 10 min (WARNING), 20 min (CRITICAL) |
+| Low RAM | `ram_available_low`, `ram_high` | available < 200 MiB / < 120 MiB; used 90 % / 96 % | 5 min (`ram_available_low`), 10 min (`ram_high`) |
 | Swap | `swap_activity` | swap-in 100 / 1000 pages/s, swap-out 300 | 10 min |
-| Disk | `disk_low`, `inodes_low` | 85 % / 93 % used | 2 samples |
-| PHP-FPM `max_children` | `fpm_max_children` (from the log, no socket access), `fpm_saturation`, `fpm_down` (need the pool status page: collector off by owner decision) | ≥ 5 / ≥ 40 `reached pm.max_children` events per 15 min | 2 samples |
-| MySQL | `db_down`, `db_conn_pressure` | unreachable on its socket; 80 % / 95 % of connections | 2 samples |
+| Disk | `disk_low`, `inodes_low` | disk 85 % / 93 %, inodes 85 % / 95 % used | 2 samples |
+| PHP-FPM `max_children` | `fpm_max_children` (counts from the FPM log via a root timer; no socket access) | ≥ 5 / ≥ 40 `reached pm.max_children` events per 15 min | 2 samples |
+| PHP-FPM pool status | `fpm_saturation`, `fpm_down` | need the pool status page over the PHP socket: **the collector is switched OFF on the staging host by an earlier owner decision** (it needs the `aicc-ops` account in the PHP socket's group), so these two cannot fire there | 4 / 2 samples |
+| MySQL | `db_down`, `db_conn_pressure` | unreachable on its socket; 80 % / 95 % of connections | 2 samples (`db_down`), 10 min (`db_conn_pressure`) |
 | Backup | `backup_failed`, `backup_stale`, **`offhost_stale`** | last run failed; newest good backup older than **3 h / 12 h** (matches the hourly timer); no verified off-host copy for 36 h / 96 h, or an acknowledged set that lags the newest backup by that much (**a laptop that sleeps Friday to Monday exceeds 36 h: raise `warn_h`/`crit_h` of `offhost_stale` in the host config if that is the normal pattern**) | 1-2 samples |
 | TLS expiry | `cert_expiry` | 14 days / 5 days | 1 sample |
 | Unexpected restart/crash | `process_restart`, `unit_failed` | 3 / 6 restarts per hour; an `OnFailure=` hook fired | 1 sample |
@@ -37,11 +38,11 @@ The owner creates the bot and puts the secret **directly on the host**, typed in
 1. In Telegram, talk to **@BotFather** → `/newbot` → note the bot's @username (the token is shown once; do not paste it anywhere except step 4).
 2. Open your new bot and send it any message (`hello`) so a chat exists.
 3. `ssh aicc@stage.copilt.org` (or the reserved IP).
-4. `sudo aicc-ops-secrets set-telegram` → paste the token at the hidden prompt (nothing is echoed). Leave the chat id blank the first time if you do not know it; the helper then runs the discovery and tells you the id to enter on a second run (`sudo aicc-ops-secrets set-telegram --keep-token`).
+4. `sudo aicc-ops-secrets set-telegram` → paste the token at the hidden prompt (nothing is echoed). It validates the format, writes the file, and runs `telegram-check` itself (`ok`, or exit 1 = written but the check failed; exit 2 = invalid input; exit 3 = refused, e.g. not root). If you do not know the chat id, press Enter at its prompt: the helper only prints a note. Then run `sudo /opt/aicc-ops/bin/aicc-ops --config /etc/aicc-ops/aicc-ops.toml telegram-discover-chat` (it lists chat id and type, never message text) and `sudo aicc-ops-secrets set-telegram --keep-token --chat-id <id>`.
 5. `sudo systemctl restart aicc-ops`
-6. Verify without sending anything sensitive: `sudo /opt/aicc-ops/bin/aicc-ops --config /etc/aicc-ops/aicc-ops.toml telegram-status` (presence, owner, mode) and `... telegram-check` (bot @username). Then one explicit test message: `... telegram-send-test --send`.
+6. Verify without sending anything sensitive: `sudo /opt/aicc-ops/bin/aicc-ops --config /etc/aicc-ops/aicc-ops.toml telegram-status` (source, owner and mode, token LENGTH, chat-id presence; exit 0 = usable, 3 = not) and `... telegram-check` (bot @username). Then one explicit test message: `... telegram-send-test --send`.
 
-Properties: the file is `/etc/aicc-ops/secrets.env`, mode `0640 root:aicc-ops`, written atomically; the token is never on a command line or in an environment variable, never logged, never in the repository; the CLI refuses a group-writable or world-readable file. **Replacing** a token: revoke it in @BotFather (`/revoke`), then run step 4 again. **Removing**: `sudo aicc-ops-secrets remove-telegram`. Anyone who can read `/etc/aicc-ops/secrets.env` (root, the `aicc-ops` service user) can use the bot: it can only send messages to that chat.
+Properties: the file is `/etc/aicc-ops/secrets.env`, mode `0640 root:aicc-ops`, written atomically; the token is never on a command line or in an environment variable, never logged, never in the repository; the CLI refuses a group-writable or world-readable file. **Replacing** a token: revoke it in @BotFather (`/revoke`), then run step 4 again. **Removing**: `sudo aicc-ops-secrets remove-telegram`. Anyone who can read `/etc/aicc-ops/secrets.env` (root, the `aicc-ops` service user) can use the bot for anything the Bot API allows (reading updates, messaging any chat that has talked to it); our software only ever sends the alert text to the one chat.
 
 ## 2. Failure modes: who sees what (summary; the full matrix is `infra/sentinel/DESIGN.md` section 2)
 
@@ -52,12 +53,12 @@ Properties: the file is `/etc/aicc-ops/secrets.env`, mode `0640 root:aicc-ops`, 
 
 ## 3. DigitalOcean alert policies (free; owner creates them, ~5 minutes)
 
-No token was requested and none is used. In the DigitalOcean console: **Monitoring → Alert Policies → Create alert policy**, scope **only** the Droplet `aicc-cp-stage` (never the API Droplet), notification **email to the address you read** (and Slack only if you already use it). Values come from the measured capacity of this host (RAM peak 650 MB used of 1967, minimum available 1059 MB, swap 0; the CPU is the first resource to saturate):
+No token was requested and none is used. In the DigitalOcean console: **Monitoring → Alert Policies → Create alert policy**, scope **only** the Droplet `aicc-cp-stage` (never the API Droplet), notification **email to the address you read** (and Slack only if you already use it). Values come from the measured capacity of this host (RAM peak 650 MB used of 1967, minimum available 1059 MB, swap 0 in the final capacity campaign, evidence `linux-stage/final-capacity/final.summary.md`; the CPU is the first resource to saturate):
 
 | Metric | Condition | Duration | Severity | Rationale |
 |---|---|---|---|---|
-| CPU | > 85 % | 15 min | warning | matches the capacity engine's `upgrade_cpu_p95` (85 %); a 15-minute plateau is real demand, not a cache purge; short load-test peaks are outside any real window |
-| Memory | > 85 % | 10 min | warning | measured peak under 8 concurrent workers was 33 %; 85 % means a leak or a runaway process, and OOM-killing is near |
+| CPU | > 85 % | 15 min | warning | matches the the capacity engine's `upgrade_cpu_p95_pct` (85 %; the engine uses a p95 of 5-minute averages, the DO policy a plain 15-minute duration); a 15-minute plateau is real demand, not a cache purge; short load-test peaks are outside any real window |
+| Memory | > 85 % | 10 min | warning | measured peak was 650 MB used (33 %) in the final 4-worker load phase (553 MB with 8 workers; evidence `linux-stage/final-capacity/final.summary.md`); 85 % means a leak or a runaway process, and OOM-killing is near |
 | Disk usage | > 75 % | 5 min | warning | 48 GB volume at 12 %; 75 % leaves weeks of room to act before AICC Ops' 85/93 % |
 | Load average (5 min) | > 3 | 15 min | warning | the capacity engine's `upgrade_load_per_vcpu = 3.0` on 1 vCPU |
 

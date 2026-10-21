@@ -1,19 +1,19 @@
 #!/usr/bin/env bash
-# Deploys a built release to the STAGING host. Runs ON THE MAC. Uses only the dedicated stage key. Fail closed: every refusal happens BEFORE any network access
+# Deploys a built release to the STAGING host (default) or, with --env production, to the PRODUCTION host through a tightened path. Runs ON THE MAC. Uses only the dedicated stage key. Fail closed: every refusal happens BEFORE any network access
 # except the read-only identity check.
 #
 #   infra/release/deploy-release.sh --kind site|cp --artifact <release-out/kind-<id>.tar.gz> \
 #        --stage-host stage.copilt.org --stage-ip <IPV4> --stage-id <32 hex> [--key ~/.ssh/aicc_cp_stage] [--user aicc] [--dry-run] [--check-only] [--first-install]
 #   PRODUCTION (--env production; nothing in this repository has ever run it against a real production host, none exists yet):
 #        --env production --kind site|cp --artifact ... --stage-host www.copilt.org --stage-ip <PRODUCTION IPV4> --stage-id <32 hex> --key ~/.ssh/aicc_cp_prod* \
-#        --confirm-production <the release id> [--dry-run] [--check-only]
+#        --known-hosts <pinned known_hosts file with the production host key> --confirm-production <the release id> [--dry-run] [--check-only]
 #      The same flags are reused so one implementation carries both environments; the production branch only ever TIGHTENS: the host name must be exactly www.copilt.org,
 #      the address may be neither a staging address nor one of the deny-listed public addresses (API Droplet, GitHub Pages), the key file must be named aicc_cp_prod*, the host
 #      identity file must say AICC_ENV=production with this host name and id, a site artifact must be a PRODUCTION build (no identity route) from a clean commit, a cp artifact
 #      must come from a clean commit, and --confirm-production must equal the release id (a per-release, conscious owner step: it cannot be pasted once and forgotten).
 #      The connection always goes to --stage-ip: public DNS is never consulted, so a rehearsal or a deploy before the DNS cutover cannot reach the old site.
 #
-# REQUIRED explicit flags: --stage-host, --stage-ip, --stage-id (nothing is guessed or defaulted). Refused outright:
+# REQUIRED explicit flags: --stage-host, --stage-ip, --stage-id (nothing is guessed or defaulted). In --env stage (the default) refused outright:
 #   * 139.59.157.231 (production API Droplet) and the other public deny-list addresses; www.copilt.org, copilt.org, api.copilt.org and anything that is not stage*.copilt.org;
 #   * the production key (any path containing aicc_digitalocean_prod); a key that is not a private-key file; SSH agent identities are not used (IdentitiesOnly);
 #   * an artifact whose tarball hash differs from its manifest, whose files differ from SHA256SUMS, whose kind differs from --kind;
@@ -52,7 +52,7 @@ if [ "$ENVN" = production ]; then
   case "$(basename "$KEY")" in aicc_cp_prod*) ;; *) refuse "the production key file must be named aicc_cp_prod* (got $(basename "$KEY"))" ;; esac
   # the production host key must be PINNED beforehand (verified out of band, e.g. in the DigitalOcean console): no trust-on-first-use for the host that takes customer data
   [ -n "$KNOWN_HOSTS" ] && [ -s "$KNOWN_HOSTS" ] || refuse "--env production needs --known-hosts FILE holding the pinned host key of the production host (no trust on first use)"
-  grep -q "$SIP" "$KNOWN_HOSTS" || refuse "the pinned known-hosts file has no entry for $SIP"
+  ssh-keygen -F "$SIP" -f "$KNOWN_HOSTS" >/dev/null 2>&1 || refuse "the pinned known-hosts file has no entry for $SIP"
 else
   for d in $DENY_IPS; do [ "$SIP" = "$d" ] && refuse "$SIP is a production/public address, not the staging Droplet."; done
   case "$SHOST" in www.copilt.org|copilt.org|api.copilt.org) refuse "$SHOST is a production hostname." ;; esac

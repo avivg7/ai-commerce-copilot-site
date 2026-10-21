@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Installs the restricted off-host pull access on the HOST (run as root, over the operator session). OWNER-APPROVED model (Phase 2B, 2026-10-21):
-#     sudo infra/backup/install-offhost-access.sh --pubkey-file /path/to/aicc_offhost.pub [--dry-run]
+#     sudo infra/backup/install-offhost-access.sh --pubkey-file /path/to/aicc_offhost.pub [--dry-run]      (undo: sudo infra/backup/install-offhost-access.sh --remove)
 #
 # Creates the least-privilege path the owner's Mac uses for UNATTENDED backup pulls:
 #   * account `aicc-offhost` (no password, home /var/lib/aicc-offhost, shell /bin/bash only because sshd runs ForceCommand through it);

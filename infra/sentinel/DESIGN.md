@@ -1,6 +1,6 @@
 # AICC external availability sentinel: design
 
-Status (2026-10-21): **implemented and tested locally; NOT installed or scheduled anywhere yet.** The code, the staging targets file, the macOS LaunchAgent installer and the GitHub Actions example are in this directory; installing them, creating the Telegram secrets and enabling the workflow are owner steps (section 4.3). No account, token, server or DNS entry was created by this work.
+Status (2026-10-21): **implemented and tested locally; INSTALLED as a LaunchAgent on the owner's Mac (running since 2026-10-21, all four targets UP, Telegram DISABLED: no secrets file yet); the GitHub Actions variant is NOT enabled.** The code, the staging targets file, the macOS LaunchAgent installer and the GitHub Actions example are in this directory; creating the Telegram secrets and enabling the workflow are the remaining owner steps (section 4.3). No account, token, server or DNS entry was created by this work.
 Labels used below: **VERIFIED** (tested locally in this repo), **INFERRED** (follows from how the pieces work, not tested against the real host), **UNVERIFIED** (depends on a provider's current terms or on infrastructure that does not exist yet).
 
 ## 1. Why a second observer
@@ -26,7 +26,7 @@ AICC Ops runs on the same Droplet it watches. Anything that kills or isolates th
 | DigitalOcean region (FRA1) outage | **N** | **Y only if the sentinel is NOT in that region/provider** | P (DO status page; their own alerting path may share the region: UNVERIFIED) | A sentinel on another Droplet in FRA1 goes down with it and cannot tell "target down" from "I am down". |
 | Caddy up but application broken (PHP fatal, WordPress white screen, bad DB credentials, bad deploy) | P (5xx rate, fpm/mysql state) | **Y with `expect_body` on a PHP-rendered page** | N | Needs a synthetic that exercises the real stack; static health paths hide it. |
 | Host out of disk, so monitoring cannot write | P (AICC Ops refuses to write below 10% free and raises a CRITICAL `monitoring_write_blocked` alert before the disk is full; at 100% everything may fail anyway) | P (symptoms: 5xx, timeouts) | **Y** (disk policy, if the threshold is set below the danger zone) | Local: cannot persist anything at 100%. External: sees only symptoms. |
-| AICC Ops itself dead or stuck (OOM kill, crash loop, hung collector) | N | N (it does not talk to Ops) | N | **Residual gap.** Mitigations: systemd `Restart=` + `MemoryMax`; the optional daily digest doubles as a dead-man signal (no digest = Ops silent); DO memory alert. A true dead-man ping needs a third-party service, which is an owner decision. |
+| AICC Ops itself dead or stuck (OOM kill, crash loop, hung collector) | N | N (it does not talk to Ops) | N | **Residual gap.** Mitigations: systemd `Restart=` + `MemoryMax`; a daily digest could double as a dead-man signal (no digest = Ops silent) but it is OFF by default (`telegram.digest_enabled = false`), so today it is NOT a mitigation; DO memory alert. A true dead-man ping needs a third-party service, which is an owner decision. |
 
 Reading the table: the three observers are complementary, none is sufficient. Local owns *why* (resource and service detail); the sentinel owns *is it reachable and correct from outside*; DO Monitoring owns *the machine's vital signs even when our own software is broken*.
 
@@ -135,7 +135,7 @@ If Telegram secrets are absent the sentinel logs once and keeps working without 
 
 * DigitalOcean Monitoring alert policies watch the Droplet's agent metrics (CPU, memory, disk, load, bandwidth) from outside our software. They keep working if AICC Ops or the sentinel is broken.
 * Their notification channels are **email and Slack only** (per DigitalOcean's documentation). **Telegram is reachable only through AICC Ops and the sentinel**; do not expect DO alerts in Telegram.
-* Suggested starting policies (provisional, tune on staging): CPU > 85% for 10 min; memory > 85% for 10 min; disk > 80%; 1-minute load > 3 for 10 min. These mirror, but never replace, the local alert rules.
+* Starting policies: see `docs/cutover/alerting.md` section 3 (CPU 85 % / 15 min, memory 85 % / 10 min, disk 75 % / 5 min, 5-minute load average above 3 / 15 min), derived from the measured capacity of the staging host. These mirror, but never replace, the local alert rules.
 * DigitalOcean also offers an uptime-check feature; its availability, regions, price and alert channels were **not verified** here and are not assumed.
 * Nothing in this repository calls the DigitalOcean API. Policies are created by the owner in the console.
 * Implemented state of this section: nothing to implement in code. It remains an owner console task, and it is the only observer here that sees machine vitals; the sentinel sees only what an outside client sees.

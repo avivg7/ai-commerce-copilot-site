@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# AICC Control Plane backup (staging host now, production later). Installed as /usr/local/sbin/aicc-backup, run by aicc-backup.timer (03:30 UTC) and
+# AICC Control Plane backup (staging host now, production later). Installed as /usr/local/sbin/aicc-backup, run by aicc-backup.timer (HOURLY at :17 UTC) and
 # by deploy tooling before a release (--label pre-release).
 #
 #   sudo aicc-backup [--label scheduled|pre-release|manual] [--quick] [--dry-run]
@@ -7,7 +7,7 @@
 # What one run produces, in /srv/aicc/backups (dir 0751 root, files 0600 root, status.json 0644):
 #   aicc_cp-<UTC>-<label>.sql.gz         mysqldump --single-transaction --routines --triggers --events --no-tablespaces, via the unix socket, account aicc_backup
 #   aicc_cp-<UTC>-<label>.sql.gz.sha256  "<hash>  <file>" (sha256sum -c compatible)
-#   aicc-files-<UTC>-<label>.tar.gz      WordPress persistent files in a SEPARATE 0600 archive: shared/uploads, shared/wp-config.php (secrets!), /etc/aicc-edge,
+#   aicc-files-<UTC>-<label>.tar.gz      WordPress persistent files in a SEPARATE 0600 archive: shared/uploads, shared/wp-config.php (secrets!), /etc/aicc-edge, /etc/aicc-ops/aicc-ops.toml (not its secrets.env),
 #                                        and pointers.txt (what site/cp current+previous pointed to). Caddy's certificate storage is NOT included (re-issuable,
 #                                        private keys stay on the host; use aicc-caddy-storage-backup for a deliberate encrypted copy).
 #   aicc-files-<UTC>-<label>.tar.gz.sha256
@@ -19,12 +19,12 @@
 # fewer than the newest 3 sets. Pruning runs after a successful run AND, when the disk guard would refuse, once before the guard (a full disk must not stay full forever).
 #
 # RPO: the timer is HOURLY (minute 17 UTC; a missed run executes after boot: Persistent=true), so the on-host RPO is about 1 hour.
-# RTO: not measured yet; see README-backup.md (do not claim a restore time before aicc-restore-test and a full drill have run on the real host).
+# RTO: measured by infra/backup/dr-drill.sh on the real host (see the drill section of README-backup.md for the figure and what it does and does not cover).
 #
 # status.json schema (schema 1):
 #   {"schema":1,"status":"ok|failed","label":"...","started_at":"...","finished_at":"...","finished_epoch":N,"duration_s":N,"reason":"",
 #    "disk_free_pct":N,"retention_days":7,"host":"...",
-#    "db_dump":{"file":"...","bytes":N,"sha256":"...","gzip_test":"ok","complete_marker":"ok","restore_check":"ok|skipped|failed","tables":N,"options_rows":N},
+#    "db_dump":{"file":"...","bytes":N,"sha256":"...","gzip_test":"ok","complete_marker":"ok","restore_check":"ok|skipped|skipped_empty_database|failed","tables":N,"options_rows":N},
 #    "files_archive":{"file":"...","bytes":N,"sha256":"...","gzip_test":"ok","paths":[...]},
 #    "last_success":{"finished_at":"...","finished_epoch":N,"label":"...","db_dump_file":"...","files_archive_file":"..."}}
 #   "last_success" survives a later failure; the release gate (activate-release.sh) uses it, AICC Ops alerts on "status" and on its age.

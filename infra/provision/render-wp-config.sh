@@ -8,7 +8,7 @@
 #   the webhook secret must equal the Backend's); the database password file exists. Nothing in this repository runs it for production.
 # Inputs : /etc/aicc/secrets/db-cp.pass (written by create-staging-db.sh); /etc/aicc/secrets/wp-secrets.env (created here once: eight WordPress keys/salts and
 #          two staging-only plugin secrets, 256-bit random each; reused on later runs so sessions survive a re-render; --force-salts regenerates them).
-# Output : /srv/aicc/shared/wp-config.php, mode 0640, owner root:aicc-cp (PHP-FPM and WP-CLI run as aicc-cp: read, cannot modify), `php -l` checked before it replaces
+# Output : /srv/aicc/shared/wp-config.php, mode 0640, owner root:aicc-cp (PHP-FPM and WP-CLI run as aicc-cp: read, cannot modify), `php -l` checked (when php is installed; otherwise a warning) before it replaces
 #          the old file (atomic rename). Idempotent: identical input gives an identical file ("unchanged").
 # Test seams: --template --out --secrets-dir (absolute paths) for tests; defaults are the host paths.
 set -euo pipefail

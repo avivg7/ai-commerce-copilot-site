@@ -13,7 +13,7 @@
 #   4 recover   copy the Mac's verified copy back, `aicc-restore live` (verify, quiesce, DB, files, perms, start, health gate, sanity)
 #   5 prove     fingerprint the recovered DB and compare it table by table with the pre-disaster fingerprint (rows + CHECKSUM TABLE); uploads/config present
 #                                                                                                             <== RTO clock T1 stops here
-#   6 clean up  remove the temporary restore-input directory and fingerprint files; verify services/timers/listeners; write the report
+#   6 clean up  remove the temporary restore-input directory and fingerprint files; report leftovers and the state of services/timers (reported in the JSON, not part of the pass condition); write the report
 # The report (JSON) holds start/end times, every step in seconds, the RTO, and the fingerprints' comparison result. A failed comparison is a FAILED drill.
 # Not covered (stated in README-backup.md): loss of the whole Droplet (needs a new host: install-stack + this restore), loss of the Mac copy, a corrupted
 # backup that passes its checksum, point-in-time recovery (binary logging is off).

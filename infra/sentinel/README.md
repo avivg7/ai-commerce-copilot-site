@@ -26,7 +26,7 @@ bash infra/sentinel/macos/install-launchd.sh            # DRY-RUN: prints every 
 bash infra/sentinel/macos/install-launchd.sh --apply    # does it
 ```
 
-What `--apply` does: copies `sentinel.py` and `targets.stage.toml` into `~/Library/Application Support/aicc-sentinel/` (0700), writes `~/Library/LaunchAgents/com.aicc.sentinel.plist`, creates `~/Library/Logs/aicc-sentinel/`, then `launchctl bootstrap gui/<uid>`. It refuses to run as root, never creates the secrets file, and finds a Python 3.11+ itself (or pass `--python /abs/path`).
+What `--apply` does: copies `sentinel.py` and the targets file (installed as `targets.toml`) into `~/Library/Application Support/aicc-sentinel/` (0700), writes `~/Library/LaunchAgents/com.aicc.sentinel.plist`, creates `~/Library/Logs/aicc-sentinel/`, then `launchctl bootstrap gui/<uid>`. It refuses to run as root, never creates the secrets file, and finds a Python 3.11+ itself (or pass `--python /abs/path`).
 
 The agent runs once at load and every 120 s afterwards (`StartInterval`, one short process per run, state in a file). The edge target runs every tick; the 300 s targets run on the first tick at or after 300 s, so about every 360 s.
 
