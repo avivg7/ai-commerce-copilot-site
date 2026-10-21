@@ -312,6 +312,20 @@ def r_write_blocked(ctx, p):
                                      text=f"monitoring writes REFUSED: filesystem free space {free:.1f}% is below the safety floor" if free is not None else "monitoring writes REFUSED: low free space")]
 
 
+WP_CRON_CADENCE_S = 120  # infra/systemd/aicc-wp-cron.timer: OnCalendar=*:0/2 (architecture review H-2)
+
+
+def r_reboot_required(ctx, p):
+    """WARNING only, never CRITICAL, and it clears ONLY when the marker file is gone (a reboot removes it): a value of 1 is 'hold', never 'clear'."""
+    v = ctx.latest("host.reboot_required")
+    if v is None:
+        return []
+    age = ctx.latest("host.reboot_required_age_s")
+    since = f" for {age / 86400:.1f} days" if age is not None and age >= 3600 else ""
+    return [Obs("reboot_required", "host", v == 1, clear=v == 0, severity=WARNING,
+                text=f"a reboot is pending{since}: updates were installed that stay inactive until the host is restarted (schedule a maintenance window; restart is NOT automatic)")]
+
+
 def r_cron(ctx, p):
     v = ctx.latest("cp.wc_cron_last_run_age_seconds")
     if v is None:
@@ -388,6 +402,9 @@ def default_rules(cfg: dict) -> list:
         RuleSpec("backend_down", "API metrics unavailable", r_backend_down, for_samples=4, clear_samples=2, cooldown_s=3600),
         RuleSpec("backend_pool_pressure", "API database pool pressure", r_backend_pool, dict(warn=80, crit=95, clear=70), for_samples=w10, clear_samples=w10, cooldown_s=3600),
         RuleSpec("backend_5xx", "Elevated API 5xx rate", r_backend_5xx, dict(window_samples=w10, interval_s=iv, min_requests=20, warn=5.0, crit=25.0, clear=2.0), for_samples=2, clear_samples=4),
+        # architecture review M-2: unattended-upgrades never reboots (Automatic-Reboot false); this tells the operator a reboot is waiting. Sustain 1 sample, one notice per day at most.
+        RuleSpec("reboot_required", "Host reboot pending", r_reboot_required, for_samples=1, clear_samples=1, cooldown_s=86400),
+        # The system cron (aicc-wp-cron.timer) runs every 2 minutes (WP_CRON_CADENCE_S); the thresholds below must stay far above it (tests/test_alerts.py::CronCadence).
         RuleSpec("wc_cron_stale", "Scheduled actions stale", r_cron, dict(warn_s=3600, crit_s=14400, clear_s=1800), for_samples=2, clear_samples=2, cooldown_s=3600),
     ]
 

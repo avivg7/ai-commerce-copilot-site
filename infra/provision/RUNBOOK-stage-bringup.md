@@ -1,6 +1,6 @@
 # RUNBOOK: bringing up the STAGING Control Plane stack (stage.copilt.org)
 
-Exact order, from a freshly created Droplet to a working, verified staging site. Every step has **Run**, **Verify** and **Rollback**. Nothing here has been executed on a real server yet: the scripts were tested on a Mac (and, where noted in `infra/README.md`, in an Ubuntu 24.04 container); the first real run happens step by step over SSH, and any step that fails stops the sequence.
+Exact order, from a freshly created Droplet to a working, verified staging site. Every step has **Run**, **Verify** and **Rollback**. This runbook WAS executed on the real staging Droplet (2026-10-21) step by step over SSH; the scripts had been tested on a Mac (and, where noted in `infra/README.md`, in an Ubuntu 24.04 container) before. Any step that fails stops the sequence. It covers STAGING only: there is no production equivalent yet (`docs/cutover/runbook.md` section 11, blocker B-3).
 
 Conventions: `MAC$` = on your Mac, `HOST$` = on the Droplet as user `aicc` (`sudo` where shown). `<IP>` = the Droplet's public IPv4 (the one `verify-droplet.sh` used), `<KEY>` = `~/.ssh/aicc_cp_stage`. Never use `~/.ssh/aicc_digitalocean_prod` or `139.59.157.231`: every script refuses them.
 
@@ -149,7 +149,7 @@ Rollback: `sudo systemctl disable --now aicc-edge` (the site goes dark; nothing 
 ## Step 9. Timers (host)
 
 ```bash
-HOST$ sudo infra/provision/install-stack.sh --only enable-timers     # wp-cron every minute, backup 03:30 UTC, certificate check 06:15 UTC
+HOST$ sudo infra/provision/install-stack.sh --only enable-timers     # wp-cron every 2 minutes, backup 03:30 UTC, certificate check 06:15 UTC
 HOST$ systemctl list-timers 'aicc-*'
 HOST$ sudo systemctl start aicc-backup.service && sudo cat /srv/aicc/backups/status.json | jq .
 HOST$ sudo aicc-restore-test                                          # restore test of the dump just taken
@@ -209,3 +209,32 @@ DigitalOcean web console (Droplet, Access, Launch Droplet Console) is independen
 * In an **Ubuntu 24.04 container** (Docker, `CAP_SYS_PTRACE`, no PID 1): real PHP 8.3.6 + php-fpm with the pool/ini (settings read back from inside a request), MySQL 8.0.46 with the drop-in (effective variables read back), `systemd-analyze verify` (systemd 255) on all units, fail2ban 1.0.2 (`fail2ban-client -t`, `fail2ban-regex` with the real date pattern), OpenSSH 9.6 (`sshd -t/-T`, first-value-wins, two real SSH sessions through the verify and harden scripts), `useradd`/`setfacl`/modes, WordPress 7.1.3 + WooCommerce 10.9.4 + Storefront + the AICC plugin/theme installed with WP-CLI 2.12.0 on PHP 8.3, first install / swap / health gate / rollback / stale-OPcache demonstration, backup + restore on the real schema, the edge preflight (stage mode) on our `edge.env`.
 
 **Only on the real Droplet** (do not assume): systemd as PID 1 (boot order mysql -> php-fpm -> aicc-edge, timers firing, sandbox directives such as `ProtectSystem=strict` with the real paths, `OnFailure=` hook execution, `MemoryHigh/Max` enforcement, `Restart=`); `systemd-analyze security`; Caddy 2.11.7 on Linux (the container had no Caddy: the checks that need `caddy adapt` were not run), the Sigstore signature (cosign identity regexp unverified), the pinned amd64 tarball hash against the real download; Let's Encrypt issuance and renewal; UFW and the DigitalOcean cloud firewall; unattended-upgrades interplay; the real memory under load (the budget table in `infra/README.md` is measured only for idle/warm-up, on arm64 in a container); MySQL 8.0 on amd64 with the real disk; the ssh.service unit name and `systemctl reload ssh`; `journalctl _COMM=sshd` on the real journal (the container used sshd's own log in the same format); fail2ban banning (not just matching) and the iptables/nft action; DNS; the SSH tunnel and Chrome flags on your Mac; the off-host pull against the real host; a full disaster-recovery drill (RTO).
+
+## Known bring-up pitfalls (found on the real host; the fixes are in git history, listed here so the next operator does not rediscover them)
+
+* **Split runs leave a stale MySQL/PHP-FPM** (commit `11d77c6`): when `install-stack.sh` is run in several `--only` steps, a service started by an earlier step keeps the OLD configuration. The installer now restarts stale `mysql` / `php8.3-fpm` across split runs; if you edit a config by hand, restart the service yourself.
+* **`push-bundle.sh` creates the remote directories** and the WP-CLI check runs as root (`11d77c6`); a bundle push to a fresh Droplet used to fail on the missing directory.
+* **AICC Ops reported MySQL down for 94 minutes** (commit `70c1d22`): `mysql --no-defaults` must be the FIRST client option; client option errors are now collector failures. If `aicc-ops` raises `db_down:mysql` or `collector_failure:cp` right after an install, check `journalctl -u aicc-ops` for a client option error before assuming MySQL is down.
+* **`PREFLIGHT WARN: AICC_WP_ROOT=/srv/aicc/cp/current is writable by root`** is printed on every Caddy start and reload: expected (root owns the release tree); it is noise, not a problem. Do not train yourself to ignore other `PREFLIGHT` lines.
+* **`systemctl reload aicc-edge` runs the preflight first**; a refused preflight leaves the running edge untouched. After editing `edge.env`, Step 8's `sed` range-delete of the staging-CA line works only while both marker lines of the template exist; check the file with `cat` before and after.
+* **Root-owned state needs `sudo` for reading**: `/var/log/aicc-edge/*.log` (0640), `/var/lib/aicc-edge/caddy/certificates` (0700). `ls` without sudo fails and looks like "no certificate".
+* **The Droplet has no public IPv6**; UFW carries v6 rules for 80/443/22 that do nothing. There is no AAAA record for `stage.copilt.org`.
+* **The first requests after every PHP-FPM reload are slow** (cold OPcache: 4.8 s for `/pricing/`, once 11.5 s for a REST request). The release tooling now warms the common pages after the health gate (`infra/release/warm-cp.sh`); a manual `systemctl restart php8.3-fpm` does not.
+* **WP-Cron runs every 2 minutes** (`aicc-wp-cron.timer`), not every minute; Action Scheduler's async runner is switched off in the Control Plane plugin, so the queue is processed by that timer only.
+
+## Stage 3 hardening and sample-content cleanup (security review, 2026-10-21; NOT yet run on the host)
+
+**Stage 3 (SSH crypto allow-list, unused services).** After stage 2 is in force, from the FIRST session and with a fresh second-session marker:
+```
+HOST$ sudo infra/provision/harden-stage3.sh --dry-run          # prints what it would write/mask
+HOST$ sudo infra/provision/harden-stage3.sh                    # writes sshd_config.d/06-aicc-stage3-crypto.conf, sshd -t + effective sshd -T, reload (never restart); masks snapd, ModemManager, udisks2, multipathd when nothing depends on them
+MAC$  ssh -i ~/.ssh/aicc_cp_stage -o IdentitiesOnly=yes aicc@<IP> true     # a THIRD login proves the new algorithms work BEFORE you close the first session
+```
+It refuses a host whose `/etc/aicc-stage-identity` is not staging, refuses without stage 2 in force and without the two-session marker, never touches `do-agent` / `droplet-agent`, and skips a unit with the reason when something depends on it. Rollback: `sudo rm /etc/ssh/sshd_config.d/06-aicc-stage3-crypto.conf && sudo sshd -t && sudo systemctl reload ssh`; services: `sudo systemctl unmask <unit> && sudo systemctl enable --now <unit>`. Narrowing port 22 in the DigitalOcean Cloud Firewall is an **[OWNER]** decision in the panel and is documented only.
+
+**WordPress default sample content** ("Hello world!", "Sample Page", the sample comment "A WordPress Commenter") is public at `/wp-json/wp/v2/posts|comments`. The Control Plane launch gate reports it as a WARN note. Removal (a command to RUN ON THE HOST by the operator, not run by anything in this repository):
+```
+HOST$ sudo -u aicc-cp wp --path=/srv/aicc/cp/current post delete $(sudo -u aicc-cp wp --path=/srv/aicc/cp/current post list --post_type=post,page --name=hello-world,sample-page --field=ID --post_status=any) --force
+HOST$ sudo -u aicc-cp wp --path=/srv/aicc/cp/current comment delete $(sudo -u aicc-cp wp --path=/srv/aicc/cp/current comment list --author_email=wapuu@wordpress.example --field=comment_ID) --force
+```
+(Both commands fail harmlessly with "no IDs" when the content is already gone.)

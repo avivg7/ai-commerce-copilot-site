@@ -1,5 +1,5 @@
 # WordPress cron for the Control Plane. DISABLE_WP_CRON is true in wp-config.php and /wp-cron.php is closed to the public by the edge, so
-# this one-shot (started every minute by aicc-wp-cron.timer) is the ONLY thing that runs scheduled events (WooCommerce Action Scheduler, licence jobs).
+# this one-shot (started every 2 minutes by aicc-wp-cron.timer; cadence reasoning in the timer) is the ONLY thing that runs scheduled events (WooCommerce Action Scheduler, licence jobs).
 # Runs as the PHP user aicc-cp against whatever release `current` points to (a swap between two runs is harmless: each run resolves the link once).
 [Unit]
 Description=AICC WordPress cron (wp cron event run --due-now)
@@ -15,7 +15,7 @@ User=aicc-cp
 Group=aicc-cp
 WorkingDirectory=/srv/aicc/cp
 Environment=WP_CLI_CACHE_DIR=/var/lib/aicc-cp/wp-cli WP_CLI_CONFIG_PATH=/var/lib/aicc-cp/wp-cli/config.yml HOME=/var/lib/aicc-cp
-# php-cli reads /etc/php/8.3/cli/conf.d/90-aicc.ini (memory_limit 192M, opcache off). The 55 s timeout keeps a stuck run from overlapping the next minute.
+# php-cli reads /etc/php/8.3/cli/conf.d/90-aicc.ini (memory_limit 192M, opcache off). The 55 s timeout keeps a stuck run from overlapping the next run (2 minutes later).
 ExecStart=/usr/bin/php /usr/local/bin/wp --path=/srv/aicc/cp/current cron event run --due-now --quiet
 ExecStartPost=-+/usr/local/sbin/aicc-unit-status ok %n
 TimeoutStartSec=55s
@@ -41,3 +41,7 @@ LockPersonality=true
 SystemCallArchitectures=native
 # WordPress writes uploads/cache under shared storage, logs and temp files under /var/lib/aicc-cp and /var/log/aicc-cp
 ReadWritePaths=/srv/aicc/shared /var/lib/aicc-cp /var/log/aicc-cp
+# Security review M1: WP-CLI needs MySQL (unix socket) and nothing on the loopback; the cron run must not reach Caddy's unauthenticated admin API, the operator listener, AICC Ops
+# or the cloud metadata service (127.0.0.53 is the resolver stub). See php8.3-fpm.service.d/aicc.conf for the reasoning and the production note.
+IPAddressDeny=127.0.0.0/8 ::1/128 169.254.0.0/16
+IPAddressAllow=127.0.0.53/32

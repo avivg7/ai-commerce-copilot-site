@@ -82,7 +82,12 @@ export const WP_LOGIN_PUBLIC_QUERY = "^(action=logout(&redirect_to=[^&]*)?(&_wpn
 export const PHP_DENY_RE = "(?i)\\.(?:php[0-9]?|phtml|phar|pht)(?:/|$)";
 export const PHP_ENTRY_RE = "^/(?:index|wp-login|wp-cron)\\.php$|^/wp-admin/[A-Za-z0-9_-]+\\.php$";
 /** Files in WordPress's own trees that are never public: dotfiles and dot-directories (.git, .htaccess, .env), logs/dumps/backups, readme/changelog/license (version disclosure). 404, never proxied or served. */
-export const WP_HIDDEN_RE = "(?i)^/wp-(?:content|includes)/(?:.*/\\.|.*/(?:readme|changelog|license)\\.(?:txt|md|html)$|.*\\.(?:log|sql|bak|old|orig|swp|env|ini|sh)$)";
+/**
+ * Security review L4 (2026-10-21): also dependency manifests and lock files (composer.json/.lock, vendor/composer/installed.json, package.json, package-lock.json, yarn.lock, pnpm-lock.yaml),
+ * translation sources (.po/.pot/.mo: WordPress reads them from DISK, never over HTTP), tool configs (phpcs/phpunit .xml), sample-data and tests/docs directories of plugins and themes, and sample CSVs
+ * under plugins (WooCommerce ships sample-data/*.csv). Public assets (js, css, images, fonts, json that scripts fetch) are untouched.
+ */
+export const WP_HIDDEN_RE = "(?i)^/wp-(?:content|includes)/(?:.*/\\.|.*/(?:readme|changelog|licen[cs]e)\\.(?:txt|md|html)$|.*\\.(?:log|sql|bak|old|orig|swp|env|ini|sh|po|pot|mo)$|(?:.*/)?(?:composer\\.(?:json|lock)|installed\\.json|package(?:-lock)?\\.json|yarn\\.lock|pnpm-lock\\.yaml|phpcs[^/]*\\.xml(?:\\.dist)?|phpunit[^/]*\\.xml(?:\\.dist)?)$|plugins/.*\\.csv$|(?:plugins|themes)/[^/]+/(?:.*/)?(?:sample-data|sample_data|tests?|docs)/)";
 /** Paths that must be a branded edge 404: the export's error-page duplicates, the multisite entry points (WordPress would 302 them to wp-login.php?action=register = 403), and the 5xx page file itself (served only by handle_errors). */
 export const DUPLICATE_ERROR_RE = "^/(?:404|_not-found)(?:/|\\.html)?$|^/(?:wp-activate|wp-signup)\\.php$|^/50x\\.html$";
 export const WP_MACHINE_RE = "^/(?:wp-json|wp-admin|wc-api|wc-ajax)(?:/.*)?$|^/(?:wp-login\\.php|wp-cron\\.php|xmlrpc\\.php)$";
@@ -91,6 +96,17 @@ export const WP_ASSETS_RE = "^/(?:wp-content|wp-includes)(?:/.*)?$";
 /** The root path, with or without a language prefix: WooCommerce's plain-permalink endpoints (?wc-ajax=, ?wc-api=, ?rest_route=) live on it. */
 export const WP_ROOT_PATH_RE = `^${LOC}/$`;
 export const WP_ROOT_QUERY = "(^|&)(wc-ajax|wc-api|rest_route)=";
+/**
+ * The REST API INDEX (architecture review H-4, 2026-10-21). `GET /wp-json/` (and `?rest_route=/`, which WordPress honours on ANY URL) builds a 1.2 MB document that enumerates every
+ * namespace and costs 0.5-1.1 s of PHP on a one-vCPU host; nothing public needs route discovery. The PUBLIC listener answers the exact index forms with the branded 404; the loopback
+ * OPERATOR listener keeps it (wp-admin's block editor and REST discovery use it). Namespaced routes (/wp-json/<ns>/..., ?rest_route=/<ns>/...) are NOT touched.
+ * Query form: WordPress takes `rest_route` from the query string, trims trailing slashes/backslashes and treats an empty route as "/": so a missing value, "/", "//", "%2F" are all the index.
+ * The parameter NAME may be percent-encoded (PHP decodes it), so each letter and the underscore accept their %XX form. (A raw backslash value is not matched: it would need a backslash
+ * in a CEL string; the edge's own bad_path rule refuses backslashes in the PATH only.) This is cost containment, not an access-control boundary.
+ */
+const pctLetter = (ch) => { const hex = ch.charCodeAt(0).toString(16).toUpperCase().split("").map((x) => (/[A-F]/.test(x) ? `[${x}${x.toLowerCase()}]` : x)).join(""); return `(?:${ch}|%${hex})`; };
+export const WP_REST_INDEX_PATH_RE = `^${LOC}/wp-json/?$`;
+export const WP_REST_INDEX_QUERY = `(^|&)${[..."rest"].map(pctLetter).join("")}(?:_|%5[Ff])${[..."route"].map(pctLetter).join("")}(=(?:/|%2[Ff]|%5[Cc])*)?(&|$)`;
 export const RSC_UNDER_WP_RE = `^${LOC}/(?:pricing|privacy|terms|refund-policy|accessibility)/(?:__next[^/]*|index)\\.txt$`;
 /** Next's client-navigation payloads of the static routes. They sit under /product/ too, which WooCommerce's /product/<slug>/ would otherwise swallow. */
 export const STATIC_RSC_RE = `^${LOC}(?:/(?:product|questions|data-and-trust))?/(?:__next[^/]*|index)\\.txt$`;
@@ -283,6 +299,21 @@ export const CASES = [
     o(`https://www.copilt.org/${l}/?awc-ajax=x`, "static", 200, { note: "negative control: the key must match whole" }),
   ]),
   o("https://www.copilt.org/?awc-ajax=x", "static", 200, { note: "negative control: the key must match whole" }),
+  // ---- REST API index (architecture review H-4): the public listener answers the index forms with the branded 404; namespaced routes and the operator listener are untouched
+  ...["/wp-json", "/wp-json/", "/he/wp-json", "/he/wp-json/", "/es/wp-json/", "/ru/wp-json", "/wp-json/?context=view", "/wp-json//", "/?rest_route=/", "/?rest_route=", "/?rest_route", "/?rest_route=%2F", "/?rest_route=//", "/?rest_route=/&x=1", "/?x=1&rest_route=/", "/he/?rest_route=/", "/es/?rest_route=%2f", "/ru/?rest_route=", "/?rest%5Froute=/", "/?%72est_route=/", "/pricing/?rest_route=/", "/product/?rest_route=/", "/cart/?rest_route=/"].map((p) => o(`https://www.copilt.org${p}`, "404", 404, { publicOnly: true, note: "REST index: public 404 (operator listener keeps it)" })),
+  o("https://www.copilt.org/wp-json/wp/v2/types", "wordpress", 200, { cache: NOCACHE, note: "namespaced routes are untouched" }),
+  o("https://www.copilt.org/wp-json/wc/store/v1/", "wordpress", 200, { cache: NOCACHE, note: "a namespace index is not the root index" }),
+  o("https://www.copilt.org/wp-json/wc/store/v1/cart/items", "wordpress", 200, { cache: NOCACHE }),
+  o("https://www.copilt.org/?rest_route=/aicc-license/v1/plans", "wordpress", 200, { cache: NOCACHE }),
+  o("https://www.copilt.org/?rest_route=/wc/store/v1/cart&x=1", "wordpress", 200, { cache: NOCACHE }),
+  o("https://www.copilt.org/?rest_route=/wp/v2/types", "wordpress", 200, { cache: NOCACHE }),
+  o("https://www.copilt.org/he/?rest_route=/aicc-license/v1/plans", "wordpress", 200, { cache: NOCACHE }),
+  o("https://www.copilt.org/?xrest_route=/", "static", 200, { note: "negative control: the parameter name must match whole" }),
+  o("https://www.copilt.org/?rest_route_x=/", "static", 200, { note: "negative control: the parameter name must match whole" }),
+  o("https://www.copilt.org/wp-json/", "wordpress", 200, { peer: "operator", cache: NOCACHE, note: "wp-admin's REST discovery: the operator listener keeps the index" }),
+  o("https://www.copilt.org/wp-json", "wordpress", 200, { peer: "operator", cache: NOCACHE }),
+  o("https://www.copilt.org/?rest_route=/", "wordpress", 200, { peer: "operator", cache: NOCACHE }),
+  o("https://www.copilt.org/wp-json/wp/v2/types", "wordpress", 200, { peer: "operator", cache: NOCACHE }),
   o("https://www.copilt.org/pricing/__next._tree.txt", "404", 404, { note: "Next prefetch payload of a WordPress-owned route: cheap 404 at the edge, never a PHP request" }),
   o("https://www.copilt.org/he/terms/index.txt", "404", 404),
   // ---- admin surface (owner decision 2026-10-20). `peer: "operator"` = the connection comes from AICC_OPERATOR_CIDRS; the default is a public visitor. ----
@@ -400,6 +431,19 @@ export const CASES = [
   o("https://www.copilt.org/wp-content/uploads/.htaccess", "404", 404),
   o("https://www.copilt.org/wp-content/plugins/woocommerce/.git/config", "404", 404),
   o("https://www.copilt.org/wp-content/plugins/woocommerce/readme.txt", "404", 404, { note: "version disclosure" }),
+  // security review L4: dependency manifests, translation sources, sample data and test/doc directories are never public; real assets in the same trees are
+  ...["/wp-content/plugins/woocommerce/vendor/composer/installed.json", "/wp-content/plugins/woocommerce/composer.json", "/wp-content/plugins/woocommerce/composer.lock", "/wp-content/themes/twentytwentyfive/package.json", "/wp-content/themes/aicc-admin/package-lock.json",
+    "/wp-content/plugins/woocommerce/languages/woocommerce-he_IL.po", "/wp-content/plugins/woocommerce/i18n/languages/woocommerce.pot", "/wp-content/languages/plugins/woocommerce-he_IL.mo", "/wp-content/plugins/woocommerce/sample-data/sample_products.csv",
+    "/wp-content/plugins/woocommerce/sample-data/", "/wp-content/plugins/aicc-license-manager/tests/run_x.php", "/wp-content/plugins/woocommerce/tests/readme", "/wp-content/plugins/some/docs/guide.png", "/wp-content/plugins/woocommerce/phpunit.xml.dist", "/wp-content/plugins/woocommerce/LICENCE.txt", "/wp-content/plugins/woocommerce/changelog.txt", "/wp-content/plugins/woocommerce/README.md",
+    "/wp-content/PLUGINS/woocommerce/Composer.JSON"].map((p) => o(`https://www.copilt.org${p}`, "404", 404, { note: "review L4: never public" })),
+  o("https://www.copilt.org/wp-content/plugins/woocommerce/assets/css/woocommerce.css", "wordpress", 200, { cache: "", note: "a real plugin asset next to the hidden files" }),
+  o("https://www.copilt.org/wp-content/plugins/woocommerce/assets/js/frontend/cart.min.js", "wordpress", 200, { cache: "" }),
+  o("https://www.copilt.org/wp-content/plugins/woocommerce/assets/fonts/WooCommerce.svg", "wordpress", 200, { cache: "" }),
+  o("https://www.copilt.org/wp-content/themes/aicc-admin/assets/fonts/x.woff2", "wordpress", 200, { cache: "" }),
+  o("https://www.copilt.org/wp-content/plugins/woocommerce/assets/client/blocks/wc-blocks.js", "wordpress", 200, { cache: "", note: "not a tests/docs directory" }),
+  o("https://www.copilt.org/wp-content/plugins/woocommerce/assets/client/blocks/product-categories/block.json", "wordpress", 200, { cache: "", note: "only the named manifests are hidden, not every .json" }),
+  o("https://www.copilt.org/wp-content/uploads/2026/10/export.csv", "wordpress", 200, { cache: "", note: "uploads are not plugin sample data" }),
+  o("https://www.copilt.org/wp-content/uploads/2026/10/tests/photo.png", "wordpress", 200, { cache: "", note: "the tests/docs rule is plugins/themes only" }),
   o("https://www.copilt.org/wp-includes/ID3/license.txt", "404", 404),
   o("https://www.copilt.org/wp-content/uploads/backup.sql", "404", 404),
   o("https://www.copilt.org/wp-content/uploads/site.bak", "404", 404),

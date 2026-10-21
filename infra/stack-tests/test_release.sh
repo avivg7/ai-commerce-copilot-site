@@ -153,6 +153,77 @@ t_rc "an unhealthy cp release is rolled back (exit 3)" 3 ACT "$R" cp "$IDCP2" --
 t_eq "cp current is back on the good release" "$(cur "$R" cp)" "$IDCP1"
 t_eq "PHP-FPM was reloaded twice (after the swap and after the rollback)" "$(wc -l < "$TMP/fpm.log" | tr -d ' ')" "2"
 
+echo "== control-plane release: OPcache warm-up after the health gate (review M-7) =="
+: > "$TMP/order.log"
+SMOKE_LOG='echo smoke >> '"$TMP"'/order.log; test -f "$AICC_RELEASE_DIR/HEALTHY"'
+make_cp_tree "$TMP/cp3" CP3 1; IDCP3="$(stage_incoming "$R" cp "$TMP/cp3" $((EPOCH0 + 20)))"; fresh_backup "$R" 30
+t_ok "cp release with a warm-up command activates" ACT "$R" cp "$IDCP3" --smoke-cmd "$SMOKE_LOG" --fpm-reload-cmd "echo reload >> $TMP/order.log" --warm-cmd "echo warm >> $TMP/order.log"
+t_eq "ORDER: swap -> PHP-FPM reload -> health gate -> warm-up (warm-up is last, after the gate)" "$(tr '\n' ' ' < "$TMP/order.log")" "reload smoke warm "
+t_eq "the release is live" "$(cur "$R" cp)" "$IDCP3"
+make_cp_tree "$TMP/cp4" CP4 1; IDCP4="$(stage_incoming "$R" cp "$TMP/cp4" $((EPOCH0 + 30)))"; fresh_backup "$R" 30
+t_ok "a warm-up that FAILS (exit 1) does not fail the release" ACT "$R" cp "$IDCP4" --warm-cmd 'echo warming; exit 1'
+t_eq "...the release is live anyway" "$(cur "$R" cp)" "$IDCP4"
+t_ok "...and the activation log still ends in OK" grep -q "OK: cp release $IDCP4 is live" "$R/cp/activation.log"
+make_cp_tree "$TMP/cp5" CP5 1; IDCP5="$(stage_incoming "$R" cp "$TMP/cp5" $((EPOCH0 + 40)))"; fresh_backup "$R" 30
+if command -v timeout >/dev/null 2>&1; then
+  t0=$(date +%s); t_ok "a HANGING warm-up is cut off by the hard cap and does not fail the release" env AICC_WARM_TIMEOUT=1 bash "$REL/activate-release.sh" --root "$R" --kind cp --release-id "$IDCP5" --smoke-cmd 'test -f "$AICC_RELEASE_DIR/HEALTHY"' --smoke-timeout 2 --smoke-interval 1 --smoke-successes 1 --warm-cmd 'sleep 30'
+  t_eq "...within seconds, not 30 s" "$(( $(date +%s) - t0 < 15 ))" "1"
+else t_skip "a hanging warm-up is cut off" "no \`timeout\` on this machine (Ubuntu has it; checked in the container suite)"; ACT "$R" cp "$IDCP5" --no-warm >/dev/null; fi
+t_eq "release 5 is live" "$(cur "$R" cp)" "$IDCP5"
+: > "$TMP/order.log"
+make_cp_tree "$TMP/cp6" CP6 1; IDCP6="$(stage_incoming "$R" cp "$TMP/cp6" $((EPOCH0 + 50)))"; fresh_backup "$R" 30
+t_ok "--no-warm skips the warm-up" ACT "$R" cp "$IDCP6" --no-warm --warm-cmd "echo warm >> $TMP/order.log"
+t_eq "...nothing ran" "$(wc -c < "$TMP/order.log" | tr -d ' ')" "0"
+: > "$TMP/order.log"
+make_cp_tree "$TMP/cp7" CP7 0; IDCP7="$(stage_incoming "$R" cp "$TMP/cp7" $((EPOCH0 + 60)))"; fresh_backup "$R" 30
+t_rc "an UNHEALTHY release is rolled back (3)" 3 ACT "$R" cp "$IDCP7" --fpm-reload-cmd "echo reload >> $TMP/order.log" --warm-cmd "echo warm >> $TMP/order.log"
+t_eq "ORDER on a failed gate: reload (new) -> reload (rollback) -> warm-up of the ROLLED-BACK release only; the broken release is never warmed" "$(tr '\n' ' ' < "$TMP/order.log")" "reload reload warm "
+: > "$TMP/order.log"
+make_site_tree "$TMP/sw" "SW" 1 sw.js; R4="$(new_root warmsite)"; IDSW="$(stage_incoming "$R4" site "$TMP/sw" $EPOCH0)"
+t_ok "a SITE release never runs the (PHP) warm-up" ACT "$R4" site "$IDSW" --warm-cmd "echo warm >> $TMP/order.log"
+t_eq "...nothing ran" "$(wc -c < "$TMP/order.log" | tr -d ' ')" "0"
+t_ok "manual cp rollback runs the warm-up after a healthy swap" bash "$REL/rollback-release.sh" --root "$R" --kind cp --smoke-cmd 'test -f "$AICC_RELEASE_DIR/HEALTHY"' --smoke-timeout 2 --smoke-interval 1 --smoke-successes 1 --fpm-reload-cmd "echo reload >> $TMP/order.log" --warm-cmd "echo warm >> $TMP/order.log"
+t_eq "ORDER on rollback: reload -> warm-up" "$(tr '\n' ' ' < "$TMP/order.log")" "reload warm "
+t_ok "the default warm-up command on the real host is the shipped warm-cp.sh (and sandboxes have none)" bash -c "grep -q 'WARM_CMD=\"\$HERE/warm-cp.sh\"' '$REL/activate-release.sh' && grep -q 'WARM_CMD=\"\$HERE/warm-cp.sh\"' '$REL/rollback-release.sh'"
+
+echo "== warm-cp.sh itself (loopback fixture server; nothing leaves this machine) =="
+WARM="$REL/warm-cp.sh"
+cat > "$TMP/warmsrv.py" <<'PY'
+import http.server, sys, threading
+log = sys.argv[2]
+class H(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        open(log, "a").write("%s|%s|%s|%s\n" % (self.command, self.path, self.headers.get("Host"), self.headers.get("User-Agent")))
+        self.send_response(200); self.send_header("Content-Length", "2"); self.end_headers(); self.wfile.write(b"ok")
+    do_POST = do_PUT = do_DELETE = lambda self: (open(log, "a").write("BAD-METHOD %s\n" % self.command), self.send_error(405))
+    def log_message(self, *a): pass
+s = http.server.ThreadingHTTPServer(("127.0.0.1", 0), H)
+open(sys.argv[1], "w").write(str(s.server_address[1]))
+s.serve_forever()
+PY
+python3 "$TMP/warmsrv.py" "$TMP/warm.port" "$TMP/warm.req" &
+WSRV=$!; for _ in 1 2 3 4 5 6 7 8 9 10; do [ -s "$TMP/warm.port" ] && break; sleep 0.3; done; WPORT="$(cat "$TMP/warm.port")"
+printf 'AICC_PUBLIC_HOST=stage.copilt.org\nAICC_STATIC_ROOT=/srv/aicc/site/current\n' > "$TMP/edge.env"
+: > "$TMP/warm.req"
+t_ok "warm-cp.sh exits 0 against a working edge" bash "$WARM" --edge-env "$TMP/edge.env" --connect "127.0.0.1:$WPORT" --scheme http --timeout 3
+t_eq "it made exactly the 4 default GETs, no other method" "$(wc -l < "$TMP/warm.req" | tr -d ' ')" "4"
+t_contains "the default set covers /pricing/, /my-account/, /cart/ and a REST route" "$(cat "$TMP/warm.req")" "GET|/pricing/|stage.copilt.org:$WPORT|aicc-release-warmup/1"
+t_contains "/my-account/ is requested" "$(cat "$TMP/warm.req")" "GET|/my-account/|"
+t_contains "/cart/ is requested" "$(cat "$TMP/warm.req")" "GET|/cart/|"
+t_contains "the REST route is namespaced (the REST INDEX is a public 404 and not worth warming)" "$(cat "$TMP/warm.req")" "GET|/?rest_route=/aicc-license/v1/plans|"
+t_not_contains "no BAD method was ever sent" "$(cat "$TMP/warm.req")" "BAD-METHOD"
+: > "$TMP/warm.req"
+t_ok "the host comes from --host when given; custom paths work; an unsafe path is ignored" bash -c "bash '$WARM' --host stage.copilt.org --connect 127.0.0.1:$WPORT --scheme http --paths '/a/ /b;rm /c?x=1' | grep -q 'ignoring unsafe path'"
+t_eq "...only the two safe paths were requested" "$(wc -l < "$TMP/warm.req" | tr -d ' ')" "2"
+t_ok "an unreachable edge: exit 0 and a message (never fails the release)" bash -c "bash '$WARM' --host stage.copilt.org --connect 127.0.0.1:1 --scheme http --timeout 2 | grep -q 'no answer'"
+t_rc "a non-loopback --connect is refused by the script itself (exit 0, nothing sent)" 0 bash "$WARM" --host stage.copilt.org --connect 10.9.8.7:443 --timeout 2
+t_ok "...with an explicit message" bash -c "bash '$WARM' --host stage.copilt.org --connect 10.9.8.7:443 | grep -q 'must be a loopback address'"
+t_ok "no host name available: skipped with exit 0" bash -c "bash '$WARM' --edge-env '$TMP/nonexistent.env' | grep -q 'no usable host name'"
+t_rc "an unknown argument still exits 0" 0 bash "$WARM" --bogus
+t_ok "--dry-run sends nothing" bash -c ": > '$TMP/warm.req'; bash '$WARM' --edge-env '$TMP/edge.env' --connect 127.0.0.1:$WPORT --scheme http --dry-run >/dev/null; [ ! -s '$TMP/warm.req' ]"
+t_fail "the script names no production host and issues no POST/-d/-X" grep -Eq 'www\.copilt\.org|api\.copilt\.org|curl[^|]*( -d |--data| -X )' "$WARM"
+kill "$WSRV" 2>/dev/null; wait "$WSRV" 2>/dev/null
+
 echo "== release tool: scan, pack, unpack =="
 mkdir -p "$TMP/bad1/wp-content/plugins/aicc-license-manager"; echo ok > "$TMP/bad1/index.php"
 printf -- '-----BEGIN %s-----\nabc\n' "PRIVATE KEY" > "$TMP/bad1/wp-content/plugins/aicc-license-manager/key.txt"
@@ -179,17 +250,20 @@ t_fail "unpack rejects a path-traversal tarball" "${TOOL[@]}" unpack --tarball "
 echo "== real Control Plane tarball (built from the CP worktree) =="
 CPOUT1="$TMP/cp-out1"; CPOUT2="$TMP/cp-out2"
 if [ -f "$HOME/.cache/aicc-release/wordpress-7.1.3.tar.gz" ] && [ -f "$HOME/.cache/aicc-release/woocommerce-10.9.4.zip" ] && [ -d "/Users/avivgerman/Local Sites/woo-recommendation-qa/aicc-control-plane-worktrees/cp2a-14-readiness-independence/admin" ]; then
-  t_ok "build-cp-release.sh builds (pinned WP 7.1.3 + WC 10.9.4 + theme + plugin)" bash "$REL/build-cp-release.sh" --out-dir "$CPOUT1"
-  t_ok "second build succeeds" bash "$REL/build-cp-release.sh" --out-dir "$CPOUT2"
+  # AICC_TEST_CP_ALLOW_DIRTY=1: build from the working tree while the Control Plane change set is still uncommitted (the build refuses a dirty tree otherwise; the "clean commit" check is then skipped, honestly)
+  CPDIRTY=(); [ "${AICC_TEST_CP_ALLOW_DIRTY:-0}" = "1" ] && CPDIRTY=(--allow-dirty)
+  t_ok "build-cp-release.sh builds (pinned WP 7.1.3 + WC 10.9.4 + theme + plugin)" bash "$REL/build-cp-release.sh" "${CPDIRTY[@]}" --out-dir "$CPOUT1"
+  t_ok "second build succeeds" bash "$REL/build-cp-release.sh" "${CPDIRTY[@]}" --out-dir "$CPOUT2"
   TB1="$(ls "$CPOUT1"/cp-*.tar.gz 2>/dev/null | head -1)"; TB2="$(ls "$CPOUT2"/cp-*.tar.gz 2>/dev/null | head -1)"
   t_eq "REPRODUCIBLE: two builds give byte-identical tarballs" "$(sha256_of_file "$TB1")" "$(sha256_of_file "$TB2")"
+  [ -f "$TB1" ] || { t_bad "a tarball exists to inspect" "the build produced none (a dirty Control Plane worktree is refused: commit first or set AICC_TEST_CP_ALLOW_DIRTY=1)"; TB1=/dev/null; }
   MAN1="${TB1%.tar.gz}.manifest.json"
   t_eq "manifest records the tarball hash" "$(jq -r '.tarball.sha256' "$MAN1")" "$(sha256_of_file "$TB1")"
   t_eq "manifest pins WordPress 7.1.3" "$(jq -r '.sources.wordpress.version' "$MAN1")" "7.1.3"
   t_eq "manifest pins WooCommerce 10.9.4" "$(jq -r '.sources.woocommerce.version' "$MAN1")" "10.9.4"
   t_eq "manifest records the WordPress source SHA-256" "$(jq -r '.sources.wordpress.tarball_sha256' "$MAN1")" "d2a09acb6a15e3b9c471d72557753c266d6f41a79ed19bfe04cbfe49e283b2a5"
   t_eq "manifest records the WooCommerce source SHA-256" "$(jq -r '.sources.woocommerce.zip_sha256' "$MAN1")" "6e58fc3ba9b18d1c9aee6b0227d3c3c09e4fe2c1332823bd2e0ac54ffcff64a9"
-  t_eq "the AICC components come from a clean commit" "$(jq -r '.sources.dirty' "$MAN1")" "false"
+  if [ "${AICC_TEST_CP_ALLOW_DIRTY:-0}" = "1" ]; then t_skip "the AICC components come from a clean commit" "AICC_TEST_CP_ALLOW_DIRTY=1 (change set not committed yet; manifest dirty=$(jq -r '.sources.dirty' "$MAN1"))"; else t_eq "the AICC components come from a clean commit" "$(jq -r '.sources.dirty' "$MAN1")" "false"; fi
   LIST="$(tar tzf "$TB1")"
   t_eq "tarball has no .git, tests, node_modules, .env, *.sql, *.log, fixtures" "$(printf '%s\n' "$LIST" | grep -cE '(^|/)(\.git|\.github|tests?|Tests|__tests__|node_modules|fixtures|test-store)(/|$)|(^|/)\.env|\.sql(\.gz)?$|\.log$|\.sqlite3?$|\.DS_Store' || true)" "0"
   t_eq "no real wp-config.php (only the symlink into shared storage)" "$(tar tvzf "$TB1" | grep -E ' wp-config\.php( |$)' | grep -c '^l' || true)" "1"
@@ -210,7 +284,8 @@ else t_skip "real CP tarball tests" "pinned sources not cached in ~/.cache/aicc-
 
 echo "== site builds: stage vs production =="
 SID="0123456789abcdef0123456789abcdef"
-if [ -f "$REPO/out/index.html" ]; then EXPORT="$REPO/out"; else EXPORT="$TMP/mini-export"; mkdir -p "$EXPORT/_next/static" "$EXPORT/404"; for p in index.html 404.html 404/index.html; do printf '<!doctype html><html><head><title>x</title></head><body>p</body></html>' > "$EXPORT/$p"; done; printf 'User-agent: *\nAllow: /\n' > "$EXPORT/robots.txt"; echo c > "$EXPORT/_next/static/c.js"; fi
+# the repo's out/ is used only when it can be a STAGE export; a production-URL export (SITE_URL=https://www.copilt.org, the usual state of out/) is refused by the stage transform by design, so the synthetic export is used instead
+if [ -f "$REPO/out/index.html" ] && ! grep -rqs --include='*.txt' --include='*.html' "www\.copilt\.org" "$REPO/out/__next._head.txt" "$REPO/out/index.html"; then EXPORT="$REPO/out"; else EXPORT="$TMP/mini-export"; mkdir -p "$EXPORT/_next/static" "$EXPORT/404"; for p in index.html 404.html 404/index.html; do printf '<!doctype html><html><head><title>x</title></head><body>p</body></html>' > "$EXPORT/$p"; done; printf 'User-agent: *\nAllow: /\n' > "$EXPORT/robots.txt"; echo c > "$EXPORT/_next/static/c.js"; fi
 t_ok "stage build succeeds" bash "$REL/build-site-release.sh" --target stage --stage-id "$SID" --export-dir "$EXPORT" --out-dir "$TMP/site-stage"
 t_ok "production build succeeds" bash "$REL/build-site-release.sh" --target production --export-dir "$EXPORT" --out-dir "$TMP/site-prod"
 SS="$(ls "$TMP"/site-stage/site-*.tar.gz | head -1)"; SP="$(ls "$TMP"/site-prod/site-*.tar.gz | head -1)"

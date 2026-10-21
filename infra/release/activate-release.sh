@@ -17,11 +17,14 @@
 #   7. cp: graceful PHP-FPM reload (SIGUSR2: clears OPcache and the realpath cache; opcache.validate_timestamps=0 makes this mandatory).
 #   8. HEALTH GATE: the smoke command must succeed <successes> times in a row within <smoke-timeout> seconds. If it does not: AUTO-ROLLBACK
 #      (current := old current, previous := old previous, reload again, smoke again). Exit 3 if rolled back, 4 if even the rollback is unhealthy (CRITICAL).
-#   9. prune old releases (keep the newest <keep>, never current/previous).
+#   9. cp only: OPCACHE WARM-UP after the health gate (warm-cp.sh: a few GETs of the common pages through the edge's loopback listener; failures are logged and NEVER fail or
+#      roll back the release; skipped when the health gate failed). The reload in step 7 empties OPcache; the first cold requests took 5-11 s.
+#  10. prune old releases (keep the newest <keep>, never current/previous).
 # Options: --root DIR (default /srv/aicc; any other root is a SANDBOX for tests: needs DIR/.aicc-sandbox, does no chown/systemctl)
 #   --incoming DIR  --manifest FILE  --sums FILE   (defaults: the .incoming-<id> names above)   --keep 4   --static-keep 3
 #   --smoke-cmd CMD (default smoke-<kind>.sh next to this script)  --smoke-timeout 30  --smoke-interval 2  --smoke-successes 2  --smoke-url U --smoke-resolve R
 #   --allow-uninstalled   cp, FIRST INSTALL ONLY: the health gate also accepts the redirect to wp-admin/install.php (WordPress core not installed yet)
+#   --warm-cmd CMD (cp; default: warm-cp.sh next to this script on the real host, none in a sandbox)  --no-warm
 #   --fpm-reload-cmd CMD (default: systemctl reload php8.3-fpm)  --backup-status FILE  --backup-dir DIR  --dump-max-age 900  --dry-run
 # Exit codes: 0 ok, 1 refused (nothing changed), 2 usage, 3 rolled back after a failed health gate, 4 rollback also unhealthy, 5 another activation is running.
 set -euo pipefail
@@ -32,7 +35,7 @@ HERE="$(cd "$(dirname "$self")" && pwd)"
 . "$HERE/lib/release-common.sh"
 
 KIND=""; ID=""; ROOT="/srv/aicc"; INCOMING=""; MANIFEST=""; SUMS=""; KEEP=4; STATIC_KEEP=3; SMOKE_CMD=""; SMOKE_TIMEOUT=30; SMOKE_INTERVAL=2; SMOKE_OK=2
-SMOKE_URL=""; SMOKE_RESOLVE=""; FPM_RELOAD=""; BK_STATUS="/srv/aicc/backups/status.json"; BK_DIR="/srv/aicc/backups"; DUMP_MAX_AGE=900; DRY=0; BK_SET=0; ALLOW_UNINSTALLED=0
+SMOKE_URL=""; SMOKE_RESOLVE=""; FPM_RELOAD=""; BK_STATUS="/srv/aicc/backups/status.json"; BK_DIR="/srv/aicc/backups"; DUMP_MAX_AGE=900; DRY=0; BK_SET=0; ALLOW_UNINSTALLED=0; WARM_CMD=""; NO_WARM=0
 usage() { sed -n 2,34p "$self"; }
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -51,6 +54,8 @@ while [ $# -gt 0 ]; do
     --smoke-url) SMOKE_URL="${2:-}"; shift 2 ;;
     --smoke-resolve) SMOKE_RESOLVE="${2:-}"; shift 2 ;;
     --fpm-reload-cmd) FPM_RELOAD="${2:-}"; shift 2 ;;
+    --warm-cmd) WARM_CMD="${2:-}"; shift 2 ;;
+    --no-warm) NO_WARM=1; shift ;;
     --backup-status) BK_STATUS="${2:-}"; BK_SET=1; shift 2 ;;
     --backup-dir) BK_DIR="${2:-}"; BK_SET=1; shift 2 ;;
     --dump-max-age) DUMP_MAX_AGE="${2:-}"; shift 2 ;;
@@ -76,6 +81,7 @@ if [ "$SANDBOX" = 1 ] && [ "$BK_SET" = 0 ]; then BK_STATUS="$ROOT/backups/status
 KDIR="$ROOT/$KIND"; RDIR="$KDIR/releases"; CUR="$KDIR/current"; PREV="$KDIR/previous"
 INCOMING="${INCOMING:-$RDIR/.incoming-$ID}"; MANIFEST="${MANIFEST:-$RDIR/.incoming-$ID.manifest.json}"; SUMS="${SUMS:-$RDIR/.incoming-$ID.SHA256SUMS}"
 [ -n "$SMOKE_CMD" ] || SMOKE_CMD="$HERE/smoke-$KIND.sh"
+if [ -z "$WARM_CMD" ] && [ "$SANDBOX" = 0 ] && [ "$KIND" = cp ]; then WARM_CMD="$HERE/warm-cp.sh"; fi
 if [ -z "$FPM_RELOAD" ]; then if [ "$SANDBOX" = 1 ]; then FPM_RELOAD="true"; else FPM_RELOAD="systemctl reload php8.3-fpm"; fi; fi
 # On the real host: a site release is also probed THROUGH the running edge (loopback, public SNI) and must carry this host's stage id.
 if [ "$SANDBOX" = 0 ] && [ "$KIND" = site ] && [ -r /etc/aicc-stage-identity ]; then
@@ -166,6 +172,7 @@ if [ "$healthy" = 0 ]; then
     alog "rolled back: current -> $OLD_CUR, previous -> ${OLD_PREV:-(none)}"
     reload_fpm || true
     if smoke_gate "rolled-back release $OLD_CUR"; then
+      [ "$KIND" = cp ] && [ "$NO_WARM" = 0 ] && rl_warm "$WARM_CMD"
       echo "ROLLED BACK to $OLD_CUR; the failed release stays in $RDIR/$ID for inspection ($RDIR/$ID.FAILED)." >&2
       [ "$KIND" = cp ] && echo "NOTE: the code was rolled back, the DATABASE was not. See infra/release/README.md (migration rules); restore from the pre-release dump only if the failed release changed the schema incompatibly." >&2
       exit 3
@@ -178,7 +185,10 @@ if [ "$healthy" = 0 ]; then
   exit 3
 fi
 
-# ---- 9. prune ------------------------------------------------------------------------------------------------------------------------------------
+# ---- 9. OPcache warm-up (cp only, AFTER the health gate; can never fail the release) ----------------------------------------------------------
+[ "$KIND" = cp ] && [ "$NO_WARM" = 0 ] && rl_warm "$WARM_CMD"
+
+# ---- 10. prune -----------------------------------------------------------------------------------------------------------------------------------
 prune_releases "$RDIR" "$KEEP" "$ID" "$OLD_CUR" "$(link_target_id "$PREV")"
 find "$RDIR" -maxdepth 1 -name '.incoming-*' -mtime +1 -exec rm -rf {} + 2>/dev/null || true
 alog "OK: $KIND release $ID is live (previous: ${OLD_CUR:-none})"

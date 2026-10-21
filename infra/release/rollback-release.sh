@@ -7,7 +7,7 @@
 # After the swap `previous` := the release that was just replaced, so running the command twice flips back and forth.
 # CODE rollback is NOT a DATABASE rollback (cp): see infra/release/README.md. If the release you are leaving changed the schema in a way the older code cannot
 # read, restore the pre-release dump instead (data written after the dump is lost; that loss is accepted in the owner-approved model).
-# Options as activate-release.sh: --root (sandbox for tests) --fpm-reload-cmd --smoke-cmd --smoke-timeout --smoke-interval --smoke-successes --smoke-url --smoke-resolve
+# Options as activate-release.sh: --root (sandbox for tests) --fpm-reload-cmd --smoke-cmd --smoke-timeout --smoke-interval --smoke-successes --smoke-url --smoke-resolve --warm-cmd --no-warm (the OPcache warm-up runs after a HEALTHY cp rollback, as after an activation; it never fails the rollback)
 # Exit codes: 0 ok, 1 refused, 2 usage, 3 the target is unhealthy (swap reverted), 5 lock held.
 set -euo pipefail
 umask 022
@@ -15,13 +15,13 @@ self="${BASH_SOURCE[0]}"; while [ -L "$self" ]; do d="$(cd "$(dirname "$self")" 
 HERE="$(cd "$(dirname "$self")" && pwd)"
 # shellcheck source=lib/release-common.sh
 . "$HERE/lib/release-common.sh"
-KIND=""; TO=""; ROOT="/srv/aicc"; SMOKE_CMD=""; SMOKE_TIMEOUT=30; SMOKE_INTERVAL=2; SMOKE_OK=2; SMOKE_URL=""; SMOKE_RESOLVE=""; FPM_RELOAD=""; DRY=0
+KIND=""; TO=""; ROOT="/srv/aicc"; SMOKE_CMD=""; SMOKE_TIMEOUT=30; SMOKE_INTERVAL=2; SMOKE_OK=2; SMOKE_URL=""; SMOKE_RESOLVE=""; FPM_RELOAD=""; DRY=0; WARM_CMD=""; NO_WARM=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --kind) KIND="${2:-}"; shift 2 ;; --to) TO="${2:-}"; shift 2 ;; --root) ROOT="${2:-}"; shift 2 ;;
     --smoke-cmd) SMOKE_CMD="${2:-}"; shift 2 ;; --smoke-timeout) SMOKE_TIMEOUT="${2:-}"; shift 2 ;; --smoke-interval) SMOKE_INTERVAL="${2:-}"; shift 2 ;;
     --smoke-successes) SMOKE_OK="${2:-}"; shift 2 ;; --smoke-url) SMOKE_URL="${2:-}"; shift 2 ;; --smoke-resolve) SMOKE_RESOLVE="${2:-}"; shift 2 ;;
-    --fpm-reload-cmd) FPM_RELOAD="${2:-}"; shift 2 ;; --dry-run) DRY=1; shift ;;
+    --fpm-reload-cmd) FPM_RELOAD="${2:-}"; shift 2 ;; --dry-run) DRY=1; shift ;; --warm-cmd) WARM_CMD="${2:-}"; shift 2 ;; --no-warm) NO_WARM=1; shift ;;
     -h|--help) sed -n 2,14p "$self"; exit 0 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
@@ -33,6 +33,7 @@ if [ "$ROOT" != "/srv/aicc" ]; then [ -f "$ROOT/.aicc-sandbox" ] || { echo "REFU
 elif [ "$(id -u)" != "0" ]; then echo "must run as root (sudo). Refusing." >&2; exit 2; fi
 KDIR="$ROOT/$KIND"; RDIR="$KDIR/releases"; CUR="$KDIR/current"; PREV="$KDIR/previous"
 [ -n "$SMOKE_CMD" ] || SMOKE_CMD="$HERE/smoke-$KIND.sh"
+if [ -z "$WARM_CMD" ] && [ "$SANDBOX" = 0 ] && [ "$KIND" = cp ]; then WARM_CMD="$HERE/warm-cp.sh"; fi
 if [ -z "$FPM_RELOAD" ]; then if [ "$SANDBOX" = 1 ]; then FPM_RELOAD="true"; else FPM_RELOAD="systemctl reload php8.3-fpm"; fi; fi
 LOCKDIR="$KDIR/.release.lock"
 rl_lock "$LOCKDIR" || { echo "another release operation is running" >&2; exit 5; }
@@ -63,6 +64,7 @@ while :; do
   fi
   sleep "$SMOKE_INTERVAL"
 done
+[ "$KIND" = cp ] && [ "$NO_WARM" = 0 ] && rl_warm "$WARM_CMD"
 echo "ROLLED BACK: current -> $TARGET (healthy)."
 [ "$KIND" = cp ] && echo "NOTE: the database was NOT rolled back (see infra/release/README.md)."
 exit 0

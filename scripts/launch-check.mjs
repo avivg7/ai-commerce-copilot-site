@@ -121,6 +121,10 @@ if (fs.existsSync(out)) {
   }
 }
 
+// Production preconditions that live in the Control Plane's configuration and cannot be read from this repository (architecture review B-3). Printed on every run so they are not forgotten;
+// the Control Plane's own gate (scripts/check-launch-blockers.php with AICC_PRODUCTION=1) is what fails on them.
+console.log("production precondition (checked by the Control Plane gate, not here): the CP -> Backend entitlement webhook. AICC_ENTITLEMENT_WEBHOOK_URL must be https://api.copilt.org/v1/internal/entitlement/webhook (the plugin's default is the docker-compose name http://backend:8000/...) and WP_ACCESSIBLE_HOSTS must be exactly api.copilt.org while WP_HTTP_BLOCK_EXTERNAL is true. Staging keeps WP_HTTP_BLOCK_EXTERNAL=true with its own host only; copying that to production silently blocks every paid-licence entitlement. Template (NOT usable): infra/provision/wp-config.production.template.php. Details: docs/cutover/runbook.md section 11 (B-3).");
+
 if (!problems.length) { console.log("PASS: nothing pending, drafted or unapproved would be published."); process.exit(0); }
 console.log(`${strict ? "FAIL" : "REPORT"}: ${problems.length} launch blocker(s)`);
 for (const p of problems) console.log("  - " + p);

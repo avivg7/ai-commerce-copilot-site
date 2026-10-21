@@ -1,11 +1,16 @@
 [Unit]
-Description=Run AICC WordPress cron every minute
+Description=Run AICC WordPress cron every 2 minutes
 
 [Timer]
-# every minute at second 00 (+/- 5 s so it does not line up with the minute's other work)
-OnCalendar=*-*-* *:*:00
+# every 2 minutes (minute 00, 02, 04 ...), second 00 (+/- 5 s so it does not line up with the minute's other work).
+# WHY NOT EVERY MINUTE (architecture review H-2/H-4, measured on the Linux staging host): one run is a full WordPress bootstrap in php-cli (opcache.enable_cli=Off) and cost
+# 2.31 CPU-s on average (median 2.20, p95 2.70, max 3.17; 30 runs from the journal). Every minute that is 3.9% of the SINGLE vCPU, continuously, for a store with nothing due most of the time.
+# Every 2 minutes halves it (about 1.9%). What the cadence costs: an event scheduled "now" (the entitlement KICK, wp_schedule_single_event(time()+3)) waits for the next run, up to
+# 2 minutes instead of 1; the 5-minute entitlement delivery schedule, the daily sweep and Action Scheduler (WP-Cron `action_scheduler_run_queue`, every minute by its own schedule) are
+# unaffected in substance. Nothing in the Control Plane needs sub-minute precision. AICC Ops `wc_cron_stale` warns after 1 h without a completed scheduled action, so it cannot fire
+# falsely on this cadence (tests/test_alerts.py::CronCadence). Persistent=false stays: minutes missed while the host was down are NOT replayed (Action Scheduler catches up on the next run).
+OnCalendar=*:0/2
 AccuracySec=5s
-# if the host was down, do not replay missed minutes
 Persistent=false
 Unit=aicc-wp-cron.service
 

@@ -91,7 +91,8 @@ class Runtime:
         finally:
             conn.close()
         lt = self.latest()
-        ctx = {"mem_total": (lt.get("mem.total_bytes") or (0,))[0], "vcpus": (lt.get("cpu.vcpus") or (1,))[0]}
+        ctx = {"mem_total": (lt.get("mem.total_bytes") or (0,))[0], "vcpus": (lt.get("cpu.vcpus") or (1,))[0],
+               "reboot_required": (lt.get("host.reboot_required") or (0,))[0] == 1}
         val = cap.evaluate(w, self.cfg["capacity"], ctx)
         with self._lock:
             self._cap_cache = (now, val)

@@ -272,6 +272,20 @@ def collect(full_cfg, cfg, state, now) -> Result:
         m["uptime.seconds"] = parse_uptime(_read(root, "uptime"))
     section("uptime", uptime)
 
+    def reboot_required():
+        # architecture review M-2: unattended-upgrades installs kernel/library updates that stay inactive until a reboot. Existence of the marker file is the whole signal.
+        f = cfg.get("reboot_required_file", "/var/run/reboot-required")
+        if not f:
+            return
+        try:
+            st = os.stat(f)
+        except FileNotFoundError:
+            m["host.reboot_required"] = 0.0
+            return
+        m["host.reboot_required"] = 1.0
+        m["host.reboot_required_age_s"] = max(now - st.st_mtime, 0.0)
+    section("reboot_required", reboot_required)
+
     def systemd():
         ctl = cfg.get("systemctl", "systemctl")
         for unit in cfg.get("units", []):

@@ -33,6 +33,17 @@ atomic_symlink() {
   mv_T "$tmp" "$link"
 }
 
+# rl_warm <command>: the OPcache warm-up after a healthy cp release or rollback (architecture review M-7). NEVER fails the caller: a warm-up problem must not undo or fail a healthy release.
+# 60 s hard cap (AICC_WARM_TIMEOUT overrides it, for tests) where `timeout` exists (Ubuntu), so a hung request cannot hold the release lock.
+rl_warm() {
+  local cmd="${1:-}"
+  [ -n "$cmd" ] || return 0
+  rl_log "OPcache warm-up: $cmd"
+  if command -v timeout >/dev/null 2>&1; then timeout "${AICC_WARM_TIMEOUT:-60}" bash -c "$cmd" || rl_log "warm-up ended with a non-zero status or timeout (ignored: the release is live and healthy)"
+  else bash -c "$cmd" || rl_log "warm-up ended with a non-zero status (ignored: the release is live and healthy)"; fi
+  return 0
+}
+
 # directory lock (portable); stale pid is taken over
 rl_lock() { # rl_lock <dir>
   local d="$1" pid

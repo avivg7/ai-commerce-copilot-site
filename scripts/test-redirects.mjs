@@ -109,6 +109,13 @@ function genRouting(operator = false) {
   L.push(`\thandle @wp_admin_big {`, `\t\timport to_wordpress_admin`, `\t}`);
   named("dup_error", M.DUPLICATE_ERROR_RE);
   L.push(`\thandle @dup_error {`, `\t\terror 404`, `\t}`);
+  if (!operator) {
+    // REST API index (review H-4): public listener only; the operator listener keeps /wp-json/ for wp-admin. Namespaced routes are not matched.
+    named("wp_rest_index_path", M.WP_REST_INDEX_PATH_RE);
+    L.push(`\thandle @wp_rest_index_path {`, `\t\terror 404`, `\t}`);
+    L.push(`\t@wp_rest_index_query {`, `\t\texpression ${qph}.matches('${M.WP_REST_INDEX_QUERY}')`, `\t}`);
+    L.push(`\thandle @wp_rest_index_query {`, `\t\terror 404`, `\t}`);
+  }
   named("static_immutable", M.IMMUTABLE_RE);
   L.push(`\thandle @static_immutable {`, `\t\theader Cache-Control "public, max-age=31536000, immutable"`, `\t\timport to_static`, `\t}`);
   named("static_demo", M.STATIC_DEMO_RE);
@@ -420,12 +427,29 @@ if (!QUIET) console.log(`test-redirects: ${CASES.length} cases, stand-in edge on
   ok(!structure.sites.some((x) => /^\s*metrics\b/m.test(x.text)) && ![...structure.snippets.values()].some((sn) => sn.body.some((l) => /^\s*(metrics)\b/.test(l))), "no site, handle or snippet may route `metrics` (it is served by the loopback admin API only)");
   ok(/^\s*admin \{\$AICC_ADMIN_ADDR:127\.0\.0\.1:12019\}\s*$/m.test(code), "the admin API must default to 127.0.0.1:12019");
   ok(/^\s*acme_ca \{\$AICC_ACME_CA:https:\/\/acme-v02\.api\.letsencrypt\.org\/directory\}\s*$/m.test(code), "the ACME CA must default to Let's Encrypt production");
+  // ---- access log (architecture review H-5): an ALLOW-LIST. The whole header maps are deleted; only the listed headers come back through log_append; retention 50 MiB x 10
+  {
+    const lg = snipText("edge_log");
+    const REQ_OK = ["User-Agent", "Referer", "Accept-Language", "Content-Type", "Content-Length", "Range", "If-None-Match"];
+    const RESP_OK = ["Content-Type", "Content-Length", "Content-Encoding", "Cache-Control", "Location", "Content-Range"];
+    ok(/^request>headers delete$/m.test(lg) && /^resp_headers delete$/m.test(lg), "edge_log must delete `request>headers` and `resp_headers` WHOLE (allow-list posture: a header nobody thought of must not reach the log)");
+    const reqUsed = [...lg.matchAll(/\{http\.request\.header\.([A-Za-z-]+)\}/g)].map((m) => m[1]);
+    const respUsed = [...lg.matchAll(/\{http\.response\.header\.([A-Za-z-]+)\}/g)].map((m) => m[1]);
+    ok(sameSet(reqUsed, REQ_OK), `edge_log may log exactly these request headers ${REQ_OK.join(", ")}; it logs: ${reqUsed.join(", ")}`);
+    ok(sameSet(respUsed, RESP_OK), `edge_log may log exactly these response headers ${RESP_OK.join(", ")}; it logs: ${respUsed.join(", ")}`);
+    ok(!/\{http\.(?:request|response)\.(?:header|cookie)\.(?:cookie|set-cookie|authorization|proxy-authorization|x-wp-nonce|nonce|cart-token|cart-hash|user-id|x-api-key|x-csrf[a-z-]*|x-forwarded-[a-z-]+)\}/i.test(lg), "edge_log must not log a secret-bearing header by placeholder");
+    ok(/^req_referer regexp "\(\?i\)/m.test(lg) && /^resp_location regexp "\(\?i\)/m.test(lg) && /^request>uri regexp "\(\?i\)/m.test(lg), "edge_log must redact secret-bearing query values in the URI, the Referer and the Location");
+    ok(/roll_size 50MiB/.test(lg) && /roll_keep 10\b/.test(lg) && /roll_keep_for 720h/.test(lg), "edge_log rotation must be 50 MiB x 10 files, 30 days (about 500 MiB cap: a 20 MiB x 5 cap held about one hour of history under load)");
+    const glob = regenerated.split("# BEGIN GLOBAL OPTIONS")[1]?.split("# END GLOBAL OPTIONS")[0] || "";
+    ok(/format filter \{[\s\S]*?request>headers delete[\s\S]*?request>uri regexp "\(\?i\)/.test(glob.split("\n").filter((l) => !/^\s*#/.test(l)).join("\n")), "the global (error) log must delete request>headers and redact the URI too: Caddy writes the whole request into an error entry");
+  }
   // ---- the WordPress origin forms
   ok(/^\s*import wp_proxy_fastcgi\s*$/m.test(snipText("wp_proxy")), "the committed (wp_proxy) selector must import the fastcgi form (the Linux target)");
   const fcgi = snipText("wp_proxy_fastcgi");
   ok(/php_fastcgi \{\$AICC_PHP_FPM_SOCKET:unix\/\/run\/php\/aicc-cp\.sock\}/.test(fcgi) && /root \* \{\$AICC_WP_ROOT\}/.test(fcgi) && /^file_server$/m.test(fcgi), "wp_proxy_fastcgi must be php_fastcgi on the unix socket with root {$AICC_WP_ROOT} and a file_server");
   ok(!/\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}:\d+|localhost:\d+/.test(fcgi), "wp_proxy_fastcgi must not contain an HTTP upstream address (unix socket only)");
   ok(/resolve_root_symlink/.test(fcgi), "wp_proxy_fastcgi must resolve the docroot symlink (opcache across release switches)");
+  for (const pat of ["X-Forwarded-*", "X-Remote-*", "X-Client-*", "X-Real-*", "X-Original-*", "X-Rewrite-*", "X-Custom-IP-*", "X-HTTP-Method-Override"]) ok(new RegExp(`^header_up -${pat.replace(/[*]/g, "\\*")}$`, "m").test(fcgi), `wp_proxy_fastcgi must strip the whole header family ${pat} (security review I1: deny-lists of single names rot)`);
   // request body cap (E9): every PUBLIC WordPress route is capped at 2 MB; only the operator-only /wp-admin/ route may take more
   for (const n of ["to_wordpress", "to_wordpress_nocache"]) ok(structure.snippets.get(n)?.body.includes("import wp_body_cap"), `snippet ${n} must import wp_body_cap (public WordPress routes have a request body cap)`);
   ok(/request_body \{\s*max_size 2MB\s*\}/.test((structure.snippets.get("wp_body_cap")?.body || []).join("\n").replace(/\n+/g, " ")) || (structure.snippets.get("wp_body_cap")?.body || []).join(" ").includes("max_size 2MB"), "wp_body_cap must set max_size 2MB");
@@ -445,6 +469,10 @@ if (!QUIET) console.log(`test-redirects: ${CASES.length} cases, stand-in edge on
       if (o.mode === "stage") ok(/aicc-stage-identity/.test(c) && /\{\$AICC_STAGE_ID\}/.test(c) && /"env":"staging"/.test(c), "the stage render must contain the identity route (env staging, id from AICC_STAGE_ID)");
       if (o.mode === "stage") ok(/X-Robots-Tag "noindex, nofollow, noarchive"/.test(c), "the stage render must send X-Robots-Tag noindex on every response (the staging host is never indexable)");
       if (o.mode === "production") ok(!/X-Robots-Tag/.test(c), "the production render must not send X-Robots-Tag");
+      // architecture review H-6: a live file must not say "nothing is live" / "NOT APPLIED"; the status banner (line 2) is true for the render
+      if (o.mode === "stage") ok(r.text.split("\n")[1].startsWith("# RENDERED FOR THE STAGE HOST") && !/Nothing here is live|NOT APPLIED/i.test(r.text.split("\n").slice(0, 6).join("\n")), "the stage render's status banner (line 2) must say it is the stage render that runs on the staging host, never 'nothing is live'");
+      if (o.mode === "rehearsal") ok(r.text.split("\n")[1].startsWith("# RENDERED FOR THE macOS REHEARSAL"), "the rehearsal render's banner must say so");
+      if (o.mode === "production") ok(!/Nothing here is live|NOT APPLIED/i.test(r.text.split("\n").slice(0, 6).join("\n")), "the committed template's status banner must not claim that nothing is live (the stage render of it is)");
       if (o.mode === "stage") ok(!/\blocal_certs\b|tls internal/.test(c) && /acme_ca/.test(c) && /^\s*email /m.test(c), "the stage render must use automatic public-CA HTTPS (no local_certs, no tls internal, email + acme_ca present)");
       if (o.topology === "stage" || o.mode === "stage") ok(!/www\.copilt\.org|(^|[\s,/])copilt\.org\b/m.test(c), `the ${label} render must not mention the production hosts in code`);
     }
@@ -627,6 +655,20 @@ async function selfTest() {
     ["trusted_proxies added to the public edge", (t) => t.replace("\tauto_https disable_redirects\n", "\tauto_https disable_redirects\n\tservers {\n\t\ttrusted_proxies static private_ranges\n\t}\n")],
     ["the PHP entry-point whitelist is widened to any wp-content file (generated drift)", (t) => t.replace("not path_regexp php_entry ^/(?:index|wp-login|wp-cron)", "not path_regexp php_entry ^/(?:wp-content/.*|index|wp-login|wp-cron)")],
     ["php_fastcgi stops resolving the docroot symlink", (t) => t.replace("\t\tresolve_root_symlink\n", "")],
+    // ---- architecture review fix round (H-4, F4): REST API index
+    ["REST index: the public path rule is removed (generated drift)", (t) => t.replace(/\t@wp_rest_index_path path_regexp [^\n]*\n\thandle @wp_rest_index_path \{\n\t\terror 404\n\t\}\n/, "")],
+    ["REST index: the public ?rest_route=/ rule is removed (generated drift)", (t) => t.replace(/\t@wp_rest_index_query \{\n[^\n]*\n\t\}\n\thandle @wp_rest_index_query \{\n\t\terror 404\n\t\}\n/, "")],
+    ["REST index: the path rule is widened to every /wp-json/ route (namespaced REST breaks; generated drift)", (t) => t.replace("wp_rest_index_path ^(/(?:he|es|ru))?/wp-json/?$", "wp_rest_index_path ^(/(?:he|es|ru))?/wp-json(?:/.*)?$")],
+    ["REST index: the operator listener gets the public 404 too (wp-admin discovery breaks; generated drift)", (t) => t.replace("# BEGIN GENERATED: routing operator\n", "# BEGIN GENERATED: routing operator\n\t@wp_rest_index_path path_regexp wp_rest_index_path ^(/(?:he|es|ru))?/wp-json/?$\n\thandle @wp_rest_index_path {\n\t\terror 404\n\t}\n")],
+    // ---- architecture review fix round (H-5, F1): access-log allow-list
+    ["access log: restore the deny-list (only X-Wp-Nonce deleted; Store API headers leak)", (t) => t.replace("\t\t\t\trequest>headers delete\n\t\t\t\tresp_headers delete\n\t\t\t\treq_referer", "\t\t\t\trequest>headers>X-Wp-Nonce delete\n\t\t\t\treq_referer")],
+    ["access log: log the Cart-Token request header again", (t) => t.replace("\tlog_append req_range {http.request.header.Range}\n", "\tlog_append req_range {http.request.header.Range}\n\tlog_append req_cart_token {http.request.header.Cart-Token}\n")],
+    ["access log: log the X-Wp-Nonce response header", (t) => t.replace("\tlog_append resp_location {http.response.header.Location}\n", "\tlog_append resp_location {http.response.header.Location}\n\tlog_append resp_nonce {http.response.header.X-Wp-Nonce}\n")],
+    ["access log: the Referer is logged unredacted", (t) => t.replace(/\t\t\t\treq_referer regexp [^\n]*\n/, "")],
+    ["access log: retention back to 20 MiB x 5", (t) => t.replace("roll_size 50MiB\n\t\t\troll_keep 10\n", "roll_size 20MiB\n\t\t\troll_keep 5\n")],
+    ["error log: request>headers no longer deleted (a 502 entry carries every request header)", (t) => afterHead(t, "# BEGIN GLOBAL OPTIONS", "\t\t\t\trequest>headers delete\n", "")],
+    ["fastcgi snippet stops stripping the X-Remote-* family (X-Remote-Addr reaches PHP; security review I1)", (t) => afterHead(t, "(wp_proxy_fastcgi) {", "\t\theader_up -X-Remote-*\n", "")],
+    ["wp_hidden loses the dependency-manifest rule (installed.json / composer.json public again; security review L4)", (t) => t.replace("composer\\.(?:json|lock)|installed\\.json|", "")],
     ["the ACME CA default is no longer Let's Encrypt production", (t) => t.replace("https://acme-v02.api.letsencrypt.org/directory", "https://acme.zerossl.com/v2/DV90")],
   ];
   const tmp = fs.mkdtempSync(path.join(process.env.TMPDIR || "/tmp", "aicc-redirect-mutants-"));

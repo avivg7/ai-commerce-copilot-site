@@ -5,7 +5,7 @@ import path from "node:path";
 import * as M from "../lib/redirect-matrix.mjs";
 import { verifyInstance, guardFor, allGuards, STAGE_REHEARSAL_HOST, stageId, alive, readPid, waitFor, startProbe, allEdgeLogFiles, readLogFile, P, INSTANCES, WP_UPSTREAM, req, rawRequest, readAccessLog, stripPort, resolveLocation, fsCaseInsensitive, sleep, now, ensureDirs, portListening, cpEchoToken, sh, caddyVersion } from "./lib.mjs";
 import { Section } from "./harness.mjs";
-import { productionReadonlyGuard, loopbackFetch, auditReport, readAuditFile } from "../lib/target-guard.mjs";
+import { productionReadonlyGuard, loopbackFetch, loopbackCurl, auditReport, readAuditFile } from "../lib/target-guard.mjs";
 import net from "node:net";
 const auditReportOf = (file) => auditReport(readAuditFile(file));
 const PRODRO = process.env.AICC_REHEARSAL_PRODUCTION_READONLY === "1"; // opt-in: read-only (GET/HEAD) probes of the REAL public sites; off by default (fail closed)
@@ -296,7 +296,7 @@ async function behavior() {
     hostRows.push({ case: label, status: r.status, location: loc, bodyBytes: r.body.length });
     S.check(`Host handling (exact): ${label}`, r.status === st && bodyOk && locOk && !/evil\.example/i.test(loc), `status=${r.status} (want ${st}) location=${loc || "-"} body[0..60]=${JSON.stringify(r.body.slice(0, 60))}`, `${r.status} ${loc}`);
   }
-  const wpEcho = await rq(E, `https://www.copilt.org/wp-json/?__rehearsal_echo=${cpEchoToken()}`, { headers: { "X-Forwarded-Host": "evil.example", Host: "www.copilt.org" } });
+  const wpEcho = await rq(E, `https://www.copilt.org/wp-json/aicc-license/v1/plans?__rehearsal_echo=${cpEchoToken()}`, { headers: { "X-Forwarded-Host": "evil.example", Host: "www.copilt.org" } });
   let echo = {}; try { echo = JSON.parse(wpEcho.body); } catch { /* */ }
   S.check(UPSTREAM_MODE === "fastcgi" ? "X-Forwarded-Host sent by a client never reaches WordPress at all (php_fastcgi: the header is stripped)" : "X-Forwarded-Host sent by a client never reaches WordPress as evil.example (the edge overwrites it with the real Host)", UPSTREAM_MODE === "fastcgi" ? !("x-forwarded-host" in (echo.headers || {})) && echo.status !== 0 : echo.headers?.["x-forwarded-host"] === "www.copilt.org", `CP saw x-forwarded-host=${echo.headers?.["x-forwarded-host"]}`);
   S.data.hostRows = hostRows;
@@ -701,7 +701,7 @@ async function breakIt() {
   const S = new Section("06-try-to-break", "Try to break it: spoofed headers, smuggling-style input, ranges, path ambiguity, locale + WordPress routes, ownership, unkeyed headers");
   await ensureInstances();
   const E = EDGE, T = cpEchoToken();
-  const echo = async (inst, headers, extraPath = "/wp-json/", o = {}) => { const r = await rq(inst, `https://www.copilt.org${extraPath}?__rehearsal_echo=${T}`, { headers, ...o }); let j = {}; try { j = JSON.parse(r.body); } catch { /* */ } return { r, j }; };
+  const echo = async (inst, headers, extraPath = "/wp-json/aicc-license/v1/plans", o = {}) => { const r = await rq(inst, `https://www.copilt.org${extraPath}?__rehearsal_echo=${T}`, { headers, ...o }); let j = {}; try { j = JSON.parse(r.body); } catch { /* */ } return { r, j }; };
   // 1. spoofed identity headers
   const spoof = { "X-Forwarded-For": "6.6.6.6, 7.7.7.7", "X-Real-IP": "7.7.7.7", Forwarded: "for=8.8.8.8;proto=http;host=evil.example", "X-Forwarded-Proto": "http", "X-Forwarded-Host": "evil.example", "X-Client-IP": "9.9.9.9", "True-Client-IP": "9.9.9.9", "X-Original-URL": "/wp-admin/", "X-Rewrite-URL": "/wp-admin/", "X-Forwarded-Server": "evil.example", "X-Request-Id": "attacker-chosen-id" };
   const { r, j } = await echo(E, spoof);
@@ -716,7 +716,7 @@ async function breakIt() {
   S.check("home_url() seen by the CP is https://www.copilt.org/ whatever the headers said", j.home_url === "https://www.copilt.org/", j.home_url);
   S.data.cpReceivedHeaders = h;
   // different sources -> different client IPs at the CP (IPv4 vs IPv6 loopback)
-  const v6 = await echo(E, { "X-Forwarded-For": "6.6.6.6" }, "/wp-json/", { connectIp: "::1" });
+  const v6 = await echo(E, { "X-Forwarded-For": "6.6.6.6" }, "/wp-json/aicc-license/v1/plans", { connectIp: "::1" });
   S.check(FC ? "a request from ::1 reaches the CP as client ::1 (REMOTE_ADDR, no XFF)" : "a request from ::1 reaches the CP as client ::1 (XFF = the peer, still overwritten)", v6.j.cp_client_ip === "::1" && (FC ? v6.j.remote_addr === "::1" && !("x-forwarded-for" in (v6.j.headers || {})) : v6.j.headers?.["x-forwarded-for"] === "::1"), `xff=${v6.j.headers?.["x-forwarded-for"]} cp_client_ip=${v6.j.cp_client_ip}`);
   // per-IP rate limit: 31st request from source A is 429, source B (::1) still 200  (runbook section 4 two-source smoke test)
   wpcliQuiet("transient", "delete", "--all");
@@ -786,6 +786,35 @@ import { loadTs } from "../lib/load.mjs";
 const wpcliQuiet = (...a) => sh("bash", [P.cpFixture, "wp", ...a]);
 
 /* ------------------------------------------------------------------ logging */
+/** Review H-5: run a throwaway Caddy built from a TEMPLATE TEXT's own (edge_log) snippet and global log block, send a Store API-like exchange with secrets in request headers, response headers, the URI and the Referer,
+ *  force a 502 (dead upstream), and report every secret VALUE found in the resulting access/error log. Self-contained (no standing edge): also runs on deliberately broken templates. */
+async function logLeakProbe(templateText, label) {
+  const dir = path.join(P.home, `run/logprobe-${label}`); fs.rmSync(dir, { recursive: true, force: true }); fs.mkdirSync(dir, { recursive: true });
+  const snippet = /\(edge_log\) \{\n(?:(?!\}\n)[^\n]*\n)*\}\n/.exec(templateText)?.[0];
+  const glob = templateText.slice(templateText.indexOf("\t# BEGIN GLOBAL OPTIONS"), templateText.indexOf("\t# END GLOBAL OPTIONS"));
+  const gi = glob.indexOf("\n\tlog {\n"), gj = glob.indexOf("\n\t}\n", gi);
+  if (!snippet || gi < 0) return { ok: false, leaks: [], note: "template shape not found" };
+  const fix = (x) => x.split("{$AICC_LOG_DIR:/var/log/caddy}").join(dir);
+  const T = Math.random().toString(36).slice(2, 8).toUpperCase();
+  const cf = `{\n\tadmin off\n\tauto_https off\n${fix(glob.slice(gi + 1, gj + 4))}}\n${fix(snippet)}\n:18099 {\n\timport edge_log public\n\theader X-Wp-Nonce RESPNONCE${T}\n\theader Nonce RESPNONCE2${T}\n\theader Cart-Token RESPCART${T}\n\theader Cart-Hash RESPHASH${T}\n\theader User-Id RESPUSER${T}\n\theader Set-Cookie wp_woocommerce_session_x=RESPCOOKIE${T}\n\theader Content-Type application/json\n\trespond \`{"ok":true}\` 200\n}\n:18098 {\n\timport edge_log public\n\treverse_proxy 127.0.0.1:1\n}\n`;
+  fs.writeFileSync(path.join(dir, "Caddyfile"), cf);
+  const { spawn } = await import("node:child_process");
+  for (const port of [18099, 18098]) if (await portListening(port)) return { ok: false, leaks: [], note: `port ${port} is already in use (a leftover throwaway Caddy?): the probe cannot run` };
+  const c = spawn(P.caddy, ["run", "--config", path.join(dir, "Caddyfile"), "--adapter", "caddyfile"], { stdio: "ignore", env: { ...process.env, XDG_DATA_HOME: dir + "/xdg", XDG_CONFIG_HOME: dir + "/cfg" } });
+  await sleep(1800);
+  const hdr = { "Nonce": `REQNONCE${T}`, "Cart-Token": `REQCART${T}`, "Cart-Hash": `REQHASH${T}`, "User-Id": `REQUSER${T}`, "X-Wp-Nonce": `REQXWP${T}`, "X-WC-Store-API-Nonce": `REQSTORE${T}`, Authorization: `Bearer REQAUTH${T}`, Cookie: `wordpress_logged_in_x=REQCOOKIE${T}`, "X-Api-Key": `REQKEY${T}`, "X-CSRF-Token": `REQCSRF${T}`, "X-Plugin-Custom": `REQCUSTOM${T}`, Referer: `https://www.copilt.org/my-account/lost-password/?key=REQREF${T}&id=1` };
+  const q = `?key=QKEY${T}&_wpnonce=QNONCE${T}&foo=bar`;
+  const a = loopbackCurl(`http://127.0.0.1:18099/wp-json/wc/store/v1/cart${q}`, { headers: hdr });
+  const e = loopbackCurl(`http://127.0.0.1:18098/wp-json/wc/store/v1/cart${q}`, { headers: hdr });
+  await sleep(600); c.kill("SIGTERM"); await waitFor(async () => !(await portListening(18099)) && !(await portListening(18098)), 8000, 100); await sleep(200);
+  const files = fs.readdirSync(dir).filter((f) => /\.log$/.test(f));
+  const text = Object.fromEntries(files.map((f) => [f, fs.readFileSync(path.join(dir, f), "utf8")]));
+  const vals = [...Object.values(hdr).flatMap((v) => (/^Bearer /.test(v) ? [v.slice(7)] : /=/.test(v) && !/^https/.test(v) ? [v.split("=")[1]] : /^https/.test(v) ? [`REQREF${T}`] : [v])), `QKEY${T}`, `QNONCE${T}`, `RESPNONCE${T}`, `RESPNONCE2${T}`, `RESPCART${T}`, `RESPHASH${T}`, `RESPUSER${T}`, `RESPCOOKIE${T}`];
+  const leaks = []; for (const [f, t] of Object.entries(text)) for (const v of vals) if (t.includes(v)) leaks.push(`${f}:${v.replace(T, "").slice(0, 12)}`);
+  const accessOk = Object.entries(text).some(([f, t]) => /aicc-edge\.log$/.test(f) && t.includes('"handled request"') && t.includes('"listener":"public"')), errOk = Object.entries(text).some(([f, t]) => /error\.log$/.test(f) && t.includes('"logger":"http.log.error'));
+  fs.rmSync(dir, { recursive: true, force: true });
+  return { ok: a.status === 200 && e.status === 502 && accessOk && errOk, leaks, note: `200/502 answered=${a.status}/${e.status}, access entry ${accessOk ? "present" : "MISSING"}, error entry ${errOk ? "present" : "MISSING"}, ${vals.length} secret values grepped` };
+}
 async function logging() {
   const S = new Section("07-logging", "Logging: JSON access + error logs, rotation settings, redaction, request id, peer IP, upstream");
   await ensureInstances();
@@ -814,11 +843,50 @@ async function logging() {
   const uri1 = e1?.request?.uri || "";
   const leaks = Object.values(marks).filter((m) => uri1.includes(m));
   S.check("logged URI: every secret-bearing query value is REDACTED (key, login, pass, password, token, code, nonce, _wpnonce, reset, license_key, case-insensitive KEY), foo=bar kept", leaks.length === 0 && /key=REDACTED/.test(uri1) && /foo=bar/.test(uri1) && !/UPPERSECRET/.test(uri1), `logged uri: ${uri1}`);
-  S.check("logged Referer is redacted too (page opened from a reset link)", !JSON.stringify(e1?.request?.headers || {}).includes("REFSECRET"), JSON.stringify(e1?.request?.headers?.Referer || e1?.request?.headers || {}).slice(0, 200));
-  S.check("no Cookie, Authorization or X-WP-Nonce request header is logged", !e1?.request?.headers?.Cookie && !e1?.request?.headers?.Authorization && !e1?.request?.headers?.["X-Wp-Nonce"], Object.keys(e1?.request?.headers || {}).join(","));
-  S.check("no Set-Cookie response header is logged (login attempt that sets wordpress_test_cookie / WooCommerce session)", all.every((x) => !x.resp_headers?.["Set-Cookie"]), `entries scanned: ${all.length}`);
-  const loc4 = e4?.resp_headers?.Location?.[0] || "";
+  S.check("logged Referer is redacted too (page opened from a reset link; allow-list field req_referer)", !JSON.stringify(e1 || {}).includes("REFSECRET") && /key=REDACTED/.test(e1?.req_referer || ""), JSON.stringify(e1?.req_referer || "").slice(0, 200));
+  S.check("ALLOW-LIST: the entry has NO request.headers and NO resp_headers map at all (so no Cookie, Authorization, X-WP-Nonce, Nonce, Cart-Token, Set-Cookie can be there)", e1 && !("headers" in (e1.request || {})) && !("resp_headers" in e1), `request keys: ${Object.keys(e1?.request || {}).join(",")}; top-level: ${Object.keys(e1 || {}).join(",")}`);
+  S.check("no Set-Cookie response header is logged, in any entry of any (current) log (login attempt that sets wordpress_test_cookie / WooCommerce session)", all.every((x) => !x.resp_headers?.["Set-Cookie"]), `entries scanned: ${all.length}`);
+  const loc4 = e4?.resp_location || e4?.resp_headers?.Location?.[0] || "";
   S.check("a redirect's logged Location is redacted (apex /my-account?key=... )", !loc4.includes("REDIRKEYSECRET") && /key=REDACTED/.test(loc4), loc4);
+  // ---- review H-5 (architecture): WooCommerce Store API credentials. A REAL Store API call carries Nonce / Cart-Token on the response; the request carries every secret-bearing header a
+  // client, a plugin or a gateway may send. None of the VALUES may appear anywhere in the edge logs, and the entry may contain nothing outside the allow-list.
+  const tag = Math.random().toString(36).slice(2, 10).toUpperCase();
+  const probeStart = Date.now() / 1000 - 2; // only lines written by THIS run are judged: rehearsal logs from before the allow-list legitimately still hold the old (leaking) lines
+  const sentHdr = { "User-Agent": `AICC-LogProbe/${tag}`, "Accept-Language": "he-IL,he;q=0.9", Nonce: `NONCEREQ${tag}`, "Cart-Token": `CARTTOKENREQ${tag}`, "Cart-Hash": `CARTHASHREQ${tag}`, "User-Id": `USERIDREQ${tag}`, "X-WC-Store-API-Nonce": `STOREAPINONCE${tag}`, "X-Wp-Nonce": `XWPNONCEREQ${tag}`, Authorization: `Bearer AUTHREQ${tag}`, Cookie: `wp_woocommerce_session_x=SESSREQ${tag}; wordpress_logged_in_x=LOGGEDREQ${tag}`, "X-Api-Key": `APIKEYREQ${tag}`, "X-CSRF-Token": `CSRFREQ${tag}`, "X-Forwarded-For": `203.0.113.77`, "X-Plugin-Custom-Secret": `CUSTOMREQ${tag}` };
+  const rApi = await rq(E, "https://www.copilt.org/wp-json/wc/store/v1/cart?_wpnonce=QSNONCE" + tag, { headers: sentHdr });
+  const rApi2 = await rq(E, "https://www.copilt.org/wp-json/wc/store/v1/cart/add-item", { method: "POST", headers: { ...sentHdr, "Content-Type": "application/json" }, body: JSON.stringify({ id: 1, quantity: 1, note: "BODYAPI" + tag }) });
+  await sleep(500);
+  const apiVals = [];
+  for (const r_ of [rApi, rApi2]) for (const h of ["cart-token", "nonce", "x-wp-nonce", "cart-hash", "user-id", "x-wc-store-api-nonce"]) for (const v of r_.headers?.[h] || []) if (String(v).length >= 6) apiVals.push(String(v));
+  const sentVals = Object.entries(sentHdr).filter(([k]) => !/^(User-Agent|Accept-Language|X-Forwarded-For)$/.test(k)).map(([, v]) => v).flatMap((v) => (/^Bearer /.test(v) ? [v, v.slice(7)] : /=/.test(v) ? v.split("; ").map((x) => x.split("=")[1]) : [v]));
+  await sleep(300);
+  const { map: map2 } = readAccessLog();
+  const eApi = map2.get(rApi.reqId), eApi2 = map2.get(rApi2.reqId);
+  S.check("a REAL Store API GET and POST went through the edge to WordPress and the answer carries store credentials (Cart-Token + Nonce response headers): the probe is not vacuous", rApi.status === 200 && (rApi.headers["cart-token"] || [""])[0].length > 40 && (rApi.headers.nonce || [""])[0].length >= 6 && !!eApi && !!eApi2 && isWpUp(eApi.upstream), `GET ${rApi.status}, POST ${rApi2.status}; response credential values captured: ${apiVals.length}`);
+  const ALLOWED_TOP = new Set(["level", "ts", "logger", "msg", "request", "bytes_read", "user_id", "duration", "size", "status", "request_id", "upstream", "listener", "uuid", "req_user_agent", "req_referer", "req_accept_language", "req_content_type", "req_content_length", "req_range", "req_if_none_match", "resp_content_type", "resp_content_length", "resp_content_encoding", "resp_cache_control", "resp_location", "resp_content_range"]);
+  const ALLOWED_REQ = new Set(["remote_ip", "remote_port", "client_ip", "proto", "method", "host", "uri", "tls"]);
+  const stray = [];
+  for (const x of [eApi, eApi2, e1, e2, e3, e4, e5, e6].filter(Boolean)) { for (const k of Object.keys(x)) if (!ALLOWED_TOP.has(k)) stray.push(k); for (const k of Object.keys(x.request || {})) if (!ALLOWED_REQ.has(k)) stray.push("request." + k); }
+  S.check("ALLOW-LIST: every field of every probe entry (Store API GET/POST, WordPress, static, redirect, deny) is in the documented set; nothing else (no header map, no custom field) is written", stray.length === 0, stray.length ? [...new Set(stray)].join(",") : `fields: ${Object.keys(eApi || {}).join(",")}`);
+  S.check("the allowed headers ARE logged (User-Agent, Accept-Language, response Content-Type, Cache-Control): the log is still useful", eApi?.req_user_agent === sentHdr["User-Agent"] && eApi?.req_accept_language === sentHdr["Accept-Language"] && /application\/json/.test(eApi?.resp_content_type || "") && /no-store/.test(eApi?.resp_cache_control || ""), JSON.stringify({ ua: eApi?.req_user_agent, al: eApi?.req_accept_language, ct: eApi?.resp_content_type, cc: eApi?.resp_cache_control }));
+  S.check("the logged URI of the Store API call has _wpnonce redacted", /_wpnonce=REDACTED/.test(eApi?.request?.uri || "") && !(eApi?.request?.uri || "").includes("QSNONCE"), eApi?.request?.uri || "");
+  const apiHits = [];
+  let judgedLines = 0;
+  for (const f of allEdgeLogFiles().map((f_) => path.relative(P.logs, f_))) { const text = readLogFile(path.join(P.logs, f)).split("\n").filter((l) => { const m = /"ts":(\d+(?:\.\d+)?)/.exec(l); const keep = m ? Number(m[1]) >= probeStart : true; if (keep && m) judgedLines++; return keep; }).join("\n"); for (const v of [...sentVals, ...apiVals, "BODYAPI" + tag, "QSNONCE" + tag]) if (text.includes(v)) apiHits.push(`${f}: ${v.slice(0, 10)}…`); }
+  S.check(`grep: none of ${sentVals.length + apiVals.length + 2} header/credential VALUES (every secret header the test SENT: Nonce, Cart-Token, Cart-Hash, User-Id, X-Wp-Nonce, X-WC-Store-API-Nonce, Authorization, Cookie, X-Api-Key, X-CSRF-Token, a custom plugin header; and the Store API's REAL response Cart-Token/Nonce values) appears in any edge log line written during this run`, apiHits.length === 0, apiHits.join("; ") || `0 hits in ${judgedLines} log lines of this run`);
+  // throwaway Caddy built from THIS template's (edge_log) snippet and global log block: the same probe, run on the real text and on mutated texts (the leak MUST be found when it is restored)
+  const probe = await logLeakProbe(fs.readFileSync(P.template, "utf8"), "real");
+  S.check("throwaway Caddy from the template's own (edge_log) + global log block: a Store API-like exchange (request AND response secret headers, a 502 on a dead upstream, secret query values) leaves 0 secret values in the access log AND the error log", probe.ok && probe.leaks.length === 0, `${probe.note}; leaks: ${probe.leaks.join(", ") || "none"}`);
+  const logMutants = [
+    ["restore the deny-list (only request>headers>X-Wp-Nonce deleted)", (t) => t.replace("\t\t\t\trequest>headers delete\n\t\t\t\tresp_headers delete\n\t\t\t\treq_referer", "\t\t\t\trequest>headers>X-Wp-Nonce delete\n\t\t\t\treq_referer")],
+    ["log the Cart-Token request header through log_append", (t) => t.replace("\tlog_append req_range {http.request.header.Range}\n", "\tlog_append req_range {http.request.header.Range}\n\tlog_append req_cart_token {http.request.header.Cart-Token}\n")],
+    ["log the Nonce response header through log_append", (t) => t.replace("\tlog_append resp_location {http.response.header.Location}\n", "\tlog_append resp_location {http.response.header.Location}\n\tlog_append resp_nonce {http.response.header.Nonce}\n")],
+    ["error log: request>headers not deleted", (t) => { const i = t.indexOf("# BEGIN GLOBAL OPTIONS"); const j = t.indexOf("\t\t\t\trequest>headers delete\n", i); return t.slice(0, j) + t.slice(j + "\t\t\t\trequest>headers delete\n".length); }],
+    ["error log: URI not redacted", (t) => { const i = t.indexOf("# BEGIN GLOBAL OPTIONS"); const j = t.indexOf("\t\t\t\trequest>uri regexp", i); const k = t.indexOf("\n", j); return t.slice(0, j) + t.slice(k + 1); }],
+  ];
+  const killed = [];
+  for (const [name, fn] of logMutants) { const base_ = fs.readFileSync(P.template, "utf8"); const mt = fn(base_); if (mt === base_) { killed.push(`${name}: SETUP STALE`); continue; } const pr = await logLeakProbe(mt, "mut"); killed.push(pr.leaks.length ? "" : `${name}: SURVIVED`); }
+  S.check(`mutation: ${logMutants.length} deliberately leaking variants of the log configuration are each caught by the same probe (a leak that is restored must fail the test)`, killed.every((x) => x === ""), killed.filter(Boolean).join("; ") || `${logMutants.length}/${logMutants.length} killed`);
   // grep every log for every secret string (also the pre-existing lines from the admin section's real reset flow)
   const files = allEdgeLogFiles().map((f) => path.relative(P.logs, f));
   const all2 = Object.values(marks).concat(["COOKIESECRET", "SESSIONSECRET", "AUTHSECRET", "XWPNONCESECRET", "REFSECRET", "BODYSECRET", "BODYSECRET2", "REDIRKEYSECRET", "DENYSECRET", "UPPERSECRET", "LOGINBODYSECRET"], secrets);
@@ -834,7 +902,8 @@ async function logging() {
   const walk = (o) => { if (o && typeof o === "object") { if (o.writer?.filename) writers.set(o.writer.filename, o.writer); Object.values(o).forEach(walk); } };
   walk(adapted.logging);
   const rot = [...writers.values()].map((w) => `${path.basename(w.filename)}: roll_size ${w.roll_size_mb} MB, keep ${w.roll_keep} files, ${w.roll_keep_days} days`);
-  S.check("rotation configured for both logs: 20 MiB per file, 5 files kept, 30 days (hard cap about 100 MiB per log; rolled files are gzip-compressed by Caddy's default)", rot.length >= 2 && [...writers.values()].every((w) => w.roll_size_mb === 20 && w.roll_keep === 5 && w.roll_keep_days === 30), rot.join("; "));
+  const wr = (n) => [...writers.values()].find((w) => path.basename(w.filename) === n);
+  S.check("rotation configured: ACCESS log 50 MiB per file x 10 files, 30 days (about 500 MiB cap: 20 MiB x 5 held about one hour under load, architecture review M-5); ERROR log 20 MiB x 5, 30 days (errors, not traffic); rolled files are gzip-compressed by Caddy's default", rot.length >= 2 && wr("aicc-edge.log")?.roll_size_mb === 50 && wr("aicc-edge.log")?.roll_keep === 10 && wr("aicc-edge.log")?.roll_keep_days === 30 && wr("error.log")?.roll_size_mb === 20 && wr("error.log")?.roll_keep === 5 && wr("error.log")?.roll_keep_days === 30, rot.join("; "));
   S.data.rotation = rot;
   // prove the rotation mechanism with a throwaway Caddy whose roll_size is tiny
   const scratch = path.join(P.home, "run/rotation-test"); fs.rmSync(scratch, { recursive: true, force: true }); fs.mkdirSync(scratch, { recursive: true });
@@ -850,7 +919,7 @@ async function logging() {
   const du = sh("du", ["-sk", P.logs]).stdout.split("\t")[0];
   S.info("current log directory size", `${du} KB under ${P.logs}`);
   // sanitized samples for the report
-  const sample = [e1, e2, e3, e4, e5].filter(Boolean).map((x) => ({ ts: x.ts, remote_ip: x.request.remote_ip, method: x.request.method, host: x.request.host, uri: x.request.uri, status: x.status, duration: x.duration, size: x.size, upstream: x.upstream, request_id: x.request_id, req_header_names: Object.keys(x.request.headers || {}), resp_location: x.resp_headers?.Location?.[0] }));
+  const sample = [e1, e2, e3, e4, e5].filter(Boolean).map((x) => ({ ts: x.ts, remote_ip: x.request.remote_ip, method: x.request.method, host: x.request.host, uri: x.request.uri, status: x.status, duration: x.duration, size: x.size, upstream: x.upstream, request_id: x.request_id, logged_extra_fields: Object.keys(x).filter((k) => /^(req|resp)_/.test(k)), resp_location: x.resp_location }));
   S.data.samples = sample;
   fs.writeFileSync(path.join(P.evidence, "log-samples-sanitized.jsonl"), sample.map((x) => JSON.stringify(x)).join("\n") + "\n");
   const errlog = fs.existsSync(path.join(P.logs, "error.log")) ? fs.readFileSync(path.join(P.logs, "error.log"), "utf8") : "";
@@ -1704,7 +1773,7 @@ async function mutation() {
   const detectors = {
     async "security headers appear once on proxied WordPress responses"(R) {
       const bad = [];
-      for (const p of ["/wp-login.php?loggedout=true", "/my-account/", "/pricing/", "/wp-json/", "/wp-admin/admin-ajax.php"]) { const r = await R(`https://www.copilt.org${p}`); for (const h of ["x-frame-options", "referrer-policy", "x-content-type-options", "permissions-policy", "strict-transport-security", "x-request-id"]) if ((r.headers[h] || []).length !== 1) bad.push(`${p} ${h} x${(r.headers[h] || []).length}`); }
+      for (const p of ["/wp-login.php?loggedout=true", "/my-account/", "/pricing/", "/wp-json/aicc-license/v1/plans", "/wp-admin/admin-ajax.php"]) { const r = await R(`https://www.copilt.org${p}`); for (const h of ["x-frame-options", "referrer-policy", "x-content-type-options", "permissions-policy", "strict-transport-security", "x-request-id"]) if ((r.headers[h] || []).length !== 1) bad.push(`${p} ${h} x${(r.headers[h] || []).length}`); }
       return bad;
     },
     async "Cache-Control appears once on forced-no-store WordPress routes"(R) {
@@ -1715,7 +1784,7 @@ async function mutation() {
     async "unknown Host on :80 -> exactly 421 'Misdirected request'"(R) { const r = await R("http://copilt.org/product", { headers: { Host: "evil.example" } }); return r.status === 421 && r.body.trim() === "Misdirected request" && !(r.headers.location || []).length ? [] : [`status ${r.status} body ${JSON.stringify(r.body.slice(0, 30))} location ${(r.headers.location || [])[0]}`]; },
     async "client-supplied identity headers never reach WordPress"(R) {
       const h = {}; for (const n of spoofNames) h[n] = "6.6.6.6"; h["X-Forwarded-For"] = "6.6.6.6, 7.7.7.7"; h["X-Forwarded-Proto"] = "http"; h["X-Forwarded-Host"] = "evil.example"; h["X-Request-Id"] = "attacker-id"; h.Via = "1.1 evil";
-      const r = await R(`https://www.copilt.org/wp-json/?__rehearsal_echo=${T}`, { headers: h }); let j = {}; try { j = JSON.parse(r.body); } catch { return ["no echo"]; }
+      const r = await R(`https://www.copilt.org/wp-json/aicc-license/v1/plans?__rehearsal_echo=${T}`, { headers: h }); let j = {}; try { j = JSON.parse(r.body); } catch { return ["no echo"]; }
       const seen = j.headers || {}; const bad = spoofNames.filter((n) => n.toLowerCase() in seen).map((n) => `leaked ${n}`);
       if (MUT_FCGI) {
         // php_fastcgi: PHP reads REMOTE_ADDR + HTTPS from Caddy; NO forwarding header of any kind may exist, and the client address is the real peer
@@ -1999,15 +2068,15 @@ async function stagefcgi() {
   const accessEntry = readAccessLog().map.get(pr.reqId);
   S.check("the edge access log names the upstream as the unix socket and the listener as public", !!accessEntry && /aicc-cp\.sock/.test(accessEntry.upstream || "") && accessEntry.listener === "public", `${accessEntry?.upstream} / ${accessEntry?.listener}`);
   // 2. forged identity headers never reach PHP; REMOTE_ADDR/HTTPS are Caddy's
-  const forged = { "X-Forwarded-For": "203.0.113.9, 198.51.100.7", "X-Real-IP": "203.0.113.10", Forwarded: "for=203.0.113.11;proto=http;host=evil.example", "X-Forwarded-Host": "evil.example", "X-Forwarded-Proto": "http", "Client-IP": "203.0.113.12", "True-Client-IP": "203.0.113.13", "CF-Connecting-IP": "203.0.113.14", "X-Client-IP": "203.0.113.15", "X-Cluster-Client-IP": "203.0.113.16", "X-Originating-IP": "203.0.113.17", "Fastly-Client-IP": "203.0.113.18", "Forwarded-For": "203.0.113.19", "X-Forwarded": "x", "X-Forwarded-Port": "8080", "X-Forwarded-Scheme": "http", "X-Forwarded-Ssl": "off", "Front-End-Https": "off", "X-Url-Scheme": "http", "X-Forwarded-Server": "evil", "X-Original-URL": "/wp-admin/", "X-Rewrite-URL": "/wp-admin/", Via: "1.1 evil", "X-Request-Id": "attacker-id" };
-  const e1 = await R(`/wp-json/?__rehearsal_echo=${T}`, { headers: forged });
+  const forged = { "X-Remote-Addr": "203.0.113.30", "X-Remote-IP": "203.0.113.31", "X-Remote-User": "admin", "X-HTTP-Method-Override": "DELETE", "X-Method-Override": "DELETE", "X-Custom-IP-Authorization": "127.0.0.1", "X-Client-Anything": "1", "X-Real-Anything": "1", "X-Original-Host": "evil.example", "X-Rewrite-Anything": "/x", "X-Forwarded-Anything": "evil", "X-Forwarded-For": "203.0.113.9, 198.51.100.7", "X-Real-IP": "203.0.113.10", Forwarded: "for=203.0.113.11;proto=http;host=evil.example", "X-Forwarded-Host": "evil.example", "X-Forwarded-Proto": "http", "Client-IP": "203.0.113.12", "True-Client-IP": "203.0.113.13", "CF-Connecting-IP": "203.0.113.14", "X-Client-IP": "203.0.113.15", "X-Cluster-Client-IP": "203.0.113.16", "X-Originating-IP": "203.0.113.17", "Fastly-Client-IP": "203.0.113.18", "Forwarded-For": "203.0.113.19", "X-Forwarded": "x", "X-Forwarded-Port": "8080", "X-Forwarded-Scheme": "http", "X-Forwarded-Ssl": "off", "Front-End-Https": "off", "X-Url-Scheme": "http", "X-Forwarded-Server": "evil", "X-Original-URL": "/wp-admin/", "X-Rewrite-URL": "/wp-admin/", Via: "1.1 evil", "X-Request-Id": "attacker-id" };
+  const e1 = await R(`/wp-json/aicc-license/v1/plans?__rehearsal_echo=${T}`, { headers: forged });
   let j1 = {}; try { j1 = JSON.parse(e1.body); } catch { /* checked below */ }
   const seen = j1.headers || {};
   const leaked = Object.keys(forged).filter((k) => k.toLowerCase() !== "x-request-id" && k.toLowerCase() in seen);
   S.check(`FORGED forwarding/identity headers (${Object.keys(forged).length - 1} names, X-Forwarded-For/-Proto/-Host, Forwarded, X-Real-IP, Client-IP, Via, ...) never reach PHP as HTTP_* (none of them appears in the echoed request headers)`, leaked.length === 0 && e1.status === 200, leaked.length ? `LEAKED: ${leaked.join(", ")}` : `0 of ${Object.keys(forged).length - 1} leaked; PHP saw: ${Object.keys(seen).sort().join(", ")}`);
   S.check("PHP's REMOTE_ADDR is the real peer (127.0.0.1) and HTTPS=on is set by Caddy; WordPress is_ssl() is true WITHOUT any X-Forwarded-Proto; the plugin's client IP is the peer, never the forged value", j1.remote_addr === "127.0.0.1" && j1.https_server_var === "on" && j1.is_ssl === true && j1.cp_client_ip === "127.0.0.1", JSON.stringify({ remote: j1.remote_addr, https: j1.https_server_var, ssl: j1.is_ssl, cp: j1.cp_client_ip }));
   S.check("the request id is the edge's, not the client's", seen["x-request-id"] && seen["x-request-id"] !== "attacker-id", seen["x-request-id"]);
-  const e6 = await R(`/wp-json/?__rehearsal_echo=${T}`, { headers: { "X-Forwarded-For": "203.0.113.9" }, connectIp: "::1" });
+  const e6 = await R(`/wp-json/aicc-license/v1/plans?__rehearsal_echo=${T}`, { headers: { "X-Forwarded-For": "203.0.113.9" }, connectIp: "::1" });
   let j6 = {}; try { j6 = JSON.parse(e6.body); } catch { /* below */ }
   S.check("over IPv6 loopback the real peer is ::1 (REMOTE_ADDR), the forged XFF is ignored", j6.remote_addr === "::1" && !("x-forwarded-for" in (j6.headers || {})), JSON.stringify({ remote: j6.remote_addr, status: e6.status }));
   // 3. the operator listener

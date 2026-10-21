@@ -41,6 +41,9 @@ DEFAULTS: dict = {
             "systemctl": "systemctl",
             "net_interface": "auto",
             "disk_device": "auto",
+            # Debian/Ubuntu `update-notifier-common` / unattended-upgrades create this file when a kernel or core-library update needs a reboot. ONLY its existence
+            # is read (the file lists package names, which are not collected). `needrestart -b` is deliberately NOT run (too heavy for a one-vCPU host).
+            "reboot_required_file": "/var/run/reboot-required",
         },
         "caddy": {
             "enabled": True, "interval_s": 30, "timeout_s": 5,

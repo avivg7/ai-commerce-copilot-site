@@ -37,6 +37,8 @@ export const PRODUCTION_NAMES = ["www.copilt.org", "copilt.org", "api.copilt.org
 export const PRODUCTION_DOMAIN = "copilt.org";
 /** 139.59.157.231 = the API droplet (api.copilt.org); the four GitHub Pages addresses = today's public www.copilt.org / copilt.org. */
 export const KNOWN_PRODUCTION_IPS = ["139.59.157.231", "185.199.108.153", "185.199.109.153", "185.199.110.153", "185.199.111.153"];
+/** GitHub Pages' IPv6 range (www.copilt.org's AAAA records: 2606:50c0:8000::153 ... 8003::153) as [prefix, bits]. */
+export const KNOWN_PRODUCTION_V6 = [["2606:50c0:8000::", 46]];
 export const SAFE_METHODS = ["GET", "HEAD", "OPTIONS"];
 
 export class GuardRefusal extends Error {
@@ -68,7 +70,60 @@ export function classifyHost(h) {
 const v4mapped = (ip) => { const m = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/i.exec(ip); return m ? m[1] : ip; };
 export const normIp = (ip) => v4mapped(String(ip || "").trim().replace(/^\[|\]$/g, "").toLowerCase());
 export const isLoopbackIp = (ip) => { const x = normIp(ip); return /^127\./.test(x) || x === "::1"; };
-export const isKnownProductionIp = (ip) => KNOWN_PRODUCTION_IPS.includes(normIp(ip));
+
+/* Strict address parsing (security review L5, 2026-10-21). The string compare of the first version missed `::ffff:8b3b:9de7` (the hex IPv4-mapped form of the API droplet) and every
+ * IPv6 address of GitHub Pages. An address is now PARSED: IPv4 must be canonical dotted decimal (no leading zero: glibc reads 139.073.157.231 as octal 139.59.157.231), IPv6 must not carry
+ * a zone id, and every IPv4 an IPv6 address embeds (mapped, compatible, NAT64 64:ff9b::/96, 6to4 2002::/16, Teredo 2001::/32) is extracted and checked. Anything else fails closed. */
+const V4_STRICT = /^(0|[1-9]\d{0,2})(\.(0|[1-9]\d{0,2})){3}$/;
+const v4Octets = (s) => (V4_STRICT.test(s) ? s.split(".").map(Number) : null);
+function v6Bytes(str) {
+  let x = String(str);
+  if (x.includes("%") || !net.isIPv6(x)) return null;
+  const tail = /^(.*:)(\d+\.\d+\.\d+\.\d+)$/.exec(x);
+  if (tail) { const o = v4Octets(tail[2]); if (!o || o.some((n) => n > 255)) return null; x = tail[1] + ((o[0] << 8) | o[1]).toString(16) + ":" + ((o[2] << 8) | o[3]).toString(16); }
+  const [head, rest] = x.split("::");
+  const hs = head ? head.split(":") : [];
+  const ts = rest === undefined ? [] : rest ? rest.split(":") : [];
+  const groups = rest === undefined ? hs : [...hs, ...Array(8 - hs.length - ts.length).fill("0"), ...ts];
+  if (groups.length !== 8) return null;
+  const out = [];
+  for (const g of groups) { const n = parseInt(g, 16); if (!/^[0-9a-f]{1,4}$/i.test(g)) return null; out.push(n >> 8, n & 255); }
+  return out;
+}
+const v4Text = (b) => b.join(".");
+const inV6Prefix = (bytes, prefix, bits) => { const p = v6Bytes(prefix); for (let i = 0; i < bits; i++) if (((bytes[i >> 3] >> (7 - (i & 7))) & 1) !== ((p[i >> 3] >> (7 - (i & 7))) & 1)) return false; return true; };
+/** @returns {{ok:boolean, ip?:string, version?:4|6, prod?:boolean, embedded?:string[], reason?:string}} */
+export function ipVerdict(raw) {
+  const v = String(raw ?? "");
+  if (v === "" || v !== v.trim()) return { ok: false, reason: "empty or surrounded by whitespace" };
+  const x = v.startsWith("[") && v.endsWith("]") ? v.slice(1, -1) : v;
+  if (!x.includes(":")) {
+    const o = v4Octets(x);
+    if (!o || o.some((n) => n > 255)) return { ok: false, reason: "not a canonical dotted-decimal IPv4 address (leading zero, hex/octal/decimal notation, short form, trailing dot or garbage)" };
+    return { ok: true, version: 4, ip: x, prod: KNOWN_PRODUCTION_IPS.includes(x), embedded: [] };
+  }
+  const b = v6Bytes(x);
+  if (!b) return { ok: false, reason: "not a valid IPv6 address (or it carries a zone id)" };
+  const embedded = [];
+  const zero = (a, z) => b.slice(a, z).every((n) => n === 0);
+  if (zero(0, 10) && b[10] === 255 && b[11] === 255) embedded.push(["IPv4-mapped", v4Text(b.slice(12))]);
+  else if (zero(0, 12) && !(zero(12, 15) && b[15] <= 1)) embedded.push(["IPv4-compatible", v4Text(b.slice(12))]);
+  if (b[0] === 0 && b[1] === 0x64 && b[2] === 0xff && b[3] === 0x9b) { if (zero(4, 12)) embedded.push(["NAT64 64:ff9b::/96", v4Text(b.slice(12))]); else if (b[4] === 0 && b[5] === 1) embedded.push(["NAT64 local-use 64:ff9b:1::/48", null]); }
+  if (b[0] === 0x20 && b[1] === 0x02) embedded.push(["6to4 2002::/16", v4Text(b.slice(2, 6))]);
+  if (b[0] === 0x20 && b[1] === 0x01 && b[2] === 0 && b[3] === 0) { embedded.push(["Teredo server", v4Text(b.slice(4, 8))]); embedded.push(["Teredo client", v4Text(b.slice(12).map((n) => n ^ 255))]); }
+  const canonical = Array.from({ length: 8 }, (_, i) => ((b[2 * i] << 8) | b[2 * i + 1]).toString(16)).join(":");
+  const prod = embedded.some(([, a]) => a && KNOWN_PRODUCTION_IPS.includes(a)) || KNOWN_PRODUCTION_V6.some(([p, n]) => inV6Prefix(b, p, n));
+  return { ok: true, version: 6, ip: net.isIPv6(x) ? x.toLowerCase() : canonical, expanded: canonical, prod, embedded: embedded.map(([k, a]) => `${k}${a ? " " + a : ""}`) };
+}
+export const isKnownProductionIp = (ip) => { const r = ipVerdict(String(ip ?? "").trim().replace(/^\[|\]$/g, "")); if (r.ok) return r.prod; const n = normIp(ip); return KNOWN_PRODUCTION_IPS.includes(n); };
+/** Refuse an address that is not a plain, canonical, non-production address (the fail-closed rule for every target the guard is given). */
+function refuseBadIp(label, raw) {
+  const r = ipVerdict(raw);
+  if (!r.ok) refuse("invalid-ip", `${label} '${raw}' is not accepted: ${r.reason}`);
+  if (r.prod) refuse("known-production-ip", `${label} ${raw} is (or embeds) a known PRODUCTION / public-site address (the API droplet or GitHub Pages): never a staging target`);
+  if (r.embedded.length) refuse("invalid-ip", `${label} '${raw}' is an IPv4-embedding IPv6 form (${r.embedded[0]}): use the plain IPv4 or global IPv6 address`);
+  return r;
+}
 const brackets = (ip) => (net.isIPv6(ip) ? `[${ip}]` : ip);
 
 /** Split an absolute URL WITHOUT normalising it (dot-segments, double slashes and raw bytes must reach the edge as written). */
@@ -131,6 +186,8 @@ export function buildConfig(c = {}) {
   if (kind === "production-domain") refuse("production-host", `'${host}' is under the production domain ${PRODUCTION_DOMAIN} but is not a stage*/staging* name: refused.`);
   if (kind !== "staging") refuse("not-a-staging-name", `'${host}' is not recognisably a staging name (the first label must start with stage or staging, e.g. stage.copilt.org)`);
   if (c.stageIp === undefined || c.stageIp === null || String(c.stageIp).trim() === "") refuse("missing-ip", "no expected IP (--stage-ip / AICC_STAGE_IP): without it there is no connect-to mapping, and an unmapped name would be resolved through public DNS");
+  const rawIp = String(c.stageIp);
+  refuseBadIp("the expected IP", rawIp);
   const ip = normIp(c.stageIp);
   if (!net.isIP(ip)) refuse("invalid-ip", `'${c.stageIp}' is not an IP address`);
   if (/^(0\.0\.0\.0|::|::0)$/.test(ip) || /^(22[4-9]|2[3-5]\d)\./.test(ip)) refuse("invalid-ip", `${ip} is not a unicast destination`);
@@ -149,6 +206,7 @@ export function buildConfig(c = {}) {
   }
   if (c.operatorTunnel) {
     const t = c.operatorTunnel;
+    if (t.publicIp !== undefined && t.publicIp !== null && String(t.publicIp) !== "") refuseBadIp("the tunnel's public IP", String(t.publicIp));
     const pub = normIp(t.publicIp);
     if (c.rehearsal) refuse("operator-tunnel", "an operator tunnel is for the real staging host, not for a rehearsal config");
     if (!net.isIP(pub) || isLoopbackIp(pub) || /^(0\.0\.0\.0|::|::0)$/.test(pub) || /^(22[4-9]|2[3-5]\d)\./.test(pub)) refuse("operator-tunnel", `--operator-tunnel-of must be the staging host's public unicast IP (got '${t.publicIp ?? ""}')`);

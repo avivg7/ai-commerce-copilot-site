@@ -1,6 +1,6 @@
 # The Linux staging host: what changes, how it is rendered, how it is tested
 
-Status: **PREPARATION. The staging host does not exist yet** (the owner creates it). Everything below is implemented and tested locally with the real Caddy 2.11.7 and a real php-fpm 8.2.29 on this Mac (`docs/cutover/rehearsal.md`), and is **UNVERIFIED on Linux until the staging host exists**; section 12 lists exactly what remains unproven. Labels: **VERIFIED** (observed in a run on this Mac), **INFERRED** (follows from documentation or from a verified behaviour, not run), **UNVERIFIED** (needs the Linux host or the public CA).
+Status (updated 2026-10-21): **the Linux staging host `stage.copilt.org` EXISTS and runs the stage render of this template** (Droplet, Caddy 2.11.7 as `aicc-edge`, PHP-FPM 8.3 pool user `aicc-cp`, MySQL 8.0, releases under `/srv/aicc/{site,cp}/releases`). It was exercised and then independently reviewed (`~/Downloads/AICC-cutover-evidence/linux-stage/`, `reviewer-architecture-final.md`; replay artifacts in `linux-stage/replay/`). Everything below was first implemented and tested locally with the real Caddy 2.11.7 and a real php-fpm 8.2.29 on the Mac (`docs/cutover/rehearsal.md`); the sections that say UNVERIFIED on Linux were written BEFORE the host existed, and `docs/cutover/runbook.md` section 10 lists what the staging run still did NOT prove (production render, apex/www flip, IPv6, HSTS ramp, Search Console, mail DNS, DB-changing rollbacks). Labels: **VERIFIED** (observed in a run on this Mac), **INFERRED** (follows from documentation or from a verified behaviour, not run), **UNVERIFIED** (needs the Linux host or the public CA).
 
 Owner-approved defaults for the staging host (2026-10-21), all implemented in the one template `docs/cutover/Caddyfile.edge.template`:
 
@@ -8,18 +8,18 @@ Owner-approved defaults for the staging host (2026-10-21), all implemented in th
 |---|---|
 | Public name `stage.copilt.org`, Caddy automatic HTTPS with Let's Encrypt (HTTP-01 / TLS-ALPN-01, **no DNS API token**) | stage render, site address `{$AICC_PUBLIC_HOST}`, `acme_ca` pinned to Let's Encrypt (no ZeroSSL fallback), `email {$AICC_ACME_EMAIL}` |
 | HTTP/3 **off** | `servers { protocols h1 h2 }`, no UDP listener, no `Alt-Svc` (an explicit `-Alt-Svc` keeps it that way) |
-| Caddy to PHP through a **unix socket**, no HTTP upstream port anywhere | `php_fastcgi unix//run/php/aicc-cp.sock` with `root {$AICC_WP_ROOT}` (`/srv/aicc/cp/current/wp`) |
+| Caddy to PHP through a **unix socket**, no HTTP upstream port anywhere | `php_fastcgi unix//run/php/aicc-cp.sock` with `root {$AICC_WP_ROOT}` (`/srv/aicc/cp/current` on the Linux hosts: the release tree is the WordPress root; `edge.env` sets it) |
 | MySQL socket-only | a provisioning matter (`infra/mysql`); `scripts/ops/edge-listener-audit.sh` fails when 3306/33060 listen on TCP |
 | Operator administration through an **SSH tunnel** to a **loopback-only** listener, no public CIDR allowlist | second site address `{host}:8443` with `bind 127.0.0.1` |
 | Static site from `/srv/aicc/site/current` | `AICC_STATIC_ROOT` |
 | Caddy admin API on loopback only; metrics enabled privately | `admin 127.0.0.1:12019`; global `metrics`; never routed by any site |
-| JSON logs with the existing redaction | unchanged `(edge_log)`; new field `listener` = `public` or `operator` |
+| JSON logs, REDACTED by an allow-list (since the architecture review H-5) | `(edge_log)`: `request>headers` and `resp_headers` deleted whole, only 7 request and 6 response headers come back as flat `req_*` / `resp_*` fields; 50 MiB x 10 retention; field `listener` = `public` or `operator`; the error log carries the same filter |
 
 ## 1. Architecture on the host
 
 ```
 Internet --80/443 (h1,h2)--> Caddy (user aicc-edge) ---static---> /srv/aicc/site/current   (file_server; 50x.html, 404.html inside)
-                                  |  \--php_fastcgi--unix//run/php/aicc-cp.sock--> PHP-FPM (user www-data) --> /srv/aicc/cp/current/wp --unix socket--> MySQL
+                                  |  \--php_fastcgi--unix//run/php/aicc-cp.sock--> PHP-FPM (user aicc-cp) --> /srv/aicc/cp/current --unix socket--> MySQL
                                   |   (Caddy reads the same docroot: existing files are served by file_server, everything else falls back to /index.php)
 operator laptop --ssh -L 443:127.0.0.1:8443--> 127.0.0.1:8443 (Caddy, loopback only: same host name, same certificate, /wp-admin /wp-login.php /wp-cron.php allowed)
 host itself ----> 127.0.0.1:12019 (Caddy admin API and /metrics; nothing else may reach it)
@@ -101,7 +101,7 @@ echo | openssl s_client -connect stage.copilt.org:443 -servername stage.copilt.o
 openssl s_client -connect stage.copilt.org:443 -servername stage.copilt.org -tls1_3 </dev/null 2>&1 | grep -E 'Protocol|Cipher is'
 curl -sI https://stage.copilt.org/ | grep -iE 'alt-svc|strict-transport|x-robots-tag|server|via'
 scripts/ops/cert-expiry-check.sh --host stage.copilt.org                                                     # from a machine OUTSIDE the host
-ls /var/lib/aicc-edge/caddy/certificates/*/stage.copilt.org/                                                 # on the host: .crt, .key, .json per CA directory
+sudo sh -c 'ls /var/lib/aicc-edge/caddy/certificates/*/stage.copilt.org/'                                         # on the host (the glob must expand AS root: the directory is 0700 aicc-edge): .crt, .key, .json per CA directory
 ```
 
 | Check | Expected |
@@ -127,10 +127,10 @@ The standing rehearsal edge has **no UDP socket at all** (`lsof -iUDP` empty; re
 ## 9. What the edge expects from the provisioning work (check against `infra/php`, `infra/mysql`, `infra/systemd`)
 
 * A PHP-FPM pool whose socket is `/run/php/aicc-cp.sock` with mode `0660`, `listen.owner` = the PHP user and `listen.group` = the edge's group (`aicc-edge`); the socket must exist **before** Caddy starts (`After=` / `Requires=` the pool in the edge unit; the preflight fails otherwise).
-* The docroot `/srv/aicc/cp/current/wp` is a symlink to the release; it is **readable by the edge's user** (Caddy checks file existence and serves non-PHP files) and **not writable by it**; the PHP user writes only `wp-content/uploads` (and cache directories). `resolve_root_symlink` makes opcache follow release switches.
+* The docroot `/srv/aicc/cp/current` (the Linux hosts; `/srv/aicc/cp/current/wp` was the macOS fixture layout) is a symlink to the release; it is **readable by the edge's user** (Caddy checks file existence and serves non-PHP files) and **not writable by it**; the PHP user writes only `wp-content/uploads` (and cache directories). `resolve_root_symlink` makes opcache follow release switches.
 * `security.limit_extensions = .php`, `cgi.fix_pathinfo = 0`, `expose_php = Off` (the edge also strips `X-Powered-By`), `clear_env = yes`, `request_terminate_timeout` a little **below** `AICC_WP_TIMEOUT` (default 60 s) so PHP answers its own error before Caddy answers 504.
 * `wp-config.php`: `home`/`siteurl` = `https://stage.copilt.org`, `AICC_LM_TRUSTED_PROXIES` empty or unset, no `X-Forwarded-Proto` line, `DISABLE_WP_CRON` true plus the system cron, `DB_HOST` the MySQL **socket**.
-* The edge unit sets `AICC_EDGE_MODE=stage` and runs `aicc-edge-preflight --mode stage` as `ExecStartPre` and in `ExecReload` (`docs/cutover/caddy-edge.service.template`).
+* The edge unit sets `AICC_EDGE_MODE=stage` and runs `aicc-edge-preflight --mode stage` as `ExecStartPre` and in `ExecReload` (`infra/systemd/aicc-edge.service`, which supersedes the generic `docs/cutover/caddy-edge.service.template`).
 * `scripts/ops/edge-listener-audit.sh` on the host: only `*:80`, `*:443`, `127.0.0.1:8443`, `127.0.0.1:12019` (and sshd) listen; no UDP; no 3306, 9000, 6379, 18982.
 
 ## 10. Fail-closed test tooling
@@ -147,10 +147,10 @@ The lesson (owner): earlier malformed local requests accidentally reached the re
 
 **Production names:** only `--production-readonly` (GET/HEAD, port 443, no mapping, nothing else) can talk to them, and the rehearsal runners use it only when `AICC_REHEARSAL_PRODUCTION_READONLY=1` is set (the old "before/after" probe of `api.copilt.org` and the live-old-site comparisons are therefore **off by default**).
 
-Commands for the real host (once it exists):
+Commands for the real host (the operator commands that read root-owned state need `sudo` ON the host: `sudo sh -c 'ls /var/lib/aicc-edge/caddy/certificates/*/stage.copilt.org/'` (the directory is 0700 `aicc-edge`; the glob must expand as root), `sudo tail /var/log/aicc-edge/aicc-edge.log` (0640)):
 
 ```
-npm run staging:replay -- --stage-host stage.copilt.org --stage-ip <ip> --port 443 --http-port 80 --stage-id <id>            # public listener: 245 matrix cases, sweep, exposure probe
+npm run staging:replay -- --stage-host stage.copilt.org --stage-ip <ip> --port 443 --http-port 80 --stage-id <id>            # public listener: the whole matrix (306 cases since the REST-index rules), sweep, exposure probe
 npm run staging:replay -- --stage-host stage.copilt.org --stage-ip 127.0.0.1 --port 443 --stage-id <id> --source operator     # through the SSH tunnel: the operator cases
 npm run staging:replay -- --stage-host stage.copilt.org --stage-ip <ip> --port 443 --stage-id <id> --allow-dns-mismatch       # before DNS exists
 node scripts/rehearsal/browser-flows.mjs --stage-host stage.copilt.org --stage-ip <ip> --port 443 --stage-id <id> --only 5,7,8  # read-only browser sections

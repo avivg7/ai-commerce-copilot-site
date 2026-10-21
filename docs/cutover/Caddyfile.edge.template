@@ -1,5 +1,5 @@
 # =====================================================================================================================================
-# NOT APPLIED. TEMPLATE. Nothing here is live. REHEARSED with a real Caddy 2.11.7 on loopback (docs/cutover/rehearsal.md); still needs `caddy validate` on the real host.
+# TEMPLATE (as committed: the PRODUCTION topology, www + apex). The STAGE render of this file has run on the Linux staging host stage.copilt.org since 2026-10-21; the PRODUCTION render is NOT activated anywhere and has never been started on Linux. REHEARSED with a real Caddy 2.11.7 on loopback (docs/cutover/rehearsal.md); `caddy validate` runs on the host in the edge preflight.
 # ONE template, three renders (scripts/lib/edge-render.mjs; docs/cutover/stage-linux.md): this committed text is the PRODUCTION topology (www + apex) and is safe by default.
 #   production   www.copilt.org + copilt.org (apex redirect), automatic public-CA HTTPS, php_fastcgi -> PHP-FPM on a unix socket. NOT activated (the cutover).
 #   stage        ONE public address {$AICC_PUBLIC_HOST} (stage.copilt.org), automatic public-CA HTTPS (Let's Encrypt), no apex block, the stage identity route
@@ -57,7 +57,7 @@
 #     The fastcgi snippet strips every client-supplied forwarding/identity header (X-Forwarded-*, Forwarded, X-Real-IP, Client-IP, ...) so none can reach PHP as HTTP_*; the reverse_proxy
 #     snippet (rehearsal only) still overwrites X-Forwarded-* with edge-made values for an upstream that trusts the edge.
 #   * no COOKIE_DOMAIN: cookies stay host-only (never share them with api.copilt.org)
-#   * WP-Cron: DISABLE_WP_CRON true plus a system cron `* * * * * wp cron event run --due-now` (the entitlement outbox delivery and the daily expiry sweep run on WP-Cron).
+#   * WP-Cron: DISABLE_WP_CRON true plus a system cron `*/2 * * * * wp cron event run --due-now` (every 2 minutes, see infra/systemd/aicc-wp-cron.timer; the entitlement outbox delivery and the daily expiry sweep run on WP-Cron).
 #   * TLS: the default is Caddy's automatic HTTPS (the aicc_tls snippet stays empty). Option A (pre-issued certificate files, `tls /path/fullchain.pem /path/privkey.pem` in aicc_tls) still validates
 #     because the http:// addresses live in their own blocks, but it is NOT the plan any more (owner decision 2026-10-21: Option B, automatic). Ports 80 and 443 (TCP) must be reachable over
 #     IPv4 and IPv6; HTTP/3 is OFF (`servers { protocols h1 h2 }`: no UDP 443, no Alt-Svc). For every rehearsal `tls internal`.
@@ -100,13 +100,22 @@
 		}
 		max_header_size 16KB
 	}
+	# Runtime + error log. REAL-CADDY FINDING (H-5): Caddy writes the whole request (every header, the full URI) into an error entry (a 502 on a dead PHP-FPM socket carries Nonce / Cart-Token
+	# and `?key=...` in clear), so the same redaction as the access log applies: headers deleted, secret-bearing query values redacted. It keeps the 20 MiB x 5 cap: it holds errors, not traffic.
 	log {
 		output file {$AICC_LOG_DIR:/var/log/caddy}/error.log {
 			roll_size 20MiB
 			roll_keep 5
 			roll_keep_for 720h
 		}
-		format json
+		format filter {
+			wrap json
+			fields {
+				request>headers delete
+				resp_headers delete
+				request>uri regexp "(?i)([?&](?:key|login|user_login|pass|password|pwd|pass1|pass2|token|code|nonce|_wpnonce|reset|license_key|license|secret|auth|signature|sig)=)[^&#]*" "${1}REDACTED"
+			}
+		}
 		level INFO
 	}
 	# END GLOBAL OPTIONS
@@ -153,29 +162,40 @@
 	abort @aicc_op_not_loopback
 }
 
-# Access log. JSON, rotated (20 MiB x 5 kept, 30 days: a hard cap of about 100 MiB), and REDACTED: no Cookie / Set-Cookie / Authorization values, and no secret-bearing query
-# parameter in any logged URI (WooCommerce password-reset links carry ?key=...&id=..., order links ?key=wc_order_..., the Connect flow ?token=...). The Referer and Location
-# headers are filtered the same way because a page opened from a reset link sends it as the Referer of every sub-request. Also logged: the real peer address
-# (request.remote_ip), status, duration, a per-request id (the same X-Request-Id sent upstream and back to the client), the upstream that answered (empty = served by Caddy itself) and the listener.
+# Access log. JSON, rotated, and REDACTED by an ALLOW-LIST (architecture review H-5, 2026-10-21: the previous deny-list let the WooCommerce Store API's X-Wp-Nonce / Nonce /
+# Cart-Token / Cart-Hash / User-Id headers into the log in clear; a Cart-Token is a JWT that restores a guest cart).
+#   * `request>headers` and `resp_headers` are deleted WHOLE. Nothing a client or WordPress puts in a header can reach the log, whatever it is called (a header added by a future plugin,
+#     a payment gateway, a different casing). Caddy's filter encoder has no keep-list, so the allow-list is rebuilt from `log_append` placeholders below: exactly these request headers
+#     (req_user_agent, req_referer, req_accept_language, req_content_type, req_content_length, req_range, req_if_none_match) and these response headers (resp_content_type,
+#     resp_content_length, resp_content_encoding, resp_cache_control, resp_location, resp_content_range); the request id is the `request_id` field (the same value as X-Request-Id).
+#     Anything not listed here is NOT logged. Adding a field is a reviewed change to this list AND to the real-Caddy test (docs/cutover/rehearsal.md "Logging").
+#   * the schema is flat on purpose: fail2ban (infra/fail2ban) and AICC Ops read request.remote_ip / request.method / request.uri / status, which did not move; the appended fields come AFTER them.
+#   * no secret-bearing query parameter in any logged URI (WooCommerce password-reset links carry ?key=...&id=..., order links ?key=wc_order_..., the Connect flow ?token=...). The Referer and Location
+#     values are filtered the same way because a page opened from a reset link sends it as the Referer of every sub-request.
+#   * Cookie, Set-Cookie, Authorization, X-Wp-Nonce, Cart-Token ... are therefore never logged (the old explicit deletes are gone because the whole map is gone).
+# Also logged: the real peer address (request.remote_ip), status, duration, a per-request id (the same X-Request-Id sent upstream and back to the client), the upstream that answered
+# (empty = served by Caddy itself) and the listener.
+# ROTATION AND RETENTION (maths): 50 MiB per file x 10 files kept = a hard cap of about 500 MiB of uncompressed-equivalent log (rolled files are gzip-compressed, so the real footprint is lower),
+# plus the live file; the 47 GiB disk cannot fill from it. The cap, not the 30 days, is what limits history. The Linux review measured 20 MiB per ~10 minutes under the load campaign
+# (about 2 MiB/min), i.e. 20 MiB x 5 held about ONE HOUR of history under sustained load. The allow-list also shrinks the line: on the rehearsal log the mean line was 1.8 KB with the full header
+# blocks and is about 1.0 KB now (an ESTIMATE for the Linux traffic mix, not a measurement of it), so 50 MiB x 10 should hold roughly 6-8 hours at that campaign rate and many days of ordinary
+# traffic. It is still a size bound, not a time bound: ship the log off-host if a fixed forensic window is required. After deploying this change, purge the OLD log files on the host
+# (they hold the credentials the previous redaction let through; `aicc-edge-*.log.gz` and the live file are rolled out by the reload, then delete the rolled ones).
 # Verified by a real run: docs/cutover/rehearsal.md "Logging".
 (edge_log) {
 	log {
 		output file {$AICC_LOG_DIR:/var/log/caddy}/aicc-edge.log {
-			roll_size 20MiB
-			roll_keep 5
+			roll_size 50MiB
+			roll_keep 10
 			roll_keep_for 720h
 		}
 		format filter {
 			wrap json
 			fields {
-				request>headers>Cookie delete
-				request>headers>Authorization delete
-				request>headers>Proxy-Authorization delete
-				request>headers>X-Wp-Nonce delete
-				request>headers>X-Api-Key delete
-				request>headers>Referer regexp "(?i)([?&](?:key|login|user_login|pass|password|pwd|pass1|pass2|token|code|nonce|_wpnonce|reset|license_key|license|secret|auth|signature|sig)=)[^&#]*" "${1}REDACTED"
-				resp_headers>Set-Cookie delete
-				resp_headers>Location regexp "(?i)([?&](?:key|login|user_login|pass|password|pwd|pass1|pass2|token|code|nonce|_wpnonce|reset|license_key|license|secret|auth|signature|sig)=)[^&#]*" "${1}REDACTED"
+				request>headers delete
+				resp_headers delete
+				req_referer regexp "(?i)([?&](?:key|login|user_login|pass|password|pwd|pass1|pass2|token|code|nonce|_wpnonce|reset|license_key|license|secret|auth|signature|sig)=)[^&#]*" "${1}REDACTED"
+				resp_location regexp "(?i)([?&](?:key|login|user_login|pass|password|pwd|pass1|pass2|token|code|nonce|_wpnonce|reset|license_key|license|secret|auth|signature|sig)=)[^&#]*" "${1}REDACTED"
 				request>uri regexp "(?i)([?&](?:key|login|user_login|pass|password|pwd|pass1|pass2|token|code|nonce|_wpnonce|reset|license_key|license|secret|auth|signature|sig)=)[^&#]*" "${1}REDACTED"
 			}
 		}
@@ -184,6 +204,21 @@
 	log_append upstream {http.reverse_proxy.upstream.hostport}
 	# which listener answered: `public` or `operator` (import edge_log public | operator)
 	log_append listener {args[0]}
+	# the request-header allow-list
+	log_append req_user_agent {http.request.header.User-Agent}
+	log_append req_referer {http.request.header.Referer}
+	log_append req_accept_language {http.request.header.Accept-Language}
+	log_append req_content_type {http.request.header.Content-Type}
+	log_append req_content_length {http.request.header.Content-Length}
+	log_append req_range {http.request.header.Range}
+	log_append req_if_none_match {http.request.header.If-None-Match}
+	# the response-header allow-list
+	log_append resp_content_type {http.response.header.Content-Type}
+	log_append resp_content_length {http.response.header.Content-Length}
+	log_append resp_content_encoding {http.response.header.Content-Encoding}
+	log_append resp_cache_control {http.response.header.Cache-Control}
+	log_append resp_location {http.response.header.Location}
+	log_append resp_content_range {http.response.header.Content-Range}
 }
 
 # Every response, whichever handler produced it (`defer`: applied after the upstream answered, so a header WordPress also sends is REPLACED, never duplicated).
@@ -264,6 +299,18 @@
 		header_up -Front-End-Https
 		header_up -X-Url-Scheme
 		header_up -Via
+		# Security review I1: the list above is a deny-list and deny-lists rot (X-Remote-Addr, X-Remote-IP, X-HTTP-Method-Override and X-Custom-IP-Authorization reached PHP as HTTP_*). Caddy 2.11.7 deletes by
+		# prefix (`-Name-*`, proved with a real Caddy and the fastcgi header echo, docs/cutover/rehearsal.md), so whole families of client-controllable identity/rewrite headers are stripped as well.
+		header_up -X-Forwarded-*
+		header_up -X-Remote-*
+		header_up -X-Client-*
+		header_up -X-Real-*
+		header_up -X-Original-*
+		header_up -X-Rewrite-*
+		header_up -X-Custom-IP-*
+		header_up -X-HTTP-Method-Override
+		header_up -X-Method-Override
+		header_up -X-HTTP-Method
 		header_down -X-Powered-By
 		header_down -Server
 		# REAL-CADDY FINDING: `error {rp.status_code}` does not take the placeholder (every upstream 5xx became a 500), so one handle_response per status keeps 502/503/504 as they are.
@@ -809,7 +856,7 @@ www.copilt.org {
 	handle @php_direct {
 		error 404
 	}
-	@wp_hidden path_regexp wp_hidden (?i)^/wp-(?:content|includes)/(?:.*/\.|.*/(?:readme|changelog|license)\.(?:txt|md|html)$|.*\.(?:log|sql|bak|old|orig|swp|env|ini|sh)$)
+	@wp_hidden path_regexp wp_hidden (?i)^/wp-(?:content|includes)/(?:.*/\.|.*/(?:readme|changelog|licen[cs]e)\.(?:txt|md|html)$|.*\.(?:log|sql|bak|old|orig|swp|env|ini|sh|po|pot|mo)$|(?:.*/)?(?:composer\.(?:json|lock)|installed\.json|package(?:-lock)?\.json|yarn\.lock|pnpm-lock\.yaml|phpcs[^/]*\.xml(?:\.dist)?|phpunit[^/]*\.xml(?:\.dist)?)$|plugins/.*\.csv$|(?:plugins|themes)/[^/]+/(?:.*/)?(?:sample-data|sample_data|tests?|docs)/)
 	handle @wp_hidden {
 		error 404
 	}
@@ -822,6 +869,16 @@ www.copilt.org {
 	}
 	@dup_error path_regexp dup_error ^/(?:404|_not-found)(?:/|\.html)?$|^/(?:wp-activate|wp-signup)\.php$|^/50x\.html$
 	handle @dup_error {
+		error 404
+	}
+	@wp_rest_index_path path_regexp wp_rest_index_path ^(/(?:he|es|ru))?/wp-json/?$
+	handle @wp_rest_index_path {
+		error 404
+	}
+	@wp_rest_index_query {
+		expression {http.request.uri.query}.matches('(^|&)(?:r|%72)(?:e|%65)(?:s|%73)(?:t|%74)(?:_|%5[Ff])(?:r|%72)(?:o|%6[Ff])(?:u|%75)(?:t|%74)(?:e|%65)(=(?:/|%2[Ff]|%5[Cc])*)?(&|$)')
+	}
+	handle @wp_rest_index_query {
 		error 404
 	}
 	@static_immutable path_regexp static_immutable ^/_next/static/.*$
@@ -929,7 +986,7 @@ www.copilt.org:{$AICC_OPERATOR_PORT:8443} {
 	handle @php_direct {
 		error 404
 	}
-	@wp_hidden path_regexp wp_hidden (?i)^/wp-(?:content|includes)/(?:.*/\.|.*/(?:readme|changelog|license)\.(?:txt|md|html)$|.*\.(?:log|sql|bak|old|orig|swp|env|ini|sh)$)
+	@wp_hidden path_regexp wp_hidden (?i)^/wp-(?:content|includes)/(?:.*/\.|.*/(?:readme|changelog|licen[cs]e)\.(?:txt|md|html)$|.*\.(?:log|sql|bak|old|orig|swp|env|ini|sh|po|pot|mo)$|(?:.*/)?(?:composer\.(?:json|lock)|installed\.json|package(?:-lock)?\.json|yarn\.lock|pnpm-lock\.yaml|phpcs[^/]*\.xml(?:\.dist)?|phpunit[^/]*\.xml(?:\.dist)?)$|plugins/.*\.csv$|(?:plugins|themes)/[^/]+/(?:.*/)?(?:sample-data|sample_data|tests?|docs)/)
 	handle @wp_hidden {
 		error 404
 	}

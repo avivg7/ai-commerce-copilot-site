@@ -25,6 +25,7 @@ umask 077
 STAGE_IP=""; STAGE_HOST="stage.copilt.org"; KEY="$HOME/.ssh/aicc_cp_stage"; USER_NAME="aicc"; DEST="$HOME/aicc-offhost-backups-stage"; KEEP=14
 WITH_FILES=1; DRY=0; REMOTE_DIR="/srv/aicc/backups"
 DENY_IPS="139.59.157.231 185.199.108.153 185.199.109.153 185.199.110.153 185.199.111.153"
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../provision/lib/ip-guard.sh"   # strict address check (security review L5)
 while [ $# -gt 0 ]; do
   case "$1" in
     --stage-ip) STAGE_IP="${2:-}"; shift 2 ;;
@@ -43,6 +44,7 @@ refuse() { echo "REFUSED: $*" >&2; exit 3; }
 [ -n "$STAGE_IP" ] || { echo "usage: $0 --stage-ip <ipv4> [options]  (the host is never guessed)" >&2; exit 2; }
 [[ "$STAGE_IP" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]] || refuse "--stage-ip must be a literal IPv4 address"
 for d in $DENY_IPS; do [ "$STAGE_IP" = "$d" ] && refuse "$STAGE_IP is a production/public address, not the staging Droplet."; done
+aicc_ip_guard "$STAGE_IP" "--stage-ip " || exit 3
 [[ "$STAGE_HOST" =~ ^stage[a-z0-9-]*\.copilt\.org$ ]] || refuse "--stage-host must look like stage.copilt.org (production names are refused)"
 case "$STAGE_HOST" in www.copilt.org|copilt.org|api.copilt.org) refuse "$STAGE_HOST is a production hostname." ;; esac
 case "$(basename "$KEY")" in aicc_digitalocean_prod*) refuse "never use the production key." ;; esac

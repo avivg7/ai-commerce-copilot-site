@@ -155,6 +155,7 @@ for (const c of CASES) {
   const wantLoc = c.location !== undefined ? sub(c.location.replace(/#.*$/, "")) : undefined;
   const expected = c.location !== undefined ? `${c.status} -> ${wantLoc}` : `${c.status} ${c.origin}${c.cache !== undefined ? ` cc=${JSON.stringify(c.cache)}` : ""}`;
   if (c.peer === "operator" && source !== "operator") { record({ request, expected, actual: "-", evidence: "", result: "SKIP", note: "needs the loopback operator listener (--source operator, through the SSH tunnel)" }); continue; }
+  if (c.publicOnly && source === "operator") { record({ request, expected, actual: "-", evidence: "", result: "SKIP", note: "the operator listener keeps the REST index for wp-admin (--source public checks the 404)" }); continue; }
   if (/^http:/i.test(url) && (!cfg.httpPort || source === "operator")) { record({ request, expected, actual: "-", evidence: "", result: "SKIP", note: source === "operator" ? "the operator listener serves https only" : "plain http was not configured (--http-port)" }); continue; }
   if (source === "operator" && new URL(url).hostname !== CANON) { record({ request, expected, actual: "-", evidence: "", result: "SKIP", note: "the operator listener serves the canonical host only" }); continue; }
   if (c.origin === "edge-deny" && c.peer !== "operator" && OPERATOR_PATH.test(path0) && source === "operator") { record({ request, expected, actual: "-", evidence: "", result: "SKIP", note: "the operator listener does not deny the operator surfaces (--source public checks the denials)" }); continue; }

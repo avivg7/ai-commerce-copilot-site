@@ -113,9 +113,14 @@ PY
   F2="$(fail2ban-regex /tmp/f2b-sample.log /etc/fail2ban/filter.d/caddy-4xx-flood.conf 2>&1)"
   TRUTH2="$(python3 -c '
 import json
-print(sum(1 for l in open("/tmp/f2b-sample.log") if 400 <= json.loads(l)["status"] <= 499 and not json.loads(l)["request"]["uri"].startswith(("/.well-known/acme-challenge/", "/favicon.ico"))))')"
+print(sum(1 for l in open("/tmp/f2b-sample.log") if 400 <= json.loads(l)["status"] <= 499 and json.loads(l)["status"] != 421 and not json.loads(l)["request"]["uri"].startswith(("/.well-known/acme-challenge/", "/favicon.ico"))))')"
   t_contains "caddy-4xx-flood: fail2ban matches exactly the 4xx lines ($TRUTH2)" "$F2" ", $TRUTH2 matched,"
 else t_skip "fail2ban-regex on real log lines" "no /tmp/f2b-sample.log"; fi
+# architecture review M-6: the OPTIONAL operator-owned override (absent by default) is accepted by the real fail2ban and changes ignoreip
+printf '[aicc-wp-login]\nignoreip = 127.0.0.1/8 ::1 10.19.0.2\n' > /etc/fail2ban/jail.d/zz-aicc-local.local
+t_ok "fail2ban 1.0.2 accepts the operator override jail.d/zz-aicc-local.local" fail2ban-client -t
+t_contains "...and the effective ignoreip of aicc-wp-login includes the extra address" "$(fail2ban-client -d 2>/dev/null | grep -i aicc-wp-login | grep -i ignoreip)" "10.19.0.2"
+rm -f /etc/fail2ban/jail.d/zz-aicc-local.local
 
 echo "== stage 2 hardening against REAL OpenSSH 9.6"
 mkdir -p /run/sshd /run/aicc; ssh-keygen -A >/dev/null 2>&1

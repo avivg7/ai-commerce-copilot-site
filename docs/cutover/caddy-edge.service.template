@@ -92,5 +92,5 @@ ReadWritePaths=/var/lib/aicc-edge /var/log/aicc-edge
 WantedBy=multi-user.target
 
 # --- system cron for WordPress (DISABLE_WP_CRON is true; /wp-cron.php is closed to the public by the edge). On the WordPress host, as the PHP user: ---
-#   * * * * * cd /var/www/cp && /usr/local/bin/wp cron event run --due-now >/dev/null 2>&1
+#   */2 * * * * cd /var/www/cp && /usr/local/bin/wp cron event run --due-now >/dev/null 2>&1   (every 2 minutes: one run costs ~2.3 CPU-s on a single vCPU, architecture review H-2; the Linux hosts use infra/systemd/aicc-wp-cron.timer)
 # --- certificate lifecycle (runbook 1.10 and section 9): scripts/ops/cert-expiry-check.sh from a machine OUTSIDE the edge, scripts/ops/caddy-storage-backup.sh nightly. ---

@@ -39,6 +39,7 @@ Frequencies are the defaults (`interval_s` per collector). "Retention" is the sa
 | `io.read_bps`, `io.write_bps`, `io.util_pct` | `/proc/diskstats` (whole disks only) | 30 s | same |
 | `net.rx_bps`, `net.tx_bps` (public interface auto-detected via default route) | `/proc/net/dev`, `/proc/net/route` | 30 s | same |
 | `uptime.seconds` | `/proc/uptime` | 30 s | same |
+| `host.reboot_required` (0/1), `host.reboot_required_age_s` | existence and mtime of `/var/run/reboot-required` (config `collectors.host.reboot_required_file`; never read, `needrestart` is NOT run) | 30 s | same |
 | `svc.<unit>.active/failed/present/restarts/uptime_s` | `systemctl show -p NRestarts,ActiveState,SubState,ActiveEnterTimestamp,LoadState <unit>` | 30 s | same |
 | `caddy.up`, `caddy.in_flight`, `caddy.rate_{2xx,3xx,4xx,5xx,other}`, `caddy.req_rate`, `caddy.resp_bytes_ps`, `caddy.req_bytes_ps`, `caddy.lat_p50/p95/p99_ms`, `caddy.dyn_lat_*_ms` (handlers in `dynamic_handlers`), `caddy.upstream_healthy_min`, `caddy.upstream_count` | Caddy admin `http://127.0.0.1:12019/metrics` (Prometheus text; `AICC_ADMIN_ADDR` default of `docs/cutover/Caddyfile.edge.template`), status classes summed over `code`, quantiles from histogram bucket deltas | 30 s | same |
 | `edge.up`, `edge.status`, `edge.latency_ms` | loopback HTTPS GET `/healthz` with SNI = hostname | 30 s | same |
@@ -98,7 +99,8 @@ Sustain = consecutive 30 s evaluations before FIRING; clear = consecutive evalua
 | `collector_failure` (per collector) | a collector reports ok = 0 | WARNING | 2 min / 1 min | 1 h |
 | `monitoring_disk_cap` | AICC Ops DB >= 85% / >= 95% of its cap | WARN/CRIT | 1 min / 2 min | 6 h |
 | `monitoring_write_blocked` | free space below the guard: writes refused | CRITICAL | immediate | 30 min |
-| `wc_cron_stale` | last cron heartbeat older than 1 h / 4 h | WARN/CRIT | 1 min | 1 h |
+| `wc_cron_stale` | last cron heartbeat older than 1 h / 4 h (the system cron runs every 2 minutes, `aicc-wp-cron.timer` `OnCalendar=*:0/2`; the thresholds are 30x that, `tests/test_alerts.py::CronCadence` pins both) | WARN/CRIT | 1 min | 1 h |
+| `reboot_required` | `/var/run/reboot-required` exists (unattended-upgrades installed a kernel/library update that stays inactive until a reboot; the host never reboots by itself). WARNING only, never escalates, **never auto-clears: it clears only when the file disappears** (i.e. after a reboot). Text carries no package names | WARN | 1 sample | 24 h |
 | `backend_down`, `backend_postgres_down`, `backend_health_degraded`, `backend_pool_pressure`, `backend_5xx` | only when the optional backend collector is enabled | mixed | see `alerts.py` | 1 h |
 
 State machine (VERIFIED by `tests/test_alerts.py`): fire after N consecutive breaches; **dedupe** per rule+scope; hold between breach and clear thresholds (hysteresis); RECOVERED only if a FIRING notice was actually sent; ESCALATED when the critical sustain is met; **flap suppression** (>= 4 state changes in 30 min => one FLAPPING notice, then silence until quiet for a window); persistent across restart; a bad rule or a failing disk never stops alerting. **These thresholds are provisional until staging measurements tune them.**

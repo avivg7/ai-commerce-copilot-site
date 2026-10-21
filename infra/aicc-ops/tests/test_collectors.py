@@ -84,6 +84,36 @@ esac
         self.assertIn("disk.root.used_pct", m)
         self.assertAlmostEqual(m["load.per_vcpu"], 0.52)
 
+    def test_reboot_required_marker(self):
+        """Architecture review M-2: the collector reads only the EXISTENCE (and mtime) of the marker file; it never opens it (it lists package names) and never runs needrestart."""
+        cfg = make_cfg(self.tmp)
+        marker = os.path.join(self.tmp, "reboot-required")
+        sect = {**cfg["collectors"]["host"], "units": [], "reboot_required_file": marker}
+        r0 = host.collect(cfg, sect, {}, 1000)
+        self.assertEqual(r0.metrics["host.reboot_required"], 0.0)
+        self.assertNotIn("host.reboot_required_age_s", r0.metrics)
+        put(marker, "*** System restart required ***\n")                          # content is irrelevant and must never be read
+        os.chmod(marker, 0)                                                         # unreadable but existing: still 1.0 (proves the content is not read)
+        os.utime(marker, (500, 500))
+        try:
+            r1 = host.collect(cfg, sect, {}, 1000)
+        finally:
+            os.chmod(marker, 0o600)
+        self.assertEqual(r1.metrics["host.reboot_required"], 1.0)
+        self.assertEqual(r1.metrics["host.reboot_required_age_s"], 500.0)
+        self.assertEqual([e for e in r1.errors if "reboot" in e], [])
+        os.remove(marker)
+        self.assertEqual(host.collect(cfg, sect, {}, 1000).metrics["host.reboot_required"], 0.0)
+        # no marker configured -> the section is silent
+        r2 = host.collect(cfg, {**sect, "reboot_required_file": ""}, {}, 1000)
+        self.assertNotIn("host.reboot_required", r2.metrics)
+
+    def test_reboot_required_default_path_and_no_subprocess(self):
+        import inspect
+        self.assertEqual(load_config()["collectors"]["host"]["reboot_required_file"], "/var/run/reboot-required")
+        src = inspect.getsource(host)
+        self.assertNotIn("needrestart", src)                                         # never run, never referenced by the collector
+
     def test_section_failure_is_isolated(self):
         cfg = make_cfg(self.tmp)
         cfg["general"]["proc_root"] = os.path.join(self.tmp, "nope")

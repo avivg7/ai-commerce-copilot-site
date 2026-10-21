@@ -5,12 +5,15 @@
 #   * PHP is reached through the FastCGI unix socket /run/php/aicc-cp.sock (group aicc-edge, mode 0660), not an HTTP upstream. The operator listener (127.0.0.1:8443,
 #     `bind 127.0.0.1`) is part of the Caddyfile rendered by scripts/ops/render-edge.mjs --mode stage; the SSH tunnel (infra/provision/operator-tunnel.sh) targets it.
 #   * ordering: mysql -> php8.3-fpm -> aicc-edge after a reboot (php8.3-fpm has After=mysql via its drop-in; this unit is After=php8.3-fpm).
-#   * memory limits sized for 2 GiB (Caddy's steady state is ~40-80 MiB): GOMEMLIMIT 160MiB, MemoryHigh 200M, MemoryMax 320M.
+#   * memory limits sized for 2 GiB: MemoryHigh 320M, MemoryMax 450M, GOMEMLIMIT 256MiB. The first figures (200M/320M, GOMEMLIMIT 160MiB) assumed a 40-80 MiB steady state; the Linux
+#     capacity campaign MEASURED Caddy at PSS 246-247 MB / RSS 255-258 MB under load (static files + TLS + gzip of WordPress responses + page cache charged to this cgroup), i.e. ABOVE
+#     MemoryHigh 200M, so the kernel reclaimed this unit's memory continuously (architecture review M-1). MemoryHigh must sit above the measured peak with headroom (320M); GOMEMLIMIT is
+#     the Go heap's soft target and must stay BELOW MemoryHigh (the runtime also has non-heap memory), 256MiB; MemoryMax 450M is the kill ceiling. infra:lint checks the arithmetic.
 #   * LimitNOFILE 65536 instead of 1048576: a 2 GiB host will never hold more than a few thousand sockets; a huge limit only hides leaks.
 #   * the preflight runs in stage mode (`aicc-edge-preflight --mode stage`, scripts/ops/edge-preflight.sh): fastcgi socket, stage identity, automatic ACME, empty operator CIDRs,
 #     loopback-only operator listener, HTTP/3 off, metrics private. The production host later gets `--mode production` through a drop-in (and AICC_ALLOW_PRODUCTION_MODE=1 on cutover day only).
-# `systemd-analyze verify` was NOT run (no systemd on the authoring Mac). Run it on the host: `systemd-analyze verify /etc/systemd/system/aicc-edge.service`
-# and `systemd-analyze security aicc-edge.service`; install-stack.sh's `verify` step does the first one.
+# `systemd-analyze verify` does not exist on the authoring Mac. It is run by install-stack.sh's `verify` step on the host and by the Ubuntu 24.04 container suite
+# (npm run infra:test, systemd 255, needs the Docker daemon). Run `systemd-analyze security aicc-edge.service` on the host after any change to the sandbox directives.
 [Unit]
 Description=AICC public edge (Caddy: static site + WordPress Control Plane over PHP-FPM)
 Documentation=https://caddyserver.com/docs/
@@ -25,7 +28,7 @@ Type=notify
 User=aicc-edge
 Group=aicc-edge
 EnvironmentFile=/etc/aicc-edge/edge.env
-Environment=XDG_DATA_HOME=/var/lib/aicc-edge XDG_CONFIG_HOME=/var/lib/aicc-edge/config GOMEMLIMIT=160MiB
+Environment=XDG_DATA_HOME=/var/lib/aicc-edge XDG_CONFIG_HOME=/var/lib/aicc-edge/config GOMEMLIMIT=256MiB
 # Fail closed: refuses a missing static root or PHP socket, a production host name, a missing stage id, a non-loopback operator listener, an unwritable log dir, a bad Caddyfile.
 ExecStartPre=/usr/local/sbin/aicc-edge-preflight --mode stage --caddyfile /etc/aicc-edge/Caddyfile --env-file /etc/aicc-edge/edge.env --caddy /usr/local/bin/caddy
 ExecStart=/usr/local/bin/caddy run --config /etc/aicc-edge/Caddyfile --adapter caddyfile
@@ -41,8 +44,8 @@ Restart=on-failure
 RestartSec=2s
 LimitNOFILE=65536
 TasksMax=512
-MemoryHigh=200M
-MemoryMax=320M
+MemoryHigh=320M
+MemoryMax=450M
 # ports 80/443 as an unprivileged user
 AmbientCapabilities=CAP_NET_BIND_SERVICE
 CapabilityBoundingSet=CAP_NET_BIND_SERVICE

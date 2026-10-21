@@ -178,4 +178,7 @@ def evaluate(windows: dict, cfg: dict, ctx: dict | None = None) -> dict:
             seen.add(k)
             dedup.append(r)
     verdict = UPGRADE if any(r["level"] == UPGRADE for r in dedup) else WATCH if dedup else HEALTHY
-    return {"verdict": verdict, "reasons": dedup, "figures": figures, "disclaimer": DISCLAIMER}
+    notes = []
+    if ctx.get("reboot_required"):
+        notes.append("A host reboot is pending (installed updates are not active yet). The figures above describe the running kernel and libraries; plan a maintenance window. This note never changes the verdict.")
+    return {"verdict": verdict, "reasons": dedup, "figures": figures, "disclaimer": DISCLAIMER, "notes": notes}

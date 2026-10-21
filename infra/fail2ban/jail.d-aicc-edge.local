@@ -3,6 +3,16 @@
 # 127.0.0.1/8 and ::1 are NEVER banned: the operator reaches wp-admin through an SSH tunnel and appears as 127.0.0.1.
 # Ban action: the distro default (iptables/nft multiport through the system action); UFW keeps its own rules, fail2ban adds a separate chain.
 # Increment: repeat offenders are banned for longer (bantime.increment), capped at one week.
+#
+# ignoreip: loopback only, as shipped. This file is REPLACED by infra/provision/install-stack.sh on every install, so do not edit it. To exempt more addresses (the host's own
+# address that Action Scheduler loopbacks arrive from, an office, a monitoring probe) create the OPTIONAL operator-owned file /etc/fail2ban/jail.d/zz-aicc-local.local (absent by
+# default; "zz" makes it load after this one; the installer never creates, overwrites or removes it) with one section per jail you want to change, for example
+#     [aicc-wp-login]
+#     ignoreip = 127.0.0.1/8 ::1 10.19.0.2
+#     [caddy-4xx-flood]
+#     ignoreip = 127.0.0.1/8 ::1 10.19.0.2
+# then `sudo fail2ban-client -t && sudo systemctl reload fail2ban`. A value there REPLACES the list above, so repeat the loopback entries. Details and limits of the jail:
+# filter.d-aicc-wp-login.conf (it counts every POST to /my-account/ and /wp-login.php, successful or not) and docs/cutover/runbook.md.
 
 [aicc-wp-login]
 enabled   = true

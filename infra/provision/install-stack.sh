@@ -312,7 +312,7 @@ step_scripts() {
   ensure_symlink "$LIB_DIR/backup/aicc-restore-test.sh" "$SBIN/aicc-restore-test"
   # release tooling (host side)
   [ -f "$INFRA/release/activate-release.sh" ] || die "infra/release missing from the bundle"
-  for f in activate-release.sh rollback-release.sh smoke-cp.sh smoke-site.sh; do install_file "$INFRA/release/$f" "$LIB_DIR/release/$f" 0755 root:root; done
+  for f in activate-release.sh rollback-release.sh smoke-cp.sh smoke-site.sh warm-cp.sh; do install_file "$INFRA/release/$f" "$LIB_DIR/release/$f" 0755 root:root; done
   install_file "$INFRA/release/lib/release-common.sh" "$LIB_DIR/release/lib/release-common.sh" 0644 root:root
   ensure_symlink "$LIB_DIR/release/activate-release.sh" "$SBIN/aicc-activate-release"
   ensure_symlink "$LIB_DIR/release/rollback-release.sh" "$SBIN/aicc-rollback-release"
@@ -328,6 +328,7 @@ step_systemd() {
     install_file "$f" "/etc/systemd/system/$(basename "$f")" 0644 root:root
   done
   install_file "$INFRA/systemd/overrides/php8.3-fpm.service.d/aicc.conf" /etc/systemd/system/php8.3-fpm.service.d/aicc.conf 0644 root:root
+  install_file "$INFRA/systemd/overrides/php8.3-fpm.service.d/20-aicc-sandbox.conf" /etc/systemd/system/php8.3-fpm.service.d/20-aicc-sandbox.conf 0644 root:root
   install_file "$INFRA/systemd/overrides/mysql.service.d/aicc.conf" /etc/systemd/system/mysql.service.d/aicc.conf 0644 root:root
   # fail2ban needs the log file to exist when its jail starts (Caddy has not run yet)
   if [ ! -e "$(P /var/log/aicc-edge/aicc-edge.log)" ]; then
@@ -452,7 +453,7 @@ step_enable_edge() {
 }
 
 step_enable_timers() {
-  step "enable-timers: wp-cron every minute, daily backup, daily certificate check"
+  step "enable-timers: wp-cron every 2 minutes, daily backup, daily certificate check"
   require_root
   if is_dry; then would "systemctl enable --now aicc-wp-cron.timer aicc-backup.timer aicc-cert-expiry.timer"; return 0; fi
   systemctl enable --now aicc-wp-cron.timer aicc-backup.timer aicc-cert-expiry.timer

@@ -186,5 +186,11 @@ in_list() { local needle="$1"; shift; local x; for x in "$@"; do [ "$x" = "$need
 # Production addresses and names that provisioning/deploy tooling must never touch.
 AICC_PROD_IPS="139.59.157.231"
 AICC_PROD_HOSTS="www.copilt.org copilt.org api.copilt.org"
-refuse_production_ip() { local ip; for ip in $AICC_PROD_IPS; do [ "$1" = "$ip" ] && die "REFUSED: $1 is the production API address."; done; return 0; }
+refuse_production_ip() {
+  local ip; for ip in $AICC_PROD_IPS; do [ "$1" = "$ip" ] && die "REFUSED: $1 is the production API address."; done
+  # canonical notation only, no IPv4-embedding IPv6 form, no production range (security review L5)
+  . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/ip-guard.sh"
+  aicc_ip_guard "$1" "the address " || die "REFUSED by the strict address check."
+  return 0
+}
 refuse_production_host() { local h; for h in $AICC_PROD_HOSTS; do [ "$1" = "$h" ] && die "REFUSED: $1 is a production hostname."; done; return 0; }

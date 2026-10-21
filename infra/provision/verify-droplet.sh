@@ -16,8 +16,10 @@ done
 [ -n "$IP" ] && [ -n "$KEY" ] || { echo "usage: $0 --ip <ipv4> --key <private-key-path>" >&2; exit 2; }
 # Production / public hosts that must never be targeted by staging tooling.
 DENY="139.59.157.231 185.199.108.153 185.199.109.153 185.199.110.153 185.199.111.153"
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/ip-guard.sh"   # strict address check (security review L5)
 for d in $DENY; do [ "$IP" = "$d" ] && { echo "REFUSED: $IP is a production/public address, not the staging Droplet." >&2; exit 3; }; done
 echo "$IP" | grep -Eq '^[0-9]{1,3}(\.[0-9]{1,3}){3}$' || { echo "REFUSED: --ip must be a literal IPv4 address." >&2; exit 3; }
+aicc_ip_guard "$IP" "--ip " || exit 3
 [ "$(basename "$KEY")" = "aicc_digitalocean_prod" ] && { echo "REFUSED: never use the production API key." >&2; exit 3; }
 [ -f "$KEY" ] || { echo "no such key file: $KEY" >&2; exit 2; }
 KH="$HOME/.ssh/known_hosts_aicc_stage"

@@ -9,6 +9,7 @@ set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"; REPO="$(cd "$HERE/../.." && pwd)"
 STAGE_IP=""; STAGE_HOST=""; KEY="$HOME/.ssh/aicc_cp_stage"; USER_NAME="aicc"; DRY=0
 DENY_IPS="139.59.157.231 185.199.108.153 185.199.109.153 185.199.110.153 185.199.111.153"
+. "$HERE/lib/ip-guard.sh"   # strict address check: canonical notation only, IPv4-embedding IPv6 forms and production ranges refused (security review L5)
 while [ $# -gt 0 ]; do
   case "$1" in
     --stage-ip) STAGE_IP="${2:-}"; shift 2 ;; --stage-host) STAGE_HOST="${2:-}"; shift 2 ;; --key) KEY="${2:-}"; shift 2 ;; --user) USER_NAME="${2:-}"; shift 2 ;; --dry-run) DRY=1; shift ;;
@@ -19,6 +20,7 @@ refuse() { echo "REFUSED: $*" >&2; exit 3; }
 [ -n "$STAGE_IP" ] && [ -n "$STAGE_HOST" ] || { echo "usage: $0 --stage-ip IP --stage-host stage.copilt.org" >&2; exit 2; }
 [[ "$STAGE_IP" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]] || refuse "--stage-ip must be a literal IPv4 address"
 for d in $DENY_IPS; do [ "$STAGE_IP" = "$d" ] && refuse "$STAGE_IP is a production/public address."; done
+aicc_ip_guard "$STAGE_IP" "--stage-ip " || exit 3
 case "$STAGE_HOST" in www.copilt.org|copilt.org|api.copilt.org) refuse "$STAGE_HOST is a production hostname." ;; esac
 [[ "$STAGE_HOST" =~ ^stage[a-z0-9-]*\.copilt\.org$ ]] || refuse "--stage-host must be a stage*.copilt.org name"
 case "$KEY" in *aicc_digitalocean_prod*) refuse "never use the production key." ;; esac

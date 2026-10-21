@@ -35,6 +35,7 @@ units = ["aicc-edge", "php8.3-fpm", "mysql", "fail2ban", "aicc-backup.timer", "a
 systemctl = "systemctl"
 net_interface = "auto"           # auto = default-route interface
 disk_device = "auto"             # auto = sum of whole disks (vda, sda, nvme0n1, ...)
+reboot_required_file = "/var/run/reboot-required"   # only its EXISTENCE is read (host.reboot_required); "" disables. `needrestart` is never run.
 
 [collectors.caddy]
 enabled = true

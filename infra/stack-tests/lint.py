@@ -53,7 +53,7 @@ def read(p):
 SH = [p for p in files(".sh")]
 # files that are sourced libraries or test runners (tests deliberately continue after a failing command, so they use `set -uo pipefail`)
 EXEMPT_SET_E = {
-    "lib/common.sh": "sourced library", "lib/ssh-session.sh": "sourced library", "lib/release-common.sh": "sourced library", "lib/backup-common.sh": "sourced library", "lib/t.sh": "sourced test harness",
+    "lib/common.sh": "sourced library", "lib/ip-guard.sh": "sourced library", "lib/ssh-session.sh": "sourced library", "lib/release-common.sh": "sourced library", "lib/backup-common.sh": "sourced library", "lib/t.sh": "sourced test harness",
     "test_provision.sh": "test runner (must continue after a failing assertion)", "test_release.sh": "test runner (must continue after a failing assertion)",
     "test_backup.sh": "test runner (must continue after a failing assertion)", "test_lint.sh": "test runner (must continue after a failing assertion)", "run-all.sh": "runs every suite even when one fails", "test_ubuntu.sh": "test runner (cleans up through a trap, must report every failure)", "ubuntu-inner.sh": "test runner inside the container (must continue after a failing assertion)",
     "verify-droplet.sh": "pre-existing stage-1 script (read-only verifier that reports every failure), not changed here",
@@ -86,7 +86,7 @@ for p in SH:
 exempt_report = sorted(set(EXEMPT_SET_E))
 
 print("== root requirement ==")
-NEEDS_ROOT = ["provision/install-stack.sh", "provision/harden-stage2.sh", "provision/stage2-verify-second-session.sh", "provision/create-staging-db.sh", "provision/render-wp-config.sh",
+NEEDS_ROOT = ["provision/install-stack.sh", "provision/harden-stage2.sh", "provision/harden-stage3.sh", "provision/stage2-verify-second-session.sh", "provision/create-staging-db.sh", "provision/render-wp-config.sh",
               "backup/aicc-backup.sh", "backup/aicc-restore-test.sh", "release/activate-release.sh", "release/rollback-release.sh"]
 for rel in NEEDS_ROOT:
     p = os.path.join(INFRA, rel); s = read(p)
@@ -125,6 +125,45 @@ for p in SH:
         if "aicc_digitalocean_prod" in line and not re.search(r"(?i)refus|deny|never|case|production|PRODKEY|prod key|echo|#", line):
             fail(p, "line %d mentions the production key outside a refusal: %s" % (i, line.strip()[:100]))
 
+print("== production wp-config template is a NOT-USABLE record (architecture review B-3) ==")
+prod_tpl = os.path.join(INFRA, "provision/wp-config.production.template.php")
+if not os.path.exists(prod_tpl):
+    fail(prod_tpl, "missing: the production webhook / outbound allow-list requirement must stay recorded")
+else:
+    t = read(prod_tpl)
+    for needle, why in (("AICC_TEMPLATE_STATUS: NOT-USABLE", "the not-usable marker"), ("throw new RuntimeException(", "the PHP guard that stops a copy from running (a fatal error: exit status 255, HTTP 500)"),
+                        ("define( 'AICC_ENTITLEMENT_WEBHOOK_URL', 'https://api.copilt.org/", "the https webhook URL on the API host"),
+                        ("define( 'WP_ACCESSIBLE_HOSTS', 'api.copilt.org' )", "WP_ACCESSIBLE_HOSTS exactly the API host"), ("define( 'WP_HTTP_BLOCK_EXTERNAL', true )", "external requests blocked")):
+        if needle not in t:
+            fail(prod_tpl, "lost %s (%s)" % (needle, why))
+        else:
+            ok()
+    if "stage.copilt.org" in re.sub(r"(?s)/\*.*?\*/", "", t):
+        fail(prod_tpl, "the staging host appears in the production template's code")
+    if os.access(prod_tpl, os.X_OK):
+        fail(prod_tpl, "the template must not be executable")
+    # the guard must come BEFORE the first define(): a copy used as wp-config.php dies immediately
+    if t.find("throw new RuntimeException(") > t.find("define("):
+        fail(prod_tpl, "the PHP guard must precede every define()")
+    else:
+        ok()
+    # nothing may use it: only the stage renderer's REFUSAL, the template itself, docs and the tests may name it
+    for q in files():
+        rel = os.path.relpath(q, INFRA)
+        if q == prod_tpl or rel.startswith("stack-tests/") or q.endswith((".md",)):
+            continue
+        if "wp-config.production" in read(q) and rel != "provision/render-wp-config.sh" and rel != "provision/wp-config.stage.template.php" and rel != "release/deploy-release.sh":
+            fail(q, "references the production wp-config template: it is a record, not an input of any script")
+    rw = read(os.path.join(INFRA, "provision/render-wp-config.sh"))
+    if 'grep -q "AICC_TEMPLATE_STATUS: NOT-USABLE"' not in rw or "*production*) die" not in rw:
+        fail(os.path.join(INFRA, "provision/render-wp-config.sh"), "must refuse the production template (by name and by its NOT-USABLE marker)")
+    else:
+        ok()
+    dr = read(os.path.join(INFRA, "release/deploy-release.sh"))
+    if "wp-config.production" not in dr or "stage[a-z0-9-]*" not in dr or "never shipped in a release" not in dr:
+        fail(os.path.join(INFRA, "release/deploy-release.sh"), "must stay stage-only and refuse an artifact that carries a wp-config template")
+    else:
+        ok()
 print("== secrets and addresses ==")
 SECRET_RES = [
     ("private key block", re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----")), ("AWS key", re.compile(r"AKIA[0-9A-Z]{16}")), ("token", re.compile(r"(gh[pousr]_[A-Za-z0-9]{30,}|xox[baprs]-[0-9A-Za-z-]{10,}|sk_live_[0-9A-Za-z]{16,})")),
@@ -141,7 +180,7 @@ ALLOWED_HEX = {
     "a7a433a1b133efc3c8d10eb0b99d52a24b5ef5c322dc77f5282182b1c0402139ab83f3a99f0c52409df77d20123fb0b523edad8a66d8f5e49136197bf61ef0e7",
 }
 IP_RE = re.compile(r"\b(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})\b")
-OK_IP_PREFIX = ("127.", "0.0.0.0", "10.", "192.168.", "203.0.113.", "198.51.100.", "192.0.2.", "139.59.157.231", "185.199.10", "185.199.11", "255.", "1.2.3.4", "1.1.1.1")
+OK_IP_PREFIX = ("127.", "169.254.", "139.073.", "0.0.0.0", "10.", "192.168.", "203.0.113.", "198.51.100.", "192.0.2.", "139.59.157.231", "185.199.10", "185.199.11", "255.", "1.2.3.4", "1.1.1.1")
 for p in files():
     if p.endswith(("lint.py", "test_lint.sh")):      # these two contain the strings they are testing for (planted secrets, addresses)
         continue
@@ -181,7 +220,7 @@ created_dirs |= {"/var/lib/aicc-cp/" + d for d in ("tmp", "sessions", "mail", "w
 VALID_KEYS = {
     "Unit": {"Description", "Documentation", "After", "Before", "Wants", "Requires", "Conflicts", "OnFailure", "ConditionPathExists", "StartLimitIntervalSec", "StartLimitBurst"},
     "Service": {"Type", "User", "Group", "DynamicUser", "EnvironmentFile", "Environment", "WorkingDirectory", "ExecStartPre", "ExecStart", "ExecStartPost", "ExecReload", "ExecStop",
-                "TimeoutStartSec", "TimeoutStopSec", "Restart", "RestartSec", "LimitNOFILE", "TasksMax", "MemoryHigh", "MemoryMax", "AmbientCapabilities", "CapabilityBoundingSet",
+                "TimeoutStartSec", "TimeoutStopSec", "Restart", "RestartSec", "LimitNOFILE", "TasksMax", "MemoryHigh", "MemoryMax", "IPAddressDeny", "IPAddressAllow", "AmbientCapabilities", "CapabilityBoundingSet",
                 "NoNewPrivileges", "UMask", "StateDirectory", "StateDirectoryMode", "LogsDirectory", "LogsDirectoryMode", "ProtectSystem", "ProtectHome", "PrivateTmp", "PrivateDevices",
                 "ProtectKernelTunables", "ProtectKernelModules", "ProtectKernelLogs", "ProtectControlGroups", "ProtectClock", "ProtectHostname", "ProtectProc", "RestrictAddressFamilies",
                 "RestrictNamespaces", "RestrictRealtime", "RestrictSUIDSGID", "LockPersonality", "SystemCallArchitectures", "SystemCallFilter", "ReadOnlyPaths", "ReadWritePaths",
@@ -286,7 +325,7 @@ for name, d in list(units.items()) + [("dropin:" + k, v) for k, v in dropins.ite
         if "Install" not in d or "timers.target" not in vals(d, "Install", "WantedBy"):
             fail(path, "timer must be WantedBy=timers.target")
         for cal in vals(d, "Timer", "OnCalendar"):
-            if not re.fullmatch(r"(?:\*-\*-\* )?(?:\*|\d{2}):(?:\*|\d{2}):\d{2}(?: UTC)?|hourly|daily|minutely", cal):
+            if not re.fullmatch(r"(?:\*-\*-\* )?(?:\*|\d{2}):(?:\*|\d{2}):\d{2}(?: UTC)?|\*:0/\d{1,2}|hourly|daily|minutely", cal):
                 fail(path, "OnCalendar=%s: unexpected form" % cal)
 # explicit expectations from the brief
 def expect(cond, f, msg):
@@ -305,9 +344,29 @@ expect(any("cron event run --due-now" in v for v in vals(cron, "Service", "ExecS
 bk = units.get("aicc-backup.service", {})
 expect(vals(bk, "Service", "Nice") == ["19"] and vals(bk, "Service", "IOSchedulingClass") == ["idle"] and vals(bk, "Service", "MemoryMax") == ["256M"], "aicc-backup.service", "Nice=19, IOSchedulingClass=idle, MemoryMax=256M required")
 expect(any("03:30:00 UTC" in v for v in vals(units.get("aicc-backup.timer", {}), "Timer", "OnCalendar")), "aicc-backup.timer", "daily 03:30 UTC required")
-expect(any(v.startswith("*-*-* *:*:00") for v in vals(units.get("aicc-wp-cron.timer", {}), "Timer", "OnCalendar")), "aicc-wp-cron.timer", "every minute required")
+# architecture review H-2/H-4: every 2 minutes (2.3 CPU-s per run on the single vCPU); AICC Ops wc_cron_stale (1 h) and the docs assume that cadence
+expect(vals(units.get("aicc-wp-cron.timer", {}), "Timer", "OnCalendar") == ["*:0/2"], "aicc-wp-cron.timer", "OnCalendar=*:0/2 (every 2 minutes) required")
+expect(vals(units.get("aicc-wp-cron.timer", {}), "Timer", "Persistent") == ["false"], "aicc-wp-cron.timer", "Persistent=false required (missed minutes are not replayed)")
 expect("aicc-notify-failure@.service" in units, "aicc-notify-failure@.service", "template missing")
 ok()
+
+print("== local trust boundary of the PHP user (security review M1) ==")
+fpm_main = dropins.get("php8.3-fpm.service.d/aicc.conf", {})
+fpm_sb = dropins.get("php8.3-fpm.service.d/20-aicc-sandbox.conf", {})
+for label, d in (("php8.3-fpm drop-in aicc.conf", fpm_main), ("aicc-wp-cron.service", units.get("aicc-wp-cron.service", {}))):
+    deny = " ".join(vals(d, "Service", "IPAddressDeny")); allow = " ".join(vals(d, "Service", "IPAddressAllow"))
+    expect(all(x in deny for x in ("127.0.0.0/8", "::1/128", "169.254.0.0/16")), label, "IPAddressDeny must cover 127.0.0.0/8, ::1/128 and 169.254.0.0/16 (Caddy admin API, operator listener, AICC Ops, cloud metadata)")
+    expect(allow.split() == ["127.0.0.53/32"], label, "IPAddressAllow must be exactly the resolver stub 127.0.0.53/32 (never 127.0.0.1 or the metadata address)")
+sb = {k for items in fpm_sb.values() for (k, _v, _l) in items}
+for key in ("NoNewPrivileges", "ProtectSystem", "ReadWritePaths", "PrivateTmp", "ProtectHome", "CapabilityBoundingSet", "RestrictSUIDSGID", "LockPersonality", "ProtectKernelTunables"):
+    expect(key in sb, "php8.3-fpm.service.d/20-aicc-sandbox.conf", "%s is required" % key)
+expect(vals(fpm_sb, "Service", "ProtectSystem") == ["strict"] and vals(fpm_sb, "Service", "NoNewPrivileges") == ["yes"], "php8.3-fpm.service.d/20-aicc-sandbox.conf", "ProtectSystem=strict and NoNewPrivileges=yes required")
+expect(not ({"MemoryDenyWriteExecute", "SystemCallFilter"} & sb), "php8.3-fpm.service.d/20-aicc-sandbox.conf", "MemoryDenyWriteExecute / SystemCallFilter are deliberately absent (PCRE JIT, untested filters)")
+caps = " ".join(vals(fpm_sb, "Service", "CapabilityBoundingSet"))
+expect(set(caps.split()) <= {"CAP_SETUID", "CAP_SETGID", "CAP_CHOWN", "CAP_FOWNER", "CAP_DAC_OVERRIDE", "CAP_KILL"} and "CAP_SETUID" in caps and "CAP_SETGID" in caps, "php8.3-fpm.service.d/20-aicc-sandbox.conf", "CapabilityBoundingSet must be the minimal master set (SETUID SETGID CHOWN FOWNER DAC_OVERRIDE KILL)")
+wpcfg = read(os.path.join(INFRA, "provision/wp-config.stage.template.php"))
+m_ = re.search(r"define\( 'WP_ACCESSIBLE_HOSTS', '([^']*)' \)", wpcfg)
+expect(bool(m_) and not re.search(r"localhost|127\.0\.0\.1|::1", m_.group(1)), "provision/wp-config.stage.template.php", "WP_ACCESSIBLE_HOSTS must not contain localhost / 127.0.0.1 (SSRF to Caddy's admin API)")
 
 print("== memory budget (2 GiB host) ==")
 pool = read(os.path.join(INFRA, "php/aicc-pool.conf"))
@@ -330,13 +389,19 @@ caddy_unit = memval(sv, "MemoryMax")
 php_high = memval(dropins["php8.3-fpm.service.d/aicc.conf"], "MemoryHigh")
 my_high = memval(dropins["mysql.service.d/aicc.conf"], "MemoryHigh")
 caddy_high = memval(sv, "MemoryHigh")
+gm = re.search(r"GOMEMLIMIT=(\d+)MiB", " ".join(vals(sv, "Service", "Environment")))
+gomem = int(gm.group(1)) if gm else None
 my_est = bp + maxconn * 3 + 150   # pool + worst-case per-connection buffers (~3 MiB) + InnoDB/dictionary/log buffers and server overhead
 print("   PHP-FPM worst case %d MiB (%d x %dM + %dM OPcache + 30M master) vs unit MemoryMax %d MiB" % (php_worst, maxch, memlim, opc, php_unit))
 print("   MySQL estimated peak %d MiB (pool %d + %d conn x 3 + 150) vs unit MemoryMax %d MiB" % (my_est, bp, maxconn, my_unit))
-print("   MemoryHigh sum %d MiB + ~300 MiB OS/cache floor = %d MiB of 2048" % (php_high + my_high + caddy_high, php_high + my_high + caddy_high + 300))
+print("   MemoryHigh sum %d MiB + ~300 MiB OS/cache floor = %d MiB of 2048 (AICC Ops MemoryHigh 48M and the transient wp-cron/backup runs come on top of that; see infra/README.md)" % (php_high + my_high + caddy_high, php_high + my_high + caddy_high + 300))
 for cond, msg in ((php_worst <= php_unit, "PHP-FPM worst case exceeds its own MemoryMax"), (my_est <= my_unit, "MySQL estimate exceeds its MemoryMax"),
                   (php_high + my_high + caddy_high + 300 <= 2048, "sum of MemoryHigh + OS floor exceeds 2 GiB"), (bp == 192 and maxconn == 30, "MySQL numbers differ from the brief (192M / 30)"),
-                  (maxch == 3 and memlim == 192, "pool numbers differ from the brief (3 children / 192M)")):
+                  (maxch == 3 and memlim == 192, "pool numbers differ from the brief (3 children / 192M)"),
+                  # architecture review M-1: Caddy was MEASURED at PSS 247 MB / RSS 258 MB under load; a MemoryHigh below that makes the kernel reclaim the unit's memory all the time
+                  (caddy_high >= 320, "aicc-edge MemoryHigh is below Caddy's measured footprint (PSS up to 247 MB, RSS 258 MB): must be >= 320M"),
+                  (caddy_unit >= 450 and caddy_unit > caddy_high, "aicc-edge MemoryMax must be >= 450M and above MemoryHigh"),
+                  (gomem is not None and gomem < caddy_high, "aicc-edge GOMEMLIMIT must stay below MemoryHigh (the Go heap target; the runtime has non-heap memory too)")):
     expect(cond, "budget", msg)
 
 print()

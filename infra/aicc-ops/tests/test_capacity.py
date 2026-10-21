@@ -61,6 +61,15 @@ class VerdictTests(unittest.TestCase):
         self.assertEqual(r["reasons"], [])
         self.assertIn("Informational only", r["disclaimer"])
 
+    def test_reboot_pending_is_a_note_not_a_verdict(self):
+        """Architecture review M-2: a pending reboot is shown on the capacity page and never changes the verdict."""
+        r = cap.evaluate(base(), CFG, {"mem_total": TOTAL, "vcpus": 1, "reboot_required": True})
+        self.assertEqual(r["verdict"], cap.HEALTHY)
+        self.assertEqual(r["reasons"], [])
+        self.assertEqual(len(r["notes"]), 1)
+        self.assertIn("reboot is pending", r["notes"][0])
+        self.assertEqual(cap.evaluate(base(), CFG, {"mem_total": TOTAL, "vcpus": 1})["notes"], [])
+
     def test_watch_ram(self):
         r = verdict(base(**{"mem.used_pct": pts(7, lambda i, t: 78.0)}))
         self.assertEqual(r["verdict"], cap.WATCH)

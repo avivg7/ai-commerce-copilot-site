@@ -25,6 +25,9 @@ while [ $# -gt 0 ]; do
 done
 [[ "$OUT" == /* && "$SECRETS" == /* && "$TEMPLATE" == /* ]] || die "paths must be absolute"
 [ -r "$TEMPLATE" ] || die "template not readable: $TEMPLATE"
+# The production template is a RECORD of required settings, not a usable template (architecture review B-3): refuse it by name and by its marker, before anything is read or written.
+case "$(basename "$TEMPLATE")" in *production*) die "REFUSED: $TEMPLATE is the production template, which is NOT USABLE (record of required settings only); this script renders the STAGING wp-config." ;; esac
+if grep -q "AICC_TEMPLATE_STATUS: NOT-USABLE" "$TEMPLATE" 2>/dev/null; then die "REFUSED: $TEMPLATE is marked AICC_TEMPLATE_STATUS: NOT-USABLE."; fi
 if [ "${AICC_TEST_HARNESS:-0}" != "1" ] && [ "$(id -u)" != "0" ] && ! is_dry; then die "must run as root (sudo). Refusing."; fi
 grep -Eq "define\( 'WP_HOME', 'https://stage\.copilt\.org' \)" "$TEMPLATE" || die "template is not the stage template (WP_HOME)"
 if is_dry; then would "render $OUT from $TEMPLATE using secrets in $SECRETS (mode 0640 $OWNER); nothing printed"; exit 0; fi

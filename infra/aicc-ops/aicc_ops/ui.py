@@ -14,7 +14,7 @@ from . import __version__
 from .charts import line_chart
 from .config import redact
 from . import export as exp
-from .util import fmt_capacity, fmt_bytes, fmt_duration, iso, GIB, is_loopback_host
+from .util import fmt_capacity, fmt_bytes, fmt_duration, iso, GIB, is_loopback_host, host_from_header
 
 CSP = ("default-src 'none'; style-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; "
        "img-src 'none'; script-src 'none'; connect-src 'none'")
@@ -211,7 +211,8 @@ class Pages:
         cls = {"HEALTHY": "st-ok", "WATCH": "st-warn"}.get(v, "st-crit")
         rs = "".join(f"<li>{esc(r['text'])}</li>" for r in cap["reasons"]) or "<li>No threshold reached in the 24 h or 7 d windows.</li>"
         return (f'<div class="card"><div class="v"><span class="pill {cls}">{esc(v)}</span></div><ul>{rs}</ul>'
-                f'<div class="s">{esc(cap["disclaimer"])} <a href="/capacity">Details</a></div></div>')
+                + "".join(f'<div class="s">{esc(n)}</div>' for n in cap.get("notes", []))
+                + f'<div class="s">{esc(cap["disclaimer"])} <a href="/capacity">Details</a></div></div>')
 
     def active_alerts(self):
         act = self.rt.engine.active() if self.rt.engine else []
@@ -327,6 +328,7 @@ class Pages:
         figs = "".join(f"<tr><th scope='row'>{esc(f['label'])}</th><td>{esc(f['window'])}</td><td>{esc(f['text'])}</td></tr>" for f in cap["figures"])
         thr = "".join(f"<tr><th scope='row'>{esc(k)}</th><td>{esc(v)}</td></tr>" for k, v in self.rt.cfg["capacity"].items())
         return (f'<h2>Capacity verdict</h2><p><span class="pill {cls}">{esc(cap["verdict"])}</span></p><p class="note">{esc(cap["disclaimer"])}</p>'
+                + "".join(f'<p class="note">{esc(n)}</p>' for n in cap.get("notes", [])) +
                 f'<h2>Reasons</h2><div class="wrap"><table><caption class="sr">Reasons</caption><thead><tr><th scope="col">Level</th><th scope="col">Window</th><th scope="col">Reason</th></tr></thead><tbody>{reasons}</tbody></table></div>'
                 f'<h2>Measured figures</h2><div class="wrap"><table><caption class="sr">Figures</caption><thead><tr><th scope="col">Measure</th><th scope="col">Window</th><th scope="col">Value</th></tr></thead><tbody>{figs}</tbody></table></div>'
                 f'<h2>Thresholds in effect (proposed, to be validated on staging)</h2><div class="wrap"><table><caption class="sr">Thresholds</caption><tbody>{thr}</tbody></table></div>'
@@ -427,8 +429,8 @@ def make_server(rt, bind="127.0.0.1", port=9190, unsafe=False, max_threads=8, ti
         do_POST = do_PUT = do_DELETE = do_PATCH = do_OPTIONS = do_HEAD = do_TRACE = do_CONNECT = _method_not_allowed
 
         def do_GET(self):
-            host = (self.headers.get("Host") or "").rsplit(":", 1)[0] if not (self.headers.get("Host") or "").startswith("[") else (self.headers.get("Host") or "").split("]")[0] + "]"
-            if host not in ALLOWED_HOSTS:
+            host = host_from_header(self.headers.get("Host") or "")
+            if host is None or host not in ALLOWED_HOSTS:
                 return self._err(403, "Host header not allowed (DNS-rebinding protection).")
             if len(self.path) > 2048:
                 return self._err(414, "URI too long.")

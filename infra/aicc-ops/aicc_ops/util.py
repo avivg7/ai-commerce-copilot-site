@@ -16,6 +16,20 @@ def now_ts() -> int:
     return int(time.time())
 
 
+_AUTHORITY_RE = re.compile(r"^(?P<h>\[[0-9A-Fa-f:.]+\]|[A-Za-z0-9][A-Za-z0-9.-]*)(?::(?P<p>[0-9]{1,5}))?$")
+
+
+def host_from_header(value) -> "str | None":
+    """The host part of an HTTP Host header, or None when the value is not a plain `host[:port]` authority (security review I2: `localhost:9190@evil` used to be
+    cut at the last colon and accepted as `localhost`). No userinfo (`@`), whitespace, slash, `?`, `#`, backslash or control character; a numeric port <= 65535."""
+    if not isinstance(value, str) or not value or len(value) > 255:
+        return None
+    m = _AUTHORITY_RE.match(value)
+    if not m or (m.group("p") is not None and int(m.group("p")) > 65535):
+        return None
+    return m.group("h").lower()
+
+
 def is_loopback_host(host: str) -> bool:
     if host in LOOPBACK_NAMES:
         return True

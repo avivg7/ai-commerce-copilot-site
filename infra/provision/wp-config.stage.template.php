@@ -41,7 +41,7 @@ define( 'AUTOMATIC_UPDATER_DISABLED', true );
 define( 'WP_AUTO_UPDATE_CORE', false );
 
 // ---- cron: system timer only ---------------------------------------------------------------------------------------------------------------------
-// aicc-wp-cron.timer runs `wp cron event run --due-now` every minute; /wp-cron.php is operator-only at the edge.
+// aicc-wp-cron.timer runs `wp cron event run --due-now` every 2 minutes; /wp-cron.php is operator-only at the edge.
 define( 'DISABLE_WP_CRON', true );
 
 // STAGING MUST NOT TALK TO ANYTHING ELSE: block every outbound HTTP request from WordPress/WooCommerce/plugins except this host's own loopback
@@ -51,7 +51,11 @@ define( 'DISABLE_WP_CRON', true );
 // The edge serves the static /product/ page (the theme otherwise falls back to /#why when it is not behind the edge): keeps the header 'Product' link identical to the site's.
 define( 'AICC_PRODUCT_PAGE_ON_EDGE', true );
 define( 'WP_HTTP_BLOCK_EXTERNAL', true );
-define( 'WP_ACCESSIBLE_HOSTS', 'stage.copilt.org,localhost,127.0.0.1' );
+// Security review M1: NO localhost / 127.0.0.1 here. They turned any wp_remote_get() SSRF primitive in WordPress/WooCommerce/a plugin into a request to Caddy's unauthenticated
+// admin API (127.0.0.1:12019), the operator listener and AICC Ops. WordPress always lets a request to its OWN site host through, so the list names only that host; nothing in the
+// Control Plane makes any other outbound call on staging (the only wp_remote_* in plugin and theme is the entitlement webhook, which staging must not deliver). The cgroup network lock in
+// infra/systemd/overrides/php8.3-fpm.service.d/aicc.conf (IPAddressDeny=127.0.0.0/8 ...) closes the same door for raw PHP sockets.
+define( 'WP_ACCESSIBLE_HOSTS', 'stage.copilt.org' );
 
 // ---- diagnostics: off (errors go to /var/log/aicc-cp/php-error.log through the pool; nothing is shown to visitors) -------------------------------
 define( 'WP_DEBUG', false );
@@ -75,6 +79,9 @@ define( 'EMPTY_TRASH_DAYS', 14 );
 define( 'AICC_LM_TRUSTED_PROXIES', array() );
 // Operators exempt from the login throttle: loopback only (the SSH tunnel). Nobody on the public internet is exempt.
 define( 'AICC_LM_OPERATOR_CIDRS', array( '127.0.0.1/32', '::1/128' ) );
+// CP -> Backend entitlement webhook: AICC_ENTITLEMENT_WEBHOOK_URL is deliberately NOT defined on staging. The plugin then falls back to its docker-compose default
+// (http://backend:8000/...), which the WP_HTTP_BLOCK_EXTERNAL allow-list above blocks: staging never delivers to a real Backend. PRODUCTION MUST differ: an https URL on
+// api.copilt.org and WP_ACCESSIBLE_HOSTS = exactly api.copilt.org (see wp-config.production.template.php, a record of the required settings, NOT usable; the Control Plane launch gate fails otherwise).
 // Staging-only random secrets generated on the host (they are NOT the production values and unlock nothing elsewhere).
 define( 'AICC_ACTIVATION_PROOF_SECRET', '@@AICC_ACTIVATION_PROOF_SECRET@@' );
 define( 'AICC_ENTITLEMENT_WEBHOOK_SECRET', '@@AICC_ENTITLEMENT_WEBHOOK_SECRET@@' );

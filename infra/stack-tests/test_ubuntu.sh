@@ -26,6 +26,7 @@ bash "$REPO/infra/release/build-cp-release.sh" --out-dir "$TMP/art" >/dev/null 2
 docker run -d --init --cap-add SYS_PTRACE --name "$NAME" --hostname aicc-cp-stage -v "$REPO/infra":/bundle/infra:ro -v "$REPO/scripts/ops":/bundle/scripts/ops:ro "$IMG" sleep infinity >/dev/null || exit 1
 docker cp "$TMP/art" "$NAME:/art" >/dev/null && docker cp "$WP_PHAR" "$NAME:/opt/wp-cli.phar" >/dev/null
 LOG="$HOME/aicc-rehearsal/logs/aicc-edge.log"
-if [ -f "$LOG" ]; then head -3000 "$LOG" | grep '^{"level"' > "$TMP/f2b-sample.log"; docker cp "$TMP/f2b-sample.log" "$NAME:/tmp/f2b-sample.log" >/dev/null; fi
+# the sample = the oldest lines (old header-map shape) + the newest lines (header allow-list shape)
+if [ -f "$LOG" ]; then { head -3000 "$LOG"; tail -2000 "$LOG"; } | grep '^{"level"' > "$TMP/f2b-sample.log"; docker cp "$TMP/f2b-sample.log" "$NAME:/tmp/f2b-sample.log" >/dev/null; fi
 if command -v node >/dev/null 2>&1 && [ -f "$REPO/scripts/ops/render-edge.mjs" ]; then node "$REPO/scripts/ops/render-edge.mjs" --mode stage --out "$TMP/Caddyfile.stage" >/dev/null 2>&1 && docker cp "$TMP/Caddyfile.stage" "$NAME:/tmp/Caddyfile.stage" >/dev/null; fi
 docker exec "$NAME" bash /bundle/infra/stack-tests/ubuntu-inner.sh

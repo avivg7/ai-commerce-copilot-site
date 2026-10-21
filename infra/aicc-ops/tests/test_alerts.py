@@ -281,5 +281,72 @@ class RuleTests(unittest.TestCase):
             self.assertIn(needed, ids)
 
 
+class RebootRequired(unittest.TestCase):
+    """Architecture review M-2: unattended-upgrades never reboots; a pending reboot must be visible as a WARNING that only a reboot (the marker file disappearing) clears."""
+
+    def test_rule_shape(self):
+        r = RULES["reboot_required"]
+        self.assertEqual((r.for_samples, r.clear_samples, r.cooldown_s), (1, 1, 86400))
+
+    def test_breach_is_warning_and_clear_only_when_file_is_gone(self):
+        pending = obs("reboot_required", win(**{"host.reboot_required": [1], "host.reboot_required_age_s": [3 * 86400]}))[0]
+        self.assertTrue(pending.breach)
+        self.assertFalse(pending.clear)
+        self.assertEqual(pending.severity, WARNING)
+        self.assertIn("3.0 days", pending.text)
+        gone = obs("reboot_required", win(**{"host.reboot_required": [0]}))[0]
+        self.assertTrue(gone.clear and not gone.breach)
+        self.assertEqual(obs("reboot_required", win(**{"cpu.used_pct": [5]})), [])      # no data: no opinion
+
+    def test_never_auto_clears_and_never_escalates(self):
+        eng = AlertEngine([RULES["reboot_required"]])
+        notes = []
+        for i in range(3000):                                                          # ~25 h of 30 s samples with the file present
+            notes += eng.evaluate(win(**{"host.reboot_required": [1], "host.reboot_required_age_s": [i * 30.0]}), T + i * 30)
+        self.assertEqual([n.kind for n in notes], [FIRING])                            # one notice, no RECOVERED, no ESCALATED, no reminder
+        self.assertEqual(notes[0].severity, WARNING)
+        self.assertEqual(len(eng.active()), 1)
+        rec = eng.evaluate(win(**{"host.reboot_required": [0]}), T + 3001 * 30)
+        self.assertEqual([n.kind for n in rec], [RECOVERED])
+        self.assertEqual(eng.active(), [])
+
+    def test_message_has_no_pii_or_package_names(self):
+        txt = obs("reboot_required", win(**{"host.reboot_required": [1], "host.reboot_required_age_s": [86400 * 2.5]}))[0].text
+        import re
+        self.assertIsNone(re.search(r"@|https?://|\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}|linux-image|libc6|openssl", txt))
+        self.assertIn("NOT automatic", txt)
+
+    def test_catalogue_lists_it(self):
+        self.assertIn("reboot_required", RULES)
+
+
+class CronCadence(unittest.TestCase):
+    """The system cron timer runs every 2 minutes (architecture review H-2/H-4). wc_cron_stale must neither fire on that cadence nor on several missed runs."""
+
+    def test_timer_file_and_alert_constant_agree(self):
+        import os, re
+        from aicc_ops.alerts import WP_CRON_CADENCE_S
+        timer = open(os.path.join(os.path.dirname(__file__), "../../systemd/aicc-wp-cron.timer")).read()
+        m = re.search(r"(?m)^OnCalendar=\*:0/(\d+)\s*$", timer)
+        self.assertIsNotNone(m, "aicc-wp-cron.timer must use OnCalendar=*:0/N")
+        self.assertEqual(int(m.group(1)) * 60, WP_CRON_CADENCE_S)
+
+    def test_two_minute_cadence_never_alerts(self):
+        from aicc_ops.alerts import WP_CRON_CADENCE_S
+        p = RULES["wc_cron_stale"].params
+        self.assertGreaterEqual(p["warn_s"], 15 * WP_CRON_CADENCE_S)          # a quarter hour of missed runs is still silent
+        for age in (30, WP_CRON_CADENCE_S, WP_CRON_CADENCE_S + 10, 5 * WP_CRON_CADENCE_S, 10 * 60, 29 * 60):
+            o = obs("wc_cron_stale", win(**{"cp.wc_cron_last_run_age_seconds": [age]}))[0]
+            self.assertFalse(o.breach, "age %d s must not breach" % age)
+        self.assertTrue(obs("wc_cron_stale", win(**{"cp.wc_cron_last_run_age_seconds": [3700]}))[0].breach)
+        self.assertEqual(obs("wc_cron_stale", win(**{"cp.wc_cron_last_run_age_seconds": [15000]}))[0].severity, CRITICAL)
+        # through the state machine: 20 consecutive samples of a "just ran 2 minutes ago" heartbeat produce no notification at all
+        eng = AlertEngine([RULES["wc_cron_stale"]])
+        notes = []
+        for i in range(20):
+            notes += eng.evaluate(win(**{"cp.wc_cron_last_run_age_seconds": [WP_CRON_CADENCE_S]}), T + i * 30)
+        self.assertEqual(notes, [])
+
+
 if __name__ == "__main__":
     unittest.main()

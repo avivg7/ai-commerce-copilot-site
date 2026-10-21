@@ -22,6 +22,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$HERE/lib/release-common.sh"
 KIND=""; ART=""; SHOST=""; SIP=""; SID=""; KEY="$HOME/.ssh/aicc_cp_stage"; USER_NAME="aicc"; DRY=0; CHECK_ONLY=0; FIRST=0
 DENY_IPS="139.59.157.231 185.199.108.153 185.199.109.153 185.199.110.153 185.199.111.153"
+. "$HERE/../provision/lib/ip-guard.sh"   # strict address check (security review L5)
 while [ $# -gt 0 ]; do
   case "$1" in
     --kind) KIND="${2:-}"; shift 2 ;; --artifact) ART="${2:-}"; shift 2 ;; --stage-host) SHOST="${2:-}"; shift 2 ;; --stage-ip) SIP="${2:-}"; shift 2 ;;
@@ -35,6 +36,7 @@ refuse() { echo "REFUSED: $*" >&2; exit 3; }
 case "$KIND" in site|cp) ;; *) echo "--kind must be site or cp" >&2; exit 2 ;; esac
 [[ "$SIP" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]] || refuse "--stage-ip must be a literal IPv4 address"
 for d in $DENY_IPS; do [ "$SIP" = "$d" ] && refuse "$SIP is a production/public address, not the staging Droplet."; done
+aicc_ip_guard "$SIP" "--stage-ip " || exit 3
 case "$SHOST" in www.copilt.org|copilt.org|api.copilt.org) refuse "$SHOST is a production hostname." ;; esac
 [[ "$SHOST" =~ ^stage[a-z0-9-]*\.copilt\.org$ ]] || refuse "--stage-host must be a stage*.copilt.org name (got $SHOST)"
 [[ "$SID" =~ ^[0-9a-f]{32}$ ]] || refuse "--stage-id must be 32 lowercase hex characters"
@@ -56,6 +58,8 @@ if [ "$KIND" = site ]; then [ "$(jq -r '.sources.target // empty' "$MAN")" = "st
 WORK="$(mktemp -d)"; trap 'rm -rf "$WORK"' EXIT
 python3 -I "$HERE/lib/release_tool.py" unpack --tarball "$ART" --dest "$WORK/tree" >/dev/null
 verify_tree "$WORK/tree" "$SUMS" >/dev/null || refuse "the unpacked tree differs from SHA256SUMS"
+# A release tree never carries a wp-config template (architecture review B-3: the production template is a record of required settings, not a usable file; staging renders its own on the host).
+if [ -n "$(find "$WORK/tree" \( -name 'wp-config.production*' -o -name 'wp-config*.template*' \) -print | head -n 1)" ]; then refuse "the artifact contains a wp-config template: configuration is rendered on the host (render-wp-config.sh), never shipped in a release"; fi
 if [ "$KIND" = site ]; then
   grep -q "\"id\":\"$SID\"" "$WORK/tree/.well-known/aicc-stage-identity" 2>/dev/null || refuse "the site build carries no identity file for stage id $SID (built for another stage, or a production build)"
   grep -q "\"host\":\"$SHOST\"" "$WORK/tree/.well-known/aicc-stage-identity" || refuse "the site build was made for another host"

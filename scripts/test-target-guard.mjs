@@ -61,6 +61,17 @@ for (const h of ["www.copilt.org", "copilt.org", "api.copilt.org", "WWW.COPILT.O
 refusesBuild("another name under the production domain (blog.copilt.org)", { ...GOOD, stageHost: "blog.copilt.org" }, "production-host");
 refusesBuild("a name that is not recognisably a staging name (example.com)", { ...GOOD, stageHost: "example.com" }, "not-a-staging-name");
 for (const ip of ["139.59.157.231", "185.199.108.153", "185.199.109.153", "185.199.110.153", "185.199.111.153", "::ffff:139.59.157.231"]) refusesBuild(`known production address ${ip} as the expected IP`, { ...GOOD, stageIp: ip }, "known-production-ip");
+// security review L5: every notation of a production address, and every non-canonical form, is refused BEFORE anything is sent
+for (const [why, ip] of [["hex IPv4-mapped IPv6 (the review's PoC)", "::ffff:8b3b:9de7"], ["bracketed hex IPv4-mapped IPv6", "[::ffff:8b3b:9de7]"], ["upper-case hex IPv4-mapped IPv6", "::FFFF:8B3B:9DE7"], ["expanded IPv4-mapped IPv6", "0:0:0:0:0:ffff:8b3b:9de7"],
+  ["IPv4-compatible IPv6", "::8b3b:9de7"], ["NAT64 64:ff9b::/96", "64:ff9b::8b3b:9de7"], ["NAT64 dotted tail", "64:ff9b::139.59.157.231"], ["6to4 2002:8b3b:9de7::/48", "2002:8b3b:9de7::1"],
+  ["GitHub Pages IPv6 2606:50c0:8000::153", "2606:50c0:8000::153"], ["GitHub Pages IPv6 8001::153", "2606:50c0:8001::153"], ["GitHub Pages IPv6 8003::153", "2606:50c0:8003::153"], ["any address of the GitHub Pages /46", "2606:50c0:8002:abcd::1"],
+  ["GitHub Pages IPv4 mapped in hex", "::ffff:b9c7:6c99"]]) refusesBuild(`${why}: ${ip}`, { ...GOOD, stageIp: ip }, "known-production-ip");
+for (const [why, ip] of [["leading-zero octet (glibc reads it as octal 139.59.157.231)", "139.073.157.231"], ["leading zeros everywhere", "0139.0059.0157.0231"], ["hex dotted notation", "0x8b.0x3b.0x9d.0xe7"], ["single decimal integer 2336496103", "2336496103"], ["single hex integer", "0x8b3b9de7"],
+  ["octal integer", "021316716747"], ["short form 139.59.40423", "139.59.40423"], ["three octets", "139.59.157"], ["trailing dot", "139.59.157.231."], ["leading dot", ".139.59.157.231"], ["an octet above 255", "139.59.157.256"], ["whitespace around", " 192.0.2.7"], ["IPv6 zone id", "fe80::1%en0"],
+  ["a CIDR", "192.0.2.0/24"], ["a URL", "http://192.0.2.7"], ["Teredo (obfuscated embedded IPv4)", "2001:0:4136:e378:8000:63bf:74c4:620"], ["an IPv4-mapped form of a harmless address (non-canonical target)", "::ffff:192.0.2.7"], ["NAT64 of a harmless address", "64:ff9b::c000:207"]])
+  refusesBuild(`non-canonical / embedded form (${why}): '${ip}'`, { ...GOOD, stageIp: ip }, "invalid-ip");
+ok(G.ipVerdict("139.59.157.231").prod === true && G.ipVerdict("192.0.2.7").prod === false && G.ipVerdict("2001:db8::1").ok === true && G.ipVerdict("2606:50c0:8004::1").prod === false, "ipVerdict: production flagged, documentation addresses and the address next to the GitHub /46 are not");
+ok(G.isKnownProductionIp("::ffff:8b3b:9de7") && G.isKnownProductionIp("[2606:50c0:8001::153]") && G.isKnownProductionIp("2002:8b3b:9de7::") && !G.isKnownProductionIp("192.0.2.7"), "isKnownProductionIp sees the embedded and IPv6 forms");
 refusesBuild("expected IP is not an IP", { ...GOOD, stageIp: "stage.copilt.org" }, "invalid-ip");
 refusesBuild("expected IP 0.0.0.0", { ...GOOD, stageIp: "0.0.0.0" }, "invalid-ip");
 refusesBuild("a production name as an alias without the opt-in", { ...GOOD, aliasHosts: ["www.copilt.org"] }, "alias-host");
@@ -288,6 +299,8 @@ group("D2. operator tunnel: the URL keeps :443, the connection is dialled at 127
   ok((() => { try { mkT(); return true; } catch { return false; } })(), "a valid operator-tunnel config builds (loopback expected IP, local port 18443, public IP 203.0.113.10)");
   refusesBuild("tunnel: the public end is a known production address", { ...TUN, operatorTunnel: { publicIp: "139.59.157.231" } }, "known-production-ip");
   refusesBuild("tunnel: the public end is a GitHub Pages address", { ...TUN, operatorTunnel: { publicIp: "185.199.108.153" } }, "known-production-ip");
+  refusesBuild("tunnel: hex IPv4-mapped public end", { ...TUN, operatorTunnel: { publicIp: "::ffff:8b3b:9de7" } }, "known-production-ip");
+  refusesBuild("tunnel: leading-zero public end", { ...TUN, operatorTunnel: { publicIp: "139.073.157.231" } }, "invalid-ip");
   refusesBuild("tunnel: the public end is loopback", { ...TUN, operatorTunnel: { publicIp: "127.0.0.1" } }, "operator-tunnel");
   refusesBuild("tunnel: the public end is missing", { ...TUN, operatorTunnel: {} }, "operator-tunnel");
   refusesBuild("tunnel: the public end is multicast", { ...TUN, operatorTunnel: { publicIp: "224.0.0.1" } }, "operator-tunnel");

@@ -46,7 +46,7 @@ async function worker(id) {
   let i = id * 2;
   while (!stop) {
     // /wp-json/ at a fixed low rate across all workers
-    if (WPJ > 0 && Date.now() - lastWpJson >= 60000 / WPJ) { lastWpJson = Date.now(); await one("/wp-json/"); continue; }
+    if (WPJ > 0 && Date.now() - lastWpJson >= 60000 / WPJ) { lastWpJson = Date.now(); await one("/wp-json/aicc-license/v1/plans"); continue; }
     await one(MIX[i++ % MIX.length]); seq++;
   }
 }

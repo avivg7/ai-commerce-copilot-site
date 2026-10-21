@@ -23,6 +23,11 @@ export const APEX = "copilt.org";
 export const STAGE_HOST_PLACEHOLDER = "{$AICC_PUBLIC_HOST}";
 export const IDENTITY_PATH = "/.well-known/aicc-stage-identity";
 
+/** Line 2 of the committed template (the status banner). The stage and rehearsal renders replace it so a LIVE file never claims "nothing is live" (architecture review H-6). */
+export const TEMPLATE_BANNER_PREFIX = "# TEMPLATE (as committed: the PRODUCTION topology, www + apex).";
+export const STAGE_BANNER = "# RENDERED FOR THE STAGE HOST (scripts/ops/render-edge.mjs --mode stage): ONE public address, the stage identity route, X-Robots-Tag noindex, automatic Let's Encrypt HTTPS. This is the file the staging edge RUNS; change docs/cutover/Caddyfile.edge.template and re-render, never this copy.";
+export const REHEARSAL_BANNER = "# RENDERED FOR THE macOS REHEARSAL (scripts/rehearsal/rehearsal.mjs generate): local certificates and loopback ports. Never deploy this file.";
+
 export const readTemplate = (file = TEMPLATE_PATH) => fs.readFileSync(file, "utf8");
 
 export function replaceRegion(text, begin, end, body) {
@@ -111,6 +116,14 @@ export function render(template, o = {}) {
   if (o.httpsPort && Number(o.httpsPort) !== 443) {
     const host = topology === "stage" ? o.host || STAGE_HOST_PLACEHOLDER : CANONICAL;
     t = mustReplaceInCode(t, `https://${host}`, `https://${host}:${o.httpsPort}`, "https redirect targets (port suffix)");
+  }
+  // the status banner (line 2) must be true for what was rendered
+  if (mode !== "production") {
+    const lines = t.split("\n");
+    const i = lines.findIndex((l) => l.startsWith(TEMPLATE_BANNER_PREFIX));
+    if (i < 0) throw new Error("template: the status banner line (TEMPLATE_BANNER_PREFIX) was not found");
+    lines[i] = mode === "stage" ? STAGE_BANNER : REHEARSAL_BANNER;
+    t = lines.join("\n");
   }
   if (!o.unchecked) assertRender(t, { mode, topology, identity, upstream }); // `unchecked`: only the real-Caddy mutation harness renders deliberately broken templates
   return { text: t, mode, topology, upstream };

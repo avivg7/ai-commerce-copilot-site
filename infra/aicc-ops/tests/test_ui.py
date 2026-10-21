@@ -67,6 +67,18 @@ class Routes(Base):
             self.assertEqual(st, 200, path)
             self.assertIn(needle, body.decode(), path)
 
+    def test_reboot_pending_note_on_capacity_pages(self):
+        """Architecture review M-2: the capacity page and the overview card show the note when host.reboot_required is 1, and nothing otherwise."""
+        for path in ("/capacity", "/"):
+            self.assertNotIn("reboot is pending", self.get(path)[2].decode())
+        with self.rt._lock:
+            self.rt._latest["host.reboot_required"] = (1.0, time.time())
+        self.rt._cap_cache = (0, None)
+        for path in ("/capacity", "/"):
+            st, _, body = self.get(path)
+            self.assertEqual(st, 200)
+            self.assertIn("A host reboot is pending", body.decode(), path)
+
     def test_overview_capacity_comparisons(self):
         body = self.get("/")[2].decode()
         self.assertIn("RAM 1.2 GiB / 2.0 GiB — 60%", body)
@@ -118,6 +130,22 @@ class Routes(Base):
         self.assertEqual(self.get("/", host="evil.example:9190")[0], 403)
         self.assertEqual(self.get("/", host="localhost:9190")[0], 200)
         self.assertEqual(self.get("/", host="127.0.0.1")[0], 200)
+        self.assertEqual(self.get("/", host="[::1]:9190")[0], 200)
+
+    def test_host_header_authority_is_parsed_strictly(self):
+        """Security review I2: `localhost:9190@evil` was cut at the last colon and accepted as `localhost`."""
+        from aicc_ops.util import host_from_header
+        for bad in ("localhost:9190@evil", "localhost@evil", "user@localhost", "localhost evil", "localhost :9190", " localhost", "localhost\t", "localhost/x", "localhost?x=1", "localhost#f", "localhost\\evil",
+                    "localhost:99999", "localhost:", ":9190", "", "127.0.0.1:9190@evil.example", "localhost:9190:80", "[::1", "[::1]x", "loc\x00alhost"):
+            self.assertIsNone(host_from_header(bad), repr(bad))
+            if bad and bad == bad.strip() and "\x00" not in bad:   # (HTTP strips leading/trailing blanks of a header value itself)
+                try:
+                    st = self.get("/", host=bad)[0]
+                except Exception:
+                    continue   # the HTTP client itself refuses to send some of them
+                self.assertEqual(st, 403, repr(bad))
+        for good, want in (("localhost", "localhost"), ("LOCALHOST:9190", "localhost"), ("127.0.0.1:9190", "127.0.0.1"), ("[::1]:9190", "[::1]"), ("[::1]", "[::1]")):
+            self.assertEqual(host_from_header(good), want)
         self.assertEqual(self.get("/", host="[::1]:9190")[0], 200)
 
     def test_no_secrets_in_any_response(self):

@@ -71,6 +71,15 @@ THIRD="$(H --only mysql 2>&1)"
 t_contains "a drifted config file is replaced" "$THIRD" "installed: /etc/mysql/mysql.conf.d/99-aicc.cnf"
 t_ok "...and the previous version is kept in /var/backups/aicc-config" bash -c "find '$PFX/var/backups/aicc-config' -name '99-aicc.cnf' | grep -q ."
 t_ok "...and the file equals the repo version again" cmp "$INFRA/mysql/99-aicc.cnf" "$PFX/etc/mysql/mysql.conf.d/99-aicc.cnf"
+t_fail "fail2ban: the installer ships no zz-aicc-local.local (the operator override is absent by default)" test -e "$PFX/etc/fail2ban/jail.d/zz-aicc-local.local"
+printf '[aicc-wp-login]\nignoreip = 127.0.0.1/8 ::1 10.19.0.2\n' > "$PFX/etc/fail2ban/jail.d/zz-aicc-local.local"
+H --only fail2ban >/dev/null 2>&1; echo "# drift" >> "$PFX/etc/fail2ban/jail.d/aicc-edge.local"; H --only fail2ban >/dev/null 2>&1
+t_eq "fail2ban: an operator-owned zz-aicc-local.local survives a re-install (even one that replaces the drifted shipped jail file)" "$(cat "$PFX/etc/fail2ban/jail.d/zz-aicc-local.local")" "$(printf '[aicc-wp-login]\nignoreip = 127.0.0.1/8 ::1 10.19.0.2')"
+t_ok "...and the shipped jail file is back to the repo version" cmp "$INFRA/fail2ban/jail.d-aicc-edge.local" "$PFX/etc/fail2ban/jail.d/aicc-edge.local"
+t_contains "the shipped jail file documents the operator override and says the installer replaces it" "$(cat "$INFRA/fail2ban/jail.d-aicc-edge.local")" "zz-aicc-local.local"
+t_contains "the login filter states the exact limitation (every POST counts, successful or not)" "$(cat "$INFRA/fail2ban/filter.d-aicc-wp-login.conf")" "PRECISE LIMITATION"
+t_contains "the flood filter excludes 421" "$(grep '^failregex' "$INFRA/fail2ban/filter.d-caddy-4xx-flood.conf")" '(?!421\b)'
+rm -f "$PFX/etc/fail2ban/jail.d/zz-aicc-local.local"
 DRYP="$(env AICC_TEST_HARNESS=1 AICC_ROOT_PREFIX="$PFX" bash "$PROV/install-stack.sh" --dry-run --only php 2>&1)"
 t_contains "dry-run on an installed prefix reports unchanged" "$DRYP" "unchanged: /etc/php/8.3/fpm/pool.d/aicc.conf"
 
@@ -136,6 +145,106 @@ t_eq "...and sshd was NOT reloaded either" "$(grep -c reload "$CALLS" || true)" 
 t_rc "a failing reload removes the drop-in and fails" 1 HX STUB_SYSTEMCTL_RC=1 AICC_TEST_SSH_ANCESTOR=100:root bash "$PROV/harden-stage2.sh"
 t_fail "...no drop-in left after a failed reload" test -e "$SB/sshd.d/05-aicc-stage2.conf"
 if [ "$(id -u)" != 0 ]; then t_rc "without the harness, non-root is refused" 1 bash "$PROV/harden-stage2.sh"; fi
+
+echo "== stage 3: SSH crypto allow-list and unused services (security review L8) =="
+S3="$TMP/s3"; mkdir -p "$S3/bin" "$S3/sshd.d" "$S3/masked" "$S3/rdeps"; C3="$S3/calls.log"; : > "$C3"
+cat > "$S3/bin/sshd" <<EOS
+#!/usr/bin/env bash
+echo "sshd \$*" >> "$C3"
+case "\$1" in
+  -t) exit "\${STUB_SSHD_T_RC:-0}" ;;
+  -T) echo "pubkeyauthentication yes"; echo "passwordauthentication no"
+      f5="$S3/sshd.d/05-aicc-stage2.conf"; f6="$S3/sshd.d/06-aicc-stage3-crypto.conf"
+      if [ -f "\$f5" ]; then echo "permitrootlogin no"; echo "allowusers aicc"; else echo "permitrootlogin without-password"; fi
+      if [ -f "\$f6" ] && [ "\${STUB_SSHD_IGNORE:-0}" != 1 ]; then sed -n 's/^Ciphers /ciphers /p;s/^KexAlgorithms /kexalgorithms /p;s/^MACs /macs /p' "\$f6"
+      else echo "ciphers chacha20-poly1305@openssh.com,aes128-ctr,aes256-ctr,aes128-gcm@openssh.com"; echo "kexalgorithms curve25519-sha256,diffie-hellman-group14-sha1"; echo "macs hmac-sha1,umac-64@openssh.com"; fi ;;
+esac
+EOS
+cat > "$S3/bin/systemctl" <<EOS
+#!/usr/bin/env bash
+echo "systemctl \$*" >> "$C3"
+case "\$1" in
+  is-enabled) if [ -f "$S3/masked/\$2" ]; then echo masked; else echo enabled; fi; exit 0 ;;
+  cat) case " \${STUB_UNITS:-snapd.service snapd.socket snapd.seeded.service ModemManager.service udisks2.service multipathd.service multipathd.socket} " in *" \$2 "*) exit 0 ;; *) exit 1 ;; esac ;;
+  list-dependencies) u="\${@: -1}"; echo "\$u"; if [ -f "$S3/rdeps/\$u" ]; then sed 's/^/  /' "$S3/rdeps/\$u"; fi; echo "  multi-user.target"; exit 0 ;;
+  disable) exit 0 ;;
+  mask) touch "$S3/masked/\$2"; exit 0 ;;
+  reload) exit "\${STUB_SYSTEMCTL_RC:-0}" ;;
+esac
+exit 0
+EOS
+cat > "$S3/bin/snap" <<EOS
+#!/usr/bin/env bash
+printf 'Name  Version  Rev  Tracking  Publisher  Notes\n'
+for n in \${STUB_SNAPS:-core22 snapd bare}; do printf '%s 1 1 latest/stable x -\n' "\$n"; done
+EOS
+chmod +x "$S3/bin"/*
+printf 'AICC_ENV=staging\nAICC_HOSTNAME=stage.copilt.org\nAICC_STAGE_ID=0123456789abcdef0123456789abcdef\n' > "$S3/identity"
+H3() { env AICC_TEST_HARNESS=1 AICC_MARKER_PATH="$S3/marker" AICC_BOOT_ID_FILE="$SB/boot_id" AICC_SSHD_BIN="$S3/bin/sshd" AICC_SSHD_DIR="$S3/sshd.d" AICC_SYSTEMCTL_BIN="$S3/bin/systemctl" AICC_SNAP_BIN="$S3/bin/snap" AICC_IDENTITY_FILE="$S3/identity" AICC_MULTIPATH_BIN=/nonexistent AICC_TEST_AICC_HOME="$SB/home" "$@"; }
+rm -f "$S3/marker" "$S3/sshd.d"/*
+printf 'PermitRootLogin no\nAllowUsers aicc\n' > "$S3/sshd.d/05-aicc-stage2.conf"
+t_rc "no marker: harden-stage3 refuses" 1 H3 AICC_TEST_SSH_ANCESTOR=100:root bash "$PROV/harden-stage3.sh"
+t_ok "second-session verification writes the marker" env AICC_TEST_HARNESS=1 AICC_MARKER_PATH="$S3/marker" AICC_BOOT_ID_FILE="$SB/boot_id" AICC_SSHD_BIN="$S3/bin/sshd" AICC_SSHD_DIR="$S3/sshd.d" AICC_SYSTEMCTL_BIN="$S3/bin/systemctl" AICC_TEST_AICC_HOME="$SB/home" AICC_TEST_SSH_ANCESTOR=300:aicc bash "$PROV/stage2-verify-second-session.sh"
+t_rc "the SAME session that wrote the marker is refused" 1 H3 AICC_TEST_SSH_ANCESTOR=300:aicc bash "$PROV/harden-stage3.sh"
+mv "$S3/identity" "$S3/identity.ok"
+t_rc "no identity file: not the staging host, refused" 1 H3 AICC_TEST_SSH_ANCESTOR=100:root bash "$PROV/harden-stage3.sh"
+printf 'AICC_ENV=production\nAICC_HOSTNAME=www.copilt.org\n' > "$S3/identity"
+t_rc "AICC_ENV=production is refused" 1 H3 AICC_TEST_SSH_ANCESTOR=100:root bash "$PROV/harden-stage3.sh"
+printf 'AICC_ENV=staging\nAICC_HOSTNAME=www.copilt.org\n' > "$S3/identity"
+t_rc "a production host name in a staging-looking identity is refused" 1 H3 AICC_TEST_SSH_ANCESTOR=100:root bash "$PROV/harden-stage3.sh"
+mv "$S3/identity.ok" "$S3/identity"
+rm "$S3/sshd.d/05-aicc-stage2.conf"
+t_rc "stage 2 not in force: refused (stage 3 never replaces it)" 1 H3 AICC_TEST_SSH_ANCESTOR=100:root bash "$PROV/harden-stage3.sh"
+t_fail "...and wrote nothing" test -e "$S3/sshd.d/06-aicc-stage3-crypto.conf"
+printf 'PermitRootLogin no\nAllowUsers aicc\n' > "$S3/sshd.d/05-aicc-stage2.conf"
+: > "$C3"
+t_rc "--dry-run succeeds" 0 H3 AICC_TEST_SSH_ANCESTOR=100:root bash "$PROV/harden-stage3.sh" --dry-run
+t_fail "...no drop-in after a dry run" test -e "$S3/sshd.d/06-aicc-stage3-crypto.conf"
+t_eq "...no reload, no mask after a dry run" "$(grep -cE 'reload|mask |disable' "$C3" || true)" "0"
+t_eq "...no unit masked" "$(ls "$S3/masked" | wc -l | tr -d ' ')" "0"
+: > "$C3"
+OUT3="$(H3 AICC_TEST_SSH_ANCESTOR=100:root bash "$PROV/harden-stage3.sh" 2>&1)"; rc=$?
+t_eq "stage 3 from the first session with a valid marker succeeds" "$rc" "0"
+t_contains "drop-in: only AEAD ciphers" "$(cat "$S3/sshd.d/06-aicc-stage3-crypto.conf")" "Ciphers chacha20-poly1305@openssh.com,aes256-gcm@openssh.com,aes128-gcm@openssh.com"
+t_contains "drop-in: curve25519 key exchange" "$(cat "$S3/sshd.d/06-aicc-stage3-crypto.conf")" "KexAlgorithms curve25519-sha256,curve25519-sha256@libssh.org,sntrup761x25519-sha512@openssh.com"
+t_contains "drop-in: encrypt-then-MAC only" "$(cat "$S3/sshd.d/06-aicc-stage3-crypto.conf")" "MACs hmac-sha2-512-etm@openssh.com,hmac-sha2-256-etm@openssh.com"
+t_not_contains "no legacy algorithm anywhere in the drop-in" "$(cat "$S3/sshd.d/06-aicc-stage3-crypto.conf")" "ctr"
+t_eq "sshd -t and the effective sshd -T both ran BEFORE the reload" "$(awk '/^sshd -t/{t=NR} /^sshd -T/{T=NR} /reload/{r=NR} END{print (t>0 && T>0 && t<r && T<r) ? "yes" : "no"}' "$C3")" "yes"
+t_not_contains "NEVER a restart/stop of ssh" "$(cat "$C3")" "restart"
+for u in snapd.service snapd.socket snapd.seeded.service ModemManager.service udisks2.service multipathd.service multipathd.socket; do t_ok "$u is masked" test -f "$S3/masked/$u"; done
+t_not_contains "do-agent and droplet-agent are never mentioned to systemctl" "$(cat "$C3")" "agent"
+t_contains "the cloud-firewall narrowing is documented as an OWNER decision and not applied" "$OUT3" "[OWNER DECISION, NOT APPLIED]"
+t_contains "tells the operator to test a THIRD login first" "$OUT3" "THIRD login"
+: > "$C3"
+OUT3B="$(H3 AICC_TEST_SSH_ANCESTOR=100:root bash "$PROV/harden-stage3.sh" 2>&1)"
+t_contains "second run: SSH file unchanged" "$OUT3B" "unchanged: $S3/sshd.d/06-aicc-stage3-crypto.conf"
+t_contains "second run: units already masked" "$OUT3B" "unchanged: snapd.service is already masked"
+t_eq "second run: no reload and no new mask" "$(grep -cE 'reload|^systemctl mask|disable' "$C3" || true)" "0"
+# a drop-in that is not effective (an earlier file wins) is reverted and sshd is not reloaded
+rm -f "$S3/sshd.d/06-aicc-stage3-crypto.conf" "$S3/masked"/*; : > "$C3"
+t_rc "ineffective drop-in (sshd -T does not report the allow-list): refused" 1 H3 STUB_SSHD_IGNORE=1 AICC_TEST_SSH_ANCESTOR=100:root bash "$PROV/harden-stage3.sh" --skip-services
+t_fail "...the drop-in was reverted" test -e "$S3/sshd.d/06-aicc-stage3-crypto.conf"
+t_eq "...and sshd was never reloaded" "$(grep -c reload "$C3" || true)" "0"
+t_rc "sshd -t rejecting the file: refused and reverted" 1 H3 STUB_SSHD_T_RC=1 AICC_TEST_SSH_ANCESTOR=100:root bash "$PROV/harden-stage3.sh" --skip-services
+t_fail "...the drop-in is gone" test -e "$S3/sshd.d/06-aicc-stage3-crypto.conf"
+t_rc "a failing reload removes the drop-in again" 1 H3 STUB_SYSTEMCTL_RC=1 AICC_TEST_SSH_ANCESTOR=100:root bash "$PROV/harden-stage3.sh" --skip-services
+t_fail "...no drop-in left behind" test -e "$S3/sshd.d/06-aicc-stage3-crypto.conf"
+# dependency checks
+rm -f "$S3/masked"/*; printf 'do-agent.service\n' > "$S3/rdeps/udisks2.service"; printf 'droplet-agent.service\n' > "$S3/rdeps/ModemManager.service"; : > "$C3"
+OUT3C="$(H3 AICC_TEST_SSH_ANCESTOR=100:root bash "$PROV/harden-stage3.sh" --skip-ssh 2>&1)"
+t_contains "a unit that do-agent depends on is SKIPPED with the reason" "$OUT3C" "SKIPPED udisks2.service: required by do-agent.service"
+t_contains "a unit that droplet-agent depends on is SKIPPED with the reason" "$OUT3C" "SKIPPED ModemManager.service: required by droplet-agent.service"
+t_fail "...and not masked" test -f "$S3/masked/udisks2.service"
+t_ok "the others are still masked" test -f "$S3/masked/snapd.service" -a -f "$S3/masked/multipathd.service"
+rm -f "$S3/masked"/* "$S3/rdeps"/*; : > "$C3"
+OUT3D="$(H3 STUB_SNAPS="core22 snapd bare droplet-agent" AICC_TEST_SSH_ANCESTOR=100:root bash "$PROV/harden-stage3.sh" --skip-ssh 2>&1)"
+t_contains "snapd is kept when a snap (e.g. a snap-packaged cloud agent) is installed" "$OUT3D" "SKIPPED snapd"
+t_fail "...snapd not masked" test -f "$S3/masked/snapd.service"
+rm -f "$S3/masked"/*; : > "$C3"
+OUT3E="$(H3 STUB_UNITS="snapd.service" AICC_TEST_SSH_ANCESTOR=100:root bash "$PROV/harden-stage3.sh" --skip-ssh 2>&1)"
+t_contains "units that are not installed are skipped quietly" "$OUT3E" "absent: ModemManager.service is not installed"
+t_ok "the installed one is masked" test -f "$S3/masked/snapd.service"
+t_contains "--help prints the header" "$(bash "$PROV/harden-stage3.sh" --help 2>&1 | head -3)" "STAGE 3"
 
 echo "== PHP-FPM / PHP ini configuration syntax (local php-fpm, user/paths substituted) =="
 if command -v php-fpm >/dev/null 2>&1; then
@@ -229,6 +338,11 @@ if [ -x "$LOCALMY/mysqld" ]; then
     RWC --force-salts >/dev/null 2>&1
     t_fail "--force-salts changes the keys" bash -c "[ \"\$(shasum -a 256 '$WC/shared/wp-config.php' | cut -d' ' -f1)\" = '$SUM1' ]"
     t_fail "the template in git has no secret-looking define with a value" grep -Eq "define\( '(AUTH|SECURE_AUTH|LOGGED_IN|NONCE)_(KEY|SALT)', '[A-Za-z0-9]{16,}'" "$PROV/wp-config.stage.template.php"
+    t_rc "rendering the PRODUCTION template is refused (record only, not usable)" 1 env AICC_TEST_HARNESS=1 bash "$PROV/render-wp-config.sh" --template "$PROV/wp-config.production.template.php" --out "$WC/prod.php" --secrets-dir "$SEC"
+    t_ok "... and the refusal says why" bash -c "env AICC_TEST_HARNESS=1 bash '$PROV/render-wp-config.sh' --template '$PROV/wp-config.production.template.php' --out '$WC/prod.php' --secrets-dir '$SEC' 2>&1 | grep -q 'production template'"
+    t_ok "... and nothing was written" test ! -e "$WC/prod.php"
+    t_rc "a copy renamed to something innocent is still refused by its NOT-USABLE marker" 1 bash -c "cp '$PROV/wp-config.production.template.php' '$TMP/innocent.php' && env AICC_TEST_HARNESS=1 bash '$PROV/render-wp-config.sh' --template '$TMP/innocent.php' --out '$WC/prod2.php' --secrets-dir '$SEC'"
+    t_rc "the production template, run as PHP (a copy used as wp-config.php), exits with an error and defines nothing" 255 bash -c "php -r 'include \"$PROV/wp-config.production.template.php\";' >/dev/null 2>&1 || exit \$?" 
     t_rc "rendering without the DB password file is refused" 1 env AICC_TEST_HARNESS=1 bash "$PROV/render-wp-config.sh" --out "$WC/x.php" --secrets-dir "$TMP/emptysecrets"
     t_rc "--dry-run prints nothing secret" 0 bash "$PROV/render-wp-config.sh" --dry-run
 
@@ -290,6 +404,25 @@ if [ -x "$LOCALMY/mysqld" ]; then
     t_eq "...and the last good backup is still referenced" "$(jq -r '.last_success.label' "$BKDIR/status.json")" "manual"
   else t_bad "throwaway mysqld did not start" "$(tail -3 "$M/run.out" | tr '\n' '|')"; fi
 else t_skip "MySQL / backup / grants tests" "Local's mysql 8.4 binaries not found"; fi
+
+echo "== strict target-address check (security review L5): every notation of the production address is refused by every Mac-side tool, before anything is sent =="
+IPG="$PROV/lib/ip-guard.py"
+BYPASS="139.073.157.231 0139.0059.0157.0231 0x8b.0x3b.0x9d.0xe7 2336496103 0x8b3b9de7 139.59.157.231. 139.59.157 ::ffff:8b3b:9de7 ::ffff:139.59.157.231 64:ff9b::8b3b:9de7 2002:8b3b:9de7::1 2606:50c0:8001::153 2606:50c0:8000::153"
+for ip in $BYPASS; do t_rc "ip-guard.py refuses $ip" 3 python3 -I "$IPG" "$ip"; done
+t_rc "ip-guard.py accepts a documentation IPv4" 0 python3 -I "$IPG" 192.0.2.7
+t_eq "ip-guard.py prints the canonical form of an accepted IPv6" "$(python3 -I "$IPG" '[2001:DB8::1]')" "2001:db8::1"
+t_rc "ip-guard.py refuses an IPv4-embedding form of a HARMLESS address too (non-canonical target)" 3 python3 -I "$IPG" ::ffff:192.0.2.7
+KEYX="$TMP/ipg-key"; printf -- '-----BEGIN %s-----\nDUMMY\n-----END %s-----\n' "OPENSSH PRIVATE KEY" "OPENSSH PRIVATE KEY" > "$KEYX"; chmod 600 "$KEYX"
+SID32=0123456789abcdef0123456789abcdef
+for ip in 139.073.157.231 0x8b.0x3b.0x9d.0xe7 2336496103 139.59.157.231. ::ffff:8b3b:9de7 2606:50c0:8001::153; do
+  t_rc "push-bundle.sh refuses --stage-ip $ip" 3 bash "$PROV/push-bundle.sh" --stage-ip "$ip" --stage-host stage.copilt.org --key "$KEYX" --dry-run
+  t_rc "verify-droplet.sh refuses --ip $ip" 3 bash "$PROV/verify-droplet.sh" --ip "$ip" --key "$KEYX"
+  t_rc "operator-tunnel.sh refuses --stage-ip $ip" 3 bash "$PROV/operator-tunnel.sh" --stage-ip "$ip" --key "$KEYX" --dry-run
+  t_rc "pull-offhost.sh refuses --stage-ip $ip" 3 bash "$INFRA/backup/pull-offhost.sh" --stage-ip "$ip" --key "$KEYX" --dry-run
+  t_rc "deploy-release.sh refuses --stage-ip $ip" 3 bash "$INFRA/release/deploy-release.sh" --kind site --artifact /nonexistent/site-x.tar.gz --stage-host stage.copilt.org --stage-ip "$ip" --stage-id "$SID32" --key "$KEYX" --dry-run
+done
+t_ok "the refusal message names the reason" bash -c "bash '$PROV/push-bundle.sh' --stage-ip 139.073.157.231 --stage-host stage.copilt.org --key '$KEYX' --dry-run 2>&1 | grep -q 'canonical dotted-decimal'"
+t_ok "every Mac-side tool sources the shared check (one implementation, not five string compares)" bash -c "for f in provision/push-bundle.sh provision/verify-droplet.sh provision/operator-tunnel.sh backup/pull-offhost.sh release/deploy-release.sh provision/lib/common.sh; do grep -q 'ip-guard.sh' '$INFRA/'\$f || exit 1; grep -q 'aicc_ip_guard' '$INFRA/'\$f || exit 1; done"
 
 echo "== fail2ban filters (regexes executed with Python re against the REAL Caddy 2.11.7 log format) =="
 t_ok "filter regexes vs. real access-log lines (ground truth from JSON parsing)" python3 "$HERE/test_fail2ban_regex.py"

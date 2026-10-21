@@ -1524,7 +1524,9 @@ async function perfLoad(label, profile, o = {}) {
 async function s8() {
   const R = new Result("08-performance", "Phase 2 / 8: lightweight performance through the edge (Home EN: desktop, mobile, reduced motion; demo untouched until opened; compression)");
   PH("performance-pages");
-  R.note("Loopback, no network throttling except where labelled: LCP/FCP show render cost, not WAN latency. php -S and a Mac are not production capacity.");
+  R.note(REMOTE
+    ? "Real Linux staging host (1 shared vCPU / 2 GiB Droplet), measured from a browser on the Mac over the public internet, no network throttling except where labelled: LCP/FCP include the real WAN latency and TLS handshakes of this Mac's connection and are not a lab number; server capacity is measured separately by the load/sampler runs (linux-stage/capacity-measurements.md), not by these page loads."
+    : "Loopback, no network throttling except where labelled: LCP/FCP show render cost, not WAN latency. php -S and a Mac are not production capacity.");
   const runs = {};
   runs.desktop = await perfLoad("desktop 1280x800, cold cache", "desktop");
   runs.mobile = await perfLoad("mobile 390x844 touch, cold cache", "mobile");
@@ -1562,7 +1564,7 @@ async function s8() {
   const bigJs = res.filter((r) => /\.js(\?|$)/.test(r.url)).sort((a, b) => b.data - a.data)[0];
   const bigCss = res.filter((r) => /\.css(\?|$)/.test(r.url)).sort((a, b) => b.data - a.data)[0];
   const comp = [];
-  for (const [name, u] of [["Home HTML", `${BASE}/`], ["largest JS", bigJs?.url], ["largest CSS", bigCss?.url], ["CP pricing HTML", `${BASE}/pricing/`], ["CP sitemap-like JSON (wp-json)", `${BASE}/wp-json/`]]) {
+  for (const [name, u] of [["Home HTML", `${BASE}/`], ["largest JS", bigJs?.url], ["largest CSS", bigCss?.url], ["CP pricing HTML", `${BASE}/pricing/`], ["CP public REST JSON (wp-json)", `${BASE}/wp-json/aicc-license/v1/plans`]]) {
     if (!u) continue;
     const idn = await reqX(EDGE, u, { headers: { "Accept-Encoding": "identity" }, bodyFile: "/dev/null" });
     const gz = await reqX(EDGE, u, { headers: { "Accept-Encoding": "gzip" }, bodyFile: "/dev/null" });
@@ -1695,7 +1697,7 @@ async function s9() {
   const page = await ctx.newPage();
   try {
     await goto(page, `${BASE}/`);
-    const echo = (extra) => page.evaluate(async ([t, h]) => { const r = await fetch(`/wp-json/?__rehearsal_echo=${t}`, { credentials: "same-origin", headers: h }); const j = await r.json(); return { status: r.status, cc: r.headers.get("cache-control") || "", body: j }; }, [token, extra || {}]);
+    const echo = (extra) => page.evaluate(async ([t, h]) => { const r = await fetch(`/wp-json/aicc-license/v1/plans?__rehearsal_echo=${t}`, { credentials: "same-origin", headers: h }); const j = await r.json(); return { status: r.status, cc: r.headers.get("cache-control") || "", body: j }; }, [token, extra || {}]);
     const clean = await echo();
     const san = (b) => ({ ...b, request_uri: String(b.request_uri || "").replace(token, "REDACTED") });
     const b = clean.body, h = b.headers || {};
