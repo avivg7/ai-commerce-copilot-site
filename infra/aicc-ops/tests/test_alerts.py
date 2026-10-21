@@ -277,8 +277,250 @@ class RuleTests(unittest.TestCase):
         ids = set(RULES)
         for needed in ("service_down", "edge_probe", "http_5xx", "ram_high", "swap_activity", "cpu_saturation", "disk_low",
                        "inodes_low", "fpm_saturation", "db_down", "db_conn_pressure", "backup_stale", "cert_expiry",
-                       "process_restart", "collector_failure", "monitoring_disk_cap"):
+                       "process_restart", "collector_failure", "monitoring_disk_cap", "ram_available_low", "offhost_stale", "backup_failed", "unit_failed",
+                       "caddy_admin", "fpm_down", "cert_unreadable"):
             self.assertIn(needed, ids)
+
+    def test_owner_checklist_has_a_rule_for_every_item(self):
+        """Caddy/site unhealthy, repeated 5xx, sustained CPU, low available RAM, swap, disk, FPM max_children, MySQL, backup freshness/failure, TLS, restarts/crashes."""
+        checklist = {"Caddy/site unhealthy": ("edge_probe", "service_down"), "repeated 5xx": ("http_5xx",), "sustained high CPU": ("cpu_saturation",),
+                     "sustained low available RAM": ("ram_available_low",), "swap pressure": ("swap_activity",), "disk": ("disk_low",),
+                     "PHP-FPM max_children": ("fpm_saturation",), "MySQL unavailable": ("db_down",), "backup freshness/failure": ("backup_stale", "backup_failed", "offhost_stale"),
+                     "TLS expiry": ("cert_expiry",), "unexpected restart/crash": ("process_restart", "service_down", "unit_failed")}
+        for item, rules in checklist.items():
+            for r in rules:
+                self.assertIn(r, RULES, item)
+                self.assertTrue(RULES[r].enabled, item)
+
+    def test_threshold_rules_state_current_value_and_threshold(self):
+        """Every threshold alert says what the value is AND what it is compared with."""
+        samples = {
+            "http_5xx": win(**{"caddy.rate_5xx": [1.0] * 10, "caddy.req_rate": [1.0] * 10}),
+            "ram_high": win(**{"mem.used_pct": [97]}), "ram_available_low": win(**{"mem.available_bytes": [100 * MIB]}),
+            "cpu_saturation": win(**{"cpu.used_pct": [99]}), "disk_low": win(**{"disk.root.used_pct": [95]}),
+            "inodes_low": win(**{"disk.root.inodes_used_pct": [96]}), "db_conn_pressure": win(**{"mysql.conn_pressure_pct": [99]}),
+            "backup_stale": win(**{"backup.newest_age_s": [80 * 3600]}), "cert_expiry": win(**{"cert.days_left": [3]}),
+            "process_restart": win(**{"svc.fpm.restarts": [0, 1, 2, 3, 4, 5, 6, 7]}), "wc_cron_stale": win(**{"cp.wc_cron_last_run_age_seconds": [20000]}),
+            "offhost_stale": win(**{"backup.offhost_present": [1], "backup.offhost_verified": [1], "backup.offhost_age_s": [100 * 3600]}),
+            "swap_activity": win(**{"swap.in_pps": [1500], "swap.out_pps": [0]}),
+        }
+        for rule, w in samples.items():
+            o = obs(rule, w)
+            self.assertTrue(o and o[0].breach, rule)
+            self.assertRegex(o[0].text, r"(warn|limit)", rule)
+            self.assertRegex(o[0].text, r"\d", rule)
+
+
+MIB = 1024 * 1024
+
+
+def run_rule(rule_id, series, cfg=None, step=30):
+    """Drive the REAL engine + default RuleSpec (sustain windows, cooldown) with a list of per-sample metric dicts. -> [(t, Notification)]"""
+    eng = AlertEngine([r for r in build_rules(cfg or CFG) if r.id == rule_id])
+    w = Window(step, stale={})
+    out = []
+    for i, metrics in enumerate(series):
+        t = T + i * step
+        w.push(t, metrics)
+        out += [(t, n) for n in eng.evaluate(w, t)]
+    return out, eng
+
+
+def avail(mib):
+    return {"mem.available_bytes": mib * MIB}
+
+
+class RamAvailableLow(unittest.TestCase):
+    def test_thresholds_and_hysteresis(self):
+        self.assertFalse(obs("ram_available_low", win(**{"mem.available_bytes": [1059 * MIB]}))[0].breach)    # measured minimum under load: healthy
+        self.assertTrue(obs("ram_available_low", win(**{"mem.available_bytes": [1059 * MIB]}))[0].clear)
+        self.assertFalse(obs("ram_available_low", win(**{"mem.available_bytes": [200 * MIB]}))[0].breach)    # strictly below 200
+        w = obs("ram_available_low", win(**{"mem.available_bytes": [199 * MIB]}))[0]
+        self.assertEqual((w.breach, w.severity), (True, WARNING))
+        self.assertEqual(obs("ram_available_low", win(**{"mem.available_bytes": [120 * MIB]}))[0].severity, WARNING)   # strictly below 120 for CRITICAL
+        self.assertEqual(obs("ram_available_low", win(**{"mem.available_bytes": [119 * MIB]}))[0].severity, CRITICAL)
+        hold = obs("ram_available_low", win(**{"mem.available_bytes": [250 * MIB]}))[0]
+        self.assertEqual((hold.breach, hold.clear), (False, False))                                          # 200..300: hold
+        self.assertFalse(obs("ram_available_low", win(**{"mem.available_bytes": [300 * MIB]}))[0].clear)      # clear is strictly > 300
+        self.assertTrue(obs("ram_available_low", win(**{"mem.available_bytes": [301 * MIB]}))[0].clear)
+        self.assertEqual(obs("ram_available_low", Window(30, stale={})), [])                                  # no data: no opinion
+
+    def test_text_has_value_and_thresholds(self):
+        t = obs("ram_available_low", win(**{"mem.available_bytes": [150 * MIB]}))[0].text
+        self.assertEqual(t, "available memory 150 MiB (warn < 200 MiB, critical < 120 MiB)")
+
+    def test_sustained_five_minutes_before_warning(self):
+        notes, _ = run_rule("ram_available_low", [avail(150)] * 9)
+        self.assertEqual(notes, [])                                       # 4.5 min: nothing
+        notes, _ = run_rule("ram_available_low", [avail(150)] * 10)
+        self.assertEqual([(n.kind, n.severity) for _, n in notes], [(FIRING, WARNING)])
+        self.assertEqual(notes[0][0], T + 9 * 30)                         # exactly at the 10th 30-second sample
+
+    def test_a_short_dip_never_alerts_and_never_sends_a_recovery(self):
+        notes, _ = run_rule("ram_available_low", [avail(150)] * 6 + [avail(900)] * 20)
+        self.assertEqual(notes, [])
+
+    def test_critical_needs_its_own_sustained_window(self):
+        notes, _ = run_rule("ram_available_low", [avail(150)] * 12 + [avail(100)] * 9)
+        self.assertEqual([(n.kind, n.severity) for _, n in notes], [(FIRING, WARNING)])
+        notes, _ = run_rule("ram_available_low", [avail(150)] * 12 + [avail(100)] * 10)
+        self.assertEqual([(n.kind, n.severity) for _, n in notes], [(FIRING, WARNING), (ESCALATED, CRITICAL)])
+        notes, _ = run_rule("ram_available_low", [avail(100)] * 10)
+        self.assertEqual([(n.kind, n.severity) for _, n in notes], [(FIRING, CRITICAL)])
+
+    def test_recovery_only_after_300_mib_is_sustained(self):
+        notes, eng = run_rule("ram_available_low", [avail(150)] * 10 + [avail(250)] * 30 + [avail(290)] * 30)
+        self.assertEqual([n.kind for _, n in notes], [FIRING])            # 250 and 290 MiB are in the hysteresis band: still active
+        self.assertEqual(len(eng.active()), 1)
+        notes, eng = run_rule("ram_available_low", [avail(150)] * 10 + [avail(400)] * 9)
+        self.assertEqual([n.kind for _, n in notes], [FIRING])            # not yet 10 clear samples
+        notes, eng = run_rule("ram_available_low", [avail(150)] * 10 + [avail(400)] * 10)
+        self.assertEqual([n.kind for _, n in notes], [FIRING, RECOVERED])
+        self.assertEqual(eng.active(), [])
+
+    def test_no_storm_while_it_stays_low(self):
+        notes, _ = run_rule("ram_available_low", [avail(150)] * 400)      # 3.3 hours
+        self.assertEqual([n.kind for _, n in notes], [FIRING])            # WARNING never repeats
+
+    def test_override_via_config(self):
+        cfg = load_config(None, {"alerts": {"rules": {"ram_available_low": {"warn_mib": 500, "for_samples": 2}}}})
+        notes, _ = run_rule("ram_available_low", [avail(400)] * 2, cfg)
+        self.assertEqual([n.kind for _, n in notes], [FIRING])
+
+
+H = 3600
+
+
+def off(age_h=None, *, present=1, verified=1, reason=None, up_h=None, newest_h=None):
+    m = {"backup.offhost_present": present, "backup.offhost_verified": verified}
+    if age_h is not None:
+        m["backup.offhost_age_s"] = age_h * H
+    if reason is not None:
+        m["backup.offhost_reason"] = reason
+    if up_h is not None:
+        m["uptime.seconds"] = up_h * H
+    if newest_h is not None:
+        m["backup.newest_age_s"] = newest_h * H
+    return m
+
+
+class OffhostStale(unittest.TestCase):
+    def one(self, **kw):
+        return obs("offhost_stale", win(**{k: [v] for k, v in off(**kw).items()}))
+
+    def test_thresholds(self):
+        self.assertFalse(self.one(age_h=35.9)[0].breach)
+        w = self.one(age_h=36.1)[0]
+        self.assertEqual((w.breach, w.severity), (True, WARNING))
+        self.assertEqual(self.one(age_h=95)[0].severity, WARNING)
+        c = self.one(age_h=96.5)[0]
+        self.assertEqual((c.breach, c.severity), (True, CRITICAL))
+        self.assertTrue(self.one(age_h=29.9)[0].clear)
+        hold = self.one(age_h=33)[0]
+        self.assertEqual((hold.breach, hold.clear), (False, False))
+
+    def test_text_says_what_to_do(self):
+        t = self.one(age_h=40.2)[0].text
+        self.assertIn("the owner's Mac has not confirmed a verified copy of the newest backup in 40 h", t)
+        self.assertIn("(warn >= 36 h, critical >= 96 h)", t)
+        self.assertIn("Mac asleep/offline?", t)
+        self.assertIn("Run infra/backup/pull-offhost.sh.", t)
+        self.assertEqual(tg_scan(t), [])
+
+    def test_absent_file_on_a_new_host_is_silent(self):
+        for kw in (dict(up_h=10, newest_h=2), dict(up_h=48, newest_h=2), dict(up_h=100, newest_h=None)):
+            o = self.one(present=0, verified=0, **kw)[0]
+            self.assertEqual((o.breach, o.clear), (False, True), kw)
+
+    def test_absent_file_on_an_old_host_with_a_successful_backup_warns(self):
+        o = self.one(present=0, verified=0, up_h=49, newest_h=5)[0]
+        self.assertEqual((o.breach, o.severity), (True, WARNING))
+        self.assertIn("pull-offhost.sh", o.text)
+        self.assertIn("up 49 h", o.text)
+        self.assertEqual(self.one(present=0, verified=0, up_h=24 * 30, newest_h=70)[0].severity, WARNING)    # never CRITICAL when absent
+
+    def test_absent_file_with_unknown_uptime_holds_state(self):
+        self.assertEqual(self.one(present=0, verified=0, newest_h=5), [])
+        self.assertEqual(obs("offhost_stale", Window(30, stale={})), [])
+
+    def test_invalid_acks_are_warnings_with_a_reason(self):
+        for code, words in ((1, "not valid JSON"), (2, "schema"), (3, "NOT verified"), (4, "missing or invalid fields"), (5, "cannot be read")):
+            o = self.one(verified=0, reason=code, age_h=1)[0]
+            self.assertEqual((o.breach, o.severity), (True, WARNING), code)
+            self.assertIn(words, o.text)
+            self.assertIn("pull-offhost.sh", o.text)
+        # a recent but unverified ack must not look healthy; an old verified-looking ack with verified=0 stays WARNING, not CRITICAL
+        self.assertEqual(self.one(verified=0, reason=3, age_h=500)[0].severity, WARNING)
+
+    def test_override_thresholds_via_config(self):
+        cfg = load_config(None, {"alerts": {"rules": {"offhost_stale": {"warn_h": 12, "crit_h": 24, "absent_after_uptime_h": 1}}}})
+        r = {x.id: x for x in build_rules(cfg)}["offhost_stale"]
+        o = r.fn(win(**{k: [v] for k, v in off(age_h=13).items()}), dict(r.params))[0]
+        self.assertEqual((o.breach, o.severity), (True, WARNING))
+        o = r.fn(win(**{k: [v] for k, v in off(present=0, verified=0, up_h=2, newest_h=1).items()}), dict(r.params))[0]
+        self.assertTrue(o.breach)
+
+    def sustained(self, ages, **kw):
+        series = [off(a, **kw) for a in ages]
+        return run_rule("offhost_stale", series, step=30)
+
+    def test_sustained_window_fire_escalate_hold_and_recover(self):
+        notes, eng = self.sustained([37])
+        self.assertEqual(notes, [])                                       # one sample is not enough (for_samples=2)
+        notes, eng = self.sustained([37, 37])
+        self.assertEqual([(n.kind, n.severity) for _, n in notes], [(FIRING, WARNING)])
+        self.assertIn("37 h", notes[0][1].text)
+        self.assertEqual(notes[0][1].scope, "offhost")
+        notes, _ = self.sustained([37, 37, 97, 97])
+        self.assertEqual([(n.kind, n.severity) for _, n in notes], [(FIRING, WARNING), (ESCALATED, CRITICAL)])
+        notes, eng = self.sustained([37, 37] + [33] * 10)
+        self.assertEqual([n.kind for _, n in notes], [FIRING])            # 30..36 h: hysteresis, no recovery
+        self.assertEqual(len(eng.active()), 1)
+        notes, eng = self.sustained([37, 37, 2])
+        self.assertEqual([n.kind for _, n in notes], [FIRING])            # one clear sample is not enough
+        notes, eng = self.sustained([37, 37, 2, 2])
+        self.assertEqual([n.kind for _, n in notes], [FIRING, RECOVERED])
+        self.assertEqual(eng.active(), [])
+
+    def test_single_stale_blip_and_normal_operation_stay_silent(self):
+        notes, _ = self.sustained([5, 37, 5, 37, 5, 6, 7])
+        self.assertEqual(notes, [])
+        notes, _ = self.sustained([a / 10 for a in range(0, 300)])        # ages climbing slowly to 30 h: never warns
+        self.assertEqual(notes, [])
+
+    def test_no_repeat_notice_for_a_warning_and_critical_reminders_are_6h_apart(self):
+        notes, _ = self.sustained([40] * 1500)                            # 12.5 hours of WARNING
+        self.assertEqual([n.kind for _, n in notes], [FIRING])
+        notes, _ = self.sustained([100] * 1500)
+        kinds_ = [n.kind for _, n in notes]
+        self.assertEqual(kinds_[0], FIRING)
+        self.assertTrue(set(kinds_[1:]) <= {REMINDER})
+        self.assertLessEqual(len(kinds_), 3)
+
+    def test_absent_then_ack_arrives_recovers(self):
+        series = [off(present=0, verified=0, up_h=50, newest_h=3)] * 2 + [off(1)] * 2
+        notes, eng = run_rule("offhost_stale", series)
+        self.assertEqual([n.kind for _, n in notes], [FIRING, RECOVERED])
+
+    def test_end_to_end_from_collector_output(self):
+        from aicc_ops.collectors import backups
+        now = 1_792_600_000
+        ack = {"schema": 1, "acked_at": now - 50 * H, "set_ts": "20261019T033000Z", "dump": "d.sql.gz", "dump_sha256": "c" * 64, "puller": "mac-launchd", "verified": True}
+        import json as _j
+        import os, tempfile
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "offhost-ack.json")
+            with open(path, "w") as fh:
+                fh.write(_j.dumps(ack))
+            m = backups.collect({}, {"dir": d, "patterns": [], "status_file": "", "offhost_ack_file": path}, {}, now).metrics
+        notes, _ = run_rule("offhost_stale", [m, m])
+        self.assertEqual([(n.kind, n.severity) for _, n in notes], [(FIRING, WARNING)])
+        self.assertIn("50 h", notes[0][1].text)
+
+
+def tg_scan(text):
+    from aicc_ops.telegram import scan_pii
+    return scan_pii(text)
 
 
 class RebootRequired(unittest.TestCase):

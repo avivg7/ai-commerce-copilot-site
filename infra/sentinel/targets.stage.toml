@@ -1,0 +1,61 @@
+# AICC Sentinel targets for the STAGING edge. Committed on purpose: it holds no secrets (Telegram credentials live only in the secrets file / CI secrets).
+# Used by the Mac LaunchAgent (infra/sentinel/macos/) and by the optional GitHub Actions variant (infra/sentinel/examples/github-actions-sentinel.yml.example).
+# Run it:  python3.12 infra/sentinel/sentinel.py --config infra/sentinel/targets.stage.toml --plan      (no network)
+#          python3.12 infra/sentinel/sentinel.py --config infra/sentinel/targets.stage.toml --once --dry-run --state-file /tmp/s.json
+#
+# NEVER add /wp-login.php, /wp-admin/, /wp-cron.php, /my-account/, /cart/, /checkout/ or any URL with side effects. /wp-login.php is 403 on the public edge by design.
+
+[sentinel]
+interval_s = 120           # default per-target interval (>= 60 enforced); targets below override it
+fail_n = 3                 # DOWN when 3 of the last 5 checks failed: one blip never pages
+window_m = 5
+recover_k = 2              # RECOVERED after 2 consecutive good checks (and only if a DOWN notice was sent)
+cooldown_s = 1800          # min gap between DOWN notices for one target
+remind_s = 21600           # reminder while still down (0 = never)
+stale_after_s = 1800       # an "up" target not checked for this long (Mac asleep, skipped CI run) starts a fresh window
+control_host = "api.telegram.org"   # only used after a dns/connect failure: one bare TLS handshake to tell "target down" from "this machine is offline"
+secrets_file = "~/.config/aicc-sentinel/secrets.env"   # mode 0600; TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID; absent = log only
+host_label = "mac-launchd"  # where this sentinel runs (shown in messages); CI overrides it with --host-label
+
+# Edge only: answered by Caddy itself (docs/cutover/Caddyfile.edge.template, snippet aicc_health: `respond "ok" 200`, Cache-Control: no-store).
+# Proves DNS + firewall + TLS certificate + Caddy. Does NOT prove PHP or MySQL: see stage-app.
+[[target]]
+name = "stage-edge"
+url = "https://stage.copilt.org/healthz"
+interval_s = 120
+expect_status = 200
+expect_body = "ok"
+expect_ip = "206.189.248.204"   # the Reserved IPv4; a changed/hijacked DNS answer (or an unexpected extra record) is a failure at stage "dns"
+latency_ms = 2000
+tls_warn_days = 14
+
+# Which host is really answering: Caddy serves this JSON on the stage render only (docs/cutover/stage-linux.md). Two substrings, no JSON parsing.
+# The id is an identifier, not an authentication secret (see DESIGN.md); it is the one the stage tooling already pins.
+[[target]]
+name = "stage-identity"
+url = "https://stage.copilt.org/.well-known/aicc-stage-identity"
+interval_s = 300
+expect_status = 200
+expect_body = ['"host":"stage.copilt.org"', '"id":"c4cae5ab234f10570763ecd9e9a36a16"']
+latency_ms = 2000
+
+# WordPress-rendered public page: exercises Caddy -> PHP-FPM -> WordPress (-> MySQL). 300 s because the host has one vCPU and the first hit after idle is slow.
+# /pricing/ is a WordPress virtual route in the Control Plane theme (docs/cutover/redirect-matrix.md rule 9); the anonymous request sets no cookie, so the default language (English) renders.
+# "Studio" is a plan name that the page lists (see DESIGN.md section 6 for why this word and what is UNVERIFIED about it).
+[[target]]
+name = "stage-app"
+url = "https://stage.copilt.org/pricing/"
+interval_s = 300
+expect_status = 200
+expect_body = "Studio"
+latency_ms = 6000          # a cold PHP-FPM worker on 1 vCPU took 4.8 s (infra/release/warm-cp.sh); this is a ceiling for "usable", not a target
+timeout_s = 15
+tls_warn_days = 14
+
+# Production API, WATCH ONLY: read-only GET /health, one request per interval, nothing here is ours to change.
+[[target]]
+name = "api-health"
+url = "https://api.copilt.org/health"
+interval_s = 300
+expect_status = 200
+latency_ms = 3000

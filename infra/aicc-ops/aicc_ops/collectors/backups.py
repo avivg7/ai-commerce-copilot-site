@@ -7,10 +7,16 @@ from __future__ import annotations
 import fnmatch
 import json
 import os
+import re
 
 from . import Result
 
 MAX_STATUS_BYTES = 65536
+DEFAULT_OFFHOST_ACK = "/srv/aicc/backups/offhost-ack.json"
+HEX64 = re.compile(r"^[0-9a-f]{64}$")
+MAX_FUTURE_S = 3600     # an ack dated further ahead than this is invalid (clock skew / bogus), not "fresh forever"
+# backup.offhost_reason codes (0 = valid): see alerts.OFFHOST_REASONS
+R_OK, R_JSON, R_SCHEMA, R_UNVERIFIED, R_FIELDS, R_UNREADABLE = 0, 1, 2, 3, 4, 5
 
 
 def parse_status_json(text: str):
@@ -75,7 +81,60 @@ def metrics_from_status(d: dict, now: float) -> dict:
     return m
 
 
+def offhost_metrics(text: str, now: float) -> dict:
+    """Parse the ack the owner's Mac writes after it pulled AND verified a backup set (schema 1). Never raises.
+    Always returns present=1; verified=1 only for a well-formed, verified, schema-1 ack that is not dated in the future."""
+    m = {"backup.offhost_present": 1.0, "backup.offhost_verified": 0.0, "backup.offhost_reason": float(R_JSON)}
+    try:
+        d = json.loads(text)
+    except ValueError:
+        return m
+    if not isinstance(d, dict):
+        return m
+    m["backup.offhost_reason"] = float(R_SCHEMA)
+    if d.get("schema") != 1 or isinstance(d.get("schema"), bool):
+        return m
+    m["backup.offhost_reason"] = float(R_FIELDS)
+    at = _num(d.get("acked_at"))
+    if at is None or at <= 0 or at > now + MAX_FUTURE_S:
+        return m
+    m["backup.offhost_age_s"] = max(now - at, 0.0)
+    if d.get("verified") is not True:
+        m["backup.offhost_reason"] = float(R_UNVERIFIED)
+        return m
+    if not isinstance(d.get("dump_sha256"), str) or not HEX64.match(d["dump_sha256"]):
+        return m
+    if d.get("files_sha256") not in (None, "") and not (isinstance(d["files_sha256"], str) and HEX64.match(d["files_sha256"])):
+        return m
+    m["backup.offhost_verified"] = 1.0
+    m["backup.offhost_reason"] = float(R_OK)
+    return m
+
+
+def collect_offhost(cfg, now):
+    """-> (metrics, errors). A missing file is normal on a new host (present=0, no error). Unreadable is a collector error."""
+    path = cfg.get("offhost_ack_file", DEFAULT_OFFHOST_ACK)
+    if not path:
+        return {}, []
+    try:
+        with open(path, "r", errors="replace") as fh:
+            return offhost_metrics(fh.read(MAX_STATUS_BYTES), now), []
+    except FileNotFoundError:
+        return {"backup.offhost_present": 0.0, "backup.offhost_verified": 0.0}, []
+    except OSError as e:
+        return ({"backup.offhost_present": 1.0, "backup.offhost_verified": 0.0, "backup.offhost_reason": float(R_UNREADABLE)},
+                [f"off-host ack unreadable: {type(e).__name__}"])
+
+
 def collect(full_cfg, cfg, state, now) -> Result:
+    off_m, off_err = collect_offhost(cfg, now)
+    r = _collect_dump(cfg, now)
+    r.metrics.update(off_m)
+    r.errors.extend(off_err)
+    return r
+
+
+def _collect_dump(cfg, now) -> Result:
     m = {}
     d = cfg["dir"]
     if not os.path.isdir(d):

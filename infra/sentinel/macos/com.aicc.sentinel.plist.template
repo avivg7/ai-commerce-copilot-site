@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  AICC Sentinel user LaunchAgent TEMPLATE. install-launchd.sh substitutes the @...@ placeholders with absolute paths (launchd does not expand ~ or $HOME).
+  Contains NO secret: the Telegram credentials are read by sentinel.py from ~/.config/aicc-sentinel/secrets.env (mode 0600), never from this file or the arguments.
+
+  Why StartInterval and not KeepAlive: a Mac sleeps. Each StartInterval run is a short-lived process (nothing to go stale across sleep, Wi-Fi changes or a crashed
+  loop), launchd coalesces the intervals missed during sleep into one run at wake, and all memory lives in the state file. KeepAlive would restart a crashed loop
+  but keeps one long-lived process whose sockets, resolver state and monotonic timers have all lived through the sleep. The price: the check cadence is a multiple
+  of 120 s (the 300 s targets run about every 360 s).
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.aicc.sentinel</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>@PYTHON@</string>
+    <string>@SCRIPT@</string>
+    <string>--config</string><string>@TARGETS@</string>
+    <string>--state-file</string><string>@STATE@</string>
+    <string>--heartbeat</string><string>@HEARTBEAT@</string>
+    <string>--once</string>
+    <string>--due-only</string>
+    <string>--quiet-ok</string>
+    <string>--macos-notify</string>
+  </array>
+  <key>RunAtLoad</key><true/>
+  <key>StartInterval</key><integer>120</integer>
+  <key>ProcessType</key><string>Background</string>
+  <key>Nice</key><integer>10</integer>
+  <key>LowPriorityIO</key><true/>
+  <key>ExitTimeOut</key><integer>60</integer>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PYTHONDONTWRITEBYTECODE</key><string>1</string>
+    <key>PYTHONUNBUFFERED</key><string>1</string>
+  </dict>
+  <key>StandardOutPath</key><string>@LOGDIR@/sentinel.out.log</string>
+  <key>StandardErrorPath</key><string>@LOGDIR@/sentinel.err.log</string>
+</dict>
+</plist>

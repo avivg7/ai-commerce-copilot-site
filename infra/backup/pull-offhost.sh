@@ -1,16 +1,21 @@
 #!/usr/bin/env bash
 # OFF-HOST backup pull. Runs ON THE OWNER'S MAC (not on the server). Pulls the latest database dump + files archive of the STAGING Control Plane over SSH,
-# verifies the checksums, keeps the 14 newest copies. Modeled on the proven API-host pull (Backend repo docs/digitalocean-infrastructure.md section 14,
-# ~/aicc-offhost-backup-pull.sh): a PULL, so the server holds no credentials for the Mac and a compromised server cannot delete the Mac's copies.
+# verifies the checksums, keeps the 14 newest copies, and then tells the host (ack) that a verified copy exists off-host so AICC Ops can alert when the
+# copies go stale. Modeled on the proven API-host pull (Backend repo docs/digitalocean-infrastructure.md section 14): a PULL, so the server holds no
+# credentials for the Mac and a compromised server cannot delete the Mac's copies.
 #
-#   infra/backup/pull-offhost.sh --stage-ip <IPV4> [--stage-host stage.copilt.org] [--key ~/.ssh/aicc_cp_stage] [--user aicc]
-#                                [--dest ~/aicc-offhost-backups-stage] [--keep 14] [--no-files-archive] [--dry-run]
+#   infra/backup/pull-offhost.sh --stage-ip <IPV4> [--stage-host stage.copilt.org] [--key ~/.ssh/aicc_cp_stage_offhost] [--user aicc-offhost]
+#                                [--dest ~/aicc-offhost-backups-stage] [--keep 14] [--no-files-archive] [--no-ack] [--dry-run]
+#
+# TRANSPORT: the default key/user is the RESTRICTED pull account (install-offhost-access.sh): sshd forces every login of that account into
+# /usr/local/sbin/aicc-offhost-serve, which only understands `identity`, `status`, `get <backup file>` and `ack ...`. This script therefore sends those four
+# words and never `sudo cat`. (The operator key/user `aicc` does NOT work with this script any more: use a manual `ssh` for operator tasks.)
 #
 # Fail closed:
 #   * the host is NEVER guessed: --stage-ip is required, there is no default. It must be a literal IPv4 address.
 #   * refuses the production API address 139.59.157.231 (and the other public addresses in the deny list), refuses any key whose file name looks like the
 #     production key (aicc_digitalocean_prod*), refuses --stage-host values other than stage*.copilt.org.
-#   * only the dedicated stage key is used (ssh -i KEY -o IdentitiesOnly=yes -o BatchMode=yes); no agent keys, no default identities.
+#   * only the dedicated pull key is used (ssh -i KEY -o IdentitiesOnly=yes -o BatchMode=yes); no agent keys, no default identities.
 #   * refuses to continue unless the host presents /etc/aicc-stage-identity with AICC_ENV=staging (and AICC_HOSTNAME equal to --stage-host).
 #   * file names come from the server's status.json but are re-validated against a strict pattern before use (no path traversal from a hostile server).
 #   * a copy is accepted only if: sha256 of the received bytes == the server's .sha256 sidecar == the hash recorded in status.json, and gzip -t passes.
@@ -22,8 +27,8 @@
 set -euo pipefail
 umask 077
 
-STAGE_IP=""; STAGE_HOST="stage.copilt.org"; KEY="$HOME/.ssh/aicc_cp_stage"; USER_NAME="aicc"; DEST="$HOME/aicc-offhost-backups-stage"; KEEP=14
-WITH_FILES=1; DRY=0; REMOTE_DIR="/srv/aicc/backups"
+STAGE_IP=""; STAGE_HOST="stage.copilt.org"; KEY="$HOME/.ssh/aicc_cp_stage_offhost"; USER_NAME="aicc-offhost"; DEST="$HOME/aicc-offhost-backups-stage"; KEEP=14
+WITH_FILES=1; DRY=0; ACK=1
 DENY_IPS="139.59.157.231 185.199.108.153 185.199.109.153 185.199.110.153 185.199.111.153"
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../provision/lib/ip-guard.sh"   # strict address check (security review L5)
 while [ $# -gt 0 ]; do
@@ -35,8 +40,9 @@ while [ $# -gt 0 ]; do
     --dest) DEST="${2:-}"; shift 2 ;;
     --keep) KEEP="${2:-}"; shift 2 ;;
     --no-files-archive) WITH_FILES=0; shift ;;
+    --no-ack) ACK=0; shift ;;
     --dry-run) DRY=1; shift ;;
-    -h|--help) sed -n 2,24p "$0"; exit 0 ;;
+    -h|--help) sed -n 2,27p "$0"; exit 0 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
 done
@@ -64,17 +70,25 @@ say() { echo "$(ts)  $*"; [ "$DRY" = 1 ] || echo "$(ts)  $*" >> "$LOG"; }
 sha_of() { if command -v shasum >/dev/null 2>&1; then shasum -a 256 "$1" | awk '{print $1}'; else sha256sum "$1" | awk '{print $1}'; fi; }
 
 if [ "$DRY" = 1 ]; then
-  echo "DRY-RUN: would ssh $USER_NAME@$STAGE_IP with key $KEY, verify the staging identity ($STAGE_HOST), read $REMOTE_DIR/status.json,"
+  echo "DRY-RUN: would ssh $USER_NAME@$STAGE_IP with key $KEY, verify the staging identity ($STAGE_HOST), read the backup status,"
   echo "         pull the newest dump$([ $WITH_FILES = 1 ] && echo ' and files archive') with sha256 verification into $DEST, keep $KEEP copies."
   exit 0
 fi
 mkdir -p "$DEST"; chmod 700 "$DEST"; : >> "$LOG"; chmod 600 "$LOG"
+# one run at a time (launchd may start a run while a slow one is still going); a stale lock of a dead pid is taken over
+LOCK="$DEST/.pull.lock"
+if ! mkdir "$LOCK" 2>/dev/null; then
+  lp="$(cat "$LOCK/pid" 2>/dev/null || true)"
+  if [ -n "$lp" ] && kill -0 "$lp" 2>/dev/null; then say "another pull is running (pid $lp): exiting"; exit 0; fi
+  rm -rf "$LOCK"; mkdir "$LOCK"
+fi
+echo $$ > "$LOCK/pid"; trap 'rm -rf "$LOCK"' EXIT
 
-ident="$(rem 'cat /etc/aicc-stage-identity' 2>/dev/null)" || { say "FAILURE cannot ssh to the staging host"; exit 1; }
+ident="$(rem 'identity' 2>/dev/null)" || { say "FAILURE cannot ssh to the staging host"; exit 1; }
 echo "$ident" | grep -q '^AICC_ENV=staging$' || refuse "host does not present AICC_ENV=staging in /etc/aicc-stage-identity"
 echo "$ident" | grep -q "^AICC_HOSTNAME=${STAGE_HOST}\$" || refuse "host identity AICC_HOSTNAME does not equal $STAGE_HOST"
 
-status="$(rem "sudo cat $REMOTE_DIR/status.json" 2>/dev/null)" || { say "FAILURE cannot read status.json"; exit 1; }
+status="$(rem "status" 2>/dev/null)" || { say "FAILURE cannot read status.json"; exit 1; }
 [ "$(echo "$status" | jq -r '.status')" = "ok" ] || { say "FAILURE latest backup run on the host did not finish ok: $(echo "$status" | jq -r '.reason')"; exit 1; }
 dump="$(echo "$status" | jq -r '.last_success.db_dump_file // empty')"
 farc="$(echo "$status" | jq -r '.last_success.files_archive_file // empty')"
@@ -93,8 +107,8 @@ want_farc="$(echo "$status" | jq -r 'if .files_archive.file == "'"$farc"'" then 
 pull_one() { # pull_one <name> <sha-from-status>
   local name="$1" want="$2" tmp="$DEST/$1.partial" side got sc
   if [ -f "$DEST/$name" ] && [ -f "$DEST/$name.sha256" ] && [ "$(sha_of "$DEST/$name")" = "$want" ]; then say "already have $name (checksum verified)"; return 0; fi
-  rem "sudo cat $REMOTE_DIR/$name" > "$tmp" || { rm -f "$tmp"; say "FAILURE transfer of $name"; return 1; }
-  side="$(rem "sudo cat $REMOTE_DIR/$name.sha256" 2>/dev/null | awk '{print $1}' | head -1)"
+  rem "get $name" > "$tmp" || { rm -f "$tmp"; say "FAILURE transfer of $name"; return 1; }
+  side="$(rem "get $name.sha256" 2>/dev/null | awk '{print $1}' | head -1)"
   got="$(sha_of "$tmp")"
   if [ -z "$side" ] || [ "$got" != "$side" ]; then rm -f "$tmp"; say "FAILURE checksum mismatch for $name (received $got, server sidecar '${side:-none}')"; return 1; fi
   if [ -n "$want" ] && [ "$got" != "$want" ]; then rm -f "$tmp"; say "FAILURE $name differs from the hash recorded in status.json"; return 1; fi
@@ -106,6 +120,15 @@ pull_one() { # pull_one <name> <sha-from-status>
 }
 pull_one "$dump" "$want_dump" || exit 1
 if [ "$WITH_FILES" = 1 ]; then pull_one "$farc" "$want_farc" || exit 1; fi
+
+# Tell the host a verified copy now exists off-host (AICC Ops alerts when this ack goes stale). The host re-checks the hashes against its own sidecars.
+set_ts="$(echo "$dump" | sed -n 's/^aicc_cp-\([0-9]\{8\}T[0-9]\{6\}Z\)-.*/\1/p')"
+if [ "$ACK" = 1 ]; then
+  dsha="$(sha_of "$DEST/$dump")"; if [ "$WITH_FILES" = 1 ]; then fname="$farc"; fsha="$(sha_of "$DEST/$farc")"; else fname="-"; fsha="-"; fi
+  if rem "ack $set_ts $dump $dsha $fname $fsha" >/dev/null 2>&1; then say "SUCCESS host acknowledged the off-host copy of set $set_ts"
+  else say "FAILURE the host did not accept the ack (the copy itself is verified and kept)"; exit 1; fi
+fi
+date -u +%s > "$DEST/.last-ok"; chmod 600 "$DEST/.last-ok"
 
 # retention: newest $KEEP of each kind (names sort chronologically because of the UTC timestamp); only files matching our patterns are touched
 prune() { # prune <pattern>

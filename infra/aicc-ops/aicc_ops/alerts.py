@@ -140,7 +140,7 @@ def r_http_5xx(ctx, p):
         return [Obs("http_5xx", "edge", False, clear=True)]
     sev = _sev(share, p["warn"], p["crit"])
     return [Obs("http_5xx", "edge", sev is not None, clear=share < p["clear"], severity=sev or WARNING,
-                text=f"{share:.1f}% of {reqs:.0f} requests in the last {n * p['interval_s'] / 60:.0f} min returned 5xx")]
+                text=f"{share:.1f}% of {reqs:.0f} requests in the last {n * p['interval_s'] / 60:.0f} min returned 5xx (warn >= {p['warn']:g}%, critical >= {p['crit']:g}%)")]
 
 
 def _simple_high(rule, scope, metric, label, fmt="{:.0f}%"):
@@ -154,6 +154,20 @@ def _simple_high(rule, scope, metric, label, fmt="{:.0f}%"):
     return fn
 
 
+MIB = 1024 * 1024
+
+
+def r_ram_available(ctx, p):
+    """LOW available memory (MiB): the figure that matters on a 2 GiB host with no headroom (ram_high is on used%)."""
+    v = ctx.latest("mem.available_bytes")
+    if v is None:
+        return []
+    mib = v / MIB
+    sev = CRITICAL if mib < p["crit_mib"] else WARNING if mib < p["warn_mib"] else None
+    return [Obs("ram_available_low", "host", sev is not None, clear=mib > p["clear_mib"], severity=sev or WARNING,
+                text=f"available memory {mib:.0f} MiB (warn < {p['warn_mib']} MiB, critical < {p['crit_mib']} MiB)")]
+
+
 def r_swap(ctx, p):
     i, o = ctx.latest("swap.in_pps"), ctx.latest("swap.out_pps")
     if i is None and o is None:
@@ -161,7 +175,7 @@ def r_swap(ctx, p):
     i, o = i or 0.0, o or 0.0
     sev = CRITICAL if i >= p["crit_in"] else WARNING if (i >= p["warn_in"] or o >= p["warn_out"]) else None
     return [Obs("swap_activity", "host", sev is not None, clear=i < p["clear_in"] and o < p["clear_out"], severity=sev or WARNING,
-                text=f"swap activity: {i:.0f} pages/s in, {o:.0f} pages/s out")]
+                text=f"swap activity: {i:.0f} pages/s in, {o:.0f} pages/s out (warn: in >= {p['warn_in']} or out >= {p['warn_out']}; critical: in >= {p['crit_in']})")]
 
 
 def r_disk(ctx, p):
@@ -182,7 +196,7 @@ def r_inodes(ctx, p):
         v = ctx.latest(n)
         sev = _sev(v, p["warn"], p["crit"])
         out.append(Obs("inodes_low", mount, sev is not None, clear=v < p["clear"], severity=sev or WARNING,
-                       text=f"inodes on {mount} are {v:.0f}% used"))
+                       text=f"inodes on {mount} are {v:.0f}% used (warn >= {p['warn']}%, critical >= {p['crit']}%)"))
     return out
 
 
@@ -221,7 +235,7 @@ def r_db_conn(ctx, p):
         return []
     sev = _sev(v, p["warn"], p["crit"])
     return [Obs("db_conn_pressure", "mysql", sev is not None, clear=v < p["clear"], severity=sev or WARNING,
-                text=f"MySQL connections at {v:.0f}% of max_connections")]
+                text=f"MySQL connections at {v:.0f}% of max_connections (warn >= {p['warn']}%, critical >= {p['crit']}%)")]
 
 
 def r_backup_stale(ctx, p):
@@ -236,6 +250,40 @@ def r_backup_stale(ctx, p):
     sev = _sev(h, p["warn_h"], p["crit_h"])
     return [Obs("backup_stale", "dump", sev is not None, clear=h < p["clear_h"], severity=sev or WARNING,
                 text=f"newest backup is {h:.0f} h old (warn >= {p['warn_h']} h, critical >= {p['crit_h']} h)")]
+
+
+OFFHOST_REASONS = {1: "the ack file is not valid JSON", 2: "the ack file has a schema this version does not understand",
+                   3: "the ack file says the copy was NOT verified", 4: "the ack file has missing or invalid fields", 5: "the ack file cannot be read"}
+OFFHOST_ACTION = "Mac asleep/offline? Run infra/backup/pull-offhost.sh."
+
+
+def r_offhost(ctx, p):
+    """The owner's Mac writes backups/offhost-ack.json after pulling AND verifying a backup set. Stale = no verified copy confirmed lately."""
+    present = ctx.latest("backup.offhost_present")
+    if present is None:
+        return []
+    if present == 0:
+        up, newest = ctx.latest("uptime.seconds"), ctx.latest("backup.newest_age_s")
+        if up is None:
+            return []                                    # cannot tell a new host from an old one: hold state
+        up_h = up / 3600
+        if newest is None or up_h <= p["absent_after_uptime_h"]:
+            return [Obs("offhost_stale", "offhost", False, clear=True)]   # brand-new host or no successful backup yet: no ack is expected
+        return [Obs("offhost_stale", "offhost", True, severity=WARNING,
+                    text=f"no off-host confirmation file exists although the host has been up {up_h:.0f} h (limit {p['absent_after_uptime_h']} h) "
+                         f"and a backup exists: the owner's Mac has never confirmed a verified copy. Run infra/backup/pull-offhost.sh.")]
+    if ctx.latest("backup.offhost_verified") != 1:
+        code = int(ctx.latest("backup.offhost_reason") or 4)
+        return [Obs("offhost_stale", "offhost", True, severity=WARNING,
+                    text=f"off-host confirmation is invalid: {OFFHOST_REASONS.get(code, OFFHOST_REASONS[4])}, so there is no verified off-host copy. Run infra/backup/pull-offhost.sh.")]
+    age = ctx.latest("backup.offhost_age_s")
+    if age is None:
+        return []
+    h = age / 3600
+    sev = _sev(h, p["warn_h"], p["crit_h"])
+    return [Obs("offhost_stale", "offhost", sev is not None, clear=h < p["clear_h"], severity=sev or WARNING,
+                text=f"the owner's Mac has not confirmed a verified copy of the newest backup in {h:.0f} h "
+                     f"(warn >= {p['warn_h']} h, critical >= {p['crit_h']} h). {OFFHOST_ACTION}")]
 
 
 def r_backup_failed(ctx, p):
@@ -282,7 +330,7 @@ def r_restarts(ctx, p):
         delta = sum(max(b - a, 0) if b >= a else b for a, b in zip(vals, vals[1:]))
         sev = _sev(delta, p["warn"], p["crit"])
         out.append(Obs("process_restart", unit, sev is not None, clear=delta < 1, severity=sev or WARNING,
-                       text=f"service {unit} restarted {delta:.0f} time(s) in the last {n * p['interval_s'] / 60:.0f} min"))
+                       text=f"service {unit} restarted {delta:.0f} time(s) in the last {n * p['interval_s'] / 60:.0f} min (warn >= {p['warn']}, critical >= {p['crit']})"))
     return out
 
 
@@ -302,7 +350,7 @@ def r_cap(ctx, p):
     pct = 100.0 * b / cap
     sev = _sev(pct, p["warn"], p["crit"])
     return [Obs("monitoring_disk_cap", "ops-db", sev is not None, clear=pct < p["clear"], severity=sev or WARNING,
-                text=f"AICC Ops database at {pct:.0f}% of its size cap (oldest data is pruned at 100%)")]
+                text=f"AICC Ops database at {pct:.0f}% of its size cap (warn >= {p['warn']}%, critical >= {p['crit']}%; oldest data is pruned at 100%)")]
 
 
 def r_write_blocked(ctx, p):
@@ -332,7 +380,7 @@ def r_cron(ctx, p):
         return []
     sev = _sev(v, p["warn_s"], p["crit_s"])
     return [Obs("wc_cron_stale", "action-scheduler", sev is not None, clear=v < p["clear_s"], severity=sev or WARNING,
-                text=f"last completed scheduled action finished {v / 60:.0f} min ago")]
+                text=f"last completed scheduled action finished {v / 60:.0f} min ago (warn >= {p['warn_s'] / 60:.0f} min, critical >= {p['crit_s'] / 60:.0f} min)")]
 
 
 def r_backend_down(ctx, p):
@@ -355,7 +403,7 @@ def r_backend_pool(ctx, p):
         return []
     sev = _sev(v, p["warn"], p["crit"])
     return [Obs("backend_pool_pressure", "db-pool", sev is not None, clear=v < p["clear"], severity=sev or WARNING,
-                text=f"API database pool at {v:.0f}% of capacity")]
+                text=f"API database pool at {v:.0f}% of capacity (warn >= {p['warn']}%, critical >= {p['crit']}%)")]
 
 
 def r_backend_5xx(ctx, p):
@@ -369,7 +417,7 @@ def r_backend_5xx(ctx, p):
     share = 100.0 * sum(r5) / sum(tot) if sum(tot) > 0 else 0.0
     sev = _sev(share, p["warn"], p["crit"])
     return [Obs("backend_5xx", "api", sev is not None, clear=share < p["clear"], severity=sev or WARNING,
-                text=f"{share:.1f}% of {reqs:.0f} API requests returned 5xx")]
+                text=f"{share:.1f}% of {reqs:.0f} API requests returned 5xx (warn >= {p['warn']:g}%, critical >= {p['crit']:g}%)")]
 
 
 def default_rules(cfg: dict) -> list:
@@ -382,6 +430,8 @@ def default_rules(cfg: dict) -> list:
         RuleSpec("caddy_admin", "Caddy metrics unreachable", r_caddy_admin, for_samples=4, clear_samples=4, cooldown_s=3600),
         RuleSpec("http_5xx", "Elevated 5xx rate", r_http_5xx, dict(window_samples=w10, interval_s=iv, min_requests=20, warn=5.0, crit=25.0, clear=2.0), for_samples=2, clear_samples=4),
         RuleSpec("ram_high", "High memory use", _simple_high("ram_high", "host", "mem.used_pct", "memory used"), dict(warn=90, crit=96, clear=85), for_samples=w10 * 2, clear_samples=w10, crit_samples=w10),
+        # available MiB, not used%: this host has 2 GiB and ~1059 MiB was the measured minimum available under load. Sustained 5 min.
+        RuleSpec("ram_available_low", "Low available memory", r_ram_available, dict(warn_mib=200, crit_mib=120, clear_mib=300), for_samples=w10, clear_samples=w10, crit_samples=w10),
         RuleSpec("swap_activity", "Meaningful swap activity", r_swap, dict(warn_in=100, warn_out=300, crit_in=1000, clear_in=10, clear_out=30), for_samples=w10 * 2, clear_samples=w10),
         RuleSpec("cpu_saturation", "Sustained CPU saturation", _simple_high("cpu_saturation", "host", "cpu.used_pct", "CPU"), dict(warn=90, crit=98, clear=80), for_samples=w10 * 2, clear_samples=w10, crit_samples=w10 * 4),
         RuleSpec("disk_low", "Low disk space", r_disk, dict(warn=85, crit=93, clear=80), for_samples=2, clear_samples=4, cooldown_s=3600),
@@ -391,6 +441,8 @@ def default_rules(cfg: dict) -> list:
         RuleSpec("db_down", "MySQL unavailable", r_db_down, for_samples=2, clear_samples=2, cooldown_s=900),
         RuleSpec("db_conn_pressure", "MySQL connection pressure", r_db_conn, dict(warn=80, crit=95, clear=70), for_samples=w10 * 2, clear_samples=w10, crit_samples=4),
         RuleSpec("backup_stale", "Backup is stale", r_backup_stale, dict(warn_h=36, crit_h=72, clear_h=30), for_samples=1, clear_samples=2, cooldown_s=21600),
+        # off-host copy confirmed by the owner's Mac (offhost-ack.json). 36 h = one missed daily pull plus slack; 96 h = four days without a verified copy.
+        RuleSpec("offhost_stale", "Off-host backup copy is stale", r_offhost, dict(warn_h=36, crit_h=96, clear_h=30, absent_after_uptime_h=48), for_samples=2, clear_samples=2, cooldown_s=21600),
         RuleSpec("unit_failed", "AICC unit reported failure", r_unit_failed, for_samples=1, clear_samples=2, cooldown_s=3600),
         RuleSpec("backup_failed", "Backup job failed", r_backup_failed, for_samples=1, clear_samples=2, cooldown_s=21600),
         RuleSpec("cert_expiry", "Certificate nearing expiry", r_cert, dict(warn_days=14, crit_days=5, clear_days=21), for_samples=1, clear_samples=2, cooldown_s=43200, renotify_critical_s=43200),

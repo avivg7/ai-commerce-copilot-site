@@ -1,0 +1,48 @@
+# AICC Sentinel targets for PRODUCTION www.copilt.org.   *** NOT ACTIVE. DO NOT INSTALL OR ENABLE BEFORE THE CUTOVER. ***
+# Nothing in this repository references this file; the installer and the CI example use targets.stage.toml. At cutover the owner copies this file,
+# reviews every line against the live site, removes the "enabled = false" lines and installs it deliberately. Until then www.copilt.org belongs to the old site.
+#
+# Differences from staging: no stage identity route exists in production (the production build never contains it, by design), and the expected IP
+# must be filled in from the real production DNS record at cutover (left empty here because it is not decided yet).
+
+[sentinel]
+interval_s = 120
+fail_n = 3
+window_m = 5
+recover_k = 2
+cooldown_s = 1800
+remind_s = 21600
+stale_after_s = 1800
+control_host = "api.telegram.org"
+secrets_file = "~/.config/aicc-sentinel/secrets.env"
+host_label = "mac-launchd"
+
+[[target]]
+name = "www-edge"
+enabled = false            # NOT ACTIVE until cutover
+url = "https://www.copilt.org/healthz"
+interval_s = 120
+expect_status = 200
+expect_body = "ok"
+# expect_ip = "FILL-IN-AT-CUTOVER"   # production address(es); uncomment once known
+latency_ms = 2000
+tls_warn_days = 14
+
+[[target]]
+name = "www-app"
+enabled = false            # NOT ACTIVE until cutover
+url = "https://www.copilt.org/pricing/"
+interval_s = 300
+expect_status = 200
+expect_body = "Studio"
+latency_ms = 6000
+timeout_s = 15
+
+[[target]]
+name = "www-home"
+enabled = false            # NOT ACTIVE until cutover. The static home page, served by Caddy from disk (does not touch PHP).
+url = "https://www.copilt.org/"
+interval_s = 300
+expect_status = 200
+expect_body = "<title"
+latency_ms = 3000

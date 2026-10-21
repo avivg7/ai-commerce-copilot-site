@@ -260,6 +260,58 @@ class PiiTests(unittest.TestCase):
                         texts += 1
         self.assertGreater(texts, 100)
 
+    def test_new_rules_and_the_test_message_are_pii_free_in_every_state(self):
+        """ram_available_low and offhost_stale (every branch: stale, critical, absent, each invalid reason) x every kind x both severities, plus TEST."""
+        cfgd = load_config()
+        host = cfgd["general"]["host_label"]
+        rules = {r.id: r for r in default_rules(cfgd)}
+        H = 3600
+        windows = [
+            {"mem.available_bytes": 100 * 1048576},
+            {"backup.offhost_present": 1, "backup.offhost_verified": 1, "backup.offhost_age_s": 100 * H},
+            {"backup.offhost_present": 1, "backup.offhost_verified": 1, "backup.offhost_age_s": 40 * H},
+            {"backup.offhost_present": 0, "backup.offhost_verified": 0, "uptime.seconds": 90 * H, "backup.newest_age_s": 3 * H},
+        ] + [{"backup.offhost_present": 1, "backup.offhost_verified": 0, "backup.offhost_reason": code, "backup.offhost_age_s": 3 * H} for code in (1, 2, 3, 4, 5)]
+        texts = []
+        for metrics in windows:
+            w = Window(30, stale={})
+            w.push(1000, metrics)
+            for rid in ("ram_available_low", "offhost_stale"):
+                for o in rules[rid].fn(w, dict(rules[rid].params)):
+                    for kind in ("FIRING", "RECOVERED", "ESCALATED", "REMINDER", "FLAPPING"):
+                        for sev in ("WARNING", "CRITICAL"):
+                            texts.append(tg.render(Notification(kind, sev, o.rule, rules[rid].title, o.scope, o.text, 2_000_000, 1_999_000), host))
+        texts.append(tg.render_test(host, 2_000_000))
+        self.assertGreater(len(texts), 60)
+        for t in texts:
+            self.assertEqual(tg.scan_pii(t), [], t)
+            self.assertNotIn("[redacted", t)
+            self.assertIn(host, t)
+            self.assertLess(len(t), 600)
+
+    def test_every_message_names_host_and_environment_and_carries_a_timestamp(self):
+        host = load_config()["general"]["host_label"]
+        self.assertEqual(host, "aicc-cp-stage (staging)")
+        for kind, sev in (("FIRING", "WARNING"), ("FIRING", "CRITICAL"), ("ESCALATED", "CRITICAL"), ("REMINDER", "CRITICAL"), ("RECOVERED", "WARNING"), ("FLAPPING", "WARNING")):
+            t = tg.render(Notification(kind, sev, "ram_high", "High memory use", "host", "memory used 91% (warn >= 90, critical >= 96)", 2_000_000, 1_999_000), host)
+            first = t.splitlines()[0]
+            self.assertIn(host, first, t)
+            self.assertRegex(first, r"^\[(WARNING|CRITICAL|RECOVERED)\]", t)
+            self.assertRegex(t, r"(Since|At) \d{4}-\d\d-\d\d \d\d:\d\d UTC", t)           # timestamp
+            self.assertIn("memory used 91%", t)                                                 # reason + value vs threshold
+        rec = tg.render(Notification("RECOVERED", "WARNING", "ram_high", "High memory use", "host", "recovered after 7 min", 2_000_000, 1_999_000), host)
+        self.assertIn("At 1970-01-24 03:33 UTC", rec)
+
+    def test_test_message_shape(self):
+        t = tg.render_test("aicc-cp-stage (staging)", 1_792_600_000)
+        self.assertEqual(t, "[TEST] aicc-cp-stage (staging) - Telegram path check 2026-10-21 16:26 UTC. No action needed.")
+        self.assertEqual(tg.scan_pii(tg.TEMPLATES["TEST"]), [])
+        self.assertEqual(tg.scan_pii(t), [])
+
+    def test_a_hostile_host_label_cannot_smuggle_an_ip_or_email_into_a_message(self):
+        t = tg.render_test("203.0.113.9 ops@example.com", 0)
+        self.assertEqual(tg.scan_pii(t), [])
+
     def test_digest_template(self):
         t = tg.render_digest("h", "HEALTHY", ["RAM used: 41%", "Active alerts: 0"])
         self.assertIn("Capacity verdict: HEALTHY", t)

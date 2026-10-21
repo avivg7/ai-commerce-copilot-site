@@ -1,5 +1,6 @@
 import os
 import re
+import shutil
 import subprocess
 import tomllib
 import unittest
@@ -67,7 +68,7 @@ class PackagingTests(TmpCase):
                 self.assertIsNone(pat.search(t), p)
 
     def test_shell_scripts_parse(self):
-        for s in ("install.sh", "measure-overhead.sh"):
+        for s in ("install.sh", "measure-overhead.sh", os.path.join("bin", "aicc-ops-secrets")):
             r = subprocess.run(["bash", "-n", os.path.join(ROOT, s)], capture_output=True, text=True)
             self.assertEqual(r.returncode, 0, r.stderr)
 
@@ -79,6 +80,11 @@ class PackagingTests(TmpCase):
             self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertTrue(os.path.exists(os.path.join(dest, "opt/aicc-ops/bin/aicc-ops")))
         self.assertTrue(os.path.exists(os.path.join(dest, "etc/systemd/system/aicc-ops.service")))
+        helper = os.path.join(dest, "usr/local/sbin/aicc-ops-secrets")            # Telegram credentials helper: root-only, executable
+        self.assertEqual(oct(os.stat(helper).st_mode & 0o777), "0o750")
+        with open(helper) as a, open(os.path.join(ROOT, "bin", "aicc-ops-secrets")) as b:
+            self.assertEqual(a.read(), b.read())
+        self.assertTrue(os.path.exists(os.path.join(dest, "opt/aicc-ops/aicc_ops/telegram_ops.py")))
         self.assertFalse(os.path.exists(os.path.join(dest, "etc/aicc-ops/secrets.env")))   # never created
         cfgp = os.path.join(dest, "etc/aicc-ops/aicc-ops.toml")
         self.assertEqual(oct(os.stat(cfgp).st_mode & 0o777), "0o640")
@@ -88,6 +94,10 @@ class PackagingTests(TmpCase):
         subprocess.run(["bash", os.path.join(ROOT, "install.sh")], env=env, capture_output=True, text=True, check=True)
         with open(cfgp) as fh:
             self.assertIn("operator edit", fh.read())   # an edited config is never overwritten
+
+    def test_install_dry_run_lists_the_helper_with_root_only_mode(self):
+        r = subprocess.run(["bash", os.path.join(ROOT, "install.sh"), "--dry-run"], env={**os.environ, "DESTDIR": os.path.join(self.tmp, "dry2"), "PATH": "/opt/homebrew/bin:" + os.environ["PATH"]}, capture_output=True, text=True)
+        self.assertRegex(r.stdout, r"install -m 0750 \S+/bin/aicc-ops-secrets \S+/usr/local/sbin/aicc-ops-secrets")
 
     def test_install_script_fails_closed_on_incomplete_tree(self):
         import shutil
@@ -113,6 +123,25 @@ class PackagingTests(TmpCase):
         self.assertNotRegex(live, r"(?i)identified\s+by")
         self.assertNotIn("GRANT ALL", live.upper())
         self.assertNotRegex(live, r"(?i)grant\s+select\s+on\s+\*\.\*")
+
+    def test_example_host_label_names_host_and_environment(self):
+        with open(os.path.join(ROOT, "config", "aicc-ops.example.toml"), "rb") as fh:
+            ex = tomllib.load(fh)
+        self.assertEqual(ex["general"]["host_label"], "aicc-cp-stage (staging)")
+        self.assertEqual(DEFAULTS["general"]["host_label"], ex["general"]["host_label"])
+        self.assertEqual(ex["collectors"]["backups"]["offhost_ack_file"], "/srv/aicc/backups/offhost-ack.json")
+
+    def test_helper_script_is_executable_shellcheck_clean_and_documented(self):
+        p = os.path.join(ROOT, "bin", "aicc-ops-secrets")
+        self.assertTrue(os.access(p, os.X_OK))
+        sc = shutil.which("shellcheck")
+        if sc:
+            r = subprocess.run([sc, "-x", "-S", "style", p], capture_output=True, text=True)
+            self.assertEqual(r.returncode, 0, r.stdout)
+        readme = read("README.md")
+        for needle in ("Telegram credentials: operator procedure", "aicc-ops-secrets set-telegram", "telegram-discover-chat", "telegram-send-test --send",
+                       "offhost_stale", "offhost-ack.json", "ram_available_low"):
+            self.assertIn(needle, readme)
 
     def test_dependency_free(self):
         std = set(__import__("sys").stdlib_module_names)

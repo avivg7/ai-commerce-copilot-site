@@ -4,7 +4,7 @@
 # /etc/aicc-ops/secrets.env, loaded via systemd LoadCredential).
 
 [general]
-host_label = "aicc-staging"      # appears in alerts; not a secret, not PII
+host_label = "aicc-cp-stage (staging)"   # appears in every alert: host AND environment; not a secret, not PII
 banner = ""                      # optional text on every page (use for demo/fixture data)
 interval_s = 30                  # base collection loop
 proc_root = "/proc"
@@ -80,6 +80,7 @@ timeout_s = 5
 dir = "/srv/aicc/backups"            # 0751 root: status.json is readable by name, the directory is not listable
 patterns = ["aicc_cp-*.sql.gz", "aicc-files-*.tar.gz"]   # only used if the directory is listable
 status_file = "/srv/aicc/backups/status.json"   # schema 1 from infra/backup/aicc-backup.sh
+offhost_ack_file = "/srv/aicc/backups/offhost-ack.json"   # schema 1, written by the owner's Mac after a VERIFIED pull; must be readable by the aicc-ops user; "" disables
 
 [collectors.unitstatus]          # unit-<name>.json files from infra/systemd/aicc-unit-status.sh (OnFailure= hook)
 enabled = true
@@ -157,6 +158,17 @@ flap_max_transitions = 4
 # for_samples = 20
 # [alerts.rules.disk_low]
 # enabled = true
+#
+# Added rules and their thresholds (values shown are the defaults):
+# [alerts.rules.ram_available_low]  # AVAILABLE memory in MiB (ram_high is on used%); sustained 5 min (for_samples/crit_samples = 10 at 30 s)
+# warn_mib = 200                    # WARNING below this
+# crit_mib = 120                    # CRITICAL below this
+# clear_mib = 300                   # recovers only above this
+# [alerts.rules.offhost_stale]      # "Off-host backup copy is stale": age of the Mac's last VERIFIED pull confirmation (offhost-ack.json)
+# warn_h = 36                       # WARNING when the newest confirmation is older than this
+# crit_h = 96                       # CRITICAL when older than this
+# clear_h = 30                      # recovers only below this
+# absent_after_uptime_h = 48        # no ack file at all: WARNING only once the host has been up this long AND a successful backup exists
 
 # ---- telegram (outbound only; credentials are NEVER here) ------------------------------------------------------
 [telegram]

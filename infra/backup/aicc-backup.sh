@@ -189,12 +189,22 @@ PTR="$(mktemp -d "$BACKUP_DIR/.ptr.XXXXXX")"
   for k in site cp; do for l in current previous; do
     if [ -L "$RELEASE_ROOT/$k/$l" ]; then printf '%s/%s -> %s\n' "$k" "$l" "$(readlink "$RELEASE_ROOT/$k/$l")"; else printf '%s/%s -> (none)\n' "$k" "$l"; fi
   done; done
+  # which releases exist and what they were built from (DR needs the release tarballs from the build host; this says WHICH ones and their hashes)
+  for k in site cp; do
+    for m in "$RELEASE_ROOT/$k"/releases/*.manifest.json; do
+      [ -f "$m" ] || continue
+      printf 'release %s %s tarball_sha256=%s cp_commit=%s\n' "$k" "$(basename "$m" .manifest.json)" "$(jq -r '.tarball.sha256 // "?"' "$m" 2>/dev/null)" "$(jq -r '.sources.cp_commit // .sources.site_commit // "-"' "$m" 2>/dev/null)"
+    done
+  done
+  printf 'host_identity %s\n' "$(tr '\n' ' ' < /etc/aicc-stage-identity 2>/dev/null | sed 's/ *$//')"
 } > "$PTR/pointers.txt"
 TAR_ITEMS=()
 add_item() { # add_item <absolute path> : archived relative to /
   if [ -e "$1" ]; then TAR_ITEMS+=("${1#/}"); FILE_PATHS+=("$1"); else b_log "note: $1 does not exist (skipped)"; fi
 }
 add_item "$SHARED_DIR/uploads"; add_item "$SHARED_DIR/wp-config.php"; add_item "$EDGE_CONF"
+# AICC Ops configuration (thresholds, host label); its secrets.env (Telegram) is deliberately NOT included
+if [ "$FIXTURE" = 0 ]; then add_item /etc/aicc-ops/aicc-ops.toml; fi
 if [ "$FIXTURE" = 0 ] && [ ! -f "$SHARED_DIR/wp-config.php" ]; then REASON="wp-config.php missing from $SHARED_DIR (a Control Plane without it cannot be restored)"; rm -rf "$PTR"; exit 1; fi
 FILE_PATHS+=("pointers.txt")
 if [ ${#TAR_ITEMS[@]} -gt 0 ]; then

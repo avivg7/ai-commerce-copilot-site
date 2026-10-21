@@ -43,14 +43,17 @@ mkset() { # mkset <ts> -> creates a dump + archive set on the fake remote, write
     '{schema:1,status:"ok",reason:"",finished_epoch:$e,db_dump:{file:$d,sha256:$ds},files_archive:{file:$f,sha256:$fs},last_success:{finished_epoch:$e,db_dump_file:$d,files_archive_file:$f}}' > "$REMOTE/status.json"
 }
 mkdir -p "$TMP/fake-up"; echo img > "$TMP/fake-up/a.jpg"
+printf 'AICC_ENV=staging\nAICC_HOSTNAME=stage.copilt.org\n' > "$TMP/ident"
 cat > "$STUB/ssh" <<EOS
 #!/usr/bin/env bash
+# stands in for the restricted account: the real host runs aicc-offhost-serve for whatever command text arrives; the stub does the same with the real script
 echo "ssh \$*" >> "$CALLS"
 cmd="\${@: -1}"
 case "\$cmd" in
-  "cat /etc/aicc-stage-identity") printf 'AICC_ENV=%s\nAICC_HOSTNAME=%s\n' "\${STUB_ENV:-staging}" "\${STUB_HOSTNAME:-stage.copilt.org}" ;;
-  "sudo cat /srv/aicc/backups/"*) f="$REMOTE/\${cmd#sudo cat /srv/aicc/backups/}"; case "\$f" in *..*) exit 1;; esac; [ -f "\$f" ] || exit 1
-     if [ "\${STUB_CORRUPT:-0}" = 1 ] && case "\$f" in *.sql.gz) true;; *) false;; esac; then (cat "\$f"; printf 'X') ; else cat "\$f"; fi ;;
+  identity) printf 'AICC_ENV=%s\nAICC_HOSTNAME=%s\n' "\${STUB_ENV:-staging}" "\${STUB_HOSTNAME:-stage.copilt.org}" ;;
+  get\ *|status|ack\ *)
+     if [ "\${STUB_CORRUPT:-0}" = 1 ] && case "\$cmd" in get\ *.sql.gz) true;; *) false;; esac; then (AICC_TEST_HARNESS=1 AICC_BACKUP_DIR="$REMOTE" bash "$BKP/aicc-offhost-serve.sh" "\$cmd"; printf 'X')
+     else AICC_TEST_HARNESS=1 AICC_BACKUP_DIR="$REMOTE" AICC_IDENTITY_FILE="$TMP/ident" bash "$BKP/aicc-offhost-serve.sh" "\$cmd"; fi ;;
   *) exit 1 ;;
 esac
 EOS
@@ -83,6 +86,11 @@ t_eq "EVERY ssh call used the dedicated key with IdentitiesOnly and BatchMode" "
 t_eq "no call touched the production IP" "$(grep -c '139.59.157.231' "$CALLS" || true)" "0"
 t_ok "a second pull of the same backup is a no-op" PULL --stage-ip 203.0.113.9
 t_contains "...reported as already present" "$(cat "$TMP/dest/pull.log")" "already have"
+t_ok "the pull recorded an ack on the host (offhost-ack.json)" test -f "$REMOTE/offhost-ack.json"
+t_eq "ack: verified true, puller mac-pull, set timestamp of the pulled set" "$(jq -r '[.verified,.puller,.set_ts]|join(",")' "$REMOTE/offhost-ack.json")" "true,mac-pull,20261021T033012Z"
+t_eq "ack: carries the sha256 of the pulled dump" "$(jq -r .dump_sha256 "$REMOTE/offhost-ack.json")" "$(shasum -a 256 "$TMP/dest/aicc_cp-20261021T033012Z-scheduled.sql.gz" | cut -d' ' -f1)"
+t_ok "the pull wrote a .last-ok marker (0600)" test "$(stat -f %Lp "$TMP/dest/.last-ok" 2>/dev/null || stat -c %a "$TMP/dest/.last-ok")" = 600
+t_eq "no lock directory is left behind" "$(ls -d "$TMP"/dest/.pull.lock 2>/dev/null | wc -l | tr -d ' ')" "0"
 for ts in 20261022T033012Z 20261023T033012Z 20261024T033012Z; do mkset "$ts"; PULL --stage-ip 203.0.113.9 --keep 2 >/dev/null 2>&1; done
 t_eq "retention: only the newest 2 dumps are kept (--keep 2)" "$(ls "$TMP"/dest/aicc_cp-*.sql.gz | wc -l | tr -d ' ')" "2"
 t_eq "retention: the sidecars of pruned dumps are gone too" "$(ls "$TMP"/dest/aicc_cp-*.sha256 | wc -l | tr -d ' ')" "2"
@@ -95,6 +103,61 @@ echo '{"schema":1,"status":"ok","last_success":{"finished_epoch":1,"db_dump_file
 t_rc "a hostile status.json naming a path outside the backup dir is rejected" 1 PULL --stage-ip 203.0.113.9
 echo '{"schema":1,"status":"failed","reason":"disk guard","last_success":{"finished_epoch":1}}' > "$REMOTE/status.json"
 t_rc "a failed latest run on the host is reported (exit 1)" 1 PULL --stage-ip 203.0.113.9
+
+echo "== aicc-offhost-serve.sh: what the restricted pull key may and may not do =="
+SV() { env AICC_TEST_HARNESS=1 AICC_BACKUP_DIR="$REMOTE" AICC_IDENTITY_FILE="$TMP/ident" bash "$BKP/aicc-offhost-serve.sh" "$@"; }
+mkset 20261030T033012Z
+D1="aicc_cp-20261030T033012Z-scheduled.sql.gz"; F1="aicc-files-20261030T033012Z-scheduled.tar.gz"
+DS="$(awk '{print $1}' "$REMOTE/$D1.sha256")"; FS="$(awk '{print $1}' "$REMOTE/$F1.sha256")"
+echo secret > "$REMOTE/wp-config.php"; echo log > "$REMOTE/backup.log"
+t_ok "identity works" SV identity
+t_ok "status works" SV status
+t_ok "get of a backup file works" SV "get $D1"
+t_ok "get of a checksum sidecar works" SV "get $D1.sha256"
+t_rc "no command at all (an interactive login) is refused" 3 SV ""
+t_rc "an unknown operation is refused" 3 SV "shell"
+t_rc "get with a path is refused" 3 SV "get ../../etc/passwd"
+t_rc "get of backup.log (not a backup file) is refused" 3 SV "get backup.log"
+t_rc "get of a file that matches no pattern is refused" 3 SV "get wp-config.php"
+t_rc "shell metacharacters are refused" 3 SV "get $D1; id"
+t_rc "command substitution is refused" 3 SV 'get $(id)'
+t_rc "a newline in the command is refused" 3 SV "$(printf 'status\nid')"
+t_rc "get with two files is refused" 3 SV "get $D1 $F1"
+t_rc "a pre-existing symlink under a valid name is refused" 3 bash -c "ln -sf /etc/passwd '$REMOTE/aicc_cp-20261031T033012Z-manual.sql.gz'; AICC_TEST_HARNESS=1 AICC_BACKUP_DIR='$REMOTE' bash '$BKP/aicc-offhost-serve.sh' 'get aicc_cp-20261031T033012Z-manual.sql.gz'"
+rm -f "$REMOTE/offhost-ack.json"
+t_rc "ack with a wrong dump hash is refused" 3 SV "ack 20261030T033012Z $D1 $(printf '0%.0s' $(seq 64)) $F1 $FS"
+t_fail "...and wrote nothing" test -f "$REMOTE/offhost-ack.json"
+t_rc "ack naming a set that does not exist is refused" 3 SV "ack 20271111T000000Z aicc_cp-20271111T000000Z-manual.sql.gz $DS - -"
+t_rc "ack with a dump from another set is refused" 3 SV "ack 20261029T033012Z $D1 $DS - -"
+t_rc "ack with a malformed hash is refused" 3 SV "ack 20261030T033012Z $D1 zzz - -"
+t_ok "a correct ack is recorded" SV "ack 20261030T033012Z $D1 $DS $F1 $FS"
+t_eq "...with the host's own timestamp and verified=true" "$(jq -r '[.verified,(.acked_at>1700000000)]|join(",")' "$REMOTE/offhost-ack.json")" "true,true"
+t_ok "a database-only ack (files -) is accepted" SV "ack 20261030T033012Z $D1 $DS - -"
+t_eq "...and records files as -" "$(jq -r .files "$REMOTE/offhost-ack.json")" "-"
+
+echo "== install-offhost-access.sh (file generation only, --root seam) =="
+IO="$TMP/io"; mkdir -p "$IO"
+ssh-keygen -q -t ed25519 -N "" -f "$TMP/okey" -C test >/dev/null 2>&1 && OK_KEY=1 || OK_KEY=0
+if [ "$OK_KEY" = 1 ]; then
+  t_ok "installs into a scratch root" env AICC_TEST_HARNESS=1 bash "$BKP/install-offhost-access.sh" --root "$IO" --pubkey-file "$TMP/okey.pub"
+  t_contains "authorized_keys: restrict + forced sudo of the one script" "$(cat "$IO/var/lib/aicc-offhost/.ssh/authorized_keys")" 'restrict,command="/usr/bin/sudo -n /usr/local/sbin/aicc-offhost-serve'
+  t_not_contains "authorized_keys holds no private material" "$(cat "$IO/var/lib/aicc-offhost/.ssh/authorized_keys")" "PRIVATE"
+  t_eq "authorized_keys is 0600" "$(stat -f %Lp "$IO/var/lib/aicc-offhost/.ssh/authorized_keys" 2>/dev/null || stat -c %a "$IO/var/lib/aicc-offhost/.ssh/authorized_keys")" "600"
+  t_contains "sudoers: exactly the one script" "$(cat "$IO/etc/sudoers.d/aicc-offhost")" "aicc-offhost ALL=(root) NOPASSWD: /usr/local/sbin/aicc-offhost-serve *"
+  t_eq "sudoers has no ALL command grant" "$(grep -c 'NOPASSWD: ALL' "$IO/etc/sudoers.d/aicc-offhost" || true)" "0"
+  t_eq "sudoers is 0440" "$(stat -f %Lp "$IO/etc/sudoers.d/aicc-offhost" 2>/dev/null || stat -c %a "$IO/etc/sudoers.d/aicc-offhost")" "440"
+  for kw in "ForceCommand" "PermitTTY no" "AllowTcpForwarding no" "PasswordAuthentication no" "AllowAgentForwarding no" "PermitTunnel no"; do t_contains "sshd drop-in: $kw" "$(cat "$IO/etc/ssh/sshd_config.d/06-aicc-offhost.conf")" "$kw"; done
+  t_ok "the installed serve script is the repo's" cmp -s "$BKP/aicc-offhost-serve.sh" "$IO/usr/local/sbin/aicc-offhost-serve"
+  t_ok "a second run is idempotent" env AICC_TEST_HARNESS=1 bash "$BKP/install-offhost-access.sh" --root "$IO" --pubkey-file "$TMP/okey.pub"
+  t_ok "--dry-run changes nothing" env AICC_TEST_HARNESS=1 bash "$BKP/install-offhost-access.sh" --root "$TMP/io-dry" --pubkey-file "$TMP/okey.pub" --dry-run
+  t_fail "...(no scratch root was created by the dry run)" test -e "$TMP/io-dry"
+  t_rc "a PRIVATE key file is refused" 3 env AICC_TEST_HARNESS=1 bash "$BKP/install-offhost-access.sh" --root "$IO" --pubkey-file "$TMP/okey"
+  t_rc "a missing key file is a usage error" 2 env AICC_TEST_HARNESS=1 bash "$BKP/install-offhost-access.sh" --root "$IO" --pubkey-file "$TMP/nokey"
+  t_rc "--root without the test harness is refused" 2 bash "$BKP/install-offhost-access.sh" --root "$IO" --pubkey-file "$TMP/okey.pub"
+  t_rc "without root and without a seam the installer refuses" 2 bash "$BKP/install-offhost-access.sh" --pubkey-file "$TMP/okey.pub"
+  t_ok "--remove removes the generated files" env AICC_TEST_HARNESS=1 bash "$BKP/install-offhost-access.sh" --root "$IO" --remove
+  t_fail "...the sudoers file is gone" test -e "$IO/etc/sudoers.d/aicc-offhost"
+else t_skip "install-offhost-access tests" "ssh-keygen unavailable"; fi
 
 echo "== RPO/RTO documentation exists and does not claim an unproven restore time =="
 t_ok "README-backup.md documents RPO and RTO" bash -c "grep -q 'RPO' '$BKP/README-backup.md' && grep -q 'RTO' '$BKP/README-backup.md'"

@@ -1,10 +1,30 @@
-# EXAMPLE ONLY, not installed and NOT to be committed to a private repository without checking the minutes quota.
-# Free only for PUBLIC repositories. Minimum schedule resolution is 5 minutes; runs may be delayed or skipped by GitHub.
-# State (the N-of-M window) is kept between runs with the cache action; if the cache is evicted the window restarts empty.
+# EXAMPLE ONLY. Nothing here is installed. To use it the OWNER must (see infra/sentinel/README.md and DESIGN.md section 4):
+#   1. confirm the repository is PUBLIC (scheduled Actions minutes are free only for public repositories; a private repo draws on a quota),
+#   2. copy this file to  .github/workflows/aicc-sentinel.yml  and merge it into the DEFAULT branch (GitHub runs `schedule:` only from the default branch),
+#   3. add two repository secrets (Settings > Secrets and variables > Actions > New repository secret): TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID.
+#      Without them the job still runs and checks, but only writes the log (Telegram stays disabled).
+#
+# Honest expectations
+#   * GitHub does not promise the schedule. "*/10" is best effort: runs are often delayed by several minutes at busy times and can be dropped.
+#     A 5-minute cron is allowed but no more reliable, so this uses 10. Treat detection time as "roughly 20-40 minutes", not "within a minute".
+#   * GitHub DISABLES scheduled workflows in a public repository after 60 days without repository activity (a commit, issue, PR...). Re-enable it in the Actions tab,
+#     or keep the repo active. A silent observer looks exactly like a healthy one: check the Actions tab now and then.
+#   * State (the N-of-M window and the cooldown) is kept between runs with the Actions cache. If GitHub evicts the cache (7 days unused, or 10 GB repo limit) the window
+#     simply restarts empty: that can delay a DOWN by a couple of runs but cannot create a false one.
+#   * Each run saves a new tiny cache entry (cache keys are immutable). They age out by themselves.
+#
+# Supply chain
+#   * The workflow checks out THIS repository only to run infra/sentinel/sentinel.py (standard library, no installs). Anyone who can push to the default branch can change
+#     what runs next to the Telegram secrets: keep branch protection on, never trigger this on pull_request/pull_request_target or forks, and never add a step that runs
+#     code from a pull request. Secrets are not exposed to workflows from forks.
+#   * The `uses:` lines below carry well-known MAJOR tags because a full commit SHA cannot be looked up offline. Before enabling, pin each to the full 40-character SHA of
+#     the current release (a tag can be moved; a SHA cannot) and add Dependabot for github-actions so the pins are refreshed.
+#   * The secrets reach the process only through `env:` (never in `run:` text, arguments or logs). sentinel.py reads TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID from the environment.
+#   * targets.stage.toml is public in a public repo. It contains no credential; it does contain the staging identity id, which is an identifier (not an authentication secret).
 name: aicc-sentinel
 on:
   schedule:
-    - cron: "*/5 * * * *"
+    - cron: "*/10 * * * *"
   workflow_dispatch: {}
 permissions:
   contents: read
@@ -13,22 +33,35 @@ concurrency:
   cancel-in-progress: false
 jobs:
   check:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-24.04            # ships Python 3.12; nothing is installed
     timeout-minutes: 3
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/cache@v4
+      - uses: actions/checkout@v4   # PIN TO A FULL COMMIT SHA before enabling
         with:
-          path: state.json
-          key: sentinel-state-${{ github.run_id }}
+          persist-credentials: false
+          sparse-checkout: infra/sentinel
+      - uses: actions/cache/restore@v4   # PIN TO A FULL COMMIT SHA before enabling
+        with:
+          path: .sentinel-state
+          key: sentinel-state-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: sentinel-state-
       - name: Probe
         env:
-          # create TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID as repository secrets; never echo them
+          # repository secrets; never echo them, never put them in run: text or arguments
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
-          umask 077
-          printf 'TELEGRAM_BOT_TOKEN=%s\nTELEGRAM_CHAT_ID=%s\n' "$TELEGRAM_BOT_TOKEN" "$TELEGRAM_CHAT_ID" > "$RUNNER_TEMP/secrets.env"
-          export CREDENTIALS_DIRECTORY="$RUNNER_TEMP"   # the sentinel reads $CREDENTIALS_DIRECTORY/secrets.env
-          python3 infra/sentinel/sentinel.py --config infra/sentinel/targets.example.toml --state state.json --once
+          python3 --version
+          # A 10-minute cadence needs a shorter window than the Mac profile: DOWN after 2 of the last 3 runs failed (one blip never pages).
+          # Add --fail-on-down if you also want a failed run (and GitHub's own email) while a target is down; it repeats every run, so it is off by default.
+          python3 infra/sentinel/sentinel.py \
+            --config infra/sentinel/targets.stage.toml \
+            --once --quiet-ok \
+            --state-file .sentinel-state/state.json \
+            --host-label github-actions \
+            --fail-n 2 --window-m 3
+      - uses: actions/cache/save@v4   # PIN TO A FULL COMMIT SHA before enabling
+        if: always()                  # save the state even when a step above failed
+        with:
+          path: .sentinel-state
+          key: sentinel-state-${{ github.run_id }}-${{ github.run_attempt }}

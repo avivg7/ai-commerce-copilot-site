@@ -19,6 +19,7 @@ import urllib.parse
 import urllib.request
 
 API_BASE = "https://api.telegram.org"
+LOOPBACK_BASE_RE = re.compile(r"^http://127\.0\.0\.1:\d{1,5}$")   # the only non-default base URL any code path accepts (tests only)
 MAX_LEN = 3500
 
 # --- PII / secret patterns: used by sanitize() AND by the unit test that scans every template ------------------
@@ -50,25 +51,33 @@ def sanitize(text: str) -> str:
 TEMPLATES = {
     "WARNING": "[WARNING] {host}\n{title}\n{scope}: {text}\nSince {since} UTC",
     "CRITICAL": "[CRITICAL] {host}\n{title}\n{scope}: {text}\nSince {since} UTC",
-    "RECOVERED": "[RECOVERED] {host}\n{title}\n{scope}: {text}",
-    "FLAPPING": "[WARNING] {host}\n{title} is flapping\n{scope}: {text}",
+    "RECOVERED": "[RECOVERED] {host}\n{title}\n{scope}: {text}\nAt {at} UTC",
+    "FLAPPING": "[WARNING] {host}\n{title} is flapping\n{scope}: {text}\nAt {at} UTC",
     "DIGEST": "[DAILY DIGEST] {host}\nCapacity verdict: {verdict}\n{lines}",
+    "TEST": "[TEST] {host} - Telegram path check {at} UTC. No action needed.",
 }
 
 
 def render(note, host: str) -> str:
     """note: alerts.Notification. Chooses the template by kind/severity."""
     since = time.strftime("%Y-%m-%d %H:%M", time.gmtime(note.since)) if note.since else "n/a"
+    at = time.strftime("%Y-%m-%d %H:%M", time.gmtime(note.ts)) if note.ts else "n/a"
     if note.kind == "RECOVERED":
         key = "RECOVERED"
     elif note.kind == "FLAPPING":
         key = "FLAPPING"
     else:
         key = "CRITICAL" if note.severity == "CRITICAL" else "WARNING"
-    txt = TEMPLATES[key].format(host=host, title=note.title, scope=note.scope, text=note.text, since=since)
+    txt = TEMPLATES[key].format(host=host, title=note.title, scope=note.scope, text=note.text, since=since, at=at)
     if note.kind in ("REMINDER", "ESCALATED"):
         txt = txt.replace("]", f"] ({'still active' if note.kind == 'REMINDER' else 'escalated'})", 1)
     return sanitize(txt)
+
+
+def render_test(host: str, now: float | None = None) -> str:
+    """The one explicit message sent by `telegram-send-test --send`. Host label (with its environment marker) + UTC minute, nothing else."""
+    at = time.strftime("%Y-%m-%d %H:%M", time.gmtime(time.time() if now is None else now))
+    return sanitize(TEMPLATES["TEST"].format(host=host, at=at))
 
 
 def render_digest(host: str, verdict: str, lines: list) -> str:
@@ -87,25 +96,32 @@ def parse_env_file(text: str) -> dict:
     return out
 
 
-def load_secrets(path: str, environ=None):
-    """Return (token, chat_id) or (None, None). Checks systemd credentials first, then the env file."""
+def load_secrets(path: str, environ=None, partial: bool = False):
+    """Return (token, chat_id) or (None, None). Checks systemd credentials first, then the env file.
+    partial=True (used only by the manual `telegram-check` / `telegram-discover-chat` commands, which need no chat id yet) also
+    returns (token, None) when the chat id is missing. The mode rule below is identical either way."""
     environ = os.environ if environ is None else environ
     cred = environ.get("CREDENTIALS_DIRECTORY")
     if cred:
         try:  # preferred: LoadCredential=secrets.env:/etc/aicc-ops/secrets.env (file may stay 0600 root:root)
             with open(os.path.join(cred, "secrets.env")) as fh:
                 env = parse_env_file(fh.read())
-            if env.get("TELEGRAM_BOT_TOKEN") and env.get("TELEGRAM_CHAT_ID"):
-                return env["TELEGRAM_BOT_TOKEN"], env["TELEGRAM_CHAT_ID"]
+            if env.get("TELEGRAM_BOT_TOKEN") and (env.get("TELEGRAM_CHAT_ID") or partial):
+                return env["TELEGRAM_BOT_TOKEN"], env.get("TELEGRAM_CHAT_ID") or None
         except OSError:
             pass
         try:
             with open(os.path.join(cred, "telegram_bot_token")) as fh:
                 t = fh.read().strip()
-            with open(os.path.join(cred, "telegram_chat_id")) as fh:
-                c = fh.read().strip()
-            if t and c:
-                return t, c
+            try:
+                with open(os.path.join(cred, "telegram_chat_id")) as fh:
+                    c = fh.read().strip()
+            except OSError:
+                if not partial:
+                    raise
+                c = ""
+            if t and (c or partial):
+                return t, c or None
         except OSError:
             pass
     try:
@@ -115,8 +131,8 @@ def load_secrets(path: str, environ=None):
         with open(path) as fh:
             env = parse_env_file(fh.read())
         t, c = env.get("TELEGRAM_BOT_TOKEN"), env.get("TELEGRAM_CHAT_ID")
-        if t and c:
-            return t, c
+        if t and (c or partial):
+            return t, c or None
     except OSError:
         pass
     return None, None
@@ -133,7 +149,7 @@ class TelegramAdapter:
         self.sleep, self.clock = sleep, clock
         self.base = API_BASE
         if test_base_url is not None:  # only tests may redirect; never from the config file
-            if not re.match(r"^http://127\.0\.0\.1:\d{1,5}$", test_base_url):
+            if not LOOPBACK_BASE_RE.match(test_base_url):
                 raise ValueError("test base URL must be http://127.0.0.1:<port>")
             self.base = test_base_url
         self.token = self.chat_id = None

@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  AICC off-host backup pull: user LaunchAgent TEMPLATE. install-launchd.sh substitutes the @...@ placeholders with absolute paths (launchd does not expand ~).
+  Contains NO secret: the SSH key is a file path; the key itself can only run aicc-offhost-serve on the host (identity / status / get <backup> / ack).
+
+  StartInterval 3600 + RunAtLoad: a Mac that sleeps misses intervals; launchd runs ONE catch-up run at wake. The pull is idempotent (an already-verified set is a
+  no-op, only the ack is refreshed), so frequent runs cost nothing. Reliability is bounded by the Mac being awake and online: see README-backup.md.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.aicc.offhost-pull</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>@RUNNER@</string>
+    <string>--pull-script</string><string>@PULL@</string>
+    <string>--stage-ip</string><string>@STAGE_IP@</string>
+    <string>--stage-host</string><string>@STAGE_HOST@</string>
+    <string>--key</string><string>@KEY@</string>
+    <string>--dest</string><string>@DEST@</string>
+  </array>
+  <key>RunAtLoad</key><true/>
+  <key>StartInterval</key><integer>3600</integer>
+  <key>ProcessType</key><string>Background</string>
+  <key>Nice</key><integer>10</integer>
+  <key>LowPriorityIO</key><true/>
+  <key>ExitTimeOut</key><integer>120</integer>
+  <key>StandardOutPath</key><string>@LOGDIR@/pull.out.log</string>
+  <key>StandardErrorPath</key><string>@LOGDIR@/pull.err.log</string>
+</dict>
+</plist>

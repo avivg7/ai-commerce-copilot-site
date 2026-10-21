@@ -18,6 +18,7 @@ VAR="${DESTDIR}/var/lib/aicc-ops"
 UNITDIR="${DESTDIR}/etc/systemd/system"
 LOGROTATE="${DESTDIR}/etc/logrotate.d"
 LOGDIR="${DESTDIR}/var/log/aicc-ops"
+SBIN="${DESTDIR}/usr/local/sbin"
 SVC_USER="aicc-ops"
 DRY=0
 ENABLE=0
@@ -37,7 +38,7 @@ run() { if [ "$DRY" = 1 ]; then echo "[dry-run] $*"; else "$@"; fi; }
 # ---- fail-closed preflight ---------------------------------------------------------------------------------
 [ "$(uname -s)" = "Linux" ] || { [ -n "$DESTDIR" ] || die "Linux only (set DESTDIR to stage the file tree on another OS)"; }
 if [ -z "$DESTDIR" ] && [ "$DRY" = 0 ] && [ "$(id -u)" -ne 0 ]; then die "must run as root (or use --dry-run / DESTDIR)"; fi
-for f in aicc_ops/__init__.py aicc_ops/cli.py bin/aicc-ops config/aicc-ops.example.toml systemd/aicc-ops.service \
+for f in aicc_ops/__init__.py aicc_ops/cli.py aicc_ops/telegram_ops.py bin/aicc-ops bin/aicc-ops-secrets config/aicc-ops.example.toml systemd/aicc-ops.service \
          systemd/aicc-ops-digest.service systemd/aicc-ops-digest.timer systemd/aicc-ops.logrotate sql/monitoring-user.sql; do
   [ -f "$SRC/$f" ] || die "incomplete source tree: missing $f"
 done
@@ -68,6 +69,10 @@ for f in "$SRC"/aicc_ops/*.py; do run install -m 0644 "$f" "$OPT/aicc_ops/$(base
 for f in "$SRC"/aicc_ops/collectors/*.py; do run install -m 0644 "$f" "$OPT/aicc_ops/collectors/$(basename "$f")"; done
 run install -m 0755 "$SRC/bin/aicc-ops" "$OPT/bin/aicc-ops"
 run install -m 0755 "$SRC/measure-overhead.sh" "$OPT/bin/measure-overhead.sh"
+# operator helper for the Telegram credentials (root only; reads the token from the terminal, never from argv/env)
+run install -d -m 0755 "$SBIN"
+run install -m 0750 "$SRC/bin/aicc-ops-secrets" "$SBIN/aicc-ops-secrets"
+[ -n "$DESTDIR" ] || run chown root:root "$SBIN/aicc-ops-secrets"
 run install -m 0644 "$SRC/config/aicc-ops.example.toml" "$OPT/config/aicc-ops.example.toml"
 run install -m 0644 "$SRC/sql/monitoring-user.sql" "$OPT/sql/monitoring-user.sql"
 run install -m 0644 "$SRC/systemd/php-fpm-status.conf.snippet" "$OPT/systemd/php-fpm-status.conf.snippet"
@@ -87,7 +92,7 @@ if [ -e "$ETC/secrets.env" ]; then
   case "$mode" in 600|640) echo "install.sh: $ETC/secrets.env present (mode $mode): left untouched" ;;
                   *) echo "install.sh: WARNING $ETC/secrets.env has mode $mode; AICC Ops will refuse it unless it is 0600 or 0640 (not touched)" >&2 ;; esac
 else
-  echo "install.sh: no $ETC/secrets.env: Telegram stays disabled (alerts are recorded locally). See README to create it."
+  echo "install.sh: no $ETC/secrets.env: Telegram stays disabled (alerts are recorded locally). Create it with: sudo aicc-ops-secrets set-telegram (README: Telegram credentials: operator procedure)."
 fi
 
 # systemd + logrotate (installed, NOT enabled; the digest timer is never enabled by this script)
@@ -111,6 +116,6 @@ cat <<MSG
 
 AICC Ops files installed under ${OPT}.
 Next (owner): 1) review ${ETC}/aicc-ops.toml  2) sudo mysql < ${OPT}/sql/monitoring-user.sql
-              3) apply the PHP-FPM snippet  4) (optional) create ${ETC}/secrets.env  5) systemctl enable --now aicc-ops
+              3) apply the PHP-FPM snippet  4) (optional) sudo aicc-ops-secrets set-telegram  5) systemctl enable --now aicc-ops
 The UI listens on 127.0.0.1:9190 only; reach it with: ssh -L 9190:127.0.0.1:9190 <host>
 MSG

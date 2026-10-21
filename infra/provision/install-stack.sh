@@ -310,6 +310,8 @@ step_scripts() {
   install_file "$INFRA/backup/lib/backup-common.sh" "$LIB_DIR/backup/lib/backup-common.sh" 0644 root:root
   ensure_symlink "$LIB_DIR/backup/aicc-backup.sh" "$SBIN/aicc-backup"
   ensure_symlink "$LIB_DIR/backup/aicc-restore-test.sh" "$SBIN/aicc-restore-test"
+  install_file "$INFRA/backup/aicc-restore.sh"      "$LIB_DIR/backup/aicc-restore.sh" 0755 root:root
+  ensure_symlink "$LIB_DIR/backup/aicc-restore.sh" "$SBIN/aicc-restore"
   # release tooling (host side)
   [ -f "$INFRA/release/activate-release.sh" ] || die "infra/release missing from the bundle"
   for f in activate-release.sh rollback-release.sh smoke-cp.sh smoke-site.sh warm-cp.sh; do install_file "$INFRA/release/$f" "$LIB_DIR/release/$f" 0755 root:root; done

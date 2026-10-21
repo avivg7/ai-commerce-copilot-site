@@ -343,7 +343,7 @@ expect(vals(cron, "Service", "Nice") == ["10"] and vals(cron, "Service", "Memory
 expect(any("cron event run --due-now" in v for v in vals(cron, "Service", "ExecStart")), "aicc-wp-cron.service", "must run `wp cron event run --due-now`")
 bk = units.get("aicc-backup.service", {})
 expect(vals(bk, "Service", "Nice") == ["19"] and vals(bk, "Service", "IOSchedulingClass") == ["idle"] and vals(bk, "Service", "MemoryMax") == ["256M"], "aicc-backup.service", "Nice=19, IOSchedulingClass=idle, MemoryMax=256M required")
-expect(any("03:30:00 UTC" in v for v in vals(units.get("aicc-backup.timer", {}), "Timer", "OnCalendar")), "aicc-backup.timer", "daily 03:30 UTC required")
+expect(any(":17:00 UTC" in v for v in vals(units.get("aicc-backup.timer", {}), "Timer", "OnCalendar")), "aicc-backup.timer", "hourly (minute 17 UTC) required: the on-host RPO is about one hour")
 # architecture review H-2/H-4: every 2 minutes (2.3 CPU-s per run on the single vCPU); AICC Ops wc_cron_stale (1 h) and the docs assume that cadence
 expect(vals(units.get("aicc-wp-cron.timer", {}), "Timer", "OnCalendar") == ["*:0/2"], "aicc-wp-cron.timer", "OnCalendar=*:0/2 (every 2 minutes) required")
 expect(vals(units.get("aicc-wp-cron.timer", {}), "Timer", "Persistent") == ["false"], "aicc-wp-cron.timer", "Persistent=false required (missed minutes are not replayed)")

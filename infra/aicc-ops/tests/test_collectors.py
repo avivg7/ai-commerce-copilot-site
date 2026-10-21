@@ -6,6 +6,7 @@ import subprocess
 import threading
 import time
 import http.server
+import json
 import unittest
 
 from aicc_ops.collectors import Collector, CollectorError, Result, run_collector, build_collectors
@@ -393,6 +394,117 @@ class BackupTests(TmpCase):
         self.assertFalse(backups.parse_status("status=error"))
         self.assertTrue(backups.parse_status('{"status":"ok"}'))
         self.assertIsNone(backups.parse_status(""))
+
+
+class OffhostAckTests(TmpCase):
+    NOW = 1_792_600_000
+    H64 = "a" * 64
+
+    def ack(self, **over):
+        d = {"schema": 1, "acked_at": self.NOW - 7200, "set_ts": "20261021T033000Z", "dump": "aicc_cp-20261021T033000Z-stage.sql.gz", "dump_sha256": self.H64,
+             "files": "aicc-files-20261021T033000Z-stage.tar.gz", "files_sha256": "b" * 64, "puller": "mac-launchd", "verified": True}
+        d.update(over)
+        return {k: v for k, v in d.items() if v is not None}
+
+    def collect(self, content=None, *, cfg_extra=None, raw=None, now=None):
+        path = os.path.join(self.tmp, "offhost-ack.json")
+        if raw is not None:
+            with open(path, "wb") as fh:
+                fh.write(raw)
+        elif content is not None:
+            put(path, content if isinstance(content, str) else json.dumps(content))
+        cfg = {"dir": self.tmp, "patterns": [], "status_file": "", "offhost_ack_file": path, **(cfg_extra or {})}
+        return backups.collect({}, cfg, {}, now or self.NOW)
+
+    def test_valid_ack_metrics(self):
+        r = self.collect(self.ack())
+        self.assertEqual(r.errors, [])
+        m = r.metrics
+        self.assertEqual((m["backup.offhost_present"], m["backup.offhost_verified"], m["backup.offhost_reason"]), (1.0, 1.0, 0.0))
+        self.assertAlmostEqual(m["backup.offhost_age_s"], 7200)
+
+    def test_files_hash_is_optional_for_database_only_pulls(self):
+        for extra in ({"files_sha256": None, "files": None}, {"files_sha256": ""}):
+            m = self.collect(self.ack(**extra)).metrics
+            self.assertEqual(m["backup.offhost_verified"], 1.0, extra)
+
+    def test_default_path_and_empty_path_disables(self):
+        self.assertEqual(backups.DEFAULT_OFFHOST_ACK, "/srv/aicc/backups/offhost-ack.json")
+        self.assertEqual(load_config()["collectors"]["backups"]["offhost_ack_file"], backups.DEFAULT_OFFHOST_ACK)
+        m = backups.collect({}, {"dir": self.tmp, "patterns": [], "status_file": ""}, {}, self.NOW).metrics     # key absent -> default path (absent here)
+        self.assertEqual((m["backup.offhost_present"], m["backup.offhost_verified"]), (0.0, 0.0))
+        m = self.collect(self.ack(), cfg_extra={"offhost_ack_file": ""}).metrics
+        self.assertFalse([k for k in m if k.startswith("backup.offhost")])
+
+    def test_absent_file_is_normal_not_an_error(self):
+        r = self.collect(None)
+        self.assertEqual(r.errors, [])
+        self.assertEqual((r.metrics["backup.offhost_present"], r.metrics["backup.offhost_verified"]), (0.0, 0.0))
+        self.assertNotIn("backup.offhost_age_s", r.metrics)
+        out = run_collector(Collector("backups", backups.collect, {"dir": self.tmp, "patterns": [], "status_file": "", "offhost_ack_file": os.path.join(self.tmp, "nope.json"), "interval_s": 300, "timeout_s": 5}, {}), {}, self.NOW)
+        self.assertEqual(out["collector.backups.ok"], 1.0)
+
+    def test_malformed_content_never_crashes_and_is_not_a_collector_failure(self):
+        cases = [("{not json", 1), ("", 1), ("[]", 1), ('"x"', 1), ("null", 1), ("12", 1), ("{" * 5000, 1), ('{"schema": 1, "acked_at": ', 1)]
+        for text, reason in cases:
+            r = self.collect(text)
+            self.assertEqual(r.errors, [], text[:20])
+            self.assertEqual((r.metrics["backup.offhost_present"], r.metrics["backup.offhost_verified"], r.metrics["backup.offhost_reason"]), (1.0, 0.0, float(reason)), text[:20])
+            self.assertNotIn("backup.offhost_age_s", r.metrics)
+        r = self.collect(raw=b"\xff\xfe\x00garbage\x80" * 100)
+        self.assertEqual((r.metrics["backup.offhost_verified"], r.errors), (0.0, []))
+        out = run_collector(Collector("backups", backups.collect, {"dir": self.tmp, "patterns": [], "status_file": "", "offhost_ack_file": os.path.join(self.tmp, "offhost-ack.json"), "interval_s": 300, "timeout_s": 5}, {}), {}, self.NOW)
+        self.assertEqual(out["collector.backups.ok"], 1.0)      # still ok=1: the alert rule reports invalid acks, the collector does not double-alert
+
+    def test_oversized_file_is_read_only_up_to_the_cap(self):
+        r = self.collect(json.dumps(self.ack()) + " " * 200_000)
+        self.assertEqual(r.metrics["backup.offhost_present"], 1.0)      # parsed from the first 64 KiB: trailing whitespace is harmless
+        self.assertEqual(r.metrics["backup.offhost_verified"], 1.0)
+
+    def test_unknown_schema_is_invalid(self):
+        for schema in (2, 0, "1", None, True, 1.5):
+            m = self.collect(self.ack(schema=schema) if schema is not None else {k: v for k, v in self.ack().items() if k != "schema"}).metrics
+            self.assertEqual((m["backup.offhost_verified"], m["backup.offhost_reason"]), (0.0, 2.0), schema)
+
+    def test_unverified_ack_is_invalid_but_keeps_its_age(self):
+        for v in (False, "true", 1, None):
+            m = self.collect(self.ack(verified=v) if v is not None else {k: x for k, x in self.ack().items() if k != "verified"}).metrics
+            self.assertEqual((m["backup.offhost_verified"], m["backup.offhost_reason"]), (0.0, 3.0), v)
+            self.assertAlmostEqual(m["backup.offhost_age_s"], 7200)
+
+    def test_bad_or_missing_fields_are_invalid(self):
+        bad = [dict(acked_at="1792592800"), dict(acked_at=True), dict(acked_at=0), dict(acked_at=-5), dict(acked_at=None),
+               dict(dump_sha256="short"), dict(dump_sha256="G" * 64), dict(dump_sha256=None), dict(dump_sha256="A" * 64), dict(files_sha256="xyz")]
+        for over in bad:
+            m = self.collect(self.ack(**over)).metrics
+            self.assertEqual((m["backup.offhost_verified"], m["backup.offhost_reason"]), (0.0, 4.0), over)
+
+    def test_future_dated_ack_cannot_hide_staleness(self):
+        ok = self.collect(self.ack(acked_at=self.NOW + 1800)).metrics            # 30 min of clock skew: tolerated, age clipped to 0
+        self.assertEqual((ok["backup.offhost_verified"], ok["backup.offhost_age_s"]), (1.0, 0.0))
+        bad = self.collect(self.ack(acked_at=self.NOW + 2 * 3600)).metrics        # 2 h ahead: invalid
+        self.assertEqual((bad["backup.offhost_verified"], bad["backup.offhost_reason"]), (0.0, 4.0))
+
+    @unittest.skipIf(os.geteuid() == 0, "root can read anything")
+    def test_unreadable_file_is_a_collector_error_naming_the_type_only(self):
+        path = os.path.join(self.tmp, "offhost-ack.json")
+        put(path, json.dumps(self.ack()))
+        os.chmod(path, 0)
+        try:
+            r = self.collect(None)
+        finally:
+            os.chmod(path, 0o600)
+        self.assertEqual(r.errors, ["off-host ack unreadable: PermissionError"])
+        self.assertEqual((r.metrics["backup.offhost_present"], r.metrics["backup.offhost_verified"], r.metrics["backup.offhost_reason"]), (1.0, 0.0, 5.0))
+
+    def test_other_backup_metrics_are_unaffected_and_ack_is_read_even_if_dir_missing(self):
+        sf = put(os.path.join(self.tmp, "status.json"), read_fixture("backup_status_ok.json"))
+        m = self.collect(self.ack(), cfg_extra={"status_file": sf}).metrics
+        self.assertEqual(m["backup.status_ok"], 1.0)
+        self.assertEqual(m["backup.offhost_verified"], 1.0)
+        path = put(os.path.join(self.tmp, "ack2.json"), json.dumps(self.ack()))
+        m2 = backups.collect({}, {"dir": "/nonexistent-aicc", "patterns": [], "status_file": "", "offhost_ack_file": path}, {}, self.NOW).metrics
+        self.assertEqual((m2["backup.dir_present"], m2["backup.offhost_verified"]), (0.0, 1.0))
 
 
 class UnitStatusTests(TmpCase):

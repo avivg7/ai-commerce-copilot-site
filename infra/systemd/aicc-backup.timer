@@ -1,12 +1,14 @@
 [Unit]
-Description=Daily AICC backup at 03:30 UTC
+Description=Hourly AICC backup (database dump, files archive, restore smoke)
 
 [Timer]
-OnCalendar=*-*-* 03:30:00 UTC
-# up to 2 minutes of jitter is harmless and keeps the unit from starting in the same second as other 03:30 jobs
+# Hourly at minute 17 UTC: the staging database is a few MB, a full run (dump + gzip test + restore smoke + archive) takes ~10 s at the lowest CPU/IO priority.
+# This bounds the on-host RPO to ~1 h; the off-host copy is as fresh as the owner's Mac last pulled (see README-backup.md). Retention: 7 days, never fewer than 3 sets.
+OnCalendar=*-*-* *:17:00 UTC
+# up to 2 minutes of jitter is harmless and keeps the unit from starting in the same second as other jobs
 RandomizedDelaySec=120
 AccuracySec=1s
-# a missed run (host was down at 03:30) executes shortly after boot: RPO stays <= 24 h
+# a missed run (host was down) executes shortly after boot
 Persistent=true
 Unit=aicc-backup.service
 

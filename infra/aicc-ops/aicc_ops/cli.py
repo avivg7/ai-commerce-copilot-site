@@ -1,4 +1,4 @@
-"""Command line: run | check-config | telegram-test | digest."""
+"""Command line: run | check-config | telegram-test | telegram-status | telegram-check | telegram-discover-chat | telegram-send-test | digest."""
 from __future__ import annotations
 
 import argparse
@@ -86,6 +86,27 @@ def cmd_telegram_test(args) -> int:
     return 0
 
 
+def cmd_telegram_status(args) -> int:
+    from . import telegram_ops
+    return telegram_ops.cmd_status(_cfg(args))
+
+
+def cmd_telegram_check(args) -> int:
+    from . import telegram_ops
+    return telegram_ops.cmd_check(_cfg(args))
+
+
+def cmd_telegram_discover_chat(args) -> int:
+    from . import telegram_ops
+    return telegram_ops.cmd_discover_chat(_cfg(args))
+
+
+def cmd_telegram_send_test(args) -> int:
+    from . import telegram_ops
+    cfg = _cfg(args)
+    return telegram_ops.cmd_send_test(cfg, cfg["general"]["host_label"], args.send)
+
+
 def cmd_digest(args) -> int:
     cfg = _cfg(args)
     if not cfg["telegram"].get("digest_enabled") and not args.force:
@@ -117,6 +138,15 @@ def main(argv=None) -> int:
     c.set_defaults(fn=cmd_check_config)
     t = sub.add_parser("telegram-test", help="print sample alert messages (dry run, no network)")
     t.set_defaults(fn=cmd_telegram_test)
+    ts = sub.add_parser("telegram-status", help="secrets presence/owner/mode, token LENGTH, chat id presence (prints no secret); exit 0 usable, 3 not")
+    ts.set_defaults(fn=cmd_telegram_status)
+    tc = sub.add_parser("telegram-check", help="Bot API getMe: prints the bot's @username and ok (sends no message)")
+    tc.set_defaults(fn=cmd_telegram_check)
+    td = sub.add_parser("telegram-discover-chat", help="Bot API getUpdates (limit 20): lists chat id/type; send the bot a message first")
+    td.set_defaults(fn=cmd_telegram_discover_chat)
+    tt = sub.add_parser("telegram-send-test", help="dry run by default; with --send sends exactly one [TEST] message")
+    tt.add_argument("--send", action="store_true", help="really send the one test message")
+    tt.set_defaults(fn=cmd_telegram_send_test)
     d = sub.add_parser("digest", help="send/print the daily digest (OFF unless enabled)")
     d.add_argument("--dry-run", action="store_true")
     d.add_argument("--force", action="store_true")
@@ -127,3 +157,6 @@ def main(argv=None) -> int:
     except ConfigError as e:
         print(f"aicc-ops: config error: {e}", file=sys.stderr)
         return 2
+    except PermissionError as e:
+        print(f"aicc-ops: permission denied ({type(e).__name__}); run as root or as the aicc-ops user (e.g. sudo)", file=sys.stderr)
+        return 3

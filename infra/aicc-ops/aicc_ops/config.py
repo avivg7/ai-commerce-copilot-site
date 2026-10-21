@@ -12,7 +12,7 @@ MIB = 1024 * 1024
 
 DEFAULTS: dict = {
     "general": {
-        "host_label": "aicc-staging",   # shown in alerts; not a secret, not PII
+        "host_label": "aicc-cp-stage (staging)",   # shown in alerts: host AND environment marker; not a secret, not PII
         "banner": "",                    # optional text shown on every page (used to label fixture/demo data)
         "interval_s": 30,
         "proc_root": "/proc",           # tests / fixture mode point this at a fixture dir
@@ -77,6 +77,7 @@ DEFAULTS: dict = {
             "dir": "/srv/aicc/backups",     # 0751 root: status.json is readable by name, the directory is not listable
             "patterns": ["aicc_cp-*.sql.gz", "aicc-files-*.tar.gz"],
             "status_file": "/srv/aicc/backups/status.json",
+            "offhost_ack_file": "/srv/aicc/backups/offhost-ack.json",   # written by the owner's Mac after a verified pull (schema 1); "" disables
         },
         "unitstatus": {
             "enabled": True, "interval_s": 60, "timeout_s": 5,

@@ -9,7 +9,7 @@ python3 "$HERE/lint.py" || rc=1
 if command -v shellcheck >/dev/null 2>&1; then
   echo "== shellcheck $(shellcheck --version | sed -n 's/^version: //p') (warnings and errors) =="
   # shellcheck disable=SC2046
-  shellcheck -x -S warning -e SC2034,SC2154,SC2120 $(find "$INFRA/provision" "$INFRA/systemd" "$INFRA/backup" "$INFRA/release" "$INFRA/php" "$INFRA/stack-tests" -name '*.sh' ! -name verify-droplet.sh ! -name render-cloud-init.sh | sort) && echo "shellcheck: clean" || rc=1
+  shellcheck -x -S warning -e SC2034,SC2154,SC2120 $(find "$INFRA/provision" "$INFRA/systemd" "$INFRA/backup" "$INFRA/release" "$INFRA/php" "$INFRA/sentinel" "$INFRA/stack-tests" -name '*.sh' ! -name verify-droplet.sh ! -name render-cloud-init.sh | sort) && echo "shellcheck: clean" || rc=1
 else
   echo "shellcheck: NOT RUN (not installed)"
 fi
