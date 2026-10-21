@@ -252,8 +252,8 @@ CPOUT1="$TMP/cp-out1"; CPOUT2="$TMP/cp-out2"
 if [ -f "$HOME/.cache/aicc-release/wordpress-7.1.3.tar.gz" ] && [ -f "$HOME/.cache/aicc-release/woocommerce-10.9.4.zip" ] && [ -d "/Users/avivgerman/Local Sites/woo-recommendation-qa/aicc-control-plane-worktrees/cp2a-14-readiness-independence/admin" ]; then
   # AICC_TEST_CP_ALLOW_DIRTY=1: build from the working tree while the Control Plane change set is still uncommitted (the build refuses a dirty tree otherwise; the "clean commit" check is then skipped, honestly)
   CPDIRTY=(); [ "${AICC_TEST_CP_ALLOW_DIRTY:-0}" = "1" ] && CPDIRTY=(--allow-dirty)
-  t_ok "build-cp-release.sh builds (pinned WP 7.1.3 + WC 10.9.4 + theme + plugin)" bash "$REL/build-cp-release.sh" "${CPDIRTY[@]}" --out-dir "$CPOUT1"
-  t_ok "second build succeeds" bash "$REL/build-cp-release.sh" "${CPDIRTY[@]}" --out-dir "$CPOUT2"
+  t_ok "build-cp-release.sh builds (pinned WP 7.1.3 + WC 10.9.4 + theme + plugin)" bash "$REL/build-cp-release.sh" ${CPDIRTY[@]+"${CPDIRTY[@]}"} --out-dir "$CPOUT1"
+  t_ok "second build succeeds" bash "$REL/build-cp-release.sh" ${CPDIRTY[@]+"${CPDIRTY[@]}"} --out-dir "$CPOUT2"
   TB1="$(ls "$CPOUT1"/cp-*.tar.gz 2>/dev/null | head -1)"; TB2="$(ls "$CPOUT2"/cp-*.tar.gz 2>/dev/null | head -1)"
   t_eq "REPRODUCIBLE: two builds give byte-identical tarballs" "$(sha256_of_file "$TB1")" "$(sha256_of_file "$TB2")"
   [ -f "$TB1" ] || { t_bad "a tarball exists to inspect" "the build produced none (a dirty Control Plane worktree is refused: commit first or set AICC_TEST_CP_ALLOW_DIRTY=1)"; TB1=/dev/null; }

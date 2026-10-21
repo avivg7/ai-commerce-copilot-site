@@ -63,7 +63,8 @@ const he = tpl.slice(tpl.indexOf("handle_errors {"));
 check("Caddyfile template: handle_errors serves /50x.html for status >= 500", /@servererror expression \{http\.error\.status_code\} >= 500/.test(he) && /rewrite \* \/50x\.html/.test(he));
 check("Caddyfile template: the status code is kept (file_server status {http.error.status_code}) and the page is no-store", /file_server \{\s*status \{http\.error\.status_code\}\s*\}/.test(he.slice(he.indexOf("@servererror"), he.indexOf("@notfound"))) && /Cache-Control "no-store"/.test(he.slice(he.indexOf("@servererror"), he.indexOf("@notfound"))));
 const rb = fs.readFileSync(RUNBOOK, "utf8");
-check("runbook: the release procedure copies docs/cutover/50x.html into every release directory", /cp docs\/cutover\/50x\.html \$R\/50x\.html/.test(rb));
+const brs = fs.readFileSync(path.join(path.dirname(RUNBOOK), "../../infra/release/build-site-release.sh"), "utf8");
+check("release procedure: build-site-release.sh copies docs/cutover/50x.html into every release tree and the runbook documents it", /cp "\$SITE_REPO\/docs\/cutover\/50x\.html" "\$TREE\/50x\.html"/.test(brs) && /50x\.html/.test(rb));
 
 /* ---- Chromium render ------------------------------------------------------------------------------------------------------------------------------- */
 const axeSource = fs.readFileSync(require.resolve("axe-core/axe.min.js"), "utf8");
