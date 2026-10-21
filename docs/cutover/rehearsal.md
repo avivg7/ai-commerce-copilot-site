@@ -1,4 +1,6 @@
-# Production-like edge rehearsal (phases 1, 2 and the round-4b fixes)
+# Production-like edge rehearsal (phases 1, 2, the round-4b fixes and round 5: Linux architecture + fail-closed tooling)
+
+> **Round 5 (2026-10-21) changed the defaults; section 15 is the current state and `docs/cutover/stage-linux.md` the reference.** Operators use a loopback-only listener (SSH tunnel) instead of `AICC_OPERATOR_CIDRS`; WordPress is reached with `php_fastcgi` over a unix socket (the php -S + reverse_proxy form stays as a fallback); HTTP/3 and `Alt-Svc` are off; every runner is fail-closed (`scripts/lib/target-guard.mjs`). Passages below that describe the CIDR allowlist, `Alt-Svc`, `X-Forwarded-For` trust, `~/aicc-rehearsal/bin/rcurl`, `staging:replay --edge-ip/--base` or Options A/B for the certificate are the HISTORY of rounds 1-4 and are marked superseded in section 15.
 
 Status: **executed 2026-10-20 on one Mac, on loopback, with a real Caddy and a real WordPress/WooCommerce Control Plane fixture.** It is NOT the cutover and NOT the public launch. No public DNS, no `/etc/hosts`, no server, no deploy, no push and no commit was involved, and Caddy never contacted a public CA.
 Every claim below is labelled **VERIFIED** (observed in a real run, evidence file named), **INFERRED** (reasoned, not observed) or **UNVERIFIED** (could not be tested here). Evidence: `~/Downloads/AICC-cutover-evidence/rehearsal/` (one `.md` and `.json` per section, `caddy-*.txt`, `live-facts-*.txt`, `log-samples-sanitized.jsonl`, `phase2/`, `staging-replay/`).
@@ -28,7 +30,7 @@ Nothing generated at run time is inside a repo. Everything below lives under `~/
 
 ```
 ~/aicc-rehearsal/
-  bin/caddy                     official Caddy v2.11.7 darwin/arm64 (sha512 verified earlier); bin/rcurl = curl wired to the rehearsal edge
+  bin/caddy                     official Caddy v2.11.7 darwin/arm64 (sha512 verified earlier); bin/rcurl = the OLD curl wrapper (superseded: use scripts/rehearsal/rcurl, which is fail-closed)
   generated/Caddyfile[.name]    the generated rehearsal configs
   releases/<utc>-<sha>/         a copy of out/ + 50x.html + the _next/static files of the previous 3 releases + .sha256 manifest and .static.txt; releases/current -> the active release (atomic rename)
   caddy/data/                   Caddy storage: local CA, leaf certificates (dir 0700, keys 0600); caddy/data/pki/authorities/local/root.crt = the rehearsal root CA
@@ -50,7 +52,7 @@ Nothing generated at run time is inside a repo. Everything below lives under `~/
 | CP upstream | `php -S 127.0.0.1:18982` (PHP 8.2.29, `PHP_CLI_SERVER_WORKERS=8`), docroot `~/aicc-rehearsal/cp/wp`, DB `aicc_rehearsal_cp` prefix `rhsl_` on its own MySQL 8.4 `127.0.0.1:18971`; wp-config has `AICC_LM_TRUSTED_PROXIES=['127.0.0.1']`, `AICC_LM_OPERATOR_CIDRS='127.0.0.1/32'` (the sign-in throttle's exemption: IPv4 loopback only, so `::1` is an ordinary client) |
 | Not used, not touched | QA 8981-8983, owner fixtures 9111-9114, any `api.copilt.org` block |
 
-Hostname model: `www.copilt.org` and `copilt.org` reach 127.0.0.1 **only** for rehearsal clients: `curl --resolve` / `--connect-to` (wrapper `~/aicc-rehearsal/bin/rcurl`) and Chrome `--host-resolver-rules`. Public DNS and `/etc/hosts` are unchanged (VERIFIED, `12-safety`).
+Hostname model: `www.copilt.org` and `copilt.org` reach 127.0.0.1 **only** for rehearsal clients: `curl --resolve` / `--connect-to` (round 5: `scripts/rehearsal/rcurl`, fail-closed; the names are mapped by the target guard, never by a hand-written `--resolve`) and Chrome `--host-resolver-rules`. Public DNS and `/etc/hosts` are unchanged (VERIFIED, `12-safety`).
 
 ## 3. Run it from scratch
 
@@ -64,7 +66,7 @@ node scripts/rehearsal/rehearsal.mjs start         # standing edge on :80/:443 (
 node scripts/rehearsal/rehearsal.mjs run-tests all # sections 01-20, ~15 min (the TLS section waits ~80 s for a real accelerated renewal)
 node scripts/rehearsal/rehearsal.mjs run-tests routing   # or one: routing behavior admin errors break logging demo restart tls rollback apexpost optiona preflight release ops mutation throttle staging safety
 npm run rehearsal:browser                          # the phase-2 real-browser suite, ~6 min
-npm run staging:replay -- --edge-ip 127.0.0.1 --cacert ~/aicc-rehearsal/caddy/data/pki/authorities/local/root.crt --source operator --ci-fs accept
+npm run staging:replay -- --rehearsal edge --source operator --ci-fs accept      # round 5: the loopback operator listener; `--rehearsal public|stage` for the twin and the stage topology
 node scripts/test-redirects.mjs --write && npm run test:redirects        # the offline model + 18 mutants
 ```
 
@@ -139,10 +141,10 @@ Dependency inventory (VERIFIED by search of the CP worktree, the product plugin,
 * `/wp-admin/admin-ajax.php` and `/wp-admin/admin-post.php`: the CP has **no front-end caller**; **both stay public anyway** (WordPress core, Action Scheduler's async runner, any future payment-gateway plugin), exact paths only.
 * `/wp-login.php`: **customers do reach it** (the Connect page and plan-intent code call `wp_logout_url()` = `/wp-login.php?action=logout&redirect_to=..&_wpnonce=..`; WordPress then shows its confirm page, status 403 by its own design without a valid nonce, and lands on `?loggedout=true`). Customer sign-in, registration and password reset are `/my-account/`. **Decision (revised after the security review F2): operators only, except GET/HEAD on the exact path with exactly `?action=logout[&redirect_to=..][&_wpnonce=..]` or `?loggedout=true[&wp_lang=..]`.** The first version matched any method and any case: **reproduced on the twin (302 + a `wordpress_logged_in` cookie for `POST /wp-login.php?loggedout=true` and `?ACTION=logout` with a login body from an address outside the list)**, i.e. the restriction protected only the dashboard UI. Now: 19 live bypass attempts (POST/PUT with `loggedout`, `ACTION=logout`, `LOGGEDOUT`, extra parameters, duplicated `action`, parameter order, `X-HTTP-Method-Override`, HTTP/2, path-info, case, `//`), all 403 from the edge, **no session cookie in any response, no request in the CP's own request log**, while the same login POST from an operator source still signs in (control) and 5 customer-logout shapes plus 11 other GET shapes (`lostpassword`, `register`, `rp`, `postpass`, `confirmaction`, ...) behave as designed. The explicit denial of `action=login|register|rp|resetpass|postpass|confirmaction` the reviewer suggested is implied: anything that is not one of the two shapes is denied for non-operators.
 * `/wp-cron.php`: `DISABLE_WP_CRON` is true; the system cron (`cp-fixture.sh cron`, exit 0) runs the entitlement outbox. **Operators only.**
-* `/wp-admin/*` otherwise: **operators only** (`AICC_OPERATOR_CIDRS`; rehearsal `127.0.0.1/32 ::1/128`; **the production value is an [OWNER] input**). **Correction:** Caddy does NOT refuse an empty or unset value (it denies everyone silently); `scripts/ops/edge-preflight.sh` is what fails, see section 8 row 17.
+* `/wp-admin/*` otherwise: **operators only** (round 4: `AICC_OPERATOR_CIDRS`; **superseded in round 5: the loopback operator listener, section 15; the CIDR list is an empty optional extra**). **Correction:** Caddy does NOT refuse an empty or unset value (it denies everyone silently); `scripts/ops/edge-preflight.sh` is what fails, see section 8 row 17.
 * `/wp-activate.php`, `/wp-signup.php`: edge 404 (multisite entry points; WordPress answered 302 to `wp-login.php?action=register` = 403). `/50x.html`: edge 404 as a page (the error handler still serves it internally).
 
-Public/operator table (VERIFIED, `04-admin-xmlrpc`, twin vs standing edge): `/xmlrpc.php` 403/403; `/wp-admin/` 403/302 then dashboard after login; `admin-ajax.php` (heartbeat) and `admin-post.php` 200/200; `/wp-login.php` and `?action=lostpassword` 403/200; `/wp-cron.php` 403/200; a valid admin session cookie from a non-operator source is still 403; spoofed `X-Forwarded-For`/`X-Real-IP`/`Forwarded` of an operator address opens nothing; `::1` is an operator on the standing edge and a miss on the twin. Customer flows from a non-operator source made 21 upstream requests; the only admin-surface URLs among them were the two `wp-login.php?action=logout` requests; none was refused by the edge.
+Public/operator table (VERIFIED, `04-admin-xmlrpc`, twin vs standing edge): `/xmlrpc.php` 403/403; `/wp-admin/` 403/302 then dashboard after login; `admin-ajax.php` (heartbeat) and `admin-post.php` 200/200; `/wp-login.php` and `?action=lostpassword` 403/200; `/wp-cron.php` 403/200; a valid admin session cookie from a non-operator source is still 403; spoofed `X-Forwarded-For`/`X-Real-IP`/`Forwarded` of an operator address opens nothing; (round 4 sentence; in round 5 the operator is the listener, `::1` is NOT an operator anywhere and the operator socket refuses `::1`). Customer flows from a non-operator source made 21 upstream requests; the only admin-surface URLs among them were the two `wp-login.php?action=logout` requests; none was refused by the edge.
 
 **Remaining exposure, plainly:** WooCommerce signs in ANY role at `/my-account/`, administrators included, and cookie authentication then reaches the REST API. The edge allowlist protects the dashboard UI and `wp-login.php`, not the password. Mitigations in place: the sign-in throttle (below) and the generic error; owner decisions: strong unique administrator passwords, a second factor, and optionally restricting `/wp-json/wp/v2/(plugins|themes|users)` and `admin-ajax.php?action=rest-nonce` for non-operators (not implemented).
 
@@ -222,7 +224,7 @@ VERIFIED (`11-rollback`): the old target modelled as a second local origin servi
 **Real-world rollback timeline (facts re-read on 2026-10-20 16:41 UTC, `live-facts-2026-10-20.txt`; "about five minutes" is withdrawn):**
 * Authoritative TTL is **1799-1800 s** (`dns1/dns2.registrar-servers.com`, apex A, `www` CNAME); **300 s only if it was lowered 24 hours or more earlier** (a day, not 30 minutes: the old TTL must expire in every cache first).
 * **SOA minimum 3601 s:** an empty answer (a name with no record at the moment a resolver asks) is cached up to an hour, in BOTH directions. The plan therefore never deletes: add an `edge.copilt.org` A record first (24 h ahead, TTL 300), then **edit the `www` CNAME target in place** (`avivg7.github.io.` -> `edge.copilt.org.`; rollback = the same edit back), and edit the apex A values in place (a mixed GitHub/edge answer set is harmless, both 301 to `https://www.copilt.org/`, provided the edge's apex certificate is ready). Whether the Namecheap UI makes an edit atomically is UNVERIFIED (optional dry run on a throwaway name, runbook 2.5).
-* Browsers keep 301s (the apex's and the new aliases'); the edge shortens `Alt-Svc` to `ma=3600` (VERIFIED header; Caddy's default is 30 days) and HSTS is `max-age=300`, the old site sends neither.
+* Browsers keep 301s (the apex's and the new aliases'); the edge sent a shortened `Alt-Svc` in round 4 (superseded: HTTP/3 is off and no `Alt-Svc` is sent) and HSTS is `max-age=300`, the old site sends neither.
 * **The GitHub Pages certificate** (Let's Encrypt): GitHub **renewed it on the morning of 2026-10-20** (`openssl s_client`: notBefore Oct 20 12:41:23 2026, **notAfter Jan 18 12:41:22 2027 GMT**, issuer YR1; it was 2026-11-19 until then). GitHub cannot renew while DNS points elsewhere, so a rollback after the notAfter in force on the day of the flip presents an expired certificate; flipping soon after a renewal keeps the longest window, and the next renewal is expected around 2026-12-19.
 * **Rollback makes the Control Plane unreachable:** `/my-account/`, `/cart/`, `/checkout/`, `/pricing/` and `/wp-json/*` are Pages 404s; plugins in the field fail soft (activate/validate/connect POSTs get a 404/405), customers cannot sign in, an order in flight could not complete (no gateway is configured today). **Owner decision:** offer rollback only before the first real customer, or give plugin traffic its own stable hostname (e.g. `licenses.copilt.org`, configured as the plugin's endpoint) that is not part of this flip. Runbook section 5 has the full text.
 * Estimated revert: the registrar edit takes minutes of human time; most clients are back within one TTL plus caches, with a long tail; plan for 30 minutes to 1 hour of mixed behaviour.
@@ -233,10 +235,10 @@ VERIFIED (`11-rollback`): the old target modelled as a second local origin servi
 
 ## 13. Owner decisions that remain
 
-1. `AICC_OPERATOR_CIDRS` for production (who may open `/wp-admin/`, staff `wp-login.php` and `wp-cron.php`); the preflight refuses an empty value, Caddy itself does not. Also the same list as `AICC_LM_OPERATOR_CIDRS` in the Control Plane's wp-config so the sign-in throttle never locks them out.
-2. Edge placement: its own host, or its own reserved IP on a shared host, or adding the www/apex blocks to the API's Caddy (rejected earlier as a boundary change; this plan does not touch the API host).
-3. Certificate method (section 10), including whether a DNS-provider API token will ever be created (never requested here).
-4. Rollback policy: only before the first customer, or a separate stable hostname for plugin traffic; the rollback window ends at the Pages certificate's notAfter (2027-01-18 as of today).
+1. ~~`AICC_OPERATOR_CIDRS` for production~~ **DECIDED 2026-10-21: SSH tunnel to the loopback operator listener** (no list). Keep `AICC_LM_OPERATOR_CIDRS` in the Control Plane's wp-config at the address operators appear from through the tunnel (loopback on the host), so the sign-in throttle never locks them out.
+2. Edge placement for PRODUCTION: its own host, or its own reserved IP on a shared host, or adding the www/apex blocks to the API's Caddy (rejected earlier as a boundary change; this plan does not touch the API host). (The staging host `stage.copilt.org` is its own Linux host: decided 2026-10-21.)
+3. ~~Certificate method~~ **DECIDED 2026-10-21: Option B, Caddy's automatic HTTPS (Let's Encrypt, HTTP-01/TLS-ALPN-01); no DNS API token will be created.** Section 10's Option A text is history.
+4. ~~Rollback policy~~ **DECIDED 2026-10-21: after the commercial launch, rollback = the previous known-good release on the new infrastructure; GitHub Pages is only a disaster fallback BEFORE the first customer** (until the Pages certificate's notAfter, 2027-01-18 as of the earlier check).
 5. Whether `/demo/*` stays revalidatable (chosen here) or moves to a versioned filename with a long cache.
 6. Whether to localise the 5xx sentence (English only today) and whether JSON clients of `/wp-json/*` should get JSON instead of the HTML page when WordPress is down.
 7. Rate limiting beyond sign-in (stock Caddy has none): fail2ban on the redacted JSON log, a CDN/WAF (then the client-address and operator-allowlist design must be redone), or a Caddy build with a rate-limit plugin.
@@ -252,3 +254,51 @@ What it proved that curl could not (VERIFIED): every cookie is host-only on `www
 Defects found by the browser and fixed: (1) WooCommerce's cart cookies had no `Secure`/`SameSite` -> CP `harden_cart_cookie_options`; (2) the QA-only payment marker never appeared in the BLOCK checkout -> display-only `option_*` filter; (3) the edge forwarded browser-supplied `Client-IP`, `CF-Connecting-IP`, ... to WordPress -> the template strips them. Round 4b: (4) my own first version of the sign-in throttle switched off a WooCommerce filter that also governs lost-password by e-mail (22 reset checks failed in this suite) -> removed, pinned by a unit check.
 
 Facts to carry forward: the rehearsal host IS the production host name, so the QA payment marker is (correctly) not shown on it and the launch gate is the only guard; WordPress auth cookies carry no explicit `SameSite` (WordPress core does not set one; Chrome applies Lax) - deferred; the origin web server's own access log must not record `key=` of the reset URL (the edge redacts it).
+
+## 15. Round 5 (2026-10-21): the Linux architecture on this Mac, and fail-closed tooling
+
+Why: the staging host will be Linux (Caddy automatic HTTPS, `php_fastcgi` over a unix socket to PHP-FPM, loopback-only operator listener reached through an SSH tunnel, HTTP/3 off, private metrics), and earlier malformed local requests once reached the real public `www.copilt.org`. Reference: `docs/cutover/stage-linux.md`. Labels as above. **Superseded by this section:** the CIDR allowlist (sections 6, 13.1), `Alt-Svc` (sections 5, 11), `X-Forwarded-*` trust (`AICC_LM_TRUSTED_PROXIES`, sections 6, 12), `~/aicc-rehearsal/bin/rcurl`, `staging:replay --edge-ip/--base/--connect-to`, Options A/B (section 10) and the rollback wording (section 11).
+
+**What was built (SITE repo).** `scripts/lib/edge-render.mjs` (one template, three renders: `stage`, `production`, macOS `rehearsal`), `scripts/ops/render-edge.mjs`, `scripts/rehearsal/fpm.sh` (a separate php-fpm 8.2.29 on `~/aicc-rehearsal/scratch-fpm/aicc-cp.sock` in front of the fixture docroot; the fixture's database and files are untouched, only WordPress's own request-time writes happen, as with `php -S`), the `stage` rehearsal instance (stage topology, `stage-rehearsal.copilt.org`, 18200/18463, operator 18464), `scripts/lib/target-guard.mjs` + `scripts/test-target-guard.mjs` (`npm run test:target-guard`), `scripts/rehearsal/rcurl` (fail-closed replacement for the old wrapper: `ln -sf "$PWD/scripts/rehearsal/rcurl" ~/aicc-rehearsal/bin/rcurl`), a rewritten `scripts/ops/edge-preflight.sh` (`--mode stage|production|rehearsal`), `scripts/ops/edge-listener-audit.sh`, and the guard wired into `lib.mjs` (every `req`, `rawRequest`, `startProbe`), `staging-replay.mjs`, `browser-flows.mjs`, `run-tests.mjs`.
+
+**Template changes.** `php_fastcgi` form next to the reverse_proxy form (selector `wp_proxy`), the loopback operator site block (`bind 127.0.0.1`, non-loopback guard, same host and certificate), the generated `routing operator` block, `php_direct` and `wp_hidden` rules, `servers { protocols h1 h2, strict_sni_host on }`, global `metrics`, `acme_ca` pinned to Let's Encrypt, `-Alt-Svc`, log field `listener`, identity route and `X-Robots-Tag` snippets (empty in the committed text, filled only by the stage render), stage topology (no apex block).
+
+**Real-binary findings of this round.** (1) Without strip lines, `Forwarded`, `X-Real-IP`, `Client-IP` and `Via` from the client reached PHP unchanged through php_fastcgi (measured with a real php-fpm); with them none does. (2) `X-Forwarded-For/-Proto/-Host` are added by Caddy itself and are removed too (`header_up -X-Forwarded-For` ...): PHP reads `REMOTE_ADDR` and `HTTPS`. (3) An https request whose Host matches no site (SNI `www.copilt.org`, `Host: localhost`) got an EMPTY 200 with `Server: Caddy` (pre-existing since round 1, previously pinned by the Host tests as "expected"); `strict_sni_host on` makes it 421. (4) `auto_https` takes one argument: the rehearsal's `no-certs` variant must not carry the template's `disable_redirects`. (5) `-Alt-Svc` in the header block hides Caddy's own `Alt-Svc`, so removing `protocols h1 h2` is NOT visible in headers: the mutation harness checks the UDP socket instead. (6) WordPress itself sends `X-Robots-Tag` on some pages; the edge only adds it on the stage topology.
+
+**Round 5 results (VERIFIED on this Mac, real Caddy 2.11.7, 2026-10-21).** The full real-Caddy suite was run twice, once per upstream mode, under a macOS `sandbox-exec` profile that only allows loopback traffic (`scripts/rehearsal/loopback-only.sb`; the restart section needs launchd and ran unsandboxed, behind the guard). Counts are PASS / FAIL per section; evidence copies are in `~/Downloads/AICC-cutover-evidence/rehearsal/round5-proxy` and `round5-fastcgi`.
+
+| # | Section | proxy mode (php -S, reverse_proxy) | fastcgi mode (php-fpm, unix socket) |
+|---|---|---|---|
+| 01 | routing-matrix | 268 / 0 | 268 / 0 |
+| 02 | redirect-sweep | 264 / 0 | 264 / 0 |
+| 03 | behavior | 236 / 0 | 236 / 0 |
+| 04 | admin-xmlrpc | 116 / 0 | 116 / 0 |
+| 05 | 5xx-experience | 41 / 0 | 41 / 0 |
+| 06 | try-to-break | 46 / 0 | 46 / 0 |
+| 07 | logging | 16 / 0 | 16 / 0 |
+| 08 | demo | 15 / 0 | 15 / 0 |
+| 09 | restart-failure | 12 / 0 | 12 / 0 |
+| 10 | tls | 17 / 0 | 17 / 0 |
+| 11 | rollback | 12 / 0 | 12 / 0 |
+| 12 | safety | 17 / 0 | 17 / 0 |
+| 13 | apex-wp-remote-post | 2 / 0 | 2 / 0 |
+| 14 | option-a-manual-certificate | 19 / 0 | 19 / 0 |
+| 15 | preflight | 104 / 0 | 104 / 0 |
+| 16 | release-swap | 9 / 0 | 9 / 0 |
+| 17 | ops-scripts | 19 / 0 | 19 / 0 |
+| 18 | mutation-real-caddy | 27 / 0 | 31 / 0 |
+| 19 | login-throttle-browser | 9 / 0 | 9 / 0 |
+| 20 | staging-replay-tool | 14 / 0 | 14 / 0 |
+| 21 | stage-fastcgi | 42 / 0 | 42 / 0 |
+| 22 | fixture-egress | 7 / 0 | 7 / 0 |
+| | **total** | **1312 / 0** | **1316 / 0** |
+
+Browser flows (`npm run rehearsal:browser`, sandboxed, `caffeinate`d): 564 checks, 0 failed in each mode (cookies 93, csrf 19, reset 63, locale 114, demo 182, checkout 31, SEO 10, performance 9, client ip 10, public surface 33). The guard counted 92 curl/socket requests and about 26 000 browser requests per run, 0 blocked, 0 violations.
+
+Other gates: `npm run test:redirects` 270 cases, 1805 checks, 264-request sweep, 45/45 template mutants killed; `npm run test:target-guard` 244 checks, 0 failed; lint 0 warnings, `tsc` clean, `copy:check`, `fbt:audit`, `seo:check`, `i18n:strict` PASS.
+
+Differences between the two modes that are by design, not failures: under `php_fastcgi` a 12 MB chunked POST is refused with 411 by Caddy (reverse_proxy: 413 or a closed connection); with PHP-FPM stopped, a static theme file under the docroot is still served by Caddy (200), PHP routes give the branded 502; the HTTP-garbage upstream cases exist only for `reverse_proxy` (the `php_fastcgi` equivalents are section 21: php-fpm down gives a branded 502 and recovers in about 0.5 s). The mutation section has 27 mutants in proxy mode and 31 in fastcgi mode.
+
+Harness notes: the Mac idle-sleeps during long runs (Chrome then reports `ERR_NETWORK_CHANGED` / `ERR_NETWORK_IO_SUSPENDED`): run the suites under `caffeinate -ims`. One back-button flow timed out once in 5 full runs and passed 3 of 3 re-runs of section 2 (flake, UNVERIFIED cause).
+
+**No request reached a real public name (VERIFIED for this round's window, 02:32-03:35 IDT).** The egress audit (JSONL, one record per request) for the window shows 3361 sends, all to 127.0.0.1, ::1 or this Mac's own LAN address (the deliberate "operator listener refuses a LAN connect" probe), 0 violations, 0 public-DNS sends, 0 production-direct sends; the kernel sandbox log shows 0 `deny network-outbound` events in the same window. Before this round the fixture's own WordPress could contact real hosts (Action Scheduler loopback to `https://www.copilt.org/wp-admin/admin-ajax.php`, wordpress.org and woocommerce.com update checks): whether it did in earlier rounds is UNVERIFIED. It cannot any more (`egress-guard.php` plus the sandbox).

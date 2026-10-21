@@ -12,6 +12,13 @@
 // the CP fixture on 127.0.0.1:18982 (`bash scripts/rehearsal/cp-fixture.sh status`). Names www.copilt.org and copilt.org map to 127.0.0.1 ONLY inside the
 // launched Chrome (--host-resolver-rules); the rehearsal CA is trusted through --ignore-certificate-errors-spki-list (pins of root, intermediate, leaf).
 //
+// FAIL CLOSED (scripts/lib/target-guard.mjs; `npm run test:target-guard`): Chrome is launched with a host-resolver ALLOWLIST (only the staging host / alias names map to the expected IP, every other name is
+// NOTFOUND), a black-hole proxy for literal addresses, and a route handler that ABORTS every request outside the allowed host:port set and records it as a violation: the run is ended with exit code 3. The
+// identity route of the edge (/.well-known/aicc-stage-identity) must prove the target before Chrome starts. Every curl-style request of this runner goes through the same guard (lib.req).
+// Targets:   default = the Mac rehearsal edge (www.copilt.org / copilt.org -> 127.0.0.1:443)     --rehearsal edge|public|stage = another rehearsal instance
+//            --stage-host H --stage-ip IP --port N --stage-id ID [--alias-host ...] [--cacert F]   = a REAL staging host (Linux). Only the read-only sections run there (4 locale routing and link crawl,
+//            5 Watch demo, 7 structured data / SEO, 8 performance, 10 public surface): sections 1-3, 6 and 9 need the local CP fixture (wp-cli, captured mail, echo token) and are refused with exit 3.
+//            Canonical host = the staging host; the apex/www rules are checked by `npm run staging:replay` (with --alias-host for a production-topology check), not by this runner.
 // SAFETY: no payment is ever submitted (checkout is only loaded; the block checkout's own load-time totals call is the only POST); no public DNS or
 // server is touched; only fake @example.test accounts are created in the disposable CP fixture, with random passwords that exist only in this process's
 // memory (never written to a file, a result, a screenshot or a log) and are deleted at the end. Cookie VALUES, reset keys, nonces and passwords never appear in
@@ -21,17 +28,44 @@ import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import { chromium } from "playwright-core";
-import { P, REPO, INSTANCES, sleep, sh, req, cpEchoToken, writeJson, portListening } from "./lib.mjs";
+import { P, REPO, INSTANCES, UPSTREAM_MODE, sleep, sh, req, cpEchoToken, writeJson, portListening, rehearsalConfig, verifyInstance, allGuards, loopbackCurl } from "./lib.mjs";
+const FCGI = UPSTREAM_MODE === "fastcgi"; // php_fastcgi (Linux architecture): PHP gets REMOTE_ADDR + HTTPS from Caddy and NO forwarding header at all
+import { TargetGuard, buildConfig, parseGuardArgs, guarded, installDnsGuard, EXIT_REFUSED } from "../lib/target-guard.mjs";
 
-const EDGE = INSTANCES.edge;
-const BASE = "https://www.copilt.org";
-const APEX = "https://copilt.org";
+const args = process.argv.slice(2);
+const argOpt = (n, d) => { const i = args.indexOf(n); return i >= 0 ? args[i + 1] : d; };
+const { raw: GRAW } = parseGuardArgs(args);
+const STAGE_MODE = !!GRAW.stageHost; // a staging host was named explicitly (real or the Mac's stage instance through flags)
+const REHEARSAL_NAME = argOpt("--rehearsal", "edge");
+const EDGE = INSTANCES[REHEARSAL_NAME] || INSTANCES.edge;
+const FIXTURE_SECTIONS = new Set(["1", "2", "3", "6", "9"]);
+/** The run's guard: rehearsal instance (production-name aliases mapped to 127.0.0.1) or an explicit staging target. */
+const GUARD = await guarded(async () => {
+  const cfg = STAGE_MODE ? buildConfig({ ...Object.fromEntries(Object.entries(GRAW).filter(([, v]) => v !== undefined && !(Array.isArray(v) && !v.length))), cacert: argOpt("--cacert", undefined), insecure: args.includes("--insecure") }) : buildConfig(rehearsalConfig(EDGE));
+  const g = new TargetGuard(cfg);
+  installDnsGuard(g);
+  return g;
+});
+const CANON_HOST = STAGE_MODE ? GUARD.cfg.stageHost : GUARD.cfg.aliasHosts.includes("www.copilt.org") ? "www.copilt.org" : GUARD.cfg.stageHost;
+const PORT_SUFFIX = GUARD.cfg.port === 443 ? "" : `:${GUARD.cfg.port}`;
+const BASE = `https://${CANON_HOST}${PORT_SUFFIX}`;
+const APEX = STAGE_MODE || !GUARD.cfg.aliasHosts.includes("copilt.org") ? null : `https://copilt.org${PORT_SUFFIX}`;
+/** A request through the run's guard: a rehearsal instance goes through lib.req (same guard); an explicit staging target through its own guard. */
+const reqX = async (_inst, url, o = {}) => {
+  if (!STAGE_MODE) return req(EDGE, url, o);
+  await GUARD.ensureIdentity();
+  const u = url.replace(/^(https?:\/\/[^/?#:]+)(:\d+)?/, `$1:${GUARD.cfg.port}`);
+  const r = o.follow ? await GUARD.followAsync({ url: u, method: o.method || "GET", headers: o.headers, body: o.body, head: !!o.head, timeout: o.timeout || 30, compressed: o.compressed }) : await GUARD.curlAsync({ url: u, method: o.method || "GET", headers: o.headers, body: o.body, head: !!o.head, timeout: o.timeout || 30, compressed: o.compressed, bodyFile: o.bodyFile, extra: o.extra });
+  const h = {}; for (const l of (r.headerText.split(/\r?\n\r?\n/).pop() || "").split(/\r?\n/).slice(1)) { const i = l.indexOf(":"); if (i > 0) (h[l.slice(0, i).toLowerCase()] ||= []).push(l.slice(i + 1).trim()); }
+  return { status: r.status, headers: h, body: r.body, error: r.error, reqId: (h["x-request-id"] || [])[0] };
+};
+let ABORTED = false;
+const onViolation = (rec) => { ABORTED = true; console.error(`GUARD VIOLATION: ${rec.reason}`); closeBrowser().catch(() => {}); };
 const OUT = path.join(P.evidence, "phase2");
 const SHOTS = path.join(OUT, "screenshots");
 const CHROME = process.env.AICC_CHROME || "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 const LOCALES = ["en", "he", "es", "ru"];
 const pre = (l) => (l === "en" ? "" : `/${l}`);
-const args = process.argv.slice(2);
 const flag = (n) => args.includes(n);
 const only = (() => { const i = args.indexOf("--only"); return i >= 0 ? args[i + 1].split(",").map((x) => x.trim()) : null; })();
 const KEEP_USERS = flag("--keep-users");
@@ -170,7 +204,7 @@ let SPKI = "";
 function spkiPins() {
   if (SPKI) return SPKI;
   const spkiOf = (cmd) => sh("bash", ["-c", `${cmd} | openssl x509 -pubkey -noout | openssl pkey -pubin -outform der | openssl dgst -sha256 -binary | base64`]).stdout.trim();
-  SPKI = [`cat ${P.rootCrt}`, `cat ${path.dirname(P.rootCrt)}/intermediate.crt`, `echo | openssl s_client -connect 127.0.0.1:443 -servername www.copilt.org 2>/dev/null`].map(spkiOf).filter(Boolean).join(",");
+  SPKI = [`cat ${P.rootCrt}`, `cat ${path.dirname(P.rootCrt)}/intermediate.crt`, `echo | openssl s_client -connect 127.0.0.1:${GUARD.cfg.port} -servername ${CANON_HOST} 2>/dev/null`].map(spkiOf).filter(Boolean).join(",");
   return SPKI;
 }
 let BROWSER = null;
@@ -178,7 +212,7 @@ async function browser() {
   if (BROWSER) return BROWSER;
   BROWSER = await chromium.launch({
     executablePath: CHROME,
-    args: ["--host-resolver-rules=MAP www.copilt.org 127.0.0.1, MAP copilt.org 127.0.0.1", `--ignore-certificate-errors-spki-list=${spkiPins()}`, "--disable-features=CertificateTransparencyComponentUpdater"],
+    args: [...GUARD.browserArgs(), ...(STAGE_MODE ? [] : [`--ignore-certificate-errors-spki-list=${spkiPins()}`])],
   });
   return BROWSER;
 }
@@ -191,6 +225,7 @@ const PROFILES = {
 async function newCtx(profile = "desktop", extra = {}) {
   const b = await browser();
   const ctx = await b.newContext({ ...PROFILES[profile], locale: extra.locale || "en-US", ...extra.ctx });
+  await GUARD.guardBrowser(ctx, { onViolation }); // every request of every page of this context is checked before it leaves; a violation aborts the run
   ctx.setDefaultTimeout(20000);
   ctx.setDefaultNavigationTimeout(30000);
   return ctx;
@@ -227,7 +262,7 @@ const isLoggedInPage = async (page) => (await page.locator(".woocommerce-MyAccou
 
 /* ================================================================== 1. COOKIES AND SESSION */
 function assertCookieHygiene(R, label, jarRows, log) {
-  const wrong = jarRows.filter((c) => c.domain !== "www.copilt.org");
+  const wrong = jarRows.filter((c) => c.domain !== CANON_HOST);
   R.check(`${label}: every cookie in the jar is host-only on www.copilt.org (no leading dot, no apex, no api host)`, jarRows.length > 0 && wrong.length === 0, wrong.length ? JSON.stringify(wrong.map((c) => `${c.name}@${c.domain}`)) : `${jarRows.length} cookies`);
   const withDomainAttr = log.setCookies.filter((c) => c.domain !== null);
   R.check(`${label}: no Set-Cookie header in the whole flow carries a Domain= attribute`, withDomainAttr.length === 0, JSON.stringify(withDomainAttr.map((c) => c.name)));
@@ -554,8 +589,9 @@ async function s2() {
   await ctx.close().catch(() => {});
 
   // --- e) back / forward after logout, with bfcache REALLY enabled (Playwright disables it by default)
-  const b2 = await chromium.launch({ executablePath: CHROME, ignoreDefaultArgs: ["--disable-back-forward-cache"], args: ["--host-resolver-rules=MAP www.copilt.org 127.0.0.1, MAP copilt.org 127.0.0.1", `--ignore-certificate-errors-spki-list=${spkiPins()}`, "--enable-features=BackForwardCache"] });
+  const b2 = await chromium.launch({ executablePath: CHROME, ignoreDefaultArgs: ["--disable-back-forward-cache"], args: [...GUARD.browserArgs(), ...(STAGE_MODE ? [] : [`--ignore-certificate-errors-spki-list=${spkiPins()}`]), "--enable-features=BackForwardCache"] });
   const ctx2 = await b2.newContext({ viewport: { width: 1280, height: 800 } });
+  await GUARD.guardBrowser(ctx2, { onViolation });
   const pg = await ctx2.newPage();
   await pg.addInitScript(() => { if (!window.__marker) window.__marker = Math.random().toString(36).slice(2); window.addEventListener("pageshow", (e) => { (window.__shows = window.__shows || []).push(e.persisted); }); });
   const nav = [];
@@ -703,7 +739,7 @@ function badHref(href) {
   if (u.protocol === "javascript:") return "javascript: URL";
   if (!/^https?:$/.test(u.protocol)) return null;
   if (u.protocol === "http:") return "http:// link";
-  if (u.host !== "www.copilt.org") return `non-www origin ${u.host}`;
+  if (u.hostname !== CANON_HOST) return `non-canonical origin ${u.host}`;
   if (/^\/ai[_-]?copilot/i.test(u.pathname)) return "old GitHub Pages path";
   return null;
 }
@@ -715,7 +751,7 @@ async function chase(url) {
   const chain = [];
   let cur = url, last = null;
   for (let i = 0; i < 5; i++) {
-    const r = await req(EDGE, cur, { timeout: 40 });
+    const r = await reqX(EDGE, cur, { timeout: 40 });
     last = r;
     chain.push({ url: redact(cur).replace(BASE, ""), status: r.status });
     if (r.status >= 300 && r.status < 400 && r.headers.location) cur = new URL(r.headers.location, cur).toString(); else break;
@@ -736,7 +772,7 @@ async function s4() {
   for (const loc of LOCALES) {
     const p = pre(loc), L = `[${loc}]`;
     const ctx = await newCtx("desktop", { locale: { en: "en-US", he: "he-IL", es: "es-ES", ru: "ru-RU" }[loc] });
-    ctx.on("request", (rq) => { try { const h = new URL(rq.url()).host; if (h !== "www.copilt.org" && !/^(data|blob|about):/.test(rq.url())) extHosts.set(`${h}`, (extHosts.get(h) || 0) + 1); } catch { /* noop */ } });
+    ctx.on("request", (rq) => { try { const h = new URL(rq.url()).hostname; if (h !== CANON_HOST && !/^(data|blob|about):/.test(rq.url())) extHosts.set(`${h}`, (extHosts.get(h) || 0) + 1); } catch { /* noop */ } });
     const page = await ctx.newPage();
     const pageErrors = [];
     page.on("pageerror", (e) => pageErrors.push(String(e).slice(0, 100)));
@@ -766,10 +802,10 @@ async function s4() {
       let n = 0;
       for (const [url, meta] of targets) {
         const u = new URL(url);
-        if (u.host !== "www.copilt.org" || u.protocol !== "https:") continue; // reported by the origin audit
+        if (u.hostname !== CANON_HOST || u.protocol !== "https:") continue; // reported by the origin audit
         n++;
         const c = await chase(url);
-        const ok = c.status === 200 && c.chain.length <= 3 && c.finalHost === "www.copilt.org";
+        const ok = c.status === 200 && c.chain.length <= 3 && c.finalHost === CANON_HOST;
         if (!ok) crawl.dead.push({ loc, url: redact(url).replace(BASE, ""), chain: c.chain, from: meta.from[0] });
         if (c.isHtml && c.status === 200) {
           // landing language must be the page's language unless the link is a language-menu entry
@@ -782,7 +818,7 @@ async function s4() {
       // prefix rule: on a prefixed page every in-site header/footer link (except language-menu items) must stay in the language
       if (loc !== "en") for (const [url, meta] of targets) {
         const u = new URL(url);
-        if (u.host !== "www.copilt.org") continue;
+        if (u.hostname !== CANON_HOST) continue;
         const stays = new RegExp(`^/${loc}(/|$)`).test(u.pathname);
         const isLangItem = ["he", "es", "ru"].some((x) => x !== loc && new RegExp(`^/${x}(/|$)`).test(u.pathname));
         const unprefixedLangItem = !/^\/(he|es|ru)(\/|$)/.test(u.pathname) && /\b(English)\b/.test(meta.text);
@@ -854,7 +890,7 @@ async function s4() {
       }
       // cookie vs prefix: the prefix wins; the cookie only decides the unprefixed CP URL
       await ctx.clearCookies();
-      await ctx.addCookies([{ name: "aicc_lang", value: loc === "en" ? "he" : "en", domain: "www.copilt.org", path: "/", secure: true, sameSite: "Lax" }]);
+      await ctx.addCookies([{ name: "aicc_lang", value: loc === "en" ? "he" : "en", domain: CANON_HOST, path: "/", secure: true, sameSite: "Lax" }]);
       await goto(page, `${BASE}${p}/pricing/`);
       const fp = await facts(page);
       if (loc === "en") R.info(`${L} with aicc_lang=he and the UNPREFIXED English CP URL /pricing/ the CP renders Hebrew (documented order URL prefix -> cookie -> default; English has no prefix, so the cookie decides; crawlers have no cookie)`, `page lang=${fp.lang} dir=${fp.dir}`);
@@ -1070,10 +1106,10 @@ async function s5() {
   R.info("audio/captions language in he/es/ru", "The demo is English-only (English audio and English captions) on every locale, as designed: the dialog chrome (title, close) is localized, the captions track is lang=en. Asserted above per locale.");
 
   // what a visitor can actually reach from the CP
-  const probe = async (u) => { const r = await req(EDGE, u, { timeout: 40 }); return { status: r.status, trigger: (r.body.match(/data-aicc-demo-trigger/g) || []).length, demoLink: (r.body.match(/href="[^"]*#demo"/g) || []).length }; };
+  const probe = async (u) => { const r = await reqX(EDGE, u, { timeout: 40 }); return { status: r.status, trigger: (r.body.match(/data-aicc-demo-trigger/g) || []).length, demoLink: (r.body.match(/href="[^"]*#demo"/g) || []).length }; };
   const cpPages = {};
   for (const u of ["/pricing/", "/my-account/", "/cart/", "/he/pricing/"]) cpPages[u] = await probe(`${BASE}${u}`);
-  const direct = sh("bash", ["-c", `curl -s -H 'Host: www.copilt.org' -H 'X-Forwarded-Proto: https' http://127.0.0.1:18982/ | grep -o 'data-aicc-demo-trigger' | wc -l`]).stdout.trim();
+  const direct = String((loopbackCurl("http://127.0.0.1:18982/", { headers: { Host: "www.copilt.org", "X-Forwarded-Proto": "https" } }).body.match(/data-aicc-demo-trigger/g) || []).length);
   R.data.cpReach = { cpPagesThroughEdge: cpPages, cpFrontPageDirectToUpstream_triggers: Number(direct) };
   R.check("CP pages served by the edge (/pricing/, /my-account/, /cart/, /he/pricing/) contain NO Watch-demo dialog trigger; they link to the static home's #demo instead", Object.values(cpPages).every((c) => c.status === 200 && c.trigger === 0), JSON.stringify(cpPages));
   R.info("what a visitor can actually reach", `The CP front page (which has its own Watch-demo button and /demo/* probe) is NOT served by the edge: / belongs to the static site. Through the edge the only working dialog is on the static pages (/, /product/ and their he/es/ru versions); CP pages reach it through a link to <prefix>/#demo, verified by click in section 4. Direct-to-upstream (bypassing the edge, comparison only) the CP front page has ${direct} trigger(s); its behaviour with and without /demo/* was proven in phase 1 (08-demo, variants cp-home and block-demo).`);
@@ -1087,7 +1123,7 @@ const CP_WT = "/Users/avivgerman/Local Sites/woo-recommendation-qa/aicc-control-
 const ordersCount = () => wpOut("eval", 'echo count(wc_get_orders(["limit"=>-1,"status"=>["pending","processing","on-hold","completed","failed","cancelled","refunded"]]));');
 const draftOrders = () => wpOut("eval", 'echo count(wc_get_orders(["limit"=>-1,"status"=>["checkout-draft"]]));');
 const MAP_PRELOAD = path.join(P.run, "map-www.mjs"); // maps www.copilt.org to 127.0.0.1 for a Node child process (the node equivalent of the browser's host-resolver rule)
-const writeMapPreload = () => fs.writeFileSync(MAP_PRELOAD, `import dns from "node:dns";\nconst real = dns.lookup;\ndns.lookup = function (h, o, cb) { if (typeof o === "function") { cb = o; o = {}; } if (/^(www\\.)?copilt\\.org$/.test(h)) return o && o.all ? cb(null, [{ address: "127.0.0.1", family: 4 }]) : cb(null, "127.0.0.1", 4); return real.call(dns, h, o, cb); };\n`);
+const writeMapPreload = () => fs.writeFileSync(MAP_PRELOAD, `import dns from "node:dns";\nconst real = dns.lookup;\n// FAIL CLOSED: only the two rehearsal names map to 127.0.0.1 (the edge); every other name, production API included, is refused here instead of going to public DNS\ndns.lookup = function (h, o, cb) { if (typeof o === "function") { cb = o; o = {}; } if (/^(www\\.)?copilt\\.org$/.test(h)) return o && o.all ? cb(null, [{ address: "127.0.0.1", family: 4 }]) : cb(null, "127.0.0.1", 4); if (h === "localhost" || h === "127.0.0.1") return real.call(dns, h, o, cb); const e = new Error("rehearsal preload: DNS lookup of " + h + " refused"); e.code = "ENOTFOUND"; return process.nextTick(cb, e); };\n`);
 
 async function checkoutFlow(R, loc, user, meterSink, mode = "prod-host") {
   const p = pre(loc), L = `[${loc}]`;
@@ -1244,8 +1280,8 @@ async function s7() {
   R.check("noindex is set on cart / checkout / my-account (all locales, meta robots or X-Robots-Tag) and on lost-password, and is NOT set on any indexable page", rows.every((r) => r.noindex === r.noindexExpected), JSON.stringify(rows.filter((r) => r.noindex !== r.noindexExpected).map((r) => [r.path, r.noindex])));
   R.check("og:url and og:image, where present, are on www", rows.every((r) => r.ogOk && r.imgOk), JSON.stringify(rows.filter((r) => !(r.ogOk && r.imgOk)).map((r) => r.path)));
   // robots.txt and sitemap.xml: served by the static site through the edge
-  const rb = await req(EDGE, `${BASE}/robots.txt`), sm = await req(EDGE, `${BASE}/sitemap.xml`);
-  const apexRb = await req(EDGE, `${APEX}/robots.txt`);
+  const rb = await reqX(EDGE, `${BASE}/robots.txt`), sm = await reqX(EDGE, `${BASE}/sitemap.xml`);
+  const apexRb = await reqX(EDGE, `${APEX}/robots.txt`);
   R.check("robots.txt is served by the static site (no WordPress marker), text/plain, allows crawling, names the www sitemap", rb.status === 200 && !rb.headers["x-rehearsal-upstream"] && /^text\/plain/.test(rb.headers["content-type"] || "") && /Sitemap:\s*https:\/\/www\.copilt\.org\/sitemap\.xml/i.test(rb.body) && !/Disallow:\s*\/\s*$/m.test(rb.body), `${rb.status} ${rb.headers["content-type"]} :: ${rb.body.replace(/\n/g, " | ").slice(0, 300)}`);
   R.check("apex /robots.txt redirects to www (one hop)", [301, 308].includes(apexRb.status) && String(apexRb.headers.location).trim() === `${BASE}/robots.txt`, `${apexRb.status} ${apexRb.headers.location}`);
   const locs = [...sm.body.matchAll(/<loc>([^<]+)<\/loc>/g)].map((m) => m[1]);
@@ -1331,10 +1367,10 @@ async function s8() {
   const comp = [];
   for (const [name, u] of [["Home HTML", `${BASE}/`], ["largest JS", bigJs?.url], ["largest CSS", bigCss?.url], ["CP pricing HTML", `${BASE}/pricing/`], ["CP sitemap-like JSON (wp-json)", `${BASE}/wp-json/`]]) {
     if (!u) continue;
-    const idn = await req(EDGE, u, { headers: { "Accept-Encoding": "identity" }, bodyFile: "/dev/null" });
-    const gz = await req(EDGE, u, { headers: { "Accept-Encoding": "gzip" }, bodyFile: "/dev/null" });
-    const zs = await req(EDGE, u, { headers: { "Accept-Encoding": "zstd, gzip" }, bodyFile: "/dev/null" });
-    const br = await req(EDGE, u, { headers: { "Accept-Encoding": "br" }, bodyFile: "/dev/null" });
+    const idn = await reqX(EDGE, u, { headers: { "Accept-Encoding": "identity" }, bodyFile: "/dev/null" });
+    const gz = await reqX(EDGE, u, { headers: { "Accept-Encoding": "gzip" }, bodyFile: "/dev/null" });
+    const zs = await reqX(EDGE, u, { headers: { "Accept-Encoding": "zstd, gzip" }, bodyFile: "/dev/null" });
+    const br = await reqX(EDGE, u, { headers: { "Accept-Encoding": "br" }, bodyFile: "/dev/null" });
     const hv = (h) => [].concat(h || []).join(",");
     comp.push({ name, url: u.replace(BASE, "").slice(0, 70), identityKB: kb(idn.bytes), identityEnc: hv(idn.headers["content-encoding"]) || "none", gzipKB: kb(gz.bytes), gzipEnc: hv(gz.headers["content-encoding"]) || "none", zstdKB: kb(zs.bytes), zstdEnc: hv(zs.headers["content-encoding"]) || "none", brEnc: hv(br.headers["content-encoding"]) || "none", vary: hv(gz.headers.vary) });
   }
@@ -1357,12 +1393,17 @@ async function s9() {
     const san = (b) => ({ ...b, request_uri: String(b.request_uri || "").replace(token, "REDACTED") });
     const b = clean.body, h = b.headers || {};
     R.check("echo through the edge from a real browser: 200 JSON, no-store", clean.status === 200 && /no-store/.test(clean.cc), `${clean.status} ${clean.cc}`);
+    if (FCGI) {
+      R.check("php_fastcgi: CP sees REMOTE_ADDR = the browser's real peer (127.0.0.1) and its own client IP = 127.0.0.1 with NO X-Forwarded-For at all (no XFF-trust dependency; AICC_LM_TRUSTED_PROXIES is not needed)", b.remote_addr === "127.0.0.1" && b.cp_client_ip === "127.0.0.1" && !("x-forwarded-for" in h), JSON.stringify({ remote_addr: b.remote_addr, cp_client_ip: b.cp_client_ip, xff: h["x-forwarded-for"] }));
+      R.check("php_fastcgi: CP sees HTTPS from Caddy's HTTPS=on (is_ssl true, HTTPS server var on) without X-Forwarded-Proto, host www.copilt.org, home_url https://www.copilt.org/", !("x-forwarded-proto" in h) && !("x-forwarded-host" in h) && b.is_ssl === true && b.https_server_var === "on" && b.host === "www.copilt.org" && b.home_url === "https://www.copilt.org/", JSON.stringify({ is_ssl: b.is_ssl, https: b.https_server_var, host: b.host, home: b.home_url }));
+    } else {
     R.check("CP sees remote_addr = the edge (127.0.0.1) and its own client IP = 127.0.0.1 (the browser's real peer address on this Mac), via X-Forwarded-For with exactly ONE entry", b.remote_addr === "127.0.0.1" && b.cp_client_ip === "127.0.0.1" && h["x-forwarded-for"] === "127.0.0.1", JSON.stringify({ remote_addr: b.remote_addr, cp_client_ip: b.cp_client_ip, xff: h["x-forwarded-for"] }));
     R.check("CP sees HTTPS (X-Forwarded-Proto https, is_ssl true, HTTPS server var on), host www.copilt.org (Host and X-Forwarded-Host), home_url https://www.copilt.org/", h["x-forwarded-proto"] === "https" && b.is_ssl === true && b.https_server_var === "on" && b.host === "www.copilt.org" && h["x-forwarded-host"] === "www.copilt.org" && b.home_url === "https://www.copilt.org/", JSON.stringify({ proto: h["x-forwarded-proto"], is_ssl: b.is_ssl, host: b.host, xfh: h["x-forwarded-host"], home: b.home_url }));
+    }
     const ALLOWED = /^(host|user-agent|accept|accept-encoding|accept-language|via|x-forwarded-for|x-forwarded-host|x-forwarded-proto|x-request-id|referer|origin|sec-[a-z-]+|connection|content-length|content-type|cookie|priority|cache-control|pragma|dnt|upgrade-insecure-requests)$/;
     const extra = Object.keys(h).filter((k) => !ALLOWED.test(k));
     R.check(`the header set the CP receives contains nothing unexpected (${Object.keys(h).length} headers; unexpected: ${JSON.stringify(extra)})`, extra.length === 0, Object.keys(h).join(","));
-    R.check("Via: 2.0 Caddy is the only proxy marker the CP sees (a clean browser request carries none of the identity headers either)", h.via === "2.0 Caddy" && !["forwarded", "x-real-ip", "x-original-url", "x-rewrite-url", "true-client-ip", "cf-connecting-ip", "client-ip", "x-client-ip", "x-forwarded-server", "x-forwarded-port"].some((k) => k in h), JSON.stringify(Object.keys(h).filter((k) => /forward|real|client|original|rewrite/.test(k))));
+    R.check(FCGI ? "php_fastcgi: no Via and none of the identity headers reaches the CP on a clean browser request" : "Via: 2.0 Caddy is the only proxy marker the CP sees (a clean browser request carries none of the identity headers either)", (FCGI ? !("via" in h) : h.via === "2.0 Caddy") && !["forwarded", "x-real-ip", "x-original-url", "x-rewrite-url", "true-client-ip", "cf-connecting-ip", "client-ip", "x-client-ip", "x-forwarded-server", "x-forwarded-port"].some((k) => k in h), JSON.stringify(Object.keys(h).filter((k) => /forward|real|client|original|rewrite/.test(k))));
     R.data.cleanEcho = san(b);
 
     // forged headers from page JavaScript: none may reach or change the CP's view
@@ -1370,8 +1411,8 @@ async function s9() {
     const STRIPPED = ["forwarded", "x-real-ip", "x-original-url", "x-rewrite-url", "true-client-ip", "cf-connecting-ip", "x-forwarded-port", "client-ip", "x-client-ip", "x-cluster-client-ip", "x-originating-ip", "fastly-client-ip", "forwarded-for", "x-forwarded", "x-forwarded-scheme", "x-forwarded-ssl", "front-end-https", "x-url-scheme", "x-forwarded-server"];
     const f = await echo(forged);
     const fb = f.body, fh = fb.headers || {};
-    R.check("FORGED X-Forwarded-For (two fake addresses) from browser JavaScript: the CP still sees exactly 127.0.0.1 (the edge overwrites the header; nothing appended)", fh["x-forwarded-for"] === "127.0.0.1" && fb.cp_client_ip === "127.0.0.1" && !/203\.0\.113|198\.51\.100/.test(JSON.stringify(fb)), JSON.stringify({ xff: fh["x-forwarded-for"], cp_client_ip: fb.cp_client_ip }));
-    R.check(`FORGED identity/scheme headers (${STRIPPED.length} names: Forwarded, X-Real-IP, Client-IP, CF-Connecting-IP, True-Client-IP, X-Cluster-Client-IP, X-Originating-IP, Fastly-Client-IP, Forwarded-For, X-Forwarded, -Port, -Scheme, -Ssl, -Server, Front-End-Https, X-Url-Scheme, X-Original-URL, X-Rewrite-URL, X-Client-IP): NONE reaches the CP; X-Forwarded-Host/-Proto are the edge's (www.copilt.org, https)`, STRIPPED.every((k) => !(k in fh)) && fh["x-forwarded-host"] === "www.copilt.org" && fh["x-forwarded-proto"] === "https" && fb.host === "www.copilt.org" && fb.is_ssl === true, JSON.stringify({ xfh: fh["x-forwarded-host"], xfp: fh["x-forwarded-proto"], leaked: STRIPPED.filter((k) => k in fh) }));
+    R.check(FCGI ? "FORGED X-Forwarded-For (two fake addresses) from browser JavaScript: the header does not reach PHP at all; the CP's client IP is the real peer 127.0.0.1" : "FORGED X-Forwarded-For (two fake addresses) from browser JavaScript: the CP still sees exactly 127.0.0.1 (the edge overwrites the header; nothing appended)", (FCGI ? !("x-forwarded-for" in fh) : fh["x-forwarded-for"] === "127.0.0.1") && fb.cp_client_ip === "127.0.0.1" && !/203\.0\.113|198\.51\.100/.test(JSON.stringify(fb)), JSON.stringify({ xff: fh["x-forwarded-for"], cp_client_ip: fb.cp_client_ip }));
+    R.check(`FORGED identity/scheme headers (${STRIPPED.length} names: Forwarded, X-Real-IP, Client-IP, CF-Connecting-IP, True-Client-IP, X-Cluster-Client-IP, X-Originating-IP, Fastly-Client-IP, Forwarded-For, X-Forwarded, -Port, -Scheme, -Ssl, -Server, Front-End-Https, X-Url-Scheme, X-Original-URL, X-Rewrite-URL, X-Client-IP): NONE reaches the CP; X-Forwarded-Host/-Proto are the edge's (www.copilt.org, https)`, STRIPPED.every((k) => !(k in fh)) && (FCGI ? !("x-forwarded-host" in fh) && !("x-forwarded-proto" in fh) : fh["x-forwarded-host"] === "www.copilt.org" && fh["x-forwarded-proto"] === "https") && fb.host === "www.copilt.org" && fb.is_ssl === true, JSON.stringify({ xfh: fh["x-forwarded-host"], xfp: fh["x-forwarded-proto"], leaked: STRIPPED.filter((k) => k in fh) }));
     R.check("FORGED X-Request-Id: the CP receives the edge's own id, not the browser's", fh["x-request-id"] !== "forged-request-id" && /^[0-9a-f-]{36}$/.test(fh["x-request-id"] || ""), `${(fh["x-request-id"] || "").slice(0, 8)}...`);
     R.check("the forged request's answer is otherwise identical in the fields that matter (remote_addr, home_url, request path)", fb.remote_addr === b.remote_addr && fb.home_url === b.home_url, "");
     R.data.forgedEcho = san(fb);
@@ -1394,12 +1435,12 @@ async function s10() {
   const plans = `${BASE}/wp-json/aicc-license/v1/plans`;
   const h1 = (r, k) => [].concat(r.headers[k] || []).join(",");
   // --- CORS (real HTTP through the edge)
-  const evil = await req(EDGE, plans, { headers: { Origin: "https://evil.example" } });
-  const own = await req(EDGE, plans, { headers: { Origin: BASE } });
-  const none = await req(EDGE, plans);
-  const nul = await req(EDGE, plans, { headers: { Origin: "null" } });
-  const pfEvil = await req(EDGE, plans, { method: "OPTIONS", headers: { Origin: "https://evil.example", "Access-Control-Request-Method": "POST" } });
-  const pfOwn = await req(EDGE, plans, { method: "OPTIONS", headers: { Origin: BASE, "Access-Control-Request-Method": "POST" } });
+  const evil = await reqX(EDGE, plans, { headers: { Origin: "https://evil.example" } });
+  const own = await reqX(EDGE, plans, { headers: { Origin: BASE } });
+  const none = await reqX(EDGE, plans);
+  const nul = await reqX(EDGE, plans, { headers: { Origin: "null" } });
+  const pfEvil = await reqX(EDGE, plans, { method: "OPTIONS", headers: { Origin: "https://evil.example", "Access-Control-Request-Method": "POST" } });
+  const pfOwn = await reqX(EDGE, plans, { method: "OPTIONS", headers: { Origin: BASE, "Access-Control-Request-Method": "POST" } });
   R.check("CORS through the edge: a foreign Origin (https://evil.example) gets NO Access-Control-Allow-Origin and NO Allow-Credentials on a REST route", evil.status === 200 && !h1(evil, "access-control-allow-origin") && !h1(evil, "access-control-allow-credentials"), `${evil.status} acao="${h1(evil, "access-control-allow-origin")}" acac="${h1(evil, "access-control-allow-credentials")}"`);
   R.check("CORS: the own origin (https://www.copilt.org) is allowed with credentials", own.status === 200 && h1(own, "access-control-allow-origin") === BASE && h1(own, "access-control-allow-credentials") === "true", `acao="${h1(own, "access-control-allow-origin")}" acac="${h1(own, "access-control-allow-credentials")}"`);
   R.check("CORS: no Origin header (the plugin calling the CP server to server) is unchanged: 200, no CORS headers", none.status === 200 && !h1(none, "access-control-allow-origin"), `${none.status}`);
@@ -1416,12 +1457,12 @@ async function s10() {
 
   // --- user enumeration
   for (const u of ["/wp-json/wp/v2/users", "/wp-json/wp/v2/users/1", "/he/wp-json/wp/v2/users"]) {
-    const r = await req(EDGE, `${BASE}${u}`);
+    const r = await reqX(EDGE, `${BASE}${u}`);
     R.check(`anonymous GET ${u}: no user listing (404 or no login names in the body)`, r.status === 404 || !/"slug"|"name"/.test(r.body), `${r.status} ${r.body.slice(0, 60)}`);
   }
-  const au = await req(EDGE, `${BASE}/author/rehearsal-admin/`);
+  const au = await reqX(EDGE, `${BASE}/author/rehearsal-admin/`);
   R.check("/author/<login>/ through the edge answers 404 and no login is echoed", au.status === 404 && !/rehearsal-admin/.test(au.body), `${au.status}`);
-  const direct = (p) => sh("bash", ["-c", `curl -s -o /dev/null -D - -H 'Host: www.copilt.org' -H 'X-Forwarded-Proto: https' 'http://127.0.0.1:18982${p}' | head -1; curl -s -D - -o /dev/null -H 'Host: www.copilt.org' -H 'X-Forwarded-Proto: https' 'http://127.0.0.1:18982${p}' | grep -i '^location' || true`]).stdout.replace(/\r/g, "").trim().split("\n").join(" | ");
+  const direct = (p) => { const r = loopbackCurl(`http://127.0.0.1:18982${p}`, { headers: { Host: "www.copilt.org", "X-Forwarded-Proto": "https" } }); return [(r.headerText.split(/\r?\n/)[0] || "").trim(), ...(r.headerText.split(/\r?\n/).filter((l) => /^location:/i.test(l)))].join(" | "); };
   const a1 = direct("/?author=1"), f1 = direct("/?feed=rss2"), f2 = direct("/feed/");
   R.check("(CP upstream, bypassing the edge, which owns / for the static site) /?author=1 is 404 with no Location header leaking the login", /404/.test(a1) && !/location/i.test(a1), a1);
   R.check("(CP upstream) /?feed=rss2 and /feed/ are 404", /404/.test(f1) && /404/.test(f2), `${f1} || ${f2}`);
@@ -1435,8 +1476,8 @@ async function s10() {
     if (bad.length || hdr.link) feedBad.push(`${pre(loc)}${pth}: ${bad.join(",")}${hdr.link ? " Link-header" : ""}`);
   }
   R.check("no feed / shortlink / REST-discovery / EditURI / WLW / oEmbed link or generator meta, and no Link HTTP header, on CP pages in 4 languages", feedBad.length === 0, JSON.stringify(feedBad));
-  for (const u of ["/feed/", "/comments/feed/", "/he/feed/", "/es/comments/feed/"]) { const r = await req(EDGE, `${BASE}${u}`); R.check(`${u}: 404 through the edge`, r.status === 404, `${r.status}`); }
-  const stat = await req(EDGE, `${BASE}/`);
+  for (const u of ["/feed/", "/comments/feed/", "/he/feed/", "/es/comments/feed/"]) { const r = await reqX(EDGE, `${BASE}${u}`); R.check(`${u}: 404 through the edge`, r.status === 404, `${r.status}`); }
+  const stat = await reqX(EDGE, `${BASE}/`);
   R.check("static home does not emit a feed link either", !/type="application\/(rss|atom)\+xml"/.test(stat.body));
 
   // --- html lang/dir on every CP page type in four languages (incl. checkout with a plan and the 404 page), and the footer year
@@ -1523,14 +1564,23 @@ async function s10() {
 async function preflight() {
   const problems = [];
   if (!fs.existsSync(CHROME)) problems.push(`Chrome not found at ${CHROME} (set AICC_CHROME)`);
-  if (!(await portListening(443)) || !(await portListening(80))) problems.push("edge is not listening on :80/:443 (node scripts/rehearsal/rehearsal.mjs start)");
-  if (!(await portListening(18982))) problems.push("CP fixture is not listening on 127.0.0.1:18982 (bash scripts/rehearsal/cp-fixture.sh start)");
-  if (!fs.existsSync(P.rootCrt)) problems.push("rehearsal root CA missing");
-  if (!problems.length) { const r = await req(EDGE, `${BASE}/`); if (r.status !== 200) problems.push(`edge answered ${r.status} for /`); }
+  if (STAGE_MODE) {
+    const refused = (only || Object.keys(SECTION_FNS())).filter((n) => FIXTURE_SECTIONS.has(String(n)) || ["4", "10"].includes(String(n)));
+    if (only && refused.length) { console.error(`GUARD REFUSED [stage-section]: section(s) ${refused.join(", ")} need the local CP fixture (wp-cli, captured mail, echo token) or the apex host and cannot run against a remote staging host. Read-only sections: 5, 7, 8.\nNothing was sent.`); process.exit(EXIT_REFUSED); }
+    if (!fs.existsSync(String(GUARD.cfg.cacert || "")) && !GUARD.cfg.insecure && GUARD.cfg.rehearsal) problems.push("no --cacert for a rehearsal-style target");
+    await GUARD.ensureIdentity(); // exits 3 through guarded() semantics: GuardRefusal propagates to main's catch
+  } else {
+    if (!(await portListening(EDGE.httpsPort)) || !(await portListening(EDGE.httpPort))) problems.push(`edge is not listening on :${EDGE.httpPort}/:${EDGE.httpsPort} (node scripts/rehearsal/rehearsal.mjs start)`);
+    if (!(await portListening(18982))) problems.push("CP fixture is not listening on 127.0.0.1:18982 (bash scripts/rehearsal/cp-fixture.sh start)");
+    if (!fs.existsSync(P.rootCrt)) problems.push("rehearsal root CA missing");
+    if (!problems.length) await verifyInstance(EDGE, { operator: false }); // the identity route must answer with this rehearsal's id before Chrome is started
+  }
+  if (!problems.length) { const r = await reqX(EDGE, `${BASE}/`); if (r.status !== 200) problems.push(`edge answered ${r.status} for /`); }
   if (problems.length) { console.error("PRE-FLIGHT FAILED:\n - " + problems.join("\n - ")); process.exit(2); }
 }
 const SECTION_FNS = () => ({ 1: typeof s1 === "function" && s1, 2: typeof s2 === "function" && s2, 3: typeof s3 === "function" && s3, 4: typeof s4 === "function" && s4, 5: typeof s5 === "function" && s5, 6: typeof s6 === "function" && s6, 7: typeof s7 === "function" && s7, 8: typeof s8 === "function" && s8, 9: typeof s9 === "function" && s9, 10: typeof s10 === "function" && s10 });
 async function main() {
+  if (STAGE_MODE && !only) { process.stderr.write("GUARD: against a remote staging host choose the read-only sections explicitly: --only 5,7,8\n"); process.exit(2); }
   await preflight();
   fs.mkdirSync(SHOTS, { recursive: true });
   const fns = SECTION_FNS();
@@ -1539,6 +1589,7 @@ async function main() {
     for (const n of Object.keys(fns)) {
       if (only && !only.includes(n)) continue;
       if (!fns[n]) continue;
+      if (ABORTED) break;
       console.log(`== section ${n}`);
       try { results.push(await fns[n]()); } catch (e) { console.error(`section ${n} crashed: ${e.stack || e}`); const R = new Result(`0${n}-crashed`, `section ${n} crashed`); R.check("section ran", false, String(e.stack || e)); R.save(); results.push(R); }
     }
@@ -1550,6 +1601,10 @@ async function main() {
   writeJson(path.join(OUT, only ? `00-summary-partial.json` : "00-summary.json"), { run: RUN_ID, finished: new Date().toISOString(), summary });
   if (!only) fs.writeFileSync(path.join(OUT, "00-summary.md"), ["# AICC edge rehearsal, phase 2: browser flows through the real edge", "", `Run ${RUN_ID}, ${new Date().toISOString()}. Chrome via playwright-core; names mapped to 127.0.0.1 only inside the browser; fake @example.test accounts, deleted afterwards. Nothing was paid or submitted.`, "", "| section | verdict | PASS | FAIL | detail |", "|---|---|---|---|---|", ...summary.map((x) => `| ${x.section} | ${x.verdict} | ${x.passed} | ${x.failed} | [${x.section}.md](${x.section}.md) |`), "", "Screenshots (sanitized: email and password fields masked, no URL bar): screenshots/", ""].join("\n"));
   console.log("\n" + summary.map((s) => `${s.verdict.padEnd(7)} ${s.section}  PASS ${s.passed} FAIL ${s.failed}`).join("\n"));
+  const gs = GUARD.summary();
+  const all = allGuards().concat([GUARD]).reduce((a, g) => ({ checked: a.checked + g.summary().checked, browserChecked: a.browserChecked + g.summary().browserChecked, browserBlocked: a.browserBlocked + g.summary().browserBlocked, violations: a.violations + g.violations.length }), { checked: 0, browserChecked: 0, browserBlocked: 0, violations: 0 });
+  console.log(`\negress guard: ${all.checked} curl/socket requests checked, ${gs.browserChecked} browser requests checked, ${gs.browserBlocked} blocked, ${all.violations} violation(s)`);
+  if (all.violations || ABORTED) { console.error("GUARD: a request tried to leave the allowed hosts: the run is invalid (exit code 3)"); process.exit(EXIT_REFUSED); }
   process.exit(results.some((r) => r.failed) ? 1 : 0);
 }
-await main();
+await guarded(main);

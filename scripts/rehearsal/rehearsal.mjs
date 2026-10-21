@@ -8,8 +8,12 @@
 //   node scripts/rehearsal/rehearsal.mjs run-tests [which]       routing matrix + real-behaviour tests (scripts/rehearsal/run-tests.mjs)
 //   node scripts/rehearsal/rehearsal.mjs launchd-plist           write ~/aicc-rehearsal/run/org.copilt.aicc-rehearsal-edge.plist (supervision rehearsal)
 //
-// Options: --name edge|public|<x>  --http-port N --https-port N --admin host:port  --upstream 127.0.0.1:18982  --static-root DIR  --operator-cidrs "A B"
-//          --wp-timeout 60s  --variant block-demo|old-target  --template FILE
+// Options: --name edge|public|stage|<x>  --http-port N --https-port N --admin host:port  --static-root DIR  --wp-timeout 60s  --variant block-demo|old-target  --template FILE
+//          --upstream-mode proxy|fastcgi (env AICC_REHEARSAL_UPSTREAM; proxy = reverse_proxy to the php -S fixture, fastcgi = php_fastcgi over the scratch php-fpm socket: bash scripts/rehearsal/fpm.sh start)
+//          --upstream 127.0.0.1:18982 (proxy)  --fpm-socket PATH --wp-root DIR (fastcgi)  --topology production|stage  --stage-host NAME  --operator-port N
+//          --operator-cidrs "A B"   OPTIONAL public operator list, EMPTY by default (operators use the loopback operator listener: 127.0.0.1:<operator port>; edge 18444, public twin 18445, stage 18464)
+// Instances: edge = the standing production-topology edge on :80/:443; public = its high-port twin (18080/18443); stage = the STAGE topology (stage-rehearsal.copilt.org, 18200/18463, php_fastcgi).
+// Every request any runner sends goes through scripts/lib/target-guard.mjs (fail closed; docs/cutover/stage-linux.md section 10); the render comes from scripts/lib/edge-render.mjs.
 // Safety (enforced here, refusing to run otherwise): upstream must be loopback; the generated file must contain `local_certs`, `tls internal` on every site, no
 // acme_ca/email/dns challenge line, no api.copilt.org address; after start the live config is read back from Caddy's admin API and must contain no ACME issuer.
 import fs from "node:fs";

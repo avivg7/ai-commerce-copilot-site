@@ -35,11 +35,18 @@ MYSQLD="${AICC_REHEARSAL_MYSQLD:-$(ls "$LOCAL_SERVICES"/mysql-8.4.0+2/bin/*/bin/
 PHP="${AICC_REHEARSAL_PHP:-$(ls "$LOCAL_SERVICES"/php-8.2.29+0/bin/*/bin/php 2>/dev/null | head -1)}"
 WP_CLI="${AICC_REHEARSAL_WP_CLI:-$(command -v wp || true)}"
 MYSQL_BIN_DIR="$(dirname "$MYSQLD")"
+# FAIL-CLOSED EGRESS (round 5): WordPress makes outbound HTTP requests on its own (Action Scheduler's async runner posts to https://www.copilt.org/wp-admin/admin-ajax.php, a REAL public host).
+# Every PHP process of this fixture therefore (a) loads scripts/rehearsal/egress-guard.php (WordPress HTTP API: only www.copilt.org/copilt.org -> 127.0.0.1 and loopback; the rest is a WP_Error
+# before any DNS lookup) and (b) on macOS runs under scripts/rehearsal/loopback-only.sb (the kernel denies every non-loopback connect). AICC_REHEARSAL_NO_SANDBOX=1 skips (b) only.
+REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+EGRESS_GUARD="$REPO_DIR/scripts/rehearsal/egress-guard.php"
+SANDBOX=()
+if [ "${AICC_REHEARSAL_NO_SANDBOX:-}" != 1 ] && command -v sandbox-exec >/dev/null 2>&1; then SANDBOX=(sandbox-exec -f "$REPO_DIR/scripts/rehearsal/loopback-only.sb"); fi
 MYSQLADMIN="$MYSQL_BIN_DIR/mysqladmin"
 SOCKET="$BASE/mysql.sock"
 
 die() { echo "ERROR: $*" >&2; exit 1; }
-wpc() { "$PHP" -d memory_limit=1024M "$WP_CLI" "$@" --path="$BASE/wp"; }
+wpc() { ${SANDBOX[@]+"${SANDBOX[@]}"} "$PHP" -d memory_limit=1024M -d "auto_prepend_file=$EGRESS_GUARD" "$WP_CLI" "$@" --path="$BASE/wp"; }
 port_busy() { "$PHP" -r '$s=@fsockopen("127.0.0.1",(int)$argv[1],$e,$m,0.5); if($s){fclose($s); exit(0);} exit(1);' "$1"; }
 need_tools() { [ -x "$MYSQLD" ] || die "mysqld not found (set AICC_REHEARSAL_MYSQLD)"; [ -x "$PHP" ] || die "php not found (set AICC_REHEARSAL_PHP)"; [ -n "$WP_CLI" ] || die "wp-cli not found"; [ -d "$CP/admin/wp-content/plugins/aicc-license-manager" ] || die "Control Plane worktree not found at $CP"; }
 
@@ -216,8 +223,8 @@ start_php() {
 	if port_busy "$HTTP_PORT"; then echo "php already up on $HTTP_PORT"; return 0; fi
 	[ -d "$BASE/wp" ] || die "no fixture (run create)"
 	write_helpers
-	( cd "$BASE/wp" && PHP_CLI_SERVER_WORKERS="${AICC_REHEARSAL_PHP_WORKERS:-8}" nohup "$PHP" -d memory_limit=512M -d expose_php=On -d display_errors=0 -d log_errors=1 -d "error_log=$HOME_DIR/logs/cp-php-error.log" \
-		-d "auto_prepend_file=$BASE/prepend.php" -S "127.0.0.1:$HTTP_PORT" -t "$BASE/wp" "$BASE/router.php" < /dev/null >> "$HOME_DIR/logs/cp-php-access.log" 2>&1 & echo $! > "$BASE/php.pid" ) > /dev/null 2>&1
+	( cd "$BASE/wp" && PHP_CLI_SERVER_WORKERS="${AICC_REHEARSAL_PHP_WORKERS:-8}" nohup ${SANDBOX[@]+"${SANDBOX[@]}"} "$PHP" -d memory_limit=512M -d expose_php=On -d display_errors=0 -d log_errors=1 -d "error_log=$HOME_DIR/logs/cp-php-error.log" \
+		-d "auto_prepend_file=$EGRESS_GUARD" -S "127.0.0.1:$HTTP_PORT" -t "$BASE/wp" "$REPO_DIR/scripts/rehearsal/fixture-router.php" < /dev/null >> "$HOME_DIR/logs/cp-php-access.log" 2>&1 & echo $! > "$BASE/php.pid" ) > /dev/null 2>&1
 	for _ in $(seq 1 30); do [ "$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$HTTP_PORT/?rest_route=/" 2>/dev/null)" = "200" ] && { echo "php up on 127.0.0.1:$HTTP_PORT (pid $(cat "$BASE/php.pid"))"; return 0; }; sleep 1; done
 	tail -5 "$HOME_DIR/logs/cp-php-access.log" >&2; die "php server did not answer"
 }

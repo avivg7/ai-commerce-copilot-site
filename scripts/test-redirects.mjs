@@ -13,6 +13,9 @@
 //   5. cross-checks the matrix against the site: every route in src/lib/routes.ts has exactly one owner, the static-owned ones exist in a build (if out/ is present),
 //      no enabled redirect points at a route nobody serves
 //
+// Renders: the committed template is the PRODUCTION topology. `npm run test:redirects` also RENDERS the stage topology (scripts/lib/edge-render.mjs) and replays the retargeted
+// matrix against that render in a child run (`--template <render> --stage-host <host>`), checks the production render has no identity route, and mutates both.
+//
 // What this proves and what it does not (be exact):
 //   PROVES   the generated redirect/routing text is what the matrix says; that the model of the Caddyfile (site blocks, imports, matchers, order) built from that
 //            text gives the hand-written CASES results; no chain longer than one hop; one owner per route.
@@ -36,6 +39,13 @@ const TEMPLATE = tplArg >= 0 ? path.resolve(process.argv[tplArg + 1]) : path.joi
 const WRITE = process.argv.includes("--write");
 const QUIET = process.argv.includes("--quiet");
 const SELF_TEST = process.argv.includes("--self-test");
+const stageArg = process.argv.indexOf("--stage-host");
+/** Child mode: the template given with --template is a STAGE render for this literal host (generated blocks are not re-checked against the production text). */
+const STAGE_HOST = stageArg >= 0 ? process.argv[stageArg + 1] : null;
+const CANON = STAGE_HOST || M.CANONICAL_HOST;
+const ORIGIN_L = `https://${CANON}`;
+const CASES = STAGE_HOST ? M.retargetCases(M.CASES, STAGE_HOST) : M.CASES;
+const OPERATOR_SITE_ADDR = `${CANON}:{$AICC_OPERATOR_PORT:8443}`;
 if (SELF_TEST) { await selfTest(); process.exit(0); }
 const outArg = process.argv.indexOf("--out");
 const OUT_DIR = outArg >= 0 ? path.resolve(process.argv[outArg + 1]) : path.join(ROOT, "out");
@@ -68,7 +78,7 @@ function genHost() {
   const h = M.HOST_RULE;
   return [`\t@safe_method method ${h.safeMethods.join(" ")}`, `\tredir @safe_method ${M.ORIGIN}{uri} ${h.safeCode}`, `\tredir ${M.ORIGIN}{uri} ${h.otherCode}`];
 }
-function genRouting() {
+function genRouting(operator = false) {
   const L = [];
   const named = (id, re) => L.push(`\t@${id} path_regexp ${id} ${re}`);
   const deny = (id, code, text) => L.push(`\thandle @${id} {`, `\t\theader Cache-Control "no-store"`, `\t\trespond "${text}" ${code}`, `\t}`);
@@ -80,12 +90,20 @@ function genRouting() {
   deny("bad_method", 405, "Method not allowed");
   named("xmlrpc_deny", M.XMLRPC_RE);
   deny("xmlrpc_deny", 403, "Forbidden");
-  L.push(`\t@wp_cron_deny {`, `\t\tpath_regexp wp_cron_deny ${M.WP_CRON_RE}`, `\t\tnot remote_ip ${OPS}`, `\t}`);
-  deny("wp_cron_deny", 403, "Forbidden");
-  L.push(`\t@wp_admin_deny {`, `\t\tpath_regexp wp_admin_deny ${M.WP_ADMIN_RE}`, `\t\tnot path_regexp wp_admin_public ${M.WP_ADMIN_PUBLIC_RE}`, `\t\tnot remote_ip ${OPS}`, `\t}`);
-  deny("wp_admin_deny", 403, "Forbidden");
-  L.push(`\t@wp_login_deny {`, `\t\tpath_regexp wp_login_deny ${M.WP_LOGIN_RE}`, `\t\tnot expression {http.request.method} in [${M.WP_LOGIN_PUBLIC_METHODS.map((x) => `'${x}'`).join(",")}] && {http.request.uri.path} == '${M.WP_LOGIN_PUBLIC_PATH}' && {http.request.uri.query}.matches('${M.WP_LOGIN_PUBLIC_QUERY}')`, `\t\tnot remote_ip ${OPS}`, `\t}`);
-  deny("wp_login_deny", 403, "Forbidden");
+  if (!operator) {
+    // PUBLIC listener: the three operator surfaces are denied (an OPTIONAL AICC_OPERATOR_CIDRS list, empty by default, is the only other way in)
+    L.push(`\t@wp_cron_deny {`, `\t\tpath_regexp wp_cron_deny ${M.WP_CRON_RE}`, `\t\tnot remote_ip ${OPS}`, `\t}`);
+    deny("wp_cron_deny", 403, "Forbidden");
+    L.push(`\t@wp_admin_deny {`, `\t\tpath_regexp wp_admin_deny ${M.WP_ADMIN_RE}`, `\t\tnot path_regexp wp_admin_public ${M.WP_ADMIN_PUBLIC_RE}`, `\t\tnot remote_ip ${OPS}`, `\t}`);
+    deny("wp_admin_deny", 403, "Forbidden");
+    L.push(`\t@wp_login_deny {`, `\t\tpath_regexp wp_login_deny ${M.WP_LOGIN_RE}`, `\t\tnot expression {http.request.method} in [${M.WP_LOGIN_PUBLIC_METHODS.map((x) => `'${x}'`).join(",")}] && {http.request.uri.path} == '${M.WP_LOGIN_PUBLIC_PATH}' && {http.request.uri.query}.matches('${M.WP_LOGIN_PUBLIC_QUERY}')`, `\t\tnot remote_ip ${OPS}`, `\t}`);
+    deny("wp_login_deny", 403, "Forbidden");
+  }
+  // Linux/stage architecture: PHP only through WordPress's entry points; private files of WordPress's trees are never served. Both listeners.
+  L.push(`\t@php_direct {`, `\t\tpath_regexp php_direct ${M.PHP_DENY_RE}`, `\t\tnot path_regexp php_entry ${M.PHP_ENTRY_RE}`, `\t}`);
+  L.push(`\thandle @php_direct {`, `\t\terror 404`, `\t}`);
+  named("wp_hidden", M.WP_HIDDEN_RE);
+  L.push(`\thandle @wp_hidden {`, `\t\terror 404`, `\t}`);
   // everything of /wp-admin/ that is still here is an operator (or the public admin-ajax/admin-post): operators may upload big files, the public routes keep the 2 MB cap
   L.push(`\t@wp_admin_big {`, `\t\tpath_regexp wp_admin_big ${M.WP_ADMIN_RE}`, `\t\tnot path_regexp wp_admin_big_public ${M.WP_ADMIN_PUBLIC_RE}`, `\t}`);
   L.push(`\thandle @wp_admin_big {`, `\t\timport to_wordpress_admin`, `\t}`);
@@ -114,7 +132,7 @@ function genRouting() {
   L.push(`\thandle {`, `\t\theader Cache-Control "public, max-age=0, must-revalidate"`, `\t\timport static_csp`, `\t\timport to_static`, `\t}`);
   return L;
 }
-const BLOCKS = { "path redirects": genRedirects, "host redirect": genHost, routing: genRouting };
+const BLOCKS = { "path redirects": genRedirects, "host redirect": genHost, routing: () => genRouting(false), "routing operator": () => genRouting(true) };
 
 function splice(text) {
   for (const [name, gen] of Object.entries(BLOCKS)) {
@@ -125,7 +143,7 @@ function splice(text) {
   return text;
 }
 const current = fs.readFileSync(TEMPLATE, "utf8");
-const regenerated = splice(current);
+const regenerated = STAGE_HOST ? current : splice(current);
 if (WRITE) { fs.writeFileSync(TEMPLATE, regenerated); console.log(`wrote generated blocks into ${path.relative(ROOT, TEMPLATE)}`); }
 
 let failures = 0, checks = 0;
@@ -190,6 +208,7 @@ function parseMatchers(lines) {
 const redirectsSrc = parseMatchers([...blockText(regenerated, "path redirects")]);
 const hostSrc = parseMatchers(blockText(regenerated, "host redirect"));
 const routingSrc = parseMatchers(blockText(regenerated, "routing"));
+const routingOpSrc = parseMatchers(blockText(regenerated, "routing operator"));
 
 function matches(set, name, req) {
   const body = set.matchers.get(name);
@@ -203,7 +222,7 @@ function matches(set, name, req) {
     else if (mm.t === "not_path_regexp") { if (mm.re.test(req.cleanPath ?? req.path)) return null; }
     else if (mm.t === "not_query_matches") { if (mm.re.test(req.query)) return null; }
     else if (mm.t === "not_login_public") { if (mm.methods.includes(req.method) && req.path === mm.path && mm.re.test(req.query)) return null; }
-    else if (mm.t === "not_operator") { if (req.operator) return null; }
+    else if (mm.t === "not_operator") { if (req.operatorCidr) return null; }
     else if (mm.t === "method") { if (!mm.list.includes(req.method)) return null; }
     else if (mm.t === "not_method") { if (mm.list.includes(req.method)) return null; }
   }
@@ -233,7 +252,7 @@ function parseCaddyStructure(text) {
       depth += braces(lines[i]); if (depth > 0) body.push({ line: lines[i], depth: depth - braces(lines[i]) });
     }
     i--;
-    const imports = body.filter((b) => b.depth === 1 && !b.comment).map((b) => /^\s*import\s+(\S+)\s*$/.exec(b.line)?.[1]).filter(Boolean);
+    const imports = body.filter((b) => b.depth === 1 && !b.comment).map((b) => /^\s*import\s+(\S+)(?:\s+\S+)*\s*$/.exec(b.line)?.[1]).filter(Boolean);
     if (head.startsWith("(")) snippets.set(head.slice(1, -1), { body: body.filter((b) => !b.comment).map((b) => b.line.trim()) });
     else sites.push({ addresses: head.split(",").map((a) => a.trim()).filter(Boolean), imports, text: body.map((b) => b.line).join("\n") });
   }
@@ -241,17 +260,20 @@ function parseCaddyStructure(text) {
 }
 const structure = parseCaddyStructure(regenerated);
 // imports, followed through snippets that import other snippets (apex_site imports edge_log, security_headers, hsts, aicc_redirects)
-const allImportsOf = (names, seen = new Set()) => { for (const n of names) { if (seen.has(n)) continue; seen.add(n); const sn = structure.snippets.get(n); if (sn) allImportsOf(sn.body.map((l) => /^import\s+(\S+)$/.exec(l)?.[1]).filter(Boolean), seen); } return seen; };
+// aicc_error_pages is a LEAF: the imports inside its handle_errors apply to error responses only, they must not count as the site block's own headers
+const allImportsOf = (names, seen = new Set()) => { for (const n of names) { if (seen.has(n)) continue; seen.add(n); const sn = structure.snippets.get(n); if (sn && n !== "aicc_error_pages") allImportsOf(sn.body.map((l) => /^import\s+(\S+)(?:\s+\S+)*$/.exec(l)?.[1]).filter(Boolean), seen); } return seen; };
 for (const x of structure.sites) x.allImports = [...allImportsOf(x.imports)];
 const apexSites = structure.sites.filter((x) => x.allImports.includes("apex_site"));
 const apexSite = apexSites[0]; // the http:// block (the https one is checked separately)
 const apexHttpsSite = apexSites.find((x) => x.addresses.some((a) => a.startsWith("https://")));
 const apexHttpSite = apexSites.find((x) => x.addresses.every((a) => a.startsWith("http://")));
-const wwwSite = structure.sites.find((x) => x.text.includes("# BEGIN GENERATED: routing"));
+const wwwSite = structure.sites.find((x) => x.text.includes("# BEGIN GENERATED: routing\n"));
+const opSite = structure.sites.find((x) => x.text.includes("# BEGIN GENERATED: routing operator\n"));
 for (const x of structure.sites) {
   x.hasRedirects = x.allImports.includes("aicc_redirects");
   x.hasHost = apexSites.includes(x);
-  x.hasRouting = x === wwwSite;
+  x.hasRouting = x === wwwSite || x === opSite;
+  x.routing = x === opSite ? routingOpSrc : routingSrc;
   // response headers contributed by the imported snippets (Caddy's `header` runs before `redir`/`handle`, so redirects carry them too)
   x.headers = {};
   for (const name of x.allImports) {
@@ -288,7 +310,8 @@ const staticExists = (p) => /^\/_next\/static\//.test(p) /* hashed names differ 
 
 function resolve(req) {
   // Which site block answers (address = scheme + host); no block for plain http on a host that has an https site -> Caddy's automatic HTTP->HTTPS redirect (308).
-  const site = pickSite(req.scheme, req.host);
+  // The OPERATOR listener is a different socket (127.0.0.1:8443): only it answers a request that arrived there, whatever the Host header says; a public request never reaches it.
+  const site = req.operator ? (req.host === CANON ? opSite : null) : pickSite(req.scheme, req.host);
   if (!site) {
     if (req.scheme === "http" && hasHttpsSite(req.host)) return { status: 308, location: `https://${req.host}${req.path}${req.query ? `?${req.query}` : ""}`, by: "caddy-automatic-https" };
     return { status: 421, by: "unknown-host" };
@@ -304,8 +327,8 @@ function resolve(req) {
     if (caps) return { status: it.code, location: expand(it.target, caps, req), by: "host", hdr };
   }
   if (!site.hasRouting) return { status: 404, origin: "404", by: "no-handler", hdr };
-  for (const it of routingSrc.items) {
-    const caps = it.matcher ? matches(routingSrc, it.matcher, req) : {};
+  for (const it of site.routing.items) {
+    const caps = it.matcher ? matches(site.routing, it.matcher, req) : {};
     if (!caps) continue;
     const a = it.act;
     if (a.origin === "static") {
@@ -323,7 +346,7 @@ function resolve(req) {
 const server = http.createServer((q, s) => {
   const [rawPath, ...qs] = q.url.split("?");
   const dec = (x) => { try { return decodeURIComponent(x); } catch { return x; } };
-  const res = resolve({ scheme: q.headers["x-test-scheme"] || "https", host: (q.headers.host || "").split(":")[0], method: q.method, path: dec(rawPath), cleanPath: cleanPath(dec(rawPath)), rawPath, query: qs.join("?"), operator: q.headers["x-test-peer"] === "operator" });
+  const res = resolve({ scheme: q.headers["x-test-scheme"] || "https", host: (q.headers.host || "").split(":")[0], method: q.method, path: dec(rawPath), cleanPath: cleanPath(dec(rawPath)), rawPath, query: qs.join("?"), operator: q.headers["x-test-peer"] === "operator", operatorCidr: q.headers["x-test-peer"] === "cidr" });
   const h = { "X-Origin": res.origin || "", "X-Matched": res.by || "" };
   if (res.location) h.Location = res.location;
   if (res.cache) h["Cache-Control"] = res.cache;
@@ -339,33 +362,105 @@ const hit = (url, method = "GET", peer = "public") => new Promise((resolveP, rej
   rq.on("error", reject); rq.end();
 });
 
-if (!QUIET) console.log(`test-redirects: ${M.CASES.length} cases, stand-in edge on 127.0.0.1:${PORT} (parsed from ${path.relative(ROOT, TEMPLATE)})`);
+if (!QUIET) console.log(`test-redirects: ${CASES.length} cases, stand-in edge on 127.0.0.1:${PORT} (parsed from ${path.relative(ROOT, TEMPLATE)})`);
 /* structure of the site blocks (explicit, on top of the behavioural model) */
 {
   const sameSet = (a, b) => JSON.stringify([...a].sort()) === JSON.stringify([...b].sort());
-  ok(structure.sites.length === 4, `the Caddyfile should have exactly four site blocks (http:// apex+www, https://copilt.org, the catch-all http:// that answers unknown Hosts with 421, and www), found ${structure.sites.length}`);
+  const code = regenerated.split("\n").filter((l) => !/^\s*#/.test(l)).join("\n");
+  const snip = (n) => (structure.snippets.get(n)?.body || []);
+  const snipText = (n) => snip(n).join("\n");
+  if (STAGE_HOST) ok(structure.sites.length === 4, `the STAGE render should have four site blocks (http://${CANON}, the http:// 421 catch-all, ${CANON}, the operator listener), found ${structure.sites.length}`);
+  else ok(structure.sites.length === 5, `the Caddyfile should have exactly five site blocks (http:// apex+www, https://copilt.org, the catch-all http:// that answers unknown Hosts with 421, www, and the loopback operator listener), found ${structure.sites.length}`);
   // review F1 (architecture): a "tls <cert> <key>" line in a block that also has http:// addresses is rejected by caddy validate, so aicc_tls may only be imported by blocks whose addresses are all https
   for (const x of structure.sites) if (x.allImports.includes("aicc_tls")) ok(x.addresses.every((a) => !a.startsWith("http://")), `aicc_tls is imported by a block with an http:// address (${x.addresses.join(", ")}): "tls <file> <file>" would fail caddy validate`);
-  ok(!!apexHttpSite && !!apexHttpsSite && sameSet(apexHttpSite.addresses, ["http://copilt.org", "http://www.copilt.org"]) && sameSet(apexHttpsSite.addresses, ["https://copilt.org"]), `the apex must be split into http://copilt.org, http://www.copilt.org (no TLS) and https://copilt.org (imports aicc_tls); found: ${apexSites.map((x) => x.addresses.join(" ")).join(" | ")}`);
-  ok(!!apexHttpsSite && apexHttpsSite.allImports.includes("aicc_tls"), "https://copilt.org must import aicc_tls");
+  if (!STAGE_HOST) {
+    ok(!!apexHttpSite && !!apexHttpsSite && sameSet(apexHttpSite.addresses, ["http://copilt.org", "http://www.copilt.org"]) && sameSet(apexHttpsSite.addresses, ["https://copilt.org"]), `the apex must be split into http://copilt.org, http://www.copilt.org (no TLS) and https://copilt.org (imports aicc_tls); found: ${apexSites.map((x) => x.addresses.join(" ")).join(" | ")}`);
+    ok(!!apexHttpsSite && apexHttpsSite.allImports.includes("aicc_tls"), "https://copilt.org must import aicc_tls");
+  } else {
+    ok(!!apexHttpSite && sameSet(apexHttpSite.addresses, [`http://${CANON}`]) && !apexHttpsSite, `the stage render must have only the http://${CANON} redirect block (no apex https block); found: ${apexSites.map((x) => x.addresses.join(" ")).join(" | ")}`);
+  }
   ok(structure.sites.some((x) => x.addresses.length === 1 && x.addresses[0] === "http://" && /respond "Misdirected request" 421/.test(x.text)), "the catch-all http:// block (421) is missing: unknown Hosts on port 80 would be redirected to https://<attacker host>");
   ok(/^\s*auto_https disable_redirects\s*$/m.test(regenerated), "global option `auto_https disable_redirects` is missing (Caddy would 308 any Host on port 80 to https://<that Host>)");
   ok(/handle_errors \{\s*(?:#[^\n]*\n\s*)*import security_headers\s*\n\s*import hsts/.test(regenerated), "handle_errors must import security_headers and hsts (error pages do not inherit the site block's header directives)");
-  ok(!!apexSite && !!wwwSite && !apexSites.includes(wwwSite), "could not find the apex blocks (import apex_site) and the www block (routing) in the template");
+  ok(!!apexSite && !!wwwSite && !apexSites.includes(wwwSite), "could not find the apex/http blocks (import apex_site) and the canonical block (routing) in the template");
   if (apexSite && wwwSite) {
-    ok(sameSet(wwwSite.addresses, ["www.copilt.org"]), `the www block must be exactly www.copilt.org; it has: ${wwwSite.addresses.join(", ")}`);
-    ok(wwwSite.allImports.includes("aicc_tls"), "the www block must import aicc_tls");
-    for (const [name, x] of [["apex http", apexHttpSite], ["apex https", apexHttpsSite], ["www", wwwSite]]) if (x) for (const imp of ["security_headers", "hsts", "aicc_redirects"]) ok(x.allImports.includes(imp), `the ${name} block must import ${imp} (directly or through apex_site); it imports: ${x.allImports.join(", ") || "(nothing)"}`);
+    ok(sameSet(wwwSite.addresses, [CANON]), `the canonical block must be exactly ${CANON}; it has: ${wwwSite.addresses.join(", ")}`);
+    ok(wwwSite.allImports.includes("aicc_tls"), "the canonical block must import aicc_tls");
+    for (const [name, x] of [["apex http", apexHttpSite], ["apex https", apexHttpsSite], ["canonical", wwwSite], ["operator", opSite]]) if (x) for (const imp of ["security_headers", "hsts", "aicc_redirects"]) ok(x.allImports.includes(imp), `the ${name} block must import ${imp} (directly or through apex_site); it imports: ${x.allImports.join(", ") || "(nothing)"}`);
     ok([...structure.snippets.keys()].includes("apex_site"), "snippet apex_site must exist");
   }
   ok([...structure.snippets.keys()].includes("aicc_redirects") && [...structure.snippets.keys()].includes("hsts"), "snippets aicc_redirects and hsts must exist");
+  // ---- the OPERATOR LISTENER (owner decision 2026-10-21): loopback only, same host name, same certificate, the three operator surfaces served there and denied on the public listener
+  ok(!!opSite && sameSet(opSite.addresses, [OPERATOR_SITE_ADDR]), `the operator listener block must be exactly ${OPERATOR_SITE_ADDR}; found: ${opSite ? opSite.addresses.join(", ") : "(none)"}`);
+  if (opSite) {
+    ok(/^\s*bind 127\.0\.0\.1\s*$/m.test(opSite.text), "the operator listener must `bind 127.0.0.1` (loopback only): nothing on the internet may be able to open a connection to it");
+    ok(opSite.allImports.includes("aicc_tls"), "the operator listener must import aicc_tls (same host name, same certificate)");
+    ok(opSite.allImports.includes("aicc_operator_guard") && opSite.allImports.includes("aicc_error_pages") && opSite.allImports.includes("edge_log"), "the operator listener must import aicc_operator_guard, aicc_error_pages and edge_log");
+    ok(/import edge_log operator\s*$/m.test(opSite.text), "the operator listener's access log must say listener=operator (import edge_log operator)");
+    ok(opSite.addresses.every((a) => !a.startsWith("http://")), "the operator listener is an https address");
+  }
+  ok((code.match(/^\s*bind\s/gm) || []).length === 1, "exactly one `bind` in the template (the operator listener's 127.0.0.1); the public listeners use the host's addresses");
+  ok(/@aicc_op_not_loopback not remote_ip 127\.0\.0\.1 ::1\s*\n\s*abort @aicc_op_not_loopback/.test(snipText("aicc_operator_guard")), "aicc_operator_guard must abort every peer that is not loopback");
+  const opRouting = regenerated.split("# BEGIN GENERATED: routing operator\n")[1]?.split("# END GENERATED: routing operator")[0] || "";
+  const pubRouting = regenerated.split("# BEGIN GENERATED: routing\n")[1]?.split("# END GENERATED: routing")[0] || "";
+  for (const n of ["wp_cron_deny", "wp_admin_deny", "wp_login_deny"]) { ok(pubRouting.includes(`@${n}`), `the PUBLIC routing must deny with @${n}`); ok(!opRouting.includes(`@${n}`), `the OPERATOR routing must not contain @${n} (that is what the listener is for)`); }
+  for (const n of ["bad_path", "bad_method", "xmlrpc_deny", "php_direct", "wp_hidden", "wp_admin_big"]) { ok(pubRouting.includes(`@${n}`) && opRouting.includes(`@${n}`), `both routing blocks must contain @${n}`); }
+  ok(!/(wp_cron_deny|wp_admin_deny|wp_login_deny)/.test(opRouting), "no public deny rule may leak into the operator routing");
+  // ---- stage identity: empty in the committed (production) text, never in production
+  if (!STAGE_HOST) {
+    ok(snip("aicc_stage_identity").filter((l) => l && !l.startsWith("#")).length === 0, "the committed template's (aicc_stage_identity) snippet must be EMPTY: the production build never contains the identity route");
+    ok(!/aicc-stage-identity/.test(code), "the committed template must not contain the stage identity path in code");
+    ok(snip("aicc_stage_robots").filter((l) => l && !l.startsWith("#")).length === 0 && !/X-Robots-Tag/.test(code), "the committed template's (aicc_stage_robots) snippet must be EMPTY (only the staging host is noindex)");
+  }
+  // ---- HTTP/3 off, metrics private
+  ok(/^\s*protocols h1 h2\s*$/m.test(code), "global `servers { protocols h1 h2 }` (HTTP/3 off) is missing");
+  ok(/^\s*strict_sni_host on\s*$/m.test(code), "global `servers { strict_sni_host on }` is missing (a foreign Host over a valid SNI would get Caddy's empty 200)");
+  ok(!/^\s*(Alt-Svc\s+")/m.test(code) && /^\s*-Alt-Svc\s*$/m.test(snipText("security_headers")), "no Alt-Svc value may be set and security_headers must remove one (-Alt-Svc)");
+  ok(/^\s*metrics\s*$/m.test(regenerated.split("# BEGIN GLOBAL OPTIONS")[1]?.split("# END GLOBAL OPTIONS")[0] || ""), "global option `metrics` must be enabled in the global options");
+  ok(!structure.sites.some((x) => /^\s*metrics\b/m.test(x.text)) && ![...structure.snippets.values()].some((sn) => sn.body.some((l) => /^\s*(metrics)\b/.test(l))), "no site, handle or snippet may route `metrics` (it is served by the loopback admin API only)");
+  ok(/^\s*admin \{\$AICC_ADMIN_ADDR:127\.0\.0\.1:12019\}\s*$/m.test(code), "the admin API must default to 127.0.0.1:12019");
+  ok(/^\s*acme_ca \{\$AICC_ACME_CA:https:\/\/acme-v02\.api\.letsencrypt\.org\/directory\}\s*$/m.test(code), "the ACME CA must default to Let's Encrypt production");
+  // ---- the WordPress origin forms
+  ok(/^\s*import wp_proxy_fastcgi\s*$/m.test(snipText("wp_proxy")), "the committed (wp_proxy) selector must import the fastcgi form (the Linux target)");
+  const fcgi = snipText("wp_proxy_fastcgi");
+  ok(/php_fastcgi \{\$AICC_PHP_FPM_SOCKET:unix\/\/run\/php\/aicc-cp\.sock\}/.test(fcgi) && /root \* \{\$AICC_WP_ROOT\}/.test(fcgi) && /^file_server$/m.test(fcgi), "wp_proxy_fastcgi must be php_fastcgi on the unix socket with root {$AICC_WP_ROOT} and a file_server");
+  ok(!/\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}:\d+|localhost:\d+/.test(fcgi), "wp_proxy_fastcgi must not contain an HTTP upstream address (unix socket only)");
+  ok(/resolve_root_symlink/.test(fcgi), "wp_proxy_fastcgi must resolve the docroot symlink (opcache across release switches)");
   // request body cap (E9): every PUBLIC WordPress route is capped at 2 MB; only the operator-only /wp-admin/ route may take more
   for (const n of ["to_wordpress", "to_wordpress_nocache"]) ok(structure.snippets.get(n)?.body.includes("import wp_body_cap"), `snippet ${n} must import wp_body_cap (public WordPress routes have a request body cap)`);
   ok(/request_body \{\s*max_size 2MB\s*\}/.test((structure.snippets.get("wp_body_cap")?.body || []).join("\n").replace(/\n+/g, " ")) || (structure.snippets.get("wp_body_cap")?.body || []).join(" ").includes("max_size 2MB"), "wp_body_cap must set max_size 2MB");
   ok(!structure.snippets.get("to_wordpress_admin")?.body.includes("import wp_body_cap") && (structure.snippets.get("to_wordpress_admin")?.body || []).join(" ").includes("max_size 64MB"), "to_wordpress_admin (operator-only /wp-admin/) has its own, larger cap");
   ok(!structure.sites.some((x) => x.addresses.some((a) => a.includes(M.API_HOST))), "api.copilt.org must not have a site block in this file");
+  // ---- renders (scripts/lib/edge-render.mjs): every mode renders, with the invariants asserted by the renderer itself; the production render has no identity route
+  if (!STAGE_HOST) {
+    const R = await import("./lib/edge-render.mjs");
+    const t0 = R.readTemplate(TEMPLATE);
+    for (const [label, o] of [["production", { mode: "production" }], ["stage", { mode: "stage" }], ["stage (literal host)", { mode: "stage", host: "stage.copilt.org" }], ["rehearsal production topology, fastcgi", { mode: "rehearsal", tls: "internal", identity: "rehearsal" }], ["rehearsal production topology, proxy", { mode: "rehearsal", tls: "internal", upstream: "proxy", identity: "rehearsal" }], ["rehearsal stage topology", { mode: "rehearsal", topology: "stage", host: "stage-rehearsal.copilt.org", tls: "internal", identity: "rehearsal" }]]) {
+      let r = null, err = "";
+      try { r = R.render(t0, o); } catch (e) { err = e.message; }
+      ok(!!r, `render ${label} failed: ${err}`);
+      if (!r) continue;
+      const c = r.text.split("\n").filter((l) => !/^\s*#/.test(l)).join("\n");
+      if (o.mode === "production") ok(r.text === t0 && !/aicc-stage-identity/.test(c), "the production render must be the committed template text, unchanged, with no identity route");
+      if (o.mode === "stage") ok(/aicc-stage-identity/.test(c) && /\{\$AICC_STAGE_ID\}/.test(c) && /"env":"staging"/.test(c), "the stage render must contain the identity route (env staging, id from AICC_STAGE_ID)");
+      if (o.mode === "stage") ok(/X-Robots-Tag "noindex, nofollow, noarchive"/.test(c), "the stage render must send X-Robots-Tag noindex on every response (the staging host is never indexable)");
+      if (o.mode === "production") ok(!/X-Robots-Tag/.test(c), "the production render must not send X-Robots-Tag");
+      if (o.mode === "stage") ok(!/\blocal_certs\b|tls internal/.test(c) && /acme_ca/.test(c) && /^\s*email /m.test(c), "the stage render must use automatic public-CA HTTPS (no local_certs, no tls internal, email + acme_ca present)");
+      if (o.topology === "stage" || o.mode === "stage") ok(!/www\.copilt\.org|(^|[\s,/])copilt\.org\b/m.test(c), `the ${label} render must not mention the production hosts in code`);
+    }
+    ok((() => { try { R.render(t0, { mode: "production", identity: "staging" }); return false; } catch { return true; } })(), "the renderer must refuse an identity route in the production render");
+    ok((() => { try { R.render(t0, { mode: "stage", tls: "internal" }); return false; } catch { return true; } })(), "the renderer must refuse tls internal in a stage render");
+    ok((() => { try { R.render(t0, { mode: "stage", upstream: "proxy" }); return false; } catch { return true; } })(), "the renderer must refuse reverse_proxy in a stage render");
+    // the STAGE render is replayed through the same model with the retargeted matrix (child run; the literal host keeps the model simple)
+    const tmp = fs.mkdtempSync(path.join(process.env.TMPDIR || "/tmp", "aicc-stage-render-"));
+    const f = path.join(tmp, "stage.Caddyfile");
+    fs.writeFileSync(f, R.render(t0, { mode: "stage", host: "stage.copilt.org" }).text);
+    const child = spawnSync(process.execPath, [fileURLToPath(import.meta.url), "--template", f, "--stage-host", "stage.copilt.org", "--quiet"], { encoding: "utf8", cwd: ROOT });
+    fs.rmSync(tmp, { recursive: true, force: true });
+    ok(child.status === 0, `the stage render does not pass the model (retargeted matrix):\n${(child.stderr || "").split("\n").slice(0, 12).join("\n")}`);
+  }
 }
-for (const c of M.CASES) {
+for (const c of CASES) {
   const url = c.from.replace(/#.*$/, "");
   const r = await hit(url, c.method || "GET", c.peer || "public");
   if (c.location !== undefined) {
@@ -382,7 +477,7 @@ for (const c of M.CASES) {
 
 /* ------------------------------------------------------------------ 4. no chains, no loops */
 let swept = 0, maxHops = 0;
-for (const scheme of ["http", "https"]) for (const host of [M.APEX_HOST, M.CANONICAL_HOST]) for (const p of M.SWEEP_PATHS) {
+for (const scheme of ["http", "https"]) for (const host of STAGE_HOST ? [CANON] : [M.APEX_HOST, M.CANONICAL_HOST]) for (const p of M.SWEEP_PATHS) {
   const q = p.includes("?") ? "" : (p.length % 2 ? "?plan=solo&x=1" : "");
   let url = `${scheme}://${host}${p}${q}`;
   const start = url;
@@ -393,12 +488,12 @@ for (const scheme of ["http", "https"]) for (const host of [M.APEX_HOST, M.CANON
   }
   swept++; maxHops = Math.max(maxHops, hops);
   ok(hops <= 1, `redirect chain (${hops} hops) starting at ${start}, ended at ${url}`);
-  ok(new URL(url).origin === M.ORIGIN, `${start} ends off the canonical origin: ${url}`);
+  ok(new URL(url).origin === ORIGIN_L, `${start} ends off the canonical origin: ${url}`);
   // a canonical, already-slashed https://www URL must not redirect at all
-  if (scheme === "https" && host === M.CANONICAL_HOST && /\/$/.test(p) && !/index\.html|ai-commerce|account|login|register|store|shop|404|_not-found/.test(p) && !p.includes("?")) ok(hops === 0, `canonical URL redirects: ${start} -> ${url}`);
+  if (scheme === "https" && host === CANON && /\/$/.test(p) && !/index\.html|ai-commerce|account|login|register|store|shop|404|_not-found/.test(p) && !p.includes("?")) ok(hops === 0, `canonical URL redirects: ${start} -> ${url}`);
 }
 // no rule may redirect to its own match target (loop) -- covered by the hop count above; also assert Location never carries a double slash or the old base path
-for (const c of M.CASES) if (c.location) ok(!/(?<!:)\/\//.test(c.location.replace(M.ORIGIN, "")) && !c.location.includes(M.LEGACY_BASE_PATH), `bad Location in expectation: ${c.location}`);
+for (const c of CASES) if (c.location) ok(!/(?<!:)\/\//.test(c.location.replace(ORIGIN_L, "")) && !c.location.includes(M.LEGACY_BASE_PATH), `bad Location in expectation: ${c.location}`);
 
 /* ------------------------------------------------------------------ 5. matrix vs the site itself */
 const { ROUTE_IDS, localePath } = await loadTs("src/lib/routes.ts");
@@ -407,12 +502,12 @@ for (const l of LOCALES) for (const id of ROUTE_IDS) {
   const p = localePath(l, id);
   const owner = M.TARGET_OWNER[id];
   ok(owner === "static" || owner === "wordpress", `route "${id}" has no target owner in redirect-matrix.mjs (TARGET_OWNER)`);
-  const r = await hit(`https://${M.CANONICAL_HOST}${p}`);
+  const r = await hit(`https://${CANON}${p}`);
   ok(r.status === 200 && r.headers["x-origin"] === owner, `${p}: edge sends it to "${r.headers["x-origin"]}" (${r.status}) but TARGET_OWNER says ${owner}`);
   if (owner === "static") { ok(staticExists(p), `${p} is static-owned but not found in the static export${fs.existsSync(OUT_DIR) ? "" : " (route table)"}`); owners.static.push(p); }
   else owners.wordpress.push(p);
 }
-for (const p of M.WP_ONLY_PAGES) { const r = await hit(`https://${M.CANONICAL_HOST}${p}`); ok(r.headers["x-origin"] === "wordpress", `${p} should be WordPress-owned, got ${r.headers["x-origin"]}`); }
+for (const p of M.WP_ONLY_PAGES) { const r = await hit(`https://${CANON}${p}`); ok(r.headers["x-origin"] === "wordpress", `${p} should be WordPress-owned, got ${r.headers["x-origin"]}`); }
 // The site's Get started / plan links (src/lib/site.ts) are language-prefixed and must pass the edge untouched: no redirect, WordPress-owned, prefix and ?plan= kept
 {
   const S = await loadTs("src/lib/site.ts");
@@ -429,10 +524,10 @@ for (const p of M.WP_ONLY_PAGES) { const r = await hit(`https://${M.CANONICAL_HO
   for (const [got, exp] of want) ok(got === exp, `localizeAccountUrl: expected ${exp}, got ${got}`);
   for (const l of LOCALES) {
     for (const url of [S.getStartedUrl(l), ...["solo", "studio", "agency"].map((pl) => S.planUrl(pl, l))]) {
-      if (new URL(url).origin !== M.ORIGIN) continue; // an NEXT_PUBLIC_AICC_ACCOUNT_URL override points somewhere else on purpose
+      if (new URL(url).origin !== ORIGIN_L) continue; // an NEXT_PUBLIC_AICC_ACCOUNT_URL override points somewhere else on purpose
       const r = await hit(url);
       ok(r.status === 200 && r.headers["x-origin"] === "wordpress", `${url}: the site links here, the edge must answer 200 from WordPress without a redirect, got ${r.status} ${r.headers["x-origin"]} ${r.headers.location || ""}`);
-      ok(l === "en" ? !/\/(he|es|ru)\//.test(url) : url.startsWith(`${M.ORIGIN}/${l}/my-account/`), `${url} has the wrong language prefix for ${l}`);
+      ok(l === "en" ? !/\/(he|es|ru)\//.test(url) : url.startsWith(`${ORIGIN_L}/${l}/my-account/`), `${url} has the wrong language prefix for ${l}`);
     }
   }
 }
@@ -445,20 +540,29 @@ for (const p of M.WP_ONLY_PAGES) { const r = await hit(`https://${M.CANONICAL_HO
   for (const l of LOCALES) for (const base of M.WP_SITEMAP_PAGES) {
     const p = (l === "en" ? "" : `/${l}`) + base;
     ok(M.WP_ONLY_PAGES.includes(base), `${base} is in the sitemap list but not in WP_ONLY_PAGES`);
-    const r = await hit(`https://${M.CANONICAL_HOST}${p}`);
+    const r = await hit(`https://${CANON}${p}`);
     ok(r.status === 200 && r.headers["x-origin"] === "wordpress", `${p}: listed in the sitemap, must be WordPress-owned with a 200, got ${r.headers["x-origin"]} ${r.status}`);
-    if (sm) ok(sm.includes(`<loc>https://${M.CANONICAL_HOST}${p}</loc>`), `${p} is WordPress-owned and public but missing from the built sitemap.xml`);
+    if (sm) ok(sm.includes(`<loc>https://${M.CANONICAL_HOST}${p}</loc>`) || STAGE_HOST, `${p} is WordPress-owned and public but missing from the built sitemap.xml`);
   }
 }
-for (const p of M.UNOWNED) { const r = await hit(`https://${M.CANONICAL_HOST}${p}`); ok(r.status === 404, `${p} is listed as UNOWNED and must be a 404 until it is built, got ${r.status}`); }
+for (const p of M.UNOWNED) { const r = await hit(`https://${CANON}${p}`); ok(r.status === 404, `${p} is listed as UNOWNED and must be a 404 until it is built, got ${r.status}`); }
 // every enabled redirect target (for the sample requests above) lands on a served page: covered by hop/final checks; here: disabled rules really are disabled
 for (const rule of M.PATH_RULES.filter((x) => x.enabled === false)) ok(!redirectsSrc.matchers.has(rule.id), `disabled rule ${rule.id} leaked into the generated config`);
 // cutover/ops invariants of the template text
 ok(!/includeSubDomains|preload/i.test(regenerated.replace(/#.*$/gm, "")), "HSTS must not use includeSubDomains/preload in the template");
 ok(!/api\.copilt\.org\s*\{/.test(regenerated), "api.copilt.org must not have a site block in this file");
 ok(/Strict-Transport-Security "max-age=300"/.test(regenerated), "HSTS ramp must start at max-age=300");
-for (const h of ["Forwarded", "X-Real-IP", "X-Client-IP", "True-Client-IP", "Client-IP", "CF-Connecting-IP", "X-Cluster-Client-IP", "X-Originating-IP", "Fastly-Client-IP", "Forwarded-For", "X-Forwarded", "X-Forwarded-Port", "X-Forwarded-Scheme", "X-Forwarded-Ssl", "Front-End-Https", "X-Url-Scheme", "X-Forwarded-Server", "X-Original-URL", "X-Rewrite-URL"]) ok(new RegExp(`header_up\\s+-${h}\\s*$`, "m").test(regenerated), `the WordPress proxy must strip the client-supplied ${h} header (header_up -${h}); the browser rehearsal showed it reaching the Control Plane`);
-ok(/header_up X-Forwarded-For \{remote_host\}/.test(regenerated) && /header_up X-Forwarded-Proto \{scheme\}/.test(regenerated) && /header_up X-Forwarded-Host \{host\}/.test(regenerated), "X-Forwarded-For/-Proto/-Host must be OVERWRITTEN with edge-made values");
+{
+  const body = (n) => (structure.snippets.get(n)?.body || []).join("\n");
+  const STRIP = ["Forwarded", "X-Real-IP", "X-Client-IP", "True-Client-IP", "Client-IP", "CF-Connecting-IP", "X-Cluster-Client-IP", "X-Originating-IP", "Fastly-Client-IP", "Forwarded-For", "X-Forwarded", "X-Forwarded-Port", "X-Forwarded-Scheme", "X-Forwarded-Ssl", "Front-End-Https", "X-Url-Scheme", "X-Forwarded-Server", "X-Original-URL", "X-Rewrite-URL"];
+  // reverse_proxy form (rehearsal fallback): strips the list and OVERWRITES X-Forwarded-For/-Proto/-Host with edge-made values
+  for (const h of STRIP) ok(new RegExp(`header_up\\s+-${h}\\s*$`, "m").test(body("wp_proxy_http")), `the reverse_proxy WordPress snippet must strip the client-supplied ${h} header (header_up -${h}); the browser rehearsal showed it reaching the Control Plane`);
+  ok(/header_up X-Forwarded-For \{remote_host\}/.test(body("wp_proxy_http")) && /header_up X-Forwarded-Proto \{scheme\}/.test(body("wp_proxy_http")) && /header_up X-Forwarded-Host \{host\}/.test(body("wp_proxy_http")), "reverse_proxy form: X-Forwarded-For/-Proto/-Host must be OVERWRITTEN with edge-made values");
+  // php_fastcgi form (Linux): PHP gets REMOTE_ADDR and HTTPS from Caddy, so EVERY forwarding/identity header is removed, X-Forwarded-For/-Proto/-Host and Via included (measured with a real php-fpm: Forwarded, X-Real-IP, Client-IP and Via from the client reached PHP unchanged without these lines)
+  for (const h of [...STRIP, "X-Forwarded-For", "X-Forwarded-Proto", "X-Forwarded-Host", "Via"]) ok(new RegExp(`header_up\\s+-${h}\\s*$`, "m").test(body("wp_proxy_fastcgi")), `the php_fastcgi WordPress snippet must strip the client-supplied ${h} header (header_up -${h}): it must never reach PHP as HTTP_*`);
+  ok(!/header_up\s+X-Forwarded/i.test(body("wp_proxy_fastcgi")), "the php_fastcgi form must not SET any X-Forwarded-* header (PHP reads REMOTE_ADDR and HTTPS; AICC_LM_TRUSTED_PROXIES stays empty)");
+  ok(!/trusted_proxies/.test(regenerated.split("\n").filter((l) => !/^\s*#/.test(l)).join("\n")), "trusted_proxies must not be set on the public edge (a client-supplied X-Forwarded-For would be believed)");
+}
 ok(!/header_up\s+(-?Cookie|-?Set-Cookie)/i.test(regenerated) && !/header_down\s+-?Set-Cookie/i.test(regenerated), "Cookie / Set-Cookie must pass through untouched");
 
 server.close();
@@ -496,6 +600,34 @@ async function selfTest() {
     ["remove `auto_https disable_redirects` (any Host on :80 would be 308'd to https://<attacker host>)", (t) => t.replace("\tauto_https disable_redirects\n", "")],
     ["delete the catch-all http:// block (unknown Hosts on :80)", (t) => t.replace(/http:\/\/ \{\n[\s\S]*?\n\}\n/, "")],
     ["let public visitors into /wp-admin/ (drop the operator condition; generated drift)", (t) => t.replace("\t\tpath_regexp wp_admin_deny (?i)^/wp-admin(?:/|$)\n\t\tnot path_regexp wp_admin_public (?i)^/wp-admin/(?:admin-ajax|admin-post)\\.php$\n\t\tnot remote_ip {$AICC_OPERATOR_CIDRS}\n", "\t\tpath_regexp wp_admin_deny (?i)^/wp-admin(?:/|$)\n\t\tnot path_regexp wp_admin_public (?i)^/wp-admin/(?:admin-ajax|admin-post)\\.php$\n")],
+    // ---- Linux/stage architecture (round 5): operator listener, php_fastcgi, HTTP/3 off, private metrics, identity, PHP entry points
+    ["operator listener binds the wildcard address (bind 0.0.0.0)", (t) => t.replace("\tbind 127.0.0.1\n", "\tbind 0.0.0.0\n")],
+    ["operator listener loses its bind line (listens on every address)", (t) => t.replace("\tbind 127.0.0.1\n", "")],
+    ["operator listener loses the non-loopback guard", (t) => afterHead(t, "{$AICC_OPERATOR_PORT:8443} {", "\timport aicc_operator_guard\n", "")],
+    ["operator listener loses its certificate import (different certificate/none)", (t) => afterHead(t, "{$AICC_OPERATOR_PORT:8443} {", "\timport aicc_tls\n", "")],
+    ["operator listener becomes a plain http address", (t) => t.replace("www.copilt.org:{$AICC_OPERATOR_PORT:8443} {", "http://www.copilt.org:{$AICC_OPERATOR_PORT:8443} {")],
+    ["public routing loses the wp-login deny (generated drift)", (t) => t.replace(/\t@wp_login_deny \{[\s\S]*?\thandle @wp_login_deny \{[\s\S]*?\t\}\n/, "")],
+    ["operator routing loses the PHP entry-point rule (generated drift)", (t) => { const i = t.indexOf("# BEGIN GENERATED: routing operator"); const a = t.indexOf("\t@php_direct {", i); const b = t.indexOf("\thandle @php_direct {", a); const c = t.indexOf("\t}\n", b) + 3; return t.slice(0, a) + t.slice(c) ; }],
+    ["operator routing gets a public deny rule back (drift)", (t) => t.replace("# BEGIN GENERATED: routing operator\n", "# BEGIN GENERATED: routing operator\n\t@wp_admin_deny path /wp-admin/*\n\thandle @wp_admin_deny {\n\t\theader Cache-Control \"no-store\"\n\t\trespond \"Forbidden\" 403\n\t}\n")],
+    ["Caddy advertises HTTP/3 again (Alt-Svc set)", (t) => t.replace("\t\t-Alt-Svc\n", "\t\tAlt-Svc \"h3=\\\":443\\\"; ma=3600\"\n")],
+    ["HTTP/3 turned on (protocols line removed)", (t) => t.replace("\t\tprotocols h1 h2\n", "")],
+    ["metrics disabled", (t) => t.replace("\tmetrics\n", "")],
+    ["X-Robots-Tag noindex leaks into the committed (production) template", (t) => t.replace("(aicc_stage_robots) {\n}", '(aicc_stage_robots) {\n\theader X-Robots-Tag "noindex"\n}')],
+    ["strict_sni_host removed (foreign Host over a valid SNI gets an empty 200)", (t) => t.replace("\t\tstrict_sni_host on\n", "")],
+    ["metrics routed on the public site (handle /metrics { metrics })", (t) => t.replace("\timport aicc_stage_identity\n\n\t# WordPress admin surface", "\timport aicc_stage_identity\n\thandle /metrics {\n\t\tmetrics\n\t}\n\n\t# WordPress admin surface")],
+    ["the admin API default leaves loopback", (t) => t.replace("{$AICC_ADMIN_ADDR:127.0.0.1:12019}", "{$AICC_ADMIN_ADDR::2019}")],
+    ["fastcgi snippet stops stripping Forwarded", (t) => afterHead(t, "(wp_proxy_fastcgi) {", "\t\theader_up -Forwarded\n", "")],
+    ["fastcgi snippet stops stripping X-Forwarded-For (a forged XFF would reach PHP)", (t) => afterHead(t, "(wp_proxy_fastcgi) {", "\t\theader_up -X-Forwarded-For\n", "")],
+    ["fastcgi snippet stops stripping Client-IP", (t) => afterHead(t, "(wp_proxy_fastcgi) {", "\t\theader_up -Client-IP\n", "")],
+    ["fastcgi snippet stops stripping Via", (t) => afterHead(t, "(wp_proxy_fastcgi) {", "\t\theader_up -Via\n", "")],
+    ["fastcgi upstream becomes a TCP address (HTTP/fastcgi port on the network)", (t) => t.replace("{$AICC_PHP_FPM_SOCKET:unix//run/php/aicc-cp.sock}", "{$AICC_PHP_FPM_SOCKET:127.0.0.1:9000}")],
+    ["fastcgi snippet sets X-Forwarded-For again (XFF-trust dependency)", (t) => afterHead(t, "(wp_proxy_fastcgi) {", "\t\theader_up -X-Forwarded-For\n", "\t\theader_up X-Forwarded-For {remote_host}\n")],
+    ["wp_proxy selector points at the http proxy in the committed text", (t) => t.replace("(wp_proxy) {\n\timport wp_proxy_fastcgi\n}", "(wp_proxy) {\n\timport wp_proxy_http\n}")],
+    ["the stage identity route leaks into the committed (production) template", (t) => t.replace("(aicc_stage_identity) {\n}", "(aicc_stage_identity) {\n\t@aicc_stage_identity path /.well-known/aicc-stage-identity\n\thandle @aicc_stage_identity {\n\t\trespond \"x\" 200\n\t}\n}")],
+    ["trusted_proxies added to the public edge", (t) => t.replace("\tauto_https disable_redirects\n", "\tauto_https disable_redirects\n\tservers {\n\t\ttrusted_proxies static private_ranges\n\t}\n")],
+    ["the PHP entry-point whitelist is widened to any wp-content file (generated drift)", (t) => t.replace("not path_regexp php_entry ^/(?:index|wp-login|wp-cron)", "not path_regexp php_entry ^/(?:wp-content/.*|index|wp-login|wp-cron)")],
+    ["php_fastcgi stops resolving the docroot symlink", (t) => t.replace("\t\tresolve_root_symlink\n", "")],
+    ["the ACME CA default is no longer Let's Encrypt production", (t) => t.replace("https://acme-v02.api.letsencrypt.org/directory", "https://acme.zerossl.com/v2/DV90")],
   ];
   const tmp = fs.mkdtempSync(path.join(process.env.TMPDIR || "/tmp", "aicc-redirect-mutants-"));
   let survived = 0;

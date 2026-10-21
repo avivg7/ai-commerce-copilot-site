@@ -1,0 +1,9 @@
+(version 1)
+(allow default)
+;; OS-level egress barrier (macOS sandbox profile): the process may talk to loopback and unix sockets ONLY. Every other outbound network connection is DENIED by the kernel.
+;; Used for the Control Plane fixture's PHP (php -S, php-fpm and wp-cli): WordPress makes its own outbound HTTP requests (Action Scheduler's async runner posts to admin-ajax.php of the SITE URL,
+;; https://www.copilt.org, which is a REAL public host; update checks go to wordpress.org). Denied attempts are logged by the kernel ("deny(1) network-outbound").
+;; Limit (measured): name RESOLUTION still works (getaddrinfo is answered by mDNSResponder over mach IPC, which this profile cannot cleanly cut); scripts/rehearsal/egress-guard.php stops WordPress before it resolves.
+(deny network-outbound (remote ip "*:*"))
+(allow network-outbound (remote ip "localhost:*"))
+(allow network-outbound (remote unix-socket))

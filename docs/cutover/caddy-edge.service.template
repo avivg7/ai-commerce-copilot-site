@@ -21,14 +21,19 @@
 #           install -d -m 0750 -o root -g aicc-edge /etc/aicc-edge ; install -m 0640 -o root -g aicc-edge edge.env Caddyfile /etc/aicc-edge/
 #           install -m 0755 scripts/ops/edge-preflight.sh /usr/local/sbin/aicc-edge-preflight
 #           cp this file /etc/systemd/system/aicc-edge.service ; systemctl daemon-reload ; systemctl enable --now aicc-edge
-# /etc/aicc-edge/edge.env, for example (quote values with spaces):
-#   AICC_STATIC_ROOT=/srv/aicc/current
-#   AICC_WP_UPSTREAM=10.0.0.12:8080
-#   AICC_OPERATOR_CIDRS="203.0.113.7/32 2001:db8::/48"        # [OWNER INPUT] who may reach /wp-admin/, staff /wp-login.php and /wp-cron.php
+# /etc/aicc-edge/edge.env (Linux staging/production, decisions of 2026-10-21; `node scripts/ops/render-edge.mjs --mode stage --env-template --gen-stage-id` prints it; quote values with spaces):
+#   AICC_EDGE_MODE=stage                                        # stage | production; the preflight (ExecStartPre / ExecReload) reads it
+#   AICC_PUBLIC_HOST=stage.copilt.org   AICC_STAGE_HOST=stage.copilt.org   AICC_STAGE_ID=<random marker>
+#   AICC_STATIC_ROOT=/srv/aicc/site/current
+#   AICC_WP_ROOT=/srv/aicc/cp/current/wp
+#   AICC_PHP_FPM_SOCKET=unix//run/php/aicc-cp.sock              # PHP-FPM must be up first: order this unit After=/Wants= the pool's unit; the preflight fails when the socket is missing
 #   AICC_ACME_EMAIL=ops@example.invalid                         # [OWNER INPUT] ACME account contact (not relied on for expiry warnings)
+#   AICC_ACME_CA=https://acme-staging-v02.api.letsencrypt.org/directory   # FIRST start only (browsers will not trust it); delete the line for the real certificate
 #   AICC_LOG_DIR=/var/log/aicc-edge
-#   AICC_ADMIN_ADDR=127.0.0.1:12019
+#   AICC_ADMIN_ADDR=127.0.0.1:12019                             # Caddy's admin API and /metrics, loopback only
+#   AICC_OPERATOR_PORT=8443                                     # the loopback operator listener (SSH tunnel); no public operator list exists any more
 #   AICC_WP_TIMEOUT=60s
+# No AICC_OPERATOR_CIDRS, AICC_WP_UPSTREAM or AICC_H3_PORT: HTTP/3 is off, there is no HTTP upstream port, operators use the tunnel. RestrictAddressFamilies keeps AF_UNIX for the php-fpm socket.
 # Rehearsal timings on a Mac (not a promise for Linux): graceful reload 82 ms with zero failed requests under load; kill -9 and a supervised restart about 2.2 s.
 
 [Unit]
@@ -36,6 +41,9 @@ Description=AICC public edge (Caddy: www.copilt.org static site + WordPress Cont
 Documentation=https://caddyserver.com/docs/ file:docs/cutover/runbook.md
 After=network-online.target
 Wants=network-online.target
+# order after the PHP-FPM pool that owns /run/php/aicc-cp.sock (the unit name depends on the PHP version, e.g. php8.2-fpm.service); the preflight refuses to start without the socket
+#After=php8.2-fpm.service
+#Wants=php8.2-fpm.service
 StartLimitIntervalSec=120
 StartLimitBurst=10
 
@@ -45,8 +53,8 @@ User=aicc-edge
 Group=aicc-edge
 EnvironmentFile=/etc/aicc-edge/edge.env
 Environment=XDG_DATA_HOME=/var/lib/aicc-edge XDG_CONFIG_HOME=/var/lib/aicc-edge/config
-# Fail closed: Caddy alone starts happily with an empty AICC_OPERATOR_CIDRS (staff locked out), an empty AICC_STATIC_ROOT (every page 404) or no upstream (every WordPress route
-# 502). The preflight refuses all of that, plus expired/mismatched manual certificates, a non-loopback admin API and an unwritable log dir, and runs `caddy validate` last.
+# Fail closed: Caddy alone starts happily with an empty AICC_STATIC_ROOT (every page 404), a missing php-fpm socket (every WordPress route 502), a listener on the wrong address or a production
+# name in a stage config. The preflight refuses all of that, plus internal/pre-issued certificates, a public operator list, HTTP/3, routed metrics, a non-loopback admin API and an unwritable log dir, and runs `caddy adapt`/`caddy validate` last.
 ExecStartPre=/usr/local/sbin/aicc-edge-preflight --caddyfile /etc/aicc-edge/Caddyfile --caddy /usr/bin/caddy
 ExecStart=/usr/bin/caddy run --config /etc/aicc-edge/Caddyfile --adapter caddyfile
 # A reload runs the preflight first: a corrupt renewed certificate or an empty variable never reaches a running edge. The second line fails the unit's reload if Caddy refuses.

@@ -72,6 +72,17 @@ export const WP_LOGIN_RE = "(?i)^/wp-login\\.php(?:/.*)?$";
 export const WP_LOGIN_PUBLIC_METHODS = ["GET", "HEAD"];
 export const WP_LOGIN_PUBLIC_PATH = "/wp-login.php";
 export const WP_LOGIN_PUBLIC_QUERY = "^(action=logout(&redirect_to=[^&]*)?(&_wpnonce=[0-9a-f]+)?|loggedout=true(&wp_lang=[A-Za-z_]+)?)$";
+/**
+ * Linux/stage architecture (Caddy php_fastcgi over a unix socket to PHP-FPM, WordPress docroot read by the edge itself): nginx's `location ~ \.php$` hardening moves into the edge.
+ * PHP_DENY: any path that contains a PHP extension (also followed by path-info) is a branded 404 ... PHP_ENTRY: ... unless it is one of WordPress's real entry points:
+ * /index.php, /wp-login.php, /wp-cron.php and the direct children of /wp-admin/ (admin-ajax.php, admin-post.php, the operator pages). Plugin, theme, uploads and wp-includes
+ * .php files are never executed directly (an uploaded or plugin-supplied .php file is the classic WordPress takeover). Applied on both listeners, after the deny rules (so
+ * /xmlrpc.php, /wp-login.php, /wp-cron.php and /wp-admin/ keep their 403s) and before anything is proxied.
+ */
+export const PHP_DENY_RE = "(?i)\\.(?:php[0-9]?|phtml|phar|pht)(?:/|$)";
+export const PHP_ENTRY_RE = "^/(?:index|wp-login|wp-cron)\\.php$|^/wp-admin/[A-Za-z0-9_-]+\\.php$";
+/** Files in WordPress's own trees that are never public: dotfiles and dot-directories (.git, .htaccess, .env), logs/dumps/backups, readme/changelog/license (version disclosure). 404, never proxied or served. */
+export const WP_HIDDEN_RE = "(?i)^/wp-(?:content|includes)/(?:.*/\\.|.*/(?:readme|changelog|license)\\.(?:txt|md|html)$|.*\\.(?:log|sql|bak|old|orig|swp|env|ini|sh)$)";
 /** Paths that must be a branded edge 404: the export's error-page duplicates, the multisite entry points (WordPress would 302 them to wp-login.php?action=register = 403), and the 5xx page file itself (served only by handle_errors). */
 export const DUPLICATE_ERROR_RE = "^/(?:404|_not-found)(?:/|\\.html)?$|^/(?:wp-activate|wp-signup)\\.php$|^/50x\\.html$";
 export const WP_MACHINE_RE = "^/(?:wp-json|wp-admin|wc-api|wc-ajax)(?:/.*)?$|^/(?:wp-login\\.php|wp-cron\\.php|xmlrpc\\.php)$";
@@ -371,6 +382,35 @@ export const CASES = [
   o("https://www.copilt.org/_not-found/", "404", 404),
   o("https://www.copilt.org/404.html", "404", 404),
   o("https://www.copilt.org/he/wp-json/aicc-license/v1/plans", "404", 404, { note: "a language prefix in front of a machine path is never served (class-aicc-lm-i18n.php)" }),
+  // ---- Linux/stage architecture (php_fastcgi, docroot read by the edge): PHP is executed only through WordPress's entry points; private files are never served ----
+  o("https://www.copilt.org/wp-content/uploads/2026/10/shell.php", "404", 404, { note: "no PHP execution inside uploads (or anywhere but the entry points)" }),
+  o("https://www.copilt.org/wp-content/plugins/woocommerce/woocommerce.php", "404", 404, { note: "plugin files are not entry points" }),
+  o("https://www.copilt.org/wp-content/themes/aicc-admin/functions.php", "404", 404),
+  o("https://www.copilt.org/wp-includes/version.php", "404", 404),
+  o("https://www.copilt.org/wp-config.php", "404", 404),
+  o("https://www.copilt.org/wp-load.php", "404", 404),
+  o("https://www.copilt.org/wp-settings.php", "404", 404),
+  o("https://www.copilt.org/wp-content/uploads/a.png/x.php", "404", 404, { note: "path-info trick: an image name followed by .php" }),
+  o("https://www.copilt.org/wp-content/uploads/evil.PHP", "404", 404, { note: "extension case" }),
+  o("https://www.copilt.org/wp-content/uploads/evil.phtml", "404", 404),
+  o("https://www.copilt.org/wp-content/uploads/evil.php5", "404", 404),
+  o("https://www.copilt.org/wp-content/uploads/evil.phar", "404", 404),
+  o("https://www.copilt.org/pricing/x.php", "404", 404, { note: "a WordPress-owned page prefix does not make a .php path an entry point" }),
+  o("https://www.copilt.org/wp-content/debug.log", "404", 404, { note: "WP_DEBUG_LOG output" }),
+  o("https://www.copilt.org/wp-content/uploads/.htaccess", "404", 404),
+  o("https://www.copilt.org/wp-content/plugins/woocommerce/.git/config", "404", 404),
+  o("https://www.copilt.org/wp-content/plugins/woocommerce/readme.txt", "404", 404, { note: "version disclosure" }),
+  o("https://www.copilt.org/wp-includes/ID3/license.txt", "404", 404),
+  o("https://www.copilt.org/wp-content/uploads/backup.sql", "404", 404),
+  o("https://www.copilt.org/wp-content/uploads/site.bak", "404", 404),
+  o("https://www.copilt.org/wp-admin/includes/file.php", "404", 404, { peer: "operator", note: "even an operator reaches only the direct children of /wp-admin/" }),
+  o("https://www.copilt.org/wp-admin/admin-ajax.php/x", "404", 404, { peer: "operator", note: "operator listener: path-info after an entry point is not an entry point" }),
+  // ---- metrics are private: Caddy's /metrics lives on the loopback admin API only, never on a site (the route table has no metrics handler) ----
+  o("https://www.copilt.org/metrics", "404", 404, { note: "must never be Prometheus text" }),
+  o("https://www.copilt.org/metrics/", "404", 404),
+  o("https://www.copilt.org/he/metrics", "404", 404),
+  o("https://www.copilt.org/metrics", "404", 404, { peer: "operator", note: "also not on the operator listener" }),
+  r("https://copilt.org/metrics", 301, `${W}/metrics`, { note: "the apex redirects like any other path; the target is a 404" }),
 ];
 
 /** Representative request paths for the "at most one hop, never a loop" sweep over all four host/scheme combinations. */
@@ -383,3 +423,16 @@ export const SWEEP_PATHS = [
   "/ai-commerce-copilot-site/robots.txt", "/robots.txt", "/sitemap.xml", "/favicon.ico", "/_next/static/chunks/a.js", "/brand-kit/x.svg", "/og/en-home.jpg", "/demo/aicc-demo.mp4",
   "/wp-json/aicc-license/v1/plans", "/wp-login.php", "/wp-admin/", "/?wc-ajax=x", "/get-started", "/get-started/", "/docs", "/en/", "/404/", "/_not-found/", "/Pricing", "/he/nothing",
 ];
+
+/**
+ * The same matrix for a host that is NOT www.copilt.org: the staging host (stage topology: ONE site address, no apex block).
+ * Cases on the apex host are dropped (the stage render has no apex site), every `https://www.copilt.org` becomes `https://<host>` in `from` and `location`;
+ * `http://www.copilt.org` becomes `http://<host>`. Port is not added here (callers add the explicit port the guard demands).
+ */
+export function retargetCases(cases, host) {
+  const swap = (u) => (u === undefined ? u : u.replace(/^(https?):\/\/www\.copilt\.org(?=[/:?#]|$)/, `$1://${host}`));
+  return cases
+    .filter((c) => !new RegExp(`^https?://${APEX_HOST.replace(/\./g, "\\.")}(?=[/:?#]|$)`).test(c.from))
+    .map((c) => ({ ...c, from: swap(c.from), location: swap(c.location) }));
+}
+/** Sweep paths are host-independent; the sweep hosts for a stage topology are [host] only. */

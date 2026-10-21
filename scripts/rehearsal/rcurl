@@ -1,0 +1,5 @@
+#!/usr/bin/env node
+// FAIL-CLOSED curl for the AICC rehearsal and staging. Replaces ~/aicc-rehearsal/bin/rcurl (which mapped names with --resolve and sent anything it was given).
+// This shim only locates scripts/rehearsal/rcurl.mjs; run `rcurl --help` for the usage.
+const fs = require("node:fs"), path = require("node:path"), url = require("node:url");
+import(url.pathToFileURL(path.join(path.dirname(fs.realpathSync(__filename)), "rcurl.mjs")).href).catch((e) => { console.error(e); process.exit(1); });

@@ -78,7 +78,8 @@ Notes on the two flips:
 | `_github-pages-challenge-avivg7` | TXT | value shown by GitHub's "Verify domain" page | **after** DNS leaves GitHub, before removing the Pages custom domain (runbook section 6; closes the takeover gap) | new TXT alongside the SPF; **[OWNER ACTION]** |
 | `@` | TXT | Search Console / Bing verification string | only if the DNS method is chosen (runbook 1.8) | a separate TXT row; never merge into the SPF row |
 | `_dmarc`, DKIM, SPF edit | TXT/CNAME | see Part 3 | only after the sender decision (runbook 1.11) | separate owner-approved DNS change |
-| staging hostname | A | rehearsal host | optional, if a real DNS name is wanted for the rehearsal | runbook rehearsals use `curl --resolve`/host-resolver rules and need no DNS (the production `edge` record is row 0 in 2.1) |
+| `stage` (stage.copilt.org) | A (+ AAAA) | the Linux staging host | **[OWNER ACTION]**, decided 2026-10-21: needed for Let's Encrypt (HTTP-01/TLS-ALPN-01) to issue the staging certificate; no other record changes (no MX/SPF/TXT, no apex, no `www`). Create it only after the host exists; before that the test tools run with an explicit IP and `--allow-dns-mismatch` (`docs/cutover/stage-linux.md` section 10). Check `dig +short CAA copilt.org` first | 300 | **[OWNER ACTION]** |
+| other staging/rehearsal names | - | rehearsal host | none | rehearsals use the fail-closed tools' forced connection (`scripts/lib/target-guard.mjs`): the names are never resolved, no DNS is needed (the production `edge` record is row 0 in 2.1) |
 
 ### 2.4 TTL lowering plan
 

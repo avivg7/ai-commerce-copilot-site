@@ -3,9 +3,14 @@
 import fs from "node:fs";
 import path from "node:path";
 import * as M from "../lib/redirect-matrix.mjs";
-import { alive, readPid, waitFor, startProbe, allEdgeLogFiles, readLogFile, P, INSTANCES, WP_UPSTREAM, req, rawRequest, readAccessLog, stripPort, resolveLocation, fsCaseInsensitive, sleep, now, ensureDirs, portListening, cpEchoToken, sh, caddyVersion } from "./lib.mjs";
+import { verifyInstance, guardFor, allGuards, STAGE_REHEARSAL_HOST, stageId, alive, readPid, waitFor, startProbe, allEdgeLogFiles, readLogFile, P, INSTANCES, WP_UPSTREAM, req, rawRequest, readAccessLog, stripPort, resolveLocation, fsCaseInsensitive, sleep, now, ensureDirs, portListening, cpEchoToken, sh, caddyVersion } from "./lib.mjs";
 import { Section } from "./harness.mjs";
+import { productionReadonlyGuard, loopbackFetch, auditReport, readAuditFile } from "../lib/target-guard.mjs";
+import net from "node:net";
+const auditReportOf = (file) => auditReport(readAuditFile(file));
+const PRODRO = process.env.AICC_REHEARSAL_PRODUCTION_READONLY === "1"; // opt-in: read-only (GET/HEAD) probes of the REAL public sites; off by default (fail closed)
 import { settings, start, stop, reload, launchdPlist, generateOldTarget, oldTargetSafety, generate, safetyCheck, validate, preflight, envFor } from "./edge.mjs";
+import { operatorPortOf, UPSTREAM_MODE } from "./lib.mjs";
 void 0;
 import { REPO as REPO_ROOT } from "./lib.mjs";
 
@@ -18,10 +23,15 @@ export async function ensureInstances() {
     const cfg = { ...settings(), ...inst, upstream: WP_UPSTREAM, staticRoot: P.current, wpTimeout: "60s", variant: "" };
     if (alive(readPid(inst.name))) await reload(cfg, { quiet: true }); // always run the CURRENT template
     else await start(cfg, { quiet: true });
+    await verifyInstance(inst); // fail closed: nothing else is sent to an instance whose identity route did not answer with this rehearsal's id
   }
 }
+// public peers go to the twin's PUBLIC listener; operator peers to the standing edge's loopback OPERATOR listener (the SSH-tunnel path; owner decision 2026-10-21)
 const instFor = (c) => (c.peer === "operator" ? EDGE : PUBLIC);
-const WPID = WP_UPSTREAM;
+const OPR = { operator: true };
+const WPID = UPSTREAM_MODE === "fastcgi" ? "unix//…/aicc-cp.sock" : WP_UPSTREAM;
+/** Is this access-log `upstream` the WordPress origin? (reverse_proxy: 127.0.0.1:18982; php_fastcgi: the php-fpm unix socket) */
+const isWpUp = (u) => (UPSTREAM_MODE === "fastcgi" ? /aicc-cp\.sock$/.test(u || "") : u === WP_UPSTREAM);
 const FS_CI = fsCaseInsensitive();
 
 /* ------------------------------------------------------------------ routing: the 200+ cases of scripts/lib/redirect-matrix.mjs through the real edge */
@@ -37,7 +47,7 @@ async function routing() {
   for (const c of M.CASES) {
     const url = (c.origin === "static" ? realAsset(c.from) : c.from).replace(/#.*$/, "");
     const inst = instFor(c);
-    const r = await req(inst, url, { method: c.method && c.method !== "HEAD" ? c.method : undefined, head: c.method === "HEAD", body: c.method && !["GET", "HEAD"].includes(c.method) ? "x=1" : undefined });
+    const r = await req(inst, url, { operator: c.peer === "operator", method: c.method && c.method !== "HEAD" ? c.method : undefined, head: c.method === "HEAD", body: c.method && !["GET", "HEAD"].includes(c.method) ? "x=1" : undefined });
     await sleep(2);
     const row = { request: `${c.method || "GET"} ${c.from}`, peer: c.peer || "public", expected: c.location !== undefined ? `${c.status} -> ${c.location.replace(/#.*$/, "")}` : `${c.status} ${c.origin}${c.cache !== undefined ? ` cc=${JSON.stringify(c.cache)}` : ""}`, actual: `${r.status}${r.headers.location ? " -> " + stripPort(inst, r.headers.location[0]) : ""}`, reqId: r.reqId, note: c.note || "" };
     rows.push({ c, r, row, inst });
@@ -56,7 +66,9 @@ async function routing() {
       row.owner = "edge (redirect)"; row.ok = r.status === c.status && got === want && upstream === "";
     } else if (c.origin === "wordpress") {
       const marker = (r.headers["x-rehearsal-upstream"] || [])[0];
-      const ok = marker === "wordpress" && upstream === WPID && r.status < 500 && r.status > 0;
+      // php_fastcgi: an EXISTING non-PHP file of WordPress's docroot (jquery, theme css) is served by Caddy's file_server from the docroot: no PHP marker, empty upstream, not the static handler (no CSP-Report-Only)
+      const wpFile = UPSTREAM_MODE === "fastcgi" && /^\/(wp-content|wp-includes)\//.test(new URL(c.from).pathname) && r.status === 200 && !marker && upstream === "" && !(r.headers["content-security-policy-report-only"] || []).length;
+      const ok = (marker === "wordpress" && isWpUp(upstream) && r.status < 500 && r.status > 0) || wpFile;
       let okc = true; if (c.cache === NOCACHE_S) okc = (r.headers["cache-control"] || [])[0] === NOCACHE_S; else if (c.cache === "") okc = (r.headers["cache-control"] || [])[0] !== NOCACHE_S;
       S.check(id, ok && okc, `expected WordPress (marker+log upstream ${WPID}), status<500; got marker=${marker} upstream="${upstream}" status=${r.status} cc=${(r.headers["cache-control"] || [])[0]}`, `${r.status} wp`);
       row.owner = `WordPress (${marker ? "marker" : "NO marker"}, upstream ${upstream || "-"})`; row.ok = ok && okc;
@@ -188,7 +200,7 @@ async function behavior() {
   // ---- D. HTTP/2 -----------------------------------------------------------------------------------------
   const h2 = await rq(E, "https://www.copilt.org/", { http: "2", head: true });
   S.check("HTTP/2 negotiated over TLS (ALPN h2)", h2.httpVersion === "2" || /HTTP\/2/.test(h2.proto || ""), `proto=${h2.proto} curl-version=${h2.httpVersion}`);
-  S.check("Alt-Svc advertises h3 (HTTP/3 listener is on; curl here has no HTTP/3 so QUIC itself is UNVERIFIED)", /h3=/.test(one(h2, "alt-svc") || ""), one(h2, "alt-svc"));
+  S.check("HTTP/3 is OFF (owner decision): no Alt-Svc header on an HTTP/2 answer (servers { protocols h1 h2 })", !one(h2, "alt-svc"), one(h2, "alt-svc") || "none");
 
   // ---- E. caching matrix ----------------------------------------------------------------------------------
   const cacheRows = [];
@@ -211,7 +223,7 @@ async function behavior() {
   await cacheCase("/cart/", "https://www.copilt.org/cart/", {}, /^private, no-store, max-age=0$/, "private, no-store (edge-forced)");
   await cacheCase("/checkout/", "https://www.copilt.org/checkout/", {}, /^private, no-store, max-age=0$/, "private, no-store");
   await cacheCase("/my-account/", "https://www.copilt.org/my-account/", {}, /^private, no-store, max-age=0$/, "private, no-store");
-  await cacheCase("/wp-login.php (operator)", "https://www.copilt.org/wp-login.php", {}, /^private, no-store, max-age=0$/, "private, no-store");
+  await cacheCase("/wp-login.php (operator listener)", "https://www.copilt.org/wp-login.php", { operator: true }, /^private, no-store, max-age=0$/, "private, no-store");
   await cacheCase("/wp-login.php?action=logout (public)", "https://www.copilt.org/wp-login.php?action=logout", {}, /^private, no-store, max-age=0$/, "private, no-store");
   await cacheCase("/wp-json/aicc-license/v1/plans", "https://www.copilt.org/wp-json/aicc-license/v1/plans", {}, /^private, no-store, max-age=0$/, "private, no-store");
   await cacheCase("/?wc-ajax=get_refreshed_fragments", "https://www.copilt.org/?wc-ajax=get_refreshed_fragments", {}, /^private, no-store, max-age=0$/, "private, no-store");
@@ -223,7 +235,7 @@ async function behavior() {
   const idA = (await rq(E, "https://www.copilt.org/pricing/")).reqId, idB = (await rq(E, "https://www.copilt.org/pricing/")).reqId;
   await sleep(200);
   const lg = readAccessLog().map;
-  S.check("the edge does not cache: two identical GET /pricing/ both reached the upstream", lg.get(idA)?.upstream === WP_UPSTREAM && lg.get(idB)?.upstream === WP_UPSTREAM && idA !== idB, `upstream A=${lg.get(idA)?.upstream} B=${lg.get(idB)?.upstream}`);
+  S.check("the edge does not cache: two identical GET /pricing/ both reached the upstream", isWpUp(lg.get(idA)?.upstream) && isWpUp(lg.get(idB)?.upstream) && idA !== idB, `upstream A=${lg.get(idA)?.upstream} B=${lg.get(idB)?.upstream}`);
   void before;
   const noCacheMod = sh(P.caddy, ["list-modules"]).stdout.split("\n").filter((l) => /cache|souin/i.test(l));
   S.check("no cache module is compiled into this Caddy build", noCacheMod.length === 0, noCacheMod.join(",") || "none");
@@ -251,7 +263,7 @@ async function behavior() {
   S.check("HSTS is exactly max-age=300 (no includeSubDomains, no preload)", hsts === "max-age=300", hsts);
   const xp = await rq(E, "https://www.copilt.org/pricing/");
   S.check("no X-Powered-By (PHP version) through the edge", !one(xp, "x-powered-by"), `x-powered-by=${one(xp, "x-powered-by") || "-"}; upstream sends PHP/8.2.29 directly (verified below)`);
-  const direct = await fetch("http://127.0.0.1:18982/pricing/", { headers: { "X-Forwarded-Proto": "https", Host: "www.copilt.org" } }).catch(() => null);
+  const direct = await loopbackFetch("http://127.0.0.1:18982/pricing/", { headers: { "X-Forwarded-Proto": "https", Host: "www.copilt.org" } }).catch(() => null);
   S.info("upstream (direct, not through the edge) sends", `X-Powered-By: ${direct?.headers.get("x-powered-by")}; Server: ${direct?.headers.get("server") || "-"}; Host: ${direct?.headers.get("host") || "-"} (php -S artifact), Via through the edge: ${one(xp, "via") || "-"}`);
   S.data.securityHeaders = secRows;
 
@@ -260,8 +272,8 @@ async function behavior() {
   //   exact: [status, bodyRegex|"empty"|null, locationRegex|"none"]
   const MIS = "Misdirected request";
   const hostCases = [
-    ["Host: evil.example over TLS (valid SNI www.copilt.org): Caddy's no-match answer, an EMPTY 200 (no content, no redirect)", "https://www.copilt.org/", { headers: { Host: "evil.example" } }, [200, "empty", "none"], E],
-    ["Host: evil.example with path /pricing/ over TLS: the same empty 200, never WordPress", "https://www.copilt.org/pricing/", { headers: { Host: "evil.example" } }, [200, "empty", "none"], E],
+    ["Host: evil.example over TLS (valid SNI www.copilt.org): strict SNI -> 421 Misdirected Request (round 4 answered an EMPTY 200 here), no redirect", "https://www.copilt.org/", { headers: { Host: "evil.example" } }, [421, null, "none"], E],
+    ["Host: evil.example with path /pricing/ over TLS: the same 421, never WordPress", "https://www.copilt.org/pricing/", { headers: { Host: "evil.example" } }, [421, null, "none"], E],
     ["http Host: evil.example: 421 Misdirected Request, no redirect", "http://www.copilt.org/product", { headers: { Host: "evil.example" } }, [421, MIS, "none"], PUBLIC],
     ["http Host: copilt.org.evil.example: 421", "http://copilt.org/product", { headers: { Host: "copilt.org.evil.example" } }, [421, MIS, "none"], PUBLIC],
     ["http Host: api.copilt.org: 421 (this edge never answers for the API host)", "http://copilt.org/", { headers: { Host: "api.copilt.org" } }, [421, MIS, "none"], PUBLIC],
@@ -271,7 +283,7 @@ async function behavior() {
     ["X-Forwarded-Host + X-Forwarded-Proto: http on a WordPress page: 200 from WordPress, evil.example nowhere in the page", "https://www.copilt.org/my-account/", { headers: { "X-Forwarded-Host": "evil.example", "X-Forwarded-Proto": "http" } }, [200, "!evil", "none"], E],
     ["X-Original-URL / X-Rewrite-URL on www: ignored (200 pricing page, not wp-admin)", "https://www.copilt.org/pricing/", { headers: { "X-Original-URL": "/wp-admin/", "X-Rewrite-URL": "/wp-admin/" } }, [200, "!wp-admin/index", "none"], E],
     ["Host: WWW.COPILT.ORG (case): the static page", "https://www.copilt.org/product/", { headers: { Host: "WWW.COPILT.ORG" } }, [200, "html", "none"], E],
-    ["Host: www.copilt.org. (trailing dot): Caddy's no-match empty 200", "https://www.copilt.org/product/", { headers: { Host: "www.copilt.org." } }, [200, "empty", "none"], E],
+    ["Host: www.copilt.org. (trailing dot): differs from the SNI -> 421", "https://www.copilt.org/product/", { headers: { Host: "www.copilt.org." } }, [421, null, "none"], E],
     ["Host: www.copilt.org:443: the static page", "https://www.copilt.org/product/", { headers: { Host: "www.copilt.org:443" } }, [200, "html", "none"], E],
   ];
   const hostRows = [];
@@ -286,7 +298,7 @@ async function behavior() {
   }
   const wpEcho = await rq(E, `https://www.copilt.org/wp-json/?__rehearsal_echo=${cpEchoToken()}`, { headers: { "X-Forwarded-Host": "evil.example", Host: "www.copilt.org" } });
   let echo = {}; try { echo = JSON.parse(wpEcho.body); } catch { /* */ }
-  S.check("X-Forwarded-Host sent by a client never reaches WordPress as evil.example (the edge overwrites it with the real Host)", echo.headers?.["x-forwarded-host"] === "www.copilt.org", `CP saw x-forwarded-host=${echo.headers?.["x-forwarded-host"]}`);
+  S.check(UPSTREAM_MODE === "fastcgi" ? "X-Forwarded-Host sent by a client never reaches WordPress at all (php_fastcgi: the header is stripped)" : "X-Forwarded-Host sent by a client never reaches WordPress as evil.example (the edge overwrites it with the real Host)", UPSTREAM_MODE === "fastcgi" ? !("x-forwarded-host" in (echo.headers || {})) && echo.status !== 0 : echo.headers?.["x-forwarded-host"] === "www.copilt.org", `CP saw x-forwarded-host=${echo.headers?.["x-forwarded-host"]}`);
   S.data.hostRows = hostRows;
   // unknown SNI
   const sni = sh("bash", ["-c", `echo | openssl s_client -connect 127.0.0.1:443 -servername evil.example 2>&1 | head -15`]).stdout;
@@ -330,7 +342,7 @@ async function behavior() {
   // ---- K. request body cap (E9) and Alt-Svc (E10) -----------------------------------------------------------------------------------
   const big12 = "/tmp/aicc-body-12mb.bin", big3 = "/tmp/aicc-body-3mb.bin", big1 = "/tmp/aicc-body-1mb.bin";
   for (const [f, mb] of [[big12, 12], [big3, 3], [big1, 1]]) fs.writeFileSync(f, Buffer.alloc(mb * 1024 * 1024, 0x61));
-  const post = (inst, url, file, extraHeaders = {}) => rq(inst, url, { method: "POST", extra: ["--data-binary", `@${file}`], headers: { "Content-Type": "application/octet-stream", ...extraHeaders }, timeout: 60 });
+  const post = (inst, url, file, extraHeaders = {}, more = {}) => rq(inst, url, { method: "POST", extra: ["--data-binary", `@${file}`], headers: { "Content-Type": "application/octet-stream", ...extraHeaders }, timeout: 60, ...more });
   for (const [label, path0] of [["license REST", "/wp-json/aicc-license/v1/validate"], ["Store API", "/wp-json/wc/store/v1/cart/add-item"], ["login form", "/my-account/"], ["admin-ajax.php (public)", "/wp-admin/admin-ajax.php"], ["wc-ajax", "/?wc-ajax=update_order_review"], ["lost-password", "/my-account/lost-password/"]]) {
     const r = await post(PUBLIC, `https://www.copilt.org${path0}`, big12);
     S.check(`request body cap: a 12 MB POST to ${label} (${path0}) is rejected at the edge with 413 and never reaches WordPress`, r.status === 413 && one(r, "x-rehearsal-upstream") !== "wordpress", `status=${r.status} ${r.error || ""}`.slice(0, 160));
@@ -340,19 +352,18 @@ async function behavior() {
   const rb1 = await post(PUBLIC, "https://www.copilt.org/wp-json/aicc-license/v1/validate", big1);
   S.check("request body cap: 1 MB (< cap) passes the edge and WordPress answers (any 2xx/4xx, not 413/5xx)", rb1.status > 0 && rb1.status !== 413 && rb1.status < 500 && one(rb1, "x-rehearsal-upstream") === "wordpress", `${rb1.status}`);
   const chunked = await rq(PUBLIC, "https://www.copilt.org/wp-json/aicc-license/v1/validate", { method: "POST", extra: ["--data-binary", `@${big12}`, "-H", "Transfer-Encoding: chunked"], headers: { "Content-Type": "application/octet-stream" }, timeout: 60 });
-  S.check("request body cap: a 12 MB CHUNKED POST (no Content-Length to check up front) is cut off too (413, or the connection is closed), never accepted", chunked.status === 413 || chunked.status === 0 || chunked.status === 400, `${chunked.status} ${chunked.error || ""}`.slice(0, 160));
-  const opBig = await post(E, "https://www.copilt.org/wp-admin/async-upload.php", big12);
+  S.check("request body cap: a 12 MB CHUNKED POST (no Content-Length to check up front) is cut off too (413, or the connection is closed; under php_fastcgi Caddy refuses it with 411), never accepted", chunked.status === 413 || chunked.status === 0 || chunked.status === 400 || (UPSTREAM_MODE === "fastcgi" && chunked.status === 411), `${chunked.status} ${chunked.error || ""}`.slice(0, 160));
+  const opBig = await post(E, "https://www.copilt.org/wp-admin/async-upload.php", big12, {}, OPR);
   S.check("operator-only /wp-admin/ has the larger cap: a 12 MB POST from an operator is NOT cut by the 2 MB cap (WordPress answers)", opBig.status !== 413 && opBig.status > 0 && one(opBig, "x-rehearsal-upstream") === "wordpress", `${opBig.status}`);
   const pubBig = await post(PUBLIC, "https://www.copilt.org/wp-admin/async-upload.php", big12);
-  S.check("the same upload from a non-operator is refused earlier by the allowlist (403)", pubBig.status === 403, `${pubBig.status}`);
+  S.check("the same upload from the PUBLIC listener is refused earlier by the edge (403)", pubBig.status === 403, `${pubBig.status}`);
   for (const f of [big12, big3, big1]) fs.rmSync(f, { force: true });
   const altSvcRows = [];
   for (const [inst, label] of [[E, "standing edge"], [PUBLIC, "twin"]]) for (const p of ["/", "/pricing/", "/wp-json/aicc-license/v1/plans", "/nothing-here/", "/robots.txt"]) {
     const r = await rq(inst, `https://www.copilt.org${p}`);
-    const port = inst === E ? "443" : String(PUBLIC.httpsPort);
     const v = r.headers["alt-svc"] || [];
     altSvcRows.push({ instance: label, path: p, altSvc: v });
-    S.check(`Alt-Svc is exactly one value h3=":${port}"; ma=3600 (not Caddy's 30-day default, not duplicated) on ${label} ${p}`, v.length === 1 && v[0] === `h3=":${port}"; ma=3600`, JSON.stringify(v));
+    S.check(`no Alt-Svc header at all (HTTP/3 is off) on ${label} ${p}`, v.length === 0, JSON.stringify(v));
   }
   const altRedir = await rq(PUBLIC, "http://copilt.org/product");
   S.info("Alt-Svc on a plain-http redirect", JSON.stringify(altRedir.headers["alt-svc"] || "none (not sent over http)"));
@@ -390,7 +401,7 @@ async function admin() {
     xmlrpc_cp: grepRepo(CPDIR, "xmlrpc|xml-rpc|pingback|jetpack").filter((l) => !/tests\/|README|\.md:/.test(l) || /i18n/.test(l)),
     xmlrpc_plugin: grepRepo(PLDIR, "xmlrpc|xml-rpc|pingback|jetpack").filter((l) => !/\.md:/.test(l)),
     xmlrpc_backend: grepRepo(BEDIR, "xmlrpc|xml-rpc|pingback|jetpack"),
-    xmlrpc_site: grepRepo(REPO_ROOT, "xmlrpc|xml-rpc").filter((l) => !/scripts\/(rehearsal|test-redirects|lib)|docs\/cutover/.test(l)),
+    xmlrpc_site: grepRepo(REPO_ROOT, "xmlrpc|xml-rpc").filter((l) => !/scripts\/(rehearsal|test-redirects|lib)|docs\/cutover|infra\//.test(l)),
     adminajax_cp_frontend: grepRepo(path.join(CPDIR, "admin"), "admin-ajax|wp_ajax_|ajaxurl|admin-post|admin_post_").filter((l) => !/seo\.php:151|i18n\.php/.test(l)),
     adminajax_plugin_product: grepRepo(PLDIR, "wp_ajax_nopriv|admin-ajax\\.php|admin_post_nopriv", ["--include=*.php", "--include=*.js"]).filter((l) => !/tests\//.test(l)).slice(0, 12),
     wp_login_customer: grepRepo(path.join(CPDIR, "admin"), "wp_logout_url|wp_login_url|wp_lostpassword_url|wp_registration_url|login_url").filter((l) => !/\* |\/\/ /.test(l)),
@@ -406,7 +417,7 @@ async function admin() {
   // ---- 2. final behaviour table: public visitor vs operator ------------------------------------------------------------------
   const table = [];
   const T = async (label, url, o = {}, expect) => {
-    const pub = await rq(PUBLIC, url, o), op = await rq(E, url, o);
+    const pub = await rq(PUBLIC, url, o), op = await rq(E, url, { ...o, operator: true });
     table.push({ request: label, publicVisitor: pub.status, operator: op.status, expectPublic: expect.pub, expectOperator: expect.op });
     S.check(`${label}: public visitor ${expect.pub}, operator ${expect.op}`, pub.status === expect.pub && op.status === expect.op, `public=${pub.status} (${(pub.headers["x-rehearsal-upstream"] || ["edge"])[0]}) operator=${op.status} (${(op.headers["x-rehearsal-upstream"] || ["edge"])[0]})`, `${pub.status}/${op.status}`);
     return { pub, op };
@@ -423,15 +434,41 @@ async function admin() {
   await T("GET /wp-login.php?action=logout (no nonce)", "https://www.copilt.org/wp-login.php?action=logout", {}, { pub: 403, op: 403 });
   await T("GET /wp-cron.php", "https://www.copilt.org/wp-cron.php", {}, { pub: 403, op: 200 });
   S.data.finalBehaviour = table;
-  S.note("'public visitor' = request through the twin edge whose operator list is 192.0.2.1/32 (loopback is NOT an operator there); 'operator' = the standing edge on :443 whose operator list is 127.0.0.1/32 ::1/128. Same template, same binary, only AICC_OPERATOR_CIDRS differs. (A 403 from WordPress itself for logout-without-nonce is WordPress's own 'link expired' answer, identical for both.)");
-  // IPv6 loopback is an operator on the standing edge
-  const v6 = await rq(E, "https://www.copilt.org/wp-admin/", { connectIp: "::1", extra: ["-g"] });
-  S.check("operator over IPv6 loopback (::1/128 is in the list) reaches /wp-admin/", v6.status === 302 || v6.status === 200, `status=${v6.status} ${v6.error || ""}`);
+  S.note("'public visitor' = request to the PUBLIC listener of the twin (:18443); 'operator' = request to the standing edge's loopback OPERATOR listener (127.0.0.1:18444, the SSH-tunnel path). Same template, same binary, same host name and certificate; the listener decides, no list. (A 403 from WordPress itself for logout-without-nonce is WordPress's own 'link expired' answer, identical for both.)");
+  // the operator listener is bound to 127.0.0.1 only: ::1 has no listener there (connection refused); the PUBLIC listener answers ::1 as any public client (403)
+  const v6 = await rq(E, "https://www.copilt.org/wp-admin/", { operator: true, connectIp: "::1", extra: ["-g"], timeout: 8 });
+  S.check("the operator listener is IPv4-loopback only: a connection to it over ::1 is refused (no operator access except through the 127.0.0.1 tunnel endpoint)", v6.status === 0, `status=${v6.status} ${v6.error || ""}`.slice(0, 140));
   const v6pub = await rq(PUBLIC, "https://www.copilt.org/wp-admin/", { connectIp: "::1" });
-  S.check("the same ::1 request to the twin edge (operator list 192.0.2.1/32 only) is denied: an allowlist miss is a 403 whatever the address family", v6pub.status === 403, `status=${v6pub.status} ${v6pub.error || ""}`);
-  // a spoofed operator address cannot help: XFF is not what the allowlist reads
-  const spoof = await rq(PUBLIC, "https://www.copilt.org/wp-admin/", { headers: { "X-Forwarded-For": "192.0.2.1", "X-Real-IP": "192.0.2.1", Forwarded: "for=192.0.2.1" } });
-  S.check("spoofed X-Forwarded-For / X-Real-IP / Forwarded of an operator address does not open /wp-admin/ (allowlist uses the TCP peer)", spoof.status === 403, `status=${spoof.status}`);
+  S.check("a ::1 request to the PUBLIC listener is a public request: /wp-admin/ is 403 whatever the address family", v6pub.status === 403, `status=${v6pub.status} ${v6pub.error || ""}`);
+  const v6std = await rq(E, "https://www.copilt.org/wp-admin/", { connectIp: "::1" });
+  S.check("the standing edge's PUBLIC listener treats a loopback client (::1) as PUBLIC too: /wp-admin/ is 403 (the optional CIDR list is empty; loopback is not an operator on the public listener)", v6std.status === 403, `status=${v6std.status}`);
+  const v4std = await rq(E, "https://www.copilt.org/wp-admin/", {});
+  S.check("same from 127.0.0.1 to the standing edge's public listener (:443): 403", v4std.status === 403, `status=${v4std.status}`);
+  // a spoofed operator address, or a Host / forwarding-header variant that names the operator listener, cannot turn a public request into an operator: the listener is chosen by the socket
+  const SPOOFS = [
+    ["X-Forwarded-For: 127.0.0.1", { "X-Forwarded-For": "127.0.0.1" }],
+    ["X-Forwarded-For: ::1, 127.0.0.1", { "X-Forwarded-For": "::1, 127.0.0.1" }],
+    ["X-Real-IP / Client-IP / True-Client-IP: 127.0.0.1", { "X-Real-IP": "127.0.0.1", "Client-IP": "127.0.0.1", "True-Client-IP": "127.0.0.1" }],
+    ["Forwarded: for=127.0.0.1", { Forwarded: "for=127.0.0.1;host=www.copilt.org" }],
+    [`Host: www.copilt.org:${EDGE.operatorPort} (the operator listener's port)`, { Host: `www.copilt.org:${EDGE.operatorPort}` }],
+    ["Host: 127.0.0.1", { Host: "127.0.0.1" }],
+    [`Host: 127.0.0.1:${EDGE.operatorPort}`, { Host: `127.0.0.1:${EDGE.operatorPort}` }],
+    ["Host: localhost", { Host: "localhost" }],
+    ["Host: WWW.COPILT.ORG (upper case)", { Host: "WWW.COPILT.ORG" }],
+    ["Host: www.copilt.org. (trailing dot)", { Host: "www.copilt.org." }],
+    ["X-Forwarded-Host: 127.0.0.1:" + EDGE.operatorPort, { "X-Forwarded-Host": `127.0.0.1:${EDGE.operatorPort}` }],
+    ["X-Original-URL / X-Rewrite-URL: /", { "X-Original-URL": "/", "X-Rewrite-URL": "/" }],
+  ];
+  const spoofRows = [];
+  for (const [label, hdr] of SPOOFS) {
+    for (const p of ["/wp-admin/", "/wp-login.php", "/wp-cron.php", "/wp-admin/plugins.php"]) {
+      const r = await rq(E, `https://www.copilt.org${p}`, { headers: hdr });
+      const reached = one(r, "x-rehearsal-upstream") === "wordpress";
+      spoofRows.push({ spoof: label, path: p, status: r.status, reachedWordPress: reached });
+      S.check(`public request with ${label} to ${p}: no operator treatment (403, or 421/400 for an unknown Host; WordPress not reached)`, [403, 421, 400].includes(r.status) && !reached, `status=${r.status} wordpress=${reached}`);
+    }
+  }
+  S.data.spoofRows = spoofRows;
 
   // ---- 2b. E1 (security review F2): no session can be obtained through wp-login.php from a non-operator source ---------------------------------------
   const bypassJar = "/tmp/aicc-bypass.jar"; fs.rmSync(bypassJar, { force: true });
@@ -473,7 +510,7 @@ async function admin() {
   S.check("after all bypass attempts the cookie jar holds NO wordpress_logged_in / wordpress_sec cookie", !/wordpress_logged_in|wordpress_sec/.test(jarText), jarText.split("\n").filter((l) => /wordpress_/.test(l)).length + " wordpress_* cookie lines");
   const hit = upstreamLog().slice(upBefore).filter((e) => /wp-login/i.test(e.uri));
   S.check("the CP's own request log shows NONE of the bypass POSTs (the edge answered them; WordPress never ran wp_signon)", hit.length === 0, `${hit.length} wp-login requests reached the upstream: ${hit.slice(0, 3).map((e) => e.method + " " + e.uri).join(", ")}`);
-  const opLogin = await rq(E, "https://www.copilt.org/wp-login.php", { method: "POST", body: loginBody, headers: { Cookie: "wordpress_test_cookie=WP%20Cookie%20check" }, extra: ["-c", "/tmp/aicc-bypass-op.jar"] });
+  const opLogin = await rq(E, "https://www.copilt.org/wp-login.php", { operator: true, method: "POST", body: loginBody, headers: { Cookie: "wordpress_test_cookie=WP%20Cookie%20check" }, extra: ["-c", "/tmp/aicc-bypass-op.jar"] });
   S.check("control: the SAME login POST from an operator source still signs in (302 + session cookie): the block is by source, not a broken form", opLogin.status === 302 && (opLogin.headers["set-cookie"] || []).some((c) => /wordpress_logged_in/.test(c)), `${opLogin.status}`);
   fs.rmSync("/tmp/aicc-bypass-op.jar", { force: true }); fs.rmSync(bypassJar, { force: true });
   // GET shapes that stay open: exactly the two customer shapes
@@ -484,9 +521,9 @@ async function admin() {
 
   // ---- 3. operator can really use wp-admin through the edge --------------------------------------------------------------------------
   const opJar = "/tmp/aicc-op.jar"; fs.rmSync(opJar, { force: true });
-  const lg1 = await rq(E, "https://www.copilt.org/wp-login.php", { extra: ["-c", opJar, "-b", opJar] });
-  const lg2 = await rq(E, "https://www.copilt.org/wp-login.php", { method: "POST", extra: ["-c", opJar, "-b", opJar], headers: { Cookie: "wordpress_test_cookie=WP%20Cookie%20check" }, body: "log=rehearsal-admin&pwd=" + encodeURIComponent("Rehearsal-Admin-2026!") + "&wp-submit=Log+In&redirect_to=" + encodeURIComponent("https://www.copilt.org/wp-admin/") + "&testcookie=1" });
-  const dash = await rq(E, "https://www.copilt.org/wp-admin/", { extra: ["-c", opJar, "-b", opJar] });
+  const lg1 = await rq(E, "https://www.copilt.org/wp-login.php", { operator: true, extra: ["-c", opJar, "-b", opJar] });
+  const lg2 = await rq(E, "https://www.copilt.org/wp-login.php", { operator: true, method: "POST", extra: ["-c", opJar, "-b", opJar], headers: { Cookie: "wordpress_test_cookie=WP%20Cookie%20check" }, body: "log=rehearsal-admin&pwd=" + encodeURIComponent("Rehearsal-Admin-2026!") + "&wp-submit=Log+In&redirect_to=" + encodeURIComponent("https://www.copilt.org/wp-admin/") + "&testcookie=1" });
+  const dash = await rq(E, "https://www.copilt.org/wp-admin/", { operator: true, extra: ["-c", opJar, "-b", opJar] });
   S.check("operator: staff login at /wp-login.php (POST) -> 302 /wp-admin/, dashboard 200 through the edge", lg1.status === 200 && lg2.status === 302 && dash.status === 200 && /Dashboard/.test(dash.body), `login page ${lg1.status}, POST ${lg2.status} -> ${one(lg2, "location")}, /wp-admin/ ${dash.status}`);
   const adminCookies = fs.readFileSync(opJar, "utf8");
   S.check("staff cookies are Secure + HttpOnly (the edge forwarded X-Forwarded-Proto: https and WordPress believed it)", /#HttpOnly_www\.copilt\.org\s+FALSE\s+\/\s+TRUE\s+\d+\s+wordpress_logged_in_/.test(adminCookies) || /wordpress_logged_in_/.test(adminCookies) && !/FALSE\s+\d+\s+wordpress_logged_in/.test(adminCookies), adminCookies.split("\n").filter((l) => /logged_in/.test(l)).map((l) => l.replace(/\S{20,}$/, "…")).join(" ").slice(0, 200));
@@ -565,7 +602,7 @@ async function admin() {
   // ---- 5. no regression elsewhere ---------------------------------------------------------------------------------------------------------------
   const cron = sh("bash", [P.cpFixture, "cron"]);
   S.check("system cron works with HTTP wp-cron.php closed: `wp cron event run --due-now` exits 0 (DISABLE_WP_CRON true)", cron.code === 0, cron.out.split("\n").slice(-3).join(" | ").slice(0, 200));
-  const cronOp = await rq(E, "https://www.copilt.org/wp-cron.php");
+  const cronOp = await rq(E, "https://www.copilt.org/wp-cron.php", { operator: true });
   S.check("operator can still call wp-cron.php over HTTP (WordPress answers 200, with DISABLE_WP_CRON it does nothing)", cronOp.status === 200, `${cronOp.status}`);
   const rest = await rq(PUBLIC, "https://www.copilt.org/wp-json/aicc-license/v1/plans");
   S.check("REST (license plans) is unaffected: 200 JSON for the public", rest.status === 200 && /json/.test(one(rest, "content-type")), `${rest.status}`);
@@ -581,7 +618,8 @@ async function errors() {
   const S = new Section("05-5xx-experience", "5xx experience: the branded edge page for upstream failures (real stops, real timeouts)");
   await ensureInstances();
   const E = EDGE, T = cpEchoToken();
-  const fx = (a) => sh("bash", [P.cpFixture, a]);
+  // failure injection: stop / start "the PHP upstream" = php -S in proxy mode, the php-fpm pool (unix socket) in fastcgi mode; MySQL is the same in both
+  const fx = (a) => (UPSTREAM_MODE === "fastcgi" && /-php$/.test(a) ? sh("bash", [P.fpmScript, a.startsWith("stop") ? "stop" : "start"]) : sh("bash", [P.cpFixture, a]));
   const leakRe = /UPSTREAM-LEAK-MARKER|Stack trace|mysql:\/\/|10\.1\.2\.3|\/srv\/www|dial tcp|connection refused|127\.0\.0\.1|18982|Caddy|PHP\/|Fatal error|Exception|wp-content|database/i;
   const page = (label, r, wantStatus) => {
     const visible = r.body.replace(/<!--[\s\S]*?-->/g, "");
@@ -610,7 +648,7 @@ async function errors() {
   fx("stop-php"); await sleep(500);
   const routes = ["/pricing/", "/my-account/", "/cart/", "/checkout/", "/privacy/", "/he/pricing/", "/wp-json/aicc-license/v1/plans", "/?wc-ajax=get_refreshed_fragments", "/he/?wc-ajax=get_refreshed_fragments", "/wp-login.php", "/wp-admin/", "/wp-content/themes/aicc-admin/style.css", "/data-processing-addendum/"];
   const rows = [];
-  for (const p of routes) { const r = await rq(E, `https://www.copilt.org${p}`); rows.push({ route: p, status: r.status }); page(`CP stopped: ${p} -> branded 502`, r, 502); }
+  for (const p of routes) { const r = await rq(E, `https://www.copilt.org${p}`, /^\/wp-(login|admin)/.test(p) ? OPR : {}); rows.push({ route: p, status: r.status }); if (UPSTREAM_MODE === "fastcgi" && /^\/wp-content\//.test(p)) { S.check(`CP stopped (php-fpm down): ${p} is a static file, served by Caddy straight from the docroot (200), PHP is not involved`, r.status === 200 && /css/.test(String((r.headers["content-type"] || [])[0] || r.headers["content-type"] || "")), `status=${r.status}`); continue; } page(`CP stopped: ${p} -> branded 502${/^\/wp-(login|admin)/.test(p) ? " (operator listener)" : ""}`, r, 502); }
   const post = await rq(E, "https://www.copilt.org/my-account/", { method: "POST", body: "username=a&password=b" });
   page("CP stopped: POST /my-account/ -> branded 502", post, 502);
   const stat = [];
@@ -642,7 +680,7 @@ async function errors() {
   const garbage = net.createServer((c) => { c.write("this is not http\r\n\r\n"); c.end(); }).listen(18999, "127.0.0.1");
   const closer = net.createServer((c) => c.destroy()).listen(18998, "127.0.0.1");
   for (const [port, what] of [[18999, "speaks garbage instead of HTTP"], [18998, "accepts the connection and closes it"]]) {
-    const bad = { ...base, name: "bad", httpPort: 18091, httpsPort: 18454, admin: "127.0.0.1:12023", upstream: `127.0.0.1:${port}` };
+    const bad = { ...base, name: "bad", httpPort: 18091, httpsPort: 18454, admin: "127.0.0.1:12023", upstream: `127.0.0.1:${port}`, upstreamMode: "proxy" }; // HTTP-garbage upstream is a reverse_proxy case; the fastcgi equivalents (php-fpm down) are section 21
     await start(bad, { quiet: true });
     const rb = await rq({ name: "bad", httpPort: 18091, httpsPort: 18454 }, "https://www.copilt.org/pricing/");
     page(`bad gateway: upstream ${what} -> branded 502`, rb, 502);
@@ -668,17 +706,18 @@ async function breakIt() {
   const spoof = { "X-Forwarded-For": "6.6.6.6, 7.7.7.7", "X-Real-IP": "7.7.7.7", Forwarded: "for=8.8.8.8;proto=http;host=evil.example", "X-Forwarded-Proto": "http", "X-Forwarded-Host": "evil.example", "X-Client-IP": "9.9.9.9", "True-Client-IP": "9.9.9.9", "X-Original-URL": "/wp-admin/", "X-Rewrite-URL": "/wp-admin/", "X-Forwarded-Server": "evil.example", "X-Request-Id": "attacker-chosen-id" };
   const { r, j } = await echo(E, spoof);
   const h = j.headers || {};
-  S.check("CP received X-Forwarded-For = the real peer only (127.0.0.1), the client-supplied chain is gone", h["x-forwarded-for"] === "127.0.0.1", `x-forwarded-for=${h["x-forwarded-for"]}`);
-  S.check("CP received X-Forwarded-Proto = https and is_ssl() true (client said http)", h["x-forwarded-proto"] === "https" && j.is_ssl === true && j.https_server_var === "on", `xfp=${h["x-forwarded-proto"]} is_ssl=${j.is_ssl} HTTPS=${j.https_server_var}`);
-  S.check("CP received X-Forwarded-Host = www.copilt.org (client said evil.example)", h["x-forwarded-host"] === "www.copilt.org", h["x-forwarded-host"]);
-  S.check("CP received NO Forwarded / X-Real-IP / X-Client-IP / True-Client-IP / X-Original-URL / X-Rewrite-URL / X-Forwarded-Server", ["forwarded", "x-real-ip", "x-client-ip", "true-client-ip", "x-original-url", "x-rewrite-url", "x-forwarded-server"].every((k) => !(k in h)), Object.keys(h).filter((k) => /forwarded|real-ip|client-ip|original|rewrite/.test(k)).join(","));
+  const FC = UPSTREAM_MODE === "fastcgi"; // php_fastcgi: REMOTE_ADDR + HTTPS from Caddy, NO forwarding header of any kind reaches PHP
+  S.check(FC ? "php_fastcgi: PHP's REMOTE_ADDR is the real peer (127.0.0.1) and NO X-Forwarded-For exists (the client-supplied chain is gone, nothing replaces it)" : "CP received X-Forwarded-For = the real peer only (127.0.0.1), the client-supplied chain is gone", FC ? j.remote_addr === "127.0.0.1" && !("x-forwarded-for" in h) : h["x-forwarded-for"] === "127.0.0.1", `x-forwarded-for=${h["x-forwarded-for"]} REMOTE_ADDR=${j.remote_addr}`);
+  S.check(FC ? "php_fastcgi: HTTPS=on from Caddy and is_ssl() true with no X-Forwarded-Proto (client said http)" : "CP received X-Forwarded-Proto = https and is_ssl() true (client said http)", FC ? !("x-forwarded-proto" in h) && j.is_ssl === true && j.https_server_var === "on" : h["x-forwarded-proto"] === "https" && j.is_ssl === true && j.https_server_var === "on", `xfp=${h["x-forwarded-proto"]} is_ssl=${j.is_ssl} HTTPS=${j.https_server_var}`);
+  S.check(FC ? "php_fastcgi: no X-Forwarded-Host reaches PHP (client said evil.example); HTTP_HOST is the real Host" : "CP received X-Forwarded-Host = www.copilt.org (client said evil.example)", FC ? !("x-forwarded-host" in h) && j.host === "www.copilt.org" : h["x-forwarded-host"] === "www.copilt.org", h["x-forwarded-host"]);
+  S.check("CP received NO Forwarded / X-Real-IP / X-Client-IP / True-Client-IP / X-Original-URL / X-Rewrite-URL / X-Forwarded-Server" + (FC ? " / Via" : ""), ["forwarded", "x-real-ip", "x-client-ip", "true-client-ip", "x-original-url", "x-rewrite-url", "x-forwarded-server", ...(FC ? ["via"] : [])].every((k) => !(k in h)), Object.keys(h).filter((k) => /forwarded|real-ip|client-ip|original|rewrite|via/.test(k)).join(","));
   S.check("the Control Plane's own client-IP resolution (AICC_LM_Client_IP) says 127.0.0.1, not a spoofed value", j.cp_client_ip === "127.0.0.1", `cp_client_ip=${j.cp_client_ip}`);
   S.check("X-Request-Id: the edge replaced the client's value; upstream and response carry the same edge-made id", h["x-request-id"] && h["x-request-id"] !== "attacker-chosen-id" && one(r, "x-request-id") === h["x-request-id"], `upstream=${h["x-request-id"]} response=${one(r, "x-request-id")}`);
   S.check("home_url() seen by the CP is https://www.copilt.org/ whatever the headers said", j.home_url === "https://www.copilt.org/", j.home_url);
   S.data.cpReceivedHeaders = h;
   // different sources -> different client IPs at the CP (IPv4 vs IPv6 loopback)
   const v6 = await echo(E, { "X-Forwarded-For": "6.6.6.6" }, "/wp-json/", { connectIp: "::1" });
-  S.check("a request from ::1 reaches the CP as client ::1 (XFF = the peer, still overwritten)", v6.j.cp_client_ip === "::1" && v6.j.headers?.["x-forwarded-for"] === "::1", `xff=${v6.j.headers?.["x-forwarded-for"]} cp_client_ip=${v6.j.cp_client_ip}`);
+  S.check(FC ? "a request from ::1 reaches the CP as client ::1 (REMOTE_ADDR, no XFF)" : "a request from ::1 reaches the CP as client ::1 (XFF = the peer, still overwritten)", v6.j.cp_client_ip === "::1" && (FC ? v6.j.remote_addr === "::1" && !("x-forwarded-for" in (v6.j.headers || {})) : v6.j.headers?.["x-forwarded-for"] === "::1"), `xff=${v6.j.headers?.["x-forwarded-for"]} cp_client_ip=${v6.j.cp_client_ip}`);
   // per-IP rate limit: 31st request from source A is 429, source B (::1) still 200  (runbook section 4 two-source smoke test)
   wpcliQuiet("transient", "delete", "--all");
   const codes = [];
@@ -687,8 +726,10 @@ async function breakIt() {
   S.check("two-source rate-limit smoke test: source A (127.0.0.1) hits 429 after 30 requests, source B (::1) in the same minute is NOT limited (per-client buckets, not one global bucket)", codes.slice(0, 30).every((c) => c !== 429) && codes.slice(30).includes(429) && b.status !== 429, `A: first 30 -> ${[...new Set(codes.slice(0, 30))]}, 31st/32nd -> ${codes.slice(30)}; B -> ${b.status}`);
   wpcliQuiet("transient", "delete", "--all");
   // residual: the CP believes XFF from whoever connects from a trusted address (127.0.0.1): in production the upstream port must not be reachable except from the edge
-  const direct = await fetch(`http://127.0.0.1:18982/wp-json/?__rehearsal_echo=${T}`, { headers: { "X-Forwarded-For": "9.9.9.9", "X-Forwarded-Proto": "https", Host: "www.copilt.org" } }).then((x) => x.json()).catch(() => ({}));
-  S.info("RESIDUAL (by design): talking to the upstream port directly from the edge's address, XFF is believed", `direct request with XFF 9.9.9.9 -> cp_client_ip=${direct.cp_client_ip}. Production: bind the upstream to the private interface and allow only the edge in the firewall.`);
+  if (!FC) {
+    const direct = await loopbackFetch(`http://127.0.0.1:18982/wp-json/?__rehearsal_echo=${T}`, { headers: { "X-Forwarded-For": "9.9.9.9", "X-Forwarded-Proto": "https", Host: "www.copilt.org" } }).then((x) => x.json()).catch(() => ({}));
+    S.info("RESIDUAL (by design): talking to the upstream port directly from the edge's address, XFF is believed", `direct request with XFF 9.9.9.9 -> cp_client_ip=${direct.cp_client_ip}. Production: bind the upstream to the private interface and allow only the edge in the firewall.`);
+  } else S.info("no residual: php_fastcgi has no HTTP upstream port", "there is no network address from which a forged X-Forwarded-For could be believed; AICC_LM_TRUSTED_PROXIES stays empty and the plugin reads REMOTE_ADDR");
   // 2. smuggling-ish input on the wire
   const raw = async (label, text, expectRe, secure = true) => {
     const before = upstreamLog().length;
@@ -765,9 +806,9 @@ async function logging() {
   const { map, all } = readAccessLog();
   const e1 = map.get(r.reqId), e2 = map.get(r2.reqId), e3 = map.get(rStatic.reqId), e4 = map.get(rRedir.reqId), e5 = map.get(rDeny.reqId), e6 = map.get(r6.reqId);
   S.check("access log entry exists for each probe, keyed by the X-Request-Id returned to the client", [e1, e2, e3, e4, e5, e6].every(Boolean), `entries found: ${[e1, e2, e3, e4, e5, e6].filter(Boolean).length}/6`);
-  S.check("entry fields: ts, status, duration, method, host, uri, client address (remote_ip), request_id, upstream", e1 && e1.ts && e1.status === r.status && typeof e1.duration === "number" && e1.request?.method === "GET" && e1.request?.host && e1.request?.uri && e1.request?.remote_ip === "127.0.0.1" && e1.request_id === r.reqId && e1.upstream === WP_UPSTREAM, JSON.stringify({ ts: !!e1?.ts, status: e1?.status, duration: e1?.duration, remote_ip: e1?.request?.remote_ip, upstream: e1?.upstream }));
+  S.check("entry fields: ts, status, duration, method, host, uri, client address (remote_ip), request_id, upstream", e1 && e1.ts && e1.status === r.status && typeof e1.duration === "number" && e1.request?.method === "GET" && e1.request?.host && e1.request?.uri && e1.request?.remote_ip === "127.0.0.1" && e1.request_id === r.reqId && isWpUp(e1.upstream), JSON.stringify({ ts: !!e1?.ts, status: e1?.status, duration: e1?.duration, remote_ip: e1?.request?.remote_ip, upstream: e1?.upstream }));
   S.check("the real peer address is logged: IPv4 loopback request -> 127.0.0.1, IPv6 request -> ::1", e1?.request?.remote_ip === "127.0.0.1" && e6?.request?.remote_ip === "::1", `${e1?.request?.remote_ip} / ${e6?.request?.remote_ip}`);
-  S.check("upstream field: WordPress route -> 127.0.0.1:18982; static, redirect and deny -> empty", e1?.upstream === WP_UPSTREAM && e2?.upstream === WP_UPSTREAM && !e3?.upstream && !e4?.upstream && !e5?.upstream, `wp=${e1?.upstream} ajax=${e2?.upstream} static=${e3?.upstream} redirect=${e4?.upstream} deny=${e5?.upstream}`);
+  S.check("upstream field: WordPress route -> the WordPress origin (127.0.0.1:18982 or the php-fpm socket); static, redirect and deny -> empty", isWpUp(e1?.upstream) && isWpUp(e2?.upstream) && !e3?.upstream && !e4?.upstream && !e5?.upstream, `wp=${e1?.upstream} ajax=${e2?.upstream} static=${e3?.upstream} redirect=${e4?.upstream} deny=${e5?.upstream}`);
   const up = upstreamLog();
   S.check("the SAME request id was passed to the upstream (CP upstream log) and logged by the edge and returned to the client", up.some((u) => u.request_id === r.reqId && u.uri.includes("lost-password")), `upstream log has ${up.filter((u) => u.request_id === r.reqId).length} entry with the id`);
   const uri1 = e1?.request?.uri || "";
@@ -801,7 +842,7 @@ async function logging() {
   const { spawn } = await import("node:child_process");
   const c = spawn(P.caddy, ["run", "--config", path.join(scratch, "Caddyfile"), "--adapter", "caddyfile"], { stdio: "ignore", env: { ...process.env, XDG_DATA_HOME: scratch + "/xdg", XDG_CONFIG_HOME: scratch + "/cfg" } });
   await sleep(1500);
-  for (let i = 0; i < 6000; i++) await fetch("http://127.0.0.1:18099/" + "x".repeat(900) + i).then((x) => x.text()).catch(() => {});
+  for (let i = 0; i < 6000; i++) await loopbackFetch("http://127.0.0.1:18099/" + "x".repeat(900) + i).then((x) => x.text()).catch(() => {});
   await sleep(500); c.kill("SIGTERM"); await sleep(500);
   const rotated = fs.readdirSync(scratch).filter((f) => f.startsWith("t")).sort();
   S.check("rotation mechanism (throwaway Caddy, roll_size 1 MiB, roll_keep 2, ~7 MB of log lines): rolled files appear and are pruned to the keep count (disk use is capped)", rotated.length >= 2 && rotated.length <= 3, rotated.join(", ") + " sizes(KB): " + rotated.map((f) => Math.round(fs.statSync(path.join(scratch, f)).size / 1024)).join(","));
@@ -831,9 +872,9 @@ async function demo() {
   const MASTER = "/Users/avivgerman/Downloads/AICC-demo/video/final-v3-main-michael-1.1x.mp4";
   const masterHash = fs.existsSync(MASTER) ? sh("shasum", ["-a", "256", MASTER]).stdout.split(" ")[0] : "";
   S.check("approved master (read-only hash of the original file) = docs/approved-demo.sha256, starts 6ec46e72fd2531ea, 43957999 bytes", masterHash === want && want.startsWith("6ec46e72fd2531ea") && fs.statSync(MASTER).size === 43957999, `${masterHash.slice(0, 16)} size=${fs.statSync(MASTER).size}`);
-  const dl = sh("bash", ["-c", `${P.home}/bin/rcurl -s https://www.copilt.org/demo/aicc-demo.mp4 | shasum -a 256`]).stdout.split(" ")[0];
+  const dl = sh("bash", ["-c", `${REPO_ROOT}/scripts/rehearsal/rcurl --rehearsal edge -s https://www.copilt.org:443/demo/aicc-demo.mp4 | shasum -a 256`]).stdout.split(" ")[0];
   S.check("the bytes served THROUGH THE EDGE (full GET, streamed to sha256) equal the approved master", dl === want, `served ${dl.slice(0, 16)}… master ${want.slice(0, 16)}…`);
-  const dlGz = sh("bash", ["-c", `${P.home}/bin/rcurl -s -H 'Accept-Encoding: gzip, zstd' https://www.copilt.org/demo/aicc-demo.mp4 | shasum -a 256`]).stdout.split(" ")[0];
+  const dlGz = sh("bash", ["-c", `${REPO_ROOT}/scripts/rehearsal/rcurl --rehearsal edge -s -H 'Accept-Encoding: gzip, zstd' https://www.copilt.org:443/demo/aicc-demo.mp4 | shasum -a 256`]).stdout.split(" ")[0];
   S.check("same bytes when the client offers gzip/zstd (nothing re-encoded)", dlGz === want, dlGz.slice(0, 16));
   const hd = await rq(E, "https://www.copilt.org/demo/aicc-demo.mp4", { head: true, headers: { "Accept-Encoding": "gzip, zstd, br" } });
   S.check("headers: 200, video/mp4, Content-Length 43957999, Accept-Ranges bytes, ETag + Last-Modified, no Content-Encoding, Cache-Control public, max-age=0, must-revalidate", hd.status === 200 && one(hd, "content-type") === "video/mp4" && one(hd, "content-length") === "43957999" && one(hd, "accept-ranges") === "bytes" && !!one(hd, "etag") && !!one(hd, "last-modified") && !one(hd, "content-encoding") && one(hd, "cache-control") === "public, max-age=0, must-revalidate", `${hd.status} ${one(hd, "content-type")} len=${one(hd, "content-length")} ar=${one(hd, "accept-ranges")} etag=${one(hd, "etag")} cc=${one(hd, "cache-control")}`);
@@ -855,9 +896,11 @@ async function demo() {
   const spkiOf = (cmd) => sh("bash", ["-c", `${cmd} | openssl x509 -pubkey -noout | openssl pkey -pubin -outform der | openssl dgst -sha256 -binary | base64`]).stdout.trim();
   const spki = [`cat ${P.rootCrt}`, `cat ${path.dirname(P.rootCrt)}/intermediate.crt`, `echo | openssl s_client -connect 127.0.0.1:443 -servername www.copilt.org 2>/dev/null`].map(spkiOf).filter(Boolean).join(",");
   const exe = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
-  const browser = await chromium.launch({ executablePath: exe, args: ["--host-resolver-rules=MAP www.copilt.org 127.0.0.1, MAP copilt.org 127.0.0.1", `--ignore-certificate-errors-spki-list=${spki}`] });
+  const bg = guardFor(E); // Chrome: host-resolver allowlist + black-hole proxy + a route handler that aborts and records anything outside the two rehearsal names (a violation ends the run with exit code 3)
+  const browser = await chromium.launch({ executablePath: exe, args: [...bg.browserArgs(), `--ignore-certificate-errors-spki-list=${spki}`] });
   try {
     const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+    await bg.guardBrowser(ctx);
     const pg = await ctx.newPage();
     const reqs = [];
     pg.on("response", (res) => { const u = res.url(); if (/\/demo\//.test(u)) reqs.push({ url: u.replace("https://www.copilt.org", ""), status: res.status(), range: res.request().headers()["range"] || "" }); });
@@ -882,7 +925,7 @@ async function demo() {
   const probe = async (variant, label) => {
     void label;
     await reload({ ...base, variant }, { quiet: true });
-    const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+    const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } }); await bg.guardBrowser(ctx);
     const pg = await ctx.newPage();
     const heads = [];
     pg.on("response", (res) => { if (/\/demo\//.test(res.url())) heads.push(`${res.request().method()} ${res.url().replace("https://www.copilt.org", "")} ${res.status()}`); });
@@ -924,7 +967,11 @@ async function restart() {
   let probe = startProbe(E, PROBE_URLS, { concurrency: 6, pauseMs: 10 });
   await sleep(1000);
   const reloads = [];
-  for (let k = 0; k < 4; k++) { reloads.push((await reload(cfg, { quiet: true })).ms); await sleep(700); }
+  // The reload runs in a CHILD process (validate + preflight + caddy reload take ~0.7 s of synchronous work): doing it in this process blocked the probe's own event loop mid-handshake and the
+  // probe then saw ECONNRESET for a connection it had opened itself (a measurement artifact, found in round 5: 1 of 5 runs failed that way, 0 of 40 reloads failed with an unblocked probe)
+  const { spawn: spawnChild } = await import("node:child_process");
+  const reloadChild = () => new Promise((resolve) => { const t = now(); const c = spawnChild("node", [path.join(REPO_ROOT, "scripts/rehearsal/rehearsal.mjs"), "reload", "--name", "edge"], { stdio: "ignore", env: process.env }); c.on("close", (code) => resolve({ ms: now() - t, code })); });
+  for (let k = 0; k < 4; k++) { const r = await reloadChild(); if (r.code !== 0) S.check("reload child exited 0", false, `exit ${r.code}`); reloads.push(r.ms); await sleep(700); }
   await sleep(1000);
   let sum = await probe.stop();
   S.check(`graceful reload x4 under a concurrent probe (6 workers, ${sum.total} requests over ${sum.durationMs} ms incl. WordPress pages): ZERO failed requests`, sum.failed === 0, `failed=${sum.failed} ${sum.failures.join("; ")} maxLatency=${sum.maxLatencyMs} ms`);
@@ -986,10 +1033,10 @@ async function restart() {
   probe = startProbe(E, ["https://www.copilt.org/", "https://www.copilt.org/product/"], { concurrency: 2, pauseMs: 20 });
   const wpProbe = startProbe(E, ["https://www.copilt.org/pricing/"], { concurrency: 2, pauseMs: 20 });
   await sleep(500);
-  sh("bash", [P.cpFixture, "stop-php"]);
+  sh("bash", UPSTREAM_MODE === "fastcgi" ? [P.fpmScript, "stop"] : [P.cpFixture, "stop-php"]);
   await sleep(1500);
   const down = await rq(E, "https://www.copilt.org/pricing/");
-  const tUp = now(); sh("bash", [P.cpFixture, "start-php"]);
+  const tUp = now(); sh("bash", UPSTREAM_MODE === "fastcgi" ? [P.fpmScript, "start"] : [P.cpFixture, "start-php"]);
   const rec6 = await waitFor(async () => (await rq(E, "https://www.copilt.org/pricing/")).status === 200, 30000, 50);
   await sleep(300);
   const staticSum = await probe.stop(); const wpSum = await wpProbe.stop();
@@ -1000,7 +1047,8 @@ async function restart() {
   // ONLY the processes this rehearsal started (pid files / the :18982 php workers); other Local/QA processes on this Mac are not ours
   const mysqlPid = (() => { try { return fs.readFileSync(path.join(P.cpBase, "mysql/mysqld.pid"), "utf8").trim(); } catch { return ""; } })();
   const phpPids = sh("pgrep", ["-f", "127.0.0.1:18982"]).stdout.split("\n").filter(Boolean);
-  const pids = [readPid("edge"), readPid("public"), mysqlPid, ...phpPids].filter(Boolean).join(",");
+  const fpmPid = (() => { try { return fs.readFileSync(path.join(P.fpmBase, "run/php-fpm.pid"), "utf8").trim(); } catch { return ""; } })();
+  const pids = [readPid("edge"), readPid("public"), readPid("stage"), mysqlPid, fpmPid, ...phpPids].filter(Boolean).join(",");
   const lsofTcp = sh("lsof", ["-nP", "-a", "-p", pids, "-iTCP", "-sTCP:LISTEN"]).stdout, lsofUdp = sh("lsof", ["-nP", "-a", "-p", pids, "-iUDP"]).stdout;
   const lsof = (lsofTcp + "\n" + lsofUdp).split("\n").filter((l) => l && !/^COMMAND/.test(l)).map((l) => { const f = l.split(/\s+/); return `${f[0]} pid ${f[1]} ${f[7]} ${f[8]}`; }).sort().filter((x, i, a2) => a2.indexOf(x) === i).join("\n");
   S.data.listeners = lsof.split("\n").filter(Boolean);
@@ -1009,8 +1057,8 @@ async function restart() {
   S.check(`no rehearsal listener uses a QA port (8981-8983, 9111-9114) or 8000; our listening ports: ${ports.sort((x, y) => x - y).join(", ")}`, ports.length > 0 && qa.length === 0, `qa overlap: ${qa.join(",") || "none"}`);
   S.info("listeners of the rehearsal's own processes (lsof)", lsof.split("\n").filter(Boolean).join(" || ").slice(0, 1200));
   const nonLoop = lsof.split("\n").filter((l) => l && !/127\.0\.0\.1:|\[::1\]:/.test(l));
-  S.check("the only non-loopback listeners are Caddy's wildcard :80 / :443 (TCP) and :443 (UDP, HTTP/3) of the standing edge; mysqld, php and every high-port or admin listener are loopback-only", nonLoop.every((l) => /caddy/.test(l) && /\*:(80|443)$/.test(l)), nonLoop.join(" || "));
-  S.info("the real API", "api.copilt.org is a remote host (139.59.157.231, its own Caddy); this rehearsal has no api.copilt.org site block (safety check refuses one) and only read-only `curl -sI https://api.copilt.org/` was ever sent");
+  S.check("the only non-loopback listeners are Caddy's wildcard :80 / :443 (TCP only: HTTP/3 is off) of the standing edge; mysqld, php, php-fpm (unix socket), the operator listeners and every high-port or admin listener are loopback-only", nonLoop.every((l) => /caddy/.test(l) && /\*:(80|443)$/.test(l)), nonLoop.join(" || "));
+  S.info("the real API", "api.copilt.org is a remote host (139.59.157.231, its own Caddy); this rehearsal has no api.copilt.org site block (safety check refuses one). With the target guard NO request is sent to it unless AICC_REHEARSAL_PRODUCTION_READONLY=1 (HEAD only).");
   // 8. non-loopback peers are dropped by the wildcard listener (rehearsal guard) -- use the Mac's LAN address if it has one
   const lan = sh("bash", ["-c", "ipconfig getifaddr en0 || ipconfig getifaddr en1"]).stdout.trim();
   if (lan) { const r = await rq(E, "https://www.copilt.org/", { connectIp: lan, timeout: 5 }); S.check(`wildcard listener guard: a connection to the LAN address ${lan.replace(/\.\d+$/, ".x")} (source = the Mac's own LAN address, not loopback) is aborted`, r.status === 0, `status=${r.status} ${r.error || ""}`.slice(0, 150)); }
@@ -1019,10 +1067,12 @@ async function restart() {
   const du = sh("bash", ["-c", `cd ${P.home} && du -sk * 2>/dev/null | sort -rn | head -12`]).stdout.trim().replace(/\n/g, "; ");
   S.info("disk use after the run (KB per top-level dir under ~/aicc-rehearsal)", du);
   S.data.diskUse = du;
-  const apiNow = sh("curl", ["-sI", "https://api.copilt.org/"]).stdout;
-  fs.writeFileSync(path.join(P.evidence, "api-probe-after.txt"), apiNow);
-  const norm = (t) => t.split("\n").filter((l) => !/^date:/i.test(l)).map((l) => l.trim()).join("\n");
-  S.check("api.copilt.org read-only probe (HEAD /) is unchanged before and after the whole rehearsal (status line and headers, Date ignored)", apiBefore !== "" && norm(apiBefore) === norm(apiNow), norm(apiNow).split("\n").slice(0, 3).join(" | "));
+  if (PRODRO) {
+    const apiNow = productionReadonlyGuard("api.copilt.org").curlSync({ url: "https://api.copilt.org:443/", head: true, dump: "-" }).headerText.replace(/\r/g, "") + "\n";
+    fs.writeFileSync(path.join(P.evidence, "api-probe-after.txt"), apiNow);
+    const norm = (t) => t.split("\n").filter((l) => !/^date:/i.test(l)).map((l) => l.trim()).join("\n");
+    S.check("api.copilt.org read-only probe (HEAD /) is unchanged before and after the whole rehearsal (status line and headers, Date ignored)", apiBefore !== "" && norm(apiBefore) === norm(apiNow), norm(apiNow).split("\n").slice(0, 3).join(" | "));
+  } else S.info("api.copilt.org probe SKIPPED (fail closed)", "this run sent NO request to api.copilt.org: production read-only probes are opt-in (AICC_REHEARSAL_PRODUCTION_READONLY=1, GET/HEAD only, through the target guard)");
   S.data.timings = timings;
   S.save();
   return [S];
@@ -1070,7 +1120,7 @@ async function tlsSection() {
   const after = { w: serial("www.copilt.org"), a: serial("copilt.org"), n: obtained(), root: sh("shasum", [P.rootCrt]).stdout.slice(0, 12) };
   S.check("restart persistence: both leaf serials and the root CA are unchanged after stop/start and no new 'certificate obtained' was logged (loaded from storage, not re-issued)", before.w === after.w && before.a === after.a && before.root === after.root && before.n === after.n, `www ${before.w}=${after.w}; apex ${before.a}=${after.a}; obtained log lines ${before.n}->${after.n}`);
   // renewal configuration, and a real accelerated renewal on a scratch instance
-  const cfgJson = await (await fetch(`http://${E.admin}/config/apps/tls/automation`, { headers: { Origin: `http://${E.admin}` } })).json();
+  const cfgJson = await (await loopbackFetch(`http://${E.admin}/config/apps/tls/automation`, { headers: { Origin: `http://${E.admin}` } })).json();
   S.check("renewal configuration present: automation policy with the internal issuer for www.copilt.org and copilt.org (Caddy renews managed certificates itself, in the background)", JSON.stringify(cfgJson).includes('"module":"internal"') || JSON.stringify(cfgJson).includes('"module": "internal"'), JSON.stringify(cfgJson).slice(0, 300));
   const scratch = path.join(P.home, "run/renewal-test"); fs.rmSync(scratch, { recursive: true, force: true }); fs.mkdirSync(scratch, { recursive: true });
   fs.writeFileSync(path.join(scratch, "Caddyfile"), `{\n\tlocal_certs\n\tskip_install_trust\n\tadmin off\n\thttp_port 18101\n\thttps_port 18444\n\tdefault_bind 127.0.0.1\n\tstorage file_system ${scratch}/data\n\trenew_interval 10s\n}\nwww.copilt.org {\n\ttls {\n\t\tissuer internal {\n\t\t\tlifetime 120s\n\t\t}\n\t}\n\trespond "renew test"\n}\n`);
@@ -1097,7 +1147,7 @@ async function tlsSection() {
   S.check(`TLS 1.2 cipher suites accepted (${accepted.length} of ${all12.length} tried): only forward-secret AEAD suites; no RC4/3DES/NULL/EXPORT/MD5/static-RSA/CBC-SHA1`, accepted.length > 0 && weak.length === 0 && accepted.every((x) => /ECDHE/.test(x) && /GCM|CHACHA20/.test(x)), accepted.join(", "));
   S.data.protocols = v; S.data.tls12Ciphers = accepted;
   const h3 = sh("lsof", ["-nP", "-a", "-p", String(readPid("edge")), "-iUDP"]).stdout;
-  S.check("UDP :443 (HTTP/3 / QUIC) is listening on the edge (client-side QUIC itself UNVERIFIED: this curl has no HTTP/3)", /UDP \*:443/.test(h3), h3.split("\n").slice(1, 3).join(" | "));
+  S.check("HTTP/3 is OFF: the standing edge has NO UDP listener at all (owner decision; servers { protocols h1 h2 })", !/UDP/.test(h3), h3.split("\n").slice(1, 3).join(" | ") || "no UDP sockets");
 
   // window before a certificate exists: Caddy manages no certificate (variant), http must redirect once to https, never loop; then a reload brings the certificate and https works
   await reload({ ...cfg, variant: "no-certs" }, { quiet: true });
@@ -1143,9 +1193,9 @@ async function rollback() {
   S.check("before: the NEW edge serves the new site (home is not the old page; /my-account/ and /pricing/ are 200 from WordPress)", n0.sha !== wantSha && n0.acct.status === 200 && n0.pr.status === 200, n0.rows.map((r) => r.join(" ")).slice(0, 3).join(" | "));
   // what the live old site says today (read-only GETs of the PUBLIC site, for comparison only)
   const live = {};
-  for (const [k, u] of [["my-account", "https://www.copilt.org/my-account/"], ["pricing", "https://www.copilt.org/pricing/"], ["apex deep", "https://copilt.org/x/y?z=1"], ["http www deep", "http://www.copilt.org/x/y?z=1"], ["robots", "https://www.copilt.org/robots.txt"], ["sitemap", "https://www.copilt.org/sitemap.xml"]]) {
-    const r = sh("curl", ["-s", "-o", "/dev/null", "-w", "%{http_code} %{redirect_url}", u]).stdout.trim(); live[k] = r;
-  }
+  if (PRODRO) for (const [k, u] of [["my-account", "https://www.copilt.org:443/my-account/"], ["pricing", "https://www.copilt.org:443/pricing/"], ["robots", "https://www.copilt.org:443/robots.txt"], ["sitemap", "https://www.copilt.org:443/sitemap.xml"]]) {
+    const r = productionReadonlyGuard("www.copilt.org").curlSync({ url: u, method: "GET", writeOut: "\n%{http_code} %{redirect_url}" }); live[k] = r.stdout.toString().trim().split("\n").pop();
+  } else live.skipped = "production read-only probes are opt-in (AICC_REHEARSAL_PRODUCTION_READONLY=1); no request was sent to the public site";
   S.data.liveOldSiteToday = live;
   // 1. swap = reload the standing edge with the old-target config (what a DNS revert would do to who answers)
   const old = generateOldTarget(cfg);
@@ -1154,14 +1204,14 @@ async function rollback() {
   const v = sh(P.caddy, ["validate", "--config", old.file, "--adapter", "caddyfile"]);
   S.check("caddy validate on the old-target config", v.code === 0, v.out.split("\n").filter((l) => !l.startsWith("{")).join(" ").slice(0, 120));
   const t0 = now();
-  const rl = sh(P.caddy, ["reload", "--config", old.file, "--adapter", "caddyfile", "--address", E.admin, "--force"]);
+  const rl = sh(P.caddy, ["reload", "--config", old.file, "--adapter", "caddyfile", "--address", E.admin, "--force"], { env: { ...process.env, AICC_STAGE_HOST: STAGE_REHEARSAL_HOST, AICC_STAGE_ID: stageId(), XDG_DATA_HOME: path.join(P.home, "caddy/xdg-data"), XDG_CONFIG_HOME: P.caddyConfig } });
   const tSwap = now() - t0;
   S.check("config swap (caddy reload to the old-target config)", rl.code === 0, rl.out.slice(-150));
   let tFirstOld = -1;
   for (let k = 0; k < 300; k++) { const r = await rq(E, "https://www.copilt.org/my-account/"); if (r.status === 404) { tFirstOld = now() - t0; break; } await sleep(10); }
   const o1 = await check(E);
   S.check("after the swap: / is byte-identical to the saved old home page (sha256), 200", o1.home.status === 200 && o1.sha === wantSha, `sha ${o1.sha.slice(0, 16)} vs ${wantSha.slice(0, 16)}`);
-  S.check("after the swap: /my-account/, /pricing/, /cart/, /demo/, /xmlrpc.php are 404 exactly as on the live old site today (live: my-account " + live["my-account"] + ", pricing " + live["pricing"] + ")", [o1.acct.status, o1.pr.status].every((x) => x === 404) && /^404/.test(live["my-account"]) && /^404/.test(live["pricing"]), o1.rows.slice(1, 4).map((r) => r.join(" ")).join(" | "));
+  S.check("after the swap: /my-account/, /pricing/, /cart/, /demo/, /xmlrpc.php are 404 exactly as on the live old site today (live: my-account " + live["my-account"] + ", pricing " + live["pricing"] + ")", [o1.acct.status, o1.pr.status].every((x) => x === 404) && (live.skipped || (/^404/.test(live["my-account"]) && /^404/.test(live["pricing"]))), o1.rows.slice(1, 4).map((r) => r.join(" ")).join(" | "));
   S.check("after the swap: apex 301s to https://www.copilt.org{path?query} in one hop (live old site: " + live["apex deep"] + "), http://www 301s to https", o1.apex.status === 301 && one(o1.apex, "location") === "https://www.copilt.org/x/y?z=1" && o1.httpw.status === 301 && one(o1.httpw, "location") === "https://www.copilt.org/x/y?z=1", `${o1.apex.status} ${one(o1.apex, "location")}; ${o1.httpw.status} ${one(o1.httpw, "location")}`);
   S.check("after the swap: robots.txt and sitemap.xml are the OLD site's (200, same as live today)", o1.robots.status === 200 && /aicommercecopilot\.com/.test(o1.sm.body), `${o1.robots.status}/${o1.sm.status}`);
   const old404 = await rq(E, "https://www.copilt.org/my-account/", { bodyFile: "/tmp/aicc-rb-404.bin" });
@@ -1176,21 +1226,24 @@ async function rollback() {
   timing.rollForwardMs = tNew;
   S.info("timing: swap back to the new edge", `${tNew} ms`);
   // 3. a different LISTENER (what a DNS revert is: clients go to another address): start the old target as its own process on high ports and 'resolve' the names to it
+  sh("pkill", ["-f", "Caddyfile.old-target.oldtarget"]); await sleep(300); // a stale stand-in from a crashed earlier run would keep the port
   const oldInst = { ...cfg, name: "oldtarget", httpPort: 18110, httpsPort: 18454, admin: "127.0.0.1:12024" };
   const og = generateOldTarget(oldInst);
   const t2 = now();
   const { spawn } = await import("node:child_process");
-  const child = spawn(P.caddy, ["run", "--config", og.file, "--adapter", "caddyfile"], { stdio: "ignore", env: { ...process.env, XDG_DATA_HOME: path.join(P.home, "caddy/xdg-data"), XDG_CONFIG_HOME: P.caddyConfig } });
+  const child = spawn(P.caddy, ["run", "--config", og.file, "--adapter", "caddyfile"], { stdio: "ignore", env: { ...process.env, AICC_STAGE_HOST: STAGE_REHEARSAL_HOST, AICC_STAGE_ID: stageId(), XDG_DATA_HOME: path.join(P.home, "caddy/xdg-data"), XDG_CONFIG_HOME: P.caddyConfig } });
   const up = await waitFor(async () => (await rq({ name: "oldtarget", httpPort: 18110, httpsPort: 18454 }, "https://www.copilt.org/")).status === 200, 15000, 25);
   const o2 = await check({ name: "oldtarget", httpPort: 18110, httpsPort: 18454 });
   S.check("separate old-target listener (client 'DNS' points at it): serves the saved home page and 404s the new routes, while the new edge keeps running untouched", up >= 0 && o2.sha === wantSha && o2.acct.status === 404 && (await rq(E, "https://www.copilt.org/my-account/")).status === 200, `old listener up after ${up} ms`);
   timing.oldListenerColdStartMs = now() - t2;
-  child.kill("SIGTERM"); await sleep(400);
+  child.kill("SIGTERM");
+  for (let k = 0; k < 40 && child.exitCode === null && child.signalCode === null; k++) await sleep(100);
+  if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
   S.data.timing = timing;
   // 4. the real-world timeline from FRESH facts (read-only DNS/TLS queries today)
   const facts = fs.readFileSync(path.join(P.evidence, "live-facts-2026-10-20.txt"), "utf8");
   const notAfter = /notAfter=(.*)/.exec(facts)?.[1];
-  const fresh = sh("bash", ["-c", "echo | openssl s_client -connect www.copilt.org:443 -servername www.copilt.org 2>/dev/null | openssl x509 -noout -dates"]).stdout.trim().replace(/\n/g, "; ");
+  const fresh = PRODRO ? productionReadonlyGuard("www.copilt.org").productionTlsDates() : (/notBefore=[^;]*; notAfter=[^;]*/.exec(fs.readFileSync(path.join(P.evidence, "live-facts-2026-10-20.txt"), "utf8").replace(/\n/g, "; ")) || [""])[0] + " (SNAPSHOT from live-facts-2026-10-20.txt: no live probe, production read-only probes are opt-in)";
   S.info("GitHub Pages certificate, re-verified now (openssl s_client -connect www.copilt.org:443 | openssl x509 -noout -dates)", fresh);
   const naFresh = /notAfter=(.*)/.exec(fresh)?.[1];
   const daysLeft = naFresh ? Math.round((new Date(naFresh) - new Date()) / 86400000) : -1;
@@ -1219,7 +1272,7 @@ async function safety() {
     S.check(`${f}: local_certs, no acme_ca/acme_dns/email/on_demand_tls, no api.copilt.org address`, /^\s*local_certs\s*$/m.test(code) && !/\bacme_ca\b|\bacme_dns\b|^\s*email\b|on_demand_tls|\bissuer\s+(acme|zerossl)/m.test(code) && !/api\.copilt\.org/.test(code), "");
   }
   for (const inst of [EDGE, PUBLIC]) {
-    const j = await (await fetch(`http://${inst.admin}/config/`, { headers: { Origin: `http://${inst.admin}` } })).text();
+    const j = await (await loopbackFetch(`http://${inst.admin}/config/`, { headers: { Origin: `http://${inst.admin}` } })).text();
     S.check(`live config of the :${inst.httpsPort} instance (read back from Caddy's admin API): no ACME issuer, no ZeroSSL, no acme_ca URL, issuer module is internal`, !/"module":"acme"|"module":"zerossl"|acme-v0|letsencrypt|"ca":"https?:/.test(j) && /"module":"internal"/.test(j), "");
   }
   const pids = [readPid("edge"), readPid("public")].filter(Boolean).join(",");
@@ -1233,7 +1286,8 @@ async function safety() {
   S.check("the edge's upstream is loopback and the only upstream of any generated file", gens.every((f) => !/reverse_proxy\s+(?!\{\$AICC_WP_UPSTREAM\})/.test(fs.readFileSync(path.join(P.generated, f), "utf8").split("\n").filter((l) => !/^\s*#/.test(l)).join("\n"))), "reverse_proxy {$AICC_WP_UPSTREAM} = 127.0.0.1:18982 in the runner's environment");
   const dns = sh("bash", ["-c", "grep -n 'copilt.org' /etc/hosts | head -3"]).stdout.trim();
   S.check("/etc/hosts was not modified for the rehearsal names (clients map names with curl --resolve / Chrome --host-resolver-rules only)", dns === "", dns || "no copilt.org line in /etc/hosts");
-  S.check("the real names resolve publicly as before (www still CNAME avivg7.github.io): no DNS change was made", /avivg7\.github\.io/.test(sh("dig", ["+short", "www.copilt.org", "CNAME"]).stdout), sh("dig", ["+short", "www.copilt.org", "CNAME"]).stdout.trim());
+  if (PRODRO) S.check("the real names resolve publicly as before (www still CNAME avivg7.github.io): no DNS change was made", /avivg7\.github\.io/.test(sh("dig", ["+short", "www.copilt.org", "CNAME"]).stdout), sh("dig", ["+short", "www.copilt.org", "CNAME"]).stdout.trim());
+  else S.info("public DNS lookup of the real names SKIPPED (fail closed)", "this run resolved NO production name through public DNS: that check is opt-in (AICC_REHEARSAL_PRODUCTION_READONLY=1). /etc/hosts and the system resolver configuration were not touched (checked above).");
   S.save();
   return [S];
 }
@@ -1288,7 +1342,7 @@ async function optiona() {
   const adMixed = sh(P.caddy, ["adapt", "--config", path.join(dir, "Caddyfile.mixed-old-structure"), "--adapter", "caddyfile"], { env: { ...process.env, AICC_ACME_EMAIL: "ops@example.invalid", AICC_STATIC_ROOT: "/srv/aicc/current", AICC_WP_UPSTREAM: "10.0.0.12:8080", AICC_OPERATOR_CIDRS: "203.0.113.7/32", AICC_LOG_DIR: dir } });
   S.check("control: the OLD structure (one block mixing http:// and https:// addresses + a manual tls line) is rejected by the real Caddy, as the architecture review found", adMixed.code !== 0 && /is HTTP, but attempts to configure TLS connection policies/.test(adMixed.out), adMixed.out.split("\n").filter((l) => /error/.test(l)).join(" ").slice(0, 220));
   await start(cfg, { quiet: true });
-  const OA = { ...cfg };
+  const OA = { ...cfg, cacert: cert }; // the instance presents the throwaway certificate: trust exactly that one (also for the guard's identity probe)
   const ser1 = certSerial();
   for (const name of ["www.copilt.org", "copilt.org"]) {
     const info = issuerOf(name, 18455);
@@ -1340,83 +1394,159 @@ async function rqWith(inst, url, extra, o = {}) { return req(inst, url, { ...o, 
 
 /* ------------------------------------------------------------------ preflight: fail-closed start (E5, architecture review F6) */
 async function preflightSection() {
-  const S = new Section("15-preflight", "scripts/ops/edge-preflight.sh: every missing or unsafe input stops the start with a clear message (negative tests)");
+  const S = new Section("15-preflight", "scripts/ops/edge-preflight.sh: every missing or unsafe input stops the start with a clear message (negative tests, rehearsal + stage + production renders)");
   const dir = path.join(P.home, "run/preflight"); fs.rmSync(dir, { recursive: true, force: true }); fs.mkdirSync(dir, { recursive: true });
   const root = path.join(dir, "static"), logs = path.join(dir, "logs"); fs.mkdirSync(root, { recursive: true }); fs.mkdirSync(logs, { recursive: true });
   for (const f of ["index.html", "404.html", "50x.html"]) fs.writeFileSync(path.join(root, f), "<html></html>");
+  sh("bash", [P.fpmScript, "start"]);
   const script = path.join(REPO_ROOT, "scripts/ops/edge-preflight.sh");
-  const rehearsalFile = path.join(P.generated, "Caddyfile");
-  const prodFile = path.join(dir, "Caddyfile.production"); fs.writeFileSync(prodFile, fs.readFileSync(P.template, "utf8"));
-  const base = { AICC_STATIC_ROOT: root, AICC_WP_UPSTREAM: "127.0.0.1:18982", AICC_OPERATOR_CIDRS: "127.0.0.1/32 ::1/128", AICC_LOG_DIR: logs, AICC_ACME_EMAIL: "ops@example.invalid" };
-  const run = (over, file = rehearsalFile, extra = []) => {
+  const { render, readTemplate, replaceSnippet, identitySnippetBody } = await import("../lib/edge-render.mjs");
+  const tpl = readTemplate(P.template);
+  // the rehearsal's own (proxy form) Caddyfile and a fastcgi rehearsal one
+  const proxyInst = { ...settings(), name: "pfproxy", httpPort: 18140, httpsPort: 18470, admin: "127.0.0.1:12041", upstream: WP_UPSTREAM, staticRoot: P.current, upstreamMode: "proxy" };
+  const fcgiInst = { ...proxyInst, name: "pffcgi", httpPort: 18141, httpsPort: 18471, admin: "127.0.0.1:12042", upstreamMode: "fastcgi" };
+  const rehearsalFile = generate(proxyInst).file, rehearsalFcgi = generate(fcgiInst).file;
+  const write = (name, text) => { const f = path.join(dir, name); fs.writeFileSync(f, text); return f; };
+  const stageText = render(tpl, { mode: "stage" }).text;
+  const stageFile = write("Caddyfile.stage", stageText);
+  const prodFile = write("Caddyfile.production", tpl);
+  const sockEnv = `unix/${P.fpmSocket}`;
+  const rbase = { AICC_STATIC_ROOT: root, AICC_WP_UPSTREAM: "127.0.0.1:18982", AICC_LOG_DIR: logs, AICC_OPERATOR_PORT: String(operatorPortOf(proxyInst)) };
+  const sbase = { AICC_PUBLIC_HOST: "stage.copilt.org", AICC_STAGE_HOST: "stage.copilt.org", AICC_STAGE_ID: "0123456789abcdef0123", AICC_STATIC_ROOT: root, AICC_WP_ROOT: P.wpRoot, AICC_PHP_FPM_SOCKET: sockEnv, AICC_LOG_DIR: logs, AICC_ACME_EMAIL: "ops@example.invalid", AICC_OPERATOR_PORT: "8443" };
+  const run = (base, over, file, extra = []) => {
     const env = { PATH: process.env.PATH, HOME: process.env.HOME, ...base, ...over };
     for (const k of Object.keys(env)) if (env[k] === undefined) delete env[k];
     return sh("bash", [script, "--caddyfile", file, "--caddy", P.caddy, "--no-validate", "--quiet", ...extra], { env });
   };
-  const bad = (name, over, re, file, extra) => { const r = run(over, file, extra); S.check(`NEGATIVE: ${name} -> exit 1 and a message matching ${re}`, r.code === 1 && re.test(r.out), `exit ${r.code}: ${r.out.trim().split("\n")[0].slice(0, 170)}`); };
-  const good = (name, over, file, extra) => { const r = run(over, file, extra); S.check(`POSITIVE: ${name} -> exit 0`, r.code === 0, `exit ${r.code}: ${r.out.trim().split("\n").slice(0, 2).join(" | ").slice(0, 170)}`); };
-  good("a complete environment (rehearsal Caddyfile)", {});
-  bad("AICC_OPERATOR_CIDRS unset (Caddy alone would start and lock staff out)", { AICC_OPERATOR_CIDRS: undefined }, /AICC_OPERATOR_CIDRS is empty or unset/);
-  bad("AICC_OPERATOR_CIDRS empty", { AICC_OPERATOR_CIDRS: "" }, /AICC_OPERATOR_CIDRS is empty or unset/);
-  bad("AICC_OPERATOR_CIDRS only spaces", { AICC_OPERATOR_CIDRS: "   " }, /AICC_OPERATOR_CIDRS is empty or unset/);
-  for (const v of ["0.0.0.0/0", "::/0", "0.0.0.0", "::", "10.0.0.0/0"]) bad(`AICC_OPERATOR_CIDRS=${v} (would make /wp-admin/ public)`, { AICC_OPERATOR_CIDRS: v }, /matches every address/);
-  good("AICC_OPERATOR_CIDRS=0.0.0.0/0 with the explicit override AICC_ALLOW_OPEN_OPERATOR=1", { AICC_OPERATOR_CIDRS: "0.0.0.0/0", AICC_ALLOW_OPEN_OPERATOR: "1" });
-  for (const v of ["300.1.1.1/32", "10.0.0.1/33", "abc", "10.0.0/24", "2001:db8::/129", "1.2.3.4/x", "203.0.113.7;rm"]) bad(`AICC_OPERATOR_CIDRS=${v}`, { AICC_OPERATOR_CIDRS: v }, /is not an IPv4\/IPv6 address or CIDR/);
-  good("AICC_OPERATOR_CIDRS with IPv4, IPv6 and CIDR items", { AICC_OPERATOR_CIDRS: "203.0.113.7 198.51.100.0/24 2001:db8::/48 ::1" });
-  bad("AICC_STATIC_ROOT unset", { AICC_STATIC_ROOT: undefined }, /AICC_STATIC_ROOT is empty or unset/);
-  bad("AICC_STATIC_ROOT does not exist", { AICC_STATIC_ROOT: path.join(dir, "nope") }, /is not a directory/);
+  const R = (over, file = rehearsalFile, extra = ["--mode", "rehearsal"]) => run(rbase, over, file, extra);
+  const T = (over, file = stageFile, extra = ["--mode", "stage"]) => run(sbase, over, file, extra);
+  const bad = (runner) => (name, over, re, file, extra) => { const r = runner(over, file, extra); S.check(`NEGATIVE: ${name} -> exit 1 and a message matching ${re}`, r.code === 1 && re.test(r.out), `exit ${r.code}: ${r.out.trim().split("\n")[0].slice(0, 170)}`); };
+  const good = (runner) => (name, over, file, extra) => { const r = runner(over, file, extra); S.check(`POSITIVE: ${name} -> exit 0`, r.code === 0, `exit ${r.code}: ${r.out.trim().split("\n").slice(0, 2).join(" | ").slice(0, 170)}`); return r; };
+  const rbad = bad(R), rgood = good(R), sbad = bad(T), sgood = good(T);
+  // ---------------- rehearsal mode ----------------
+  rgood("a complete environment (rehearsal Caddyfile, reverse_proxy form)", {});
+  rgood("a complete environment (rehearsal Caddyfile, php_fastcgi form: socket + docroot)", { AICC_PHP_FPM_SOCKET: sockEnv, AICC_WP_ROOT: P.wpRoot, AICC_OPERATOR_PORT: String(operatorPortOf(fcgiInst)) }, rehearsalFcgi);
+  rgood("AICC_OPERATOR_CIDRS unset (the optional public list is EMPTY by default now)", { AICC_OPERATOR_CIDRS: undefined });
+  for (const v of ["0.0.0.0/0", "::/0", "0.0.0.0", "::", "10.0.0.0/0"]) rbad(`AICC_OPERATOR_CIDRS=${v} (would make /wp-admin/ public)`, { AICC_OPERATOR_CIDRS: v }, /matches every address/);
+  rgood("AICC_OPERATOR_CIDRS=0.0.0.0/0 with the explicit override AICC_ALLOW_OPEN_OPERATOR=1", { AICC_OPERATOR_CIDRS: "0.0.0.0/0", AICC_ALLOW_OPEN_OPERATOR: "1" });
+  for (const v of ["300.1.1.1/32", "10.0.0.1/33", "abc", "10.0.0/24", "2001:db8::/129", "1.2.3.4/x", "203.0.113.7;rm"]) rbad(`AICC_OPERATOR_CIDRS=${v}`, { AICC_OPERATOR_CIDRS: v }, /is not an IPv4\/IPv6 address or CIDR/);
+  rgood("AICC_OPERATOR_CIDRS with IPv4, IPv6 and CIDR items (rehearsal only)", { AICC_OPERATOR_CIDRS: "203.0.113.7 198.51.100.0/24 2001:db8::/48 ::1" });
+  rbad("AICC_STATIC_ROOT unset", { AICC_STATIC_ROOT: undefined }, /AICC_STATIC_ROOT is empty or unset/);
+  rbad("AICC_STATIC_ROOT does not exist", { AICC_STATIC_ROOT: path.join(dir, "nope") }, /is not a directory/);
   const noIdx = path.join(dir, "no-index"); fs.mkdirSync(noIdx); fs.writeFileSync(path.join(noIdx, "50x.html"), "x"); fs.writeFileSync(path.join(noIdx, "404.html"), "x");
-  bad("AICC_STATIC_ROOT without index.html", { AICC_STATIC_ROOT: noIdx }, /has no index\.html/);
+  rbad("AICC_STATIC_ROOT without index.html", { AICC_STATIC_ROOT: noIdx }, /has no index\.html/);
   const no50 = path.join(dir, "no-50x"); fs.mkdirSync(no50); fs.writeFileSync(path.join(no50, "index.html"), "x"); fs.writeFileSync(path.join(no50, "404.html"), "x");
-  bad("AICC_STATIC_ROOT without 50x.html (the 5xx page would be Caddy's empty body)", { AICC_STATIC_ROOT: no50 }, /has no 50x\.html/);
+  rbad("AICC_STATIC_ROOT without 50x.html (the 5xx page would be Caddy's empty body)", { AICC_STATIC_ROOT: no50 }, /has no 50x\.html/);
   const dangling = path.join(dir, "dangling"); fs.symlinkSync(path.join(dir, "gone"), dangling);
-  bad("AICC_STATIC_ROOT is a dangling symlink (a release was deleted under `current`)", { AICC_STATIC_ROOT: dangling }, /is not a directory/);
-  good("AICC_STATIC_ROOT is a symlink to a good release", { AICC_STATIC_ROOT: (() => { const l = path.join(dir, "current"); fs.symlinkSync(root, l); return l; })() });
-  bad("AICC_WP_UPSTREAM unset", { AICC_WP_UPSTREAM: undefined }, /AICC_WP_UPSTREAM is empty or unset/);
-  for (const v of ["127.0.0.1", "127.0.0.1:99999", "127.0.0.1:0", "127.0.0.1:abc", ":8080"]) bad(`AICC_WP_UPSTREAM=${v}`, { AICC_WP_UPSTREAM: v }, /AICC_WP_UPSTREAM/);
-  good("AICC_WP_UPSTREAM=http://10.0.0.12:8080", { AICC_WP_UPSTREAM: "http://10.0.0.12:8080" });
-  bad("AICC_LOG_DIR does not exist", { AICC_LOG_DIR: path.join(dir, "nolog") }, /does not exist/);
+  rbad("AICC_STATIC_ROOT is a dangling symlink (a release was deleted under `current`)", { AICC_STATIC_ROOT: dangling }, /is not a directory/);
+  rgood("AICC_STATIC_ROOT is a symlink to a good release", { AICC_STATIC_ROOT: (() => { const l = path.join(dir, "current"); fs.symlinkSync(root, l); return l; })() });
+  rbad("AICC_WP_UPSTREAM unset (reverse_proxy form)", { AICC_WP_UPSTREAM: undefined }, /AICC_WP_UPSTREAM is empty or unset/);
+  for (const v of ["127.0.0.1", "127.0.0.1:99999", "127.0.0.1:0", "127.0.0.1:abc", ":8080"]) rbad(`AICC_WP_UPSTREAM=${v}`, { AICC_WP_UPSTREAM: v }, /AICC_WP_UPSTREAM/);
+  rgood("AICC_WP_UPSTREAM=http://10.0.0.12:8080", { AICC_WP_UPSTREAM: "http://10.0.0.12:8080" });
+  rbad("AICC_LOG_DIR does not exist", { AICC_LOG_DIR: path.join(dir, "nolog") }, /does not exist/);
   const ro = path.join(dir, "ro-logs"); fs.mkdirSync(ro); fs.chmodSync(ro, 0o500);
-  bad("AICC_LOG_DIR not writable", { AICC_LOG_DIR: ro }, /not writable/);
+  rbad("AICC_LOG_DIR not writable", { AICC_LOG_DIR: ro }, /not writable/);
   fs.chmodSync(ro, 0o700);
-  bad("AICC_WP_TIMEOUT=banana", { AICC_WP_TIMEOUT: "banana" }, /not a duration/);
-  // production-style Caddyfile (the template itself): the ACME e-mail is mandatory, the admin API has no address (warning only)
-  bad("production template, AICC_ACME_EMAIL unset", { AICC_ACME_EMAIL: undefined }, /AICC_ACME_EMAIL is empty or not an e-mail address/, prodFile);
-  bad("production template, AICC_ACME_EMAIL=not-an-email", { AICC_ACME_EMAIL: "not-an-email" }, /AICC_ACME_EMAIL/, prodFile);
-  const rProd = sh("bash", [script, "--caddyfile", prodFile, "--caddy", P.caddy, "--no-validate"], { env: { PATH: process.env.PATH, HOME: process.env.HOME, ...base } });
-  S.check("POSITIVE: the production template with a plausible AICC_ACME_EMAIL passes; its admin API resolves to 127.0.0.1:12019 (NOT Caddy's default localhost:2019, which another Caddy on the host may own)", rProd.code === 0 && /admin API 127\.0\.0\.1:12019/.test(rProd.out), `exit ${rProd.code}: ${(rProd.out.match(/admin API \S+/) || ["(no admin line)"])[0]}`);
-  bad("production template with AICC_ADMIN_ADDR=0.0.0.0:2019 (admin API on every interface)", { AICC_ADMIN_ADDR: "0.0.0.0:2019" }, /admin API address '0\.0\.0\.0:2019' is not loopback/, prodFile);
-  const badAdmin = path.join(dir, "Caddyfile.admin-open"); fs.writeFileSync(badAdmin, fs.readFileSync(rehearsalFile, "utf8").replace(/^\tadmin .*$/m, "\tadmin 0.0.0.0:2019"));
-  bad("Caddyfile with `admin 0.0.0.0:2019` (unauthenticated reconfiguration API on every interface)", {}, /admin API address '0\.0\.0\.0:2019' is not loopback/, badAdmin);
-  good("Caddyfile with `admin unix//run/aicc-edge/admin.sock`", {}, (() => { const f = path.join(dir, "Caddyfile.admin-sock"); fs.writeFileSync(f, fs.readFileSync(rehearsalFile, "utf8").replace(/^\tadmin .*$/m, "\tadmin unix//run/aicc-edge/admin.sock")); return f; })());
-  // manual certificate (Option A) checks
+  rbad("AICC_WP_TIMEOUT=banana", { AICC_WP_TIMEOUT: "banana" }, /not a duration/);
+  // public-CA configuration in a REHEARSAL Caddyfile is refused (a rehearsal must never contact a public CA)
+  const rtext = fs.readFileSync(rehearsalFile, "utf8");
+  rbad("rehearsal Caddyfile with an `acme_ca` line", {}, /public-CA configuration/, write("Caddyfile.r-acme", rtext.replace("\tlocal_certs\n", "\tlocal_certs\n\tacme_ca https://acme-v02.api.letsencrypt.org/directory\n")));
+  rbad("rehearsal Caddyfile with an `email` line", {}, /public-CA configuration/, write("Caddyfile.r-email", rtext.replace("\tlocal_certs\n", "\tlocal_certs\n\temail ops@example.invalid\n")));
+  rbad("rehearsal Caddyfile with a zerossl issuer", {}, /public-CA configuration/, write("Caddyfile.r-zerossl", rtext.replace("\tlocal_certs\n", "\tlocal_certs\n\tcert_issuer zerossl\n")));
+  rbad("rehearsal Caddyfile WITHOUT local_certs", {}, /needs the global option local_certs/, write("Caddyfile.r-nolocal", rtext.replace("\tlocal_certs\n", "")));
+  // admin API
+  rbad("Caddyfile with `admin 0.0.0.0:2019` (unauthenticated reconfiguration API on every interface)", {}, /admin API address '0\.0\.0\.0:2019' is not loopback/, write("Caddyfile.admin-open", rtext.replace(/^\tadmin .*$/m, "\tadmin 0.0.0.0:2019")));
+  rbad("Caddyfile with a LAN admin address", {}, /is not loopback/, write("Caddyfile.admin-lan", rtext.replace(/^\tadmin .*$/m, "\tadmin 192.168.1.5:2019")));
+  rbad("Caddyfile with NO admin address (Caddy would use localhost:2019, which the API's Caddy may own)", {}, /no 'admin' address/, write("Caddyfile.admin-none", rtext.replace(/^\tadmin .*\n/m, "")));
+  rgood("Caddyfile with `admin unix//run/aicc-edge/admin.sock`", {}, write("Caddyfile.admin-sock", rtext.replace(/^\tadmin .*$/m, "\tadmin unix//run/aicc-edge/admin.sock")));
+  // HTTP/3, Alt-Svc, metrics, listeners, strict SNI
+  rbad("HTTP/3 not switched off (no `protocols h1 h2`)", {}, /HTTP\/3 is not switched off/, write("Caddyfile.h3", rtext.replace("\t\tprotocols h1 h2\n", "")));
+  rbad("an Alt-Svc value is set", {}, /Alt-Svc value or enables h3/, write("Caddyfile.altsvc", rtext.replace("\t\t-Alt-Svc\n", '\t\tAlt-Svc "h3=\\":443\\"; ma=3600"\n')));
+  rbad("metrics is not enabled", {}, /global option 'metrics' is missing/, write("Caddyfile.nometrics", rtext.replace("\tmetrics\n", "")));
+  rbad("metrics is ROUTED on a public site (handle /metrics { metrics })", {}, /'metrics' appears 2 times/, write("Caddyfile.routedmetrics", rtext.replace("\timport aicc_stage_identity\n\n\t# WordPress admin surface", "\timport aicc_stage_identity\n\thandle /metrics {\n\t\tmetrics\n\t}\n\n\t# WordPress admin surface")));
+  rbad("strict_sni_host removed", {}, /strict_sni_host on/, write("Caddyfile.nosni", rtext.replace("\t\tstrict_sni_host on\n", "")));
+  rbad("operator listener bound to 0.0.0.0", {}, /(a 'bind' other than|exactly one 'bind'|non-loopback bind)/, write("Caddyfile.bind-open", rtext.replace("\tbind 127.0.0.1\n", "\tbind 0.0.0.0\n")));
+  rbad("operator listener without any bind", {}, /operator listener's 'bind 127\.0\.0\.1' is missing/, write("Caddyfile.bind-none", rtext.replace("\tbind 127.0.0.1\n", "")));
+  rbad("operator port equals a public port", { AICC_OPERATOR_PORT: "443" }, /AICC_OPERATOR_PORT=443/);
+  // Option A manual certificate (no longer the plan; the checks stay)
   const mkCert = (name, { days = 90, san = "DNS:www.copilt.org,DNS:copilt.org", mode = 0o600 } = {}) => {
     const c = path.join(dir, `${name}.pem`), k = path.join(dir, `${name}.key`);
     sh("openssl", ["req", "-x509", "-newkey", "ec", "-pkeyopt", "ec_paramgen_curve:prime256v1", "-nodes", "-keyout", k, "-out", c, ...(days <= 0 ? ["-not_before", "20200101000000Z", "-not_after", "20200102000000Z"] : ["-days", String(days)]), "-subj", "/CN=preflight-test", "-addext", `subjectAltName=${san}`]);
     fs.chmodSync(k, mode);
     return { c, k };
   };
-  const withTls = (c, k) => { const f = path.join(dir, `Caddyfile.tls.${path.basename(c)}`); fs.writeFileSync(f, fs.readFileSync(rehearsalFile, "utf8").replace(/\(aicc_tls\) \{\n\ttls internal\n\}/, `(aicc_tls) {\n\ttls ${c} ${k}\n}`)); return f; };
-  const ok = mkCert("good"); good("manual certificate: valid, both SANs, key 0600, key matches", {}, withTls(ok.c, ok.k));
-  const miss = withTls(path.join(dir, "missing.pem"), ok.k); bad("manual certificate file missing", {}, /TLS certificate file .* is not readable/, miss);
-  const mk2 = mkCert("wrongsan", { san: "DNS:www.copilt.org" }); bad("manual certificate lacks the apex SAN (Option A must cover BOTH names)", {}, /has no SAN DNS:copilt\.org/, withTls(mk2.c, mk2.k));
-  const mk3 = mkCert("openkey", { mode: 0o644 }); bad("manual key is group/world readable", {}, /must not be group\/world accessible/, withTls(mk3.c, mk3.k));
-  const mk4 = mkCert("other"); bad("manual key does not belong to the certificate", {}, /does not belong to certificate/, withTls(ok.c, mk4.k));
-  const mk5 = mkCert("expired", { days: 0 }); bad("manual certificate has EXPIRED", {}, /has EXPIRED/, withTls(mk5.c, mk5.k));
-  const mk6 = mkCert("soon", { days: 10 }); const rSoon = run({}, withTls(mk6.c, mk6.k)); S.check("manual certificate expiring in 10 days: still starts (exit 0) but WARNS", rSoon.code === 0 && /expires within 21 days/.test(rSoon.out), `exit ${rSoon.code}: ${rSoon.out.trim().split("\n")[0].slice(0, 150)}`);
-  fs.writeFileSync(path.join(dir, "garbage.pem"), "not a cert"); bad("manual certificate file is not PEM", {}, /not a PEM certificate/, withTls(path.join(dir, "garbage.pem"), ok.k));
+  const withTls = (c, k) => write(`Caddyfile.tls.${path.basename(c)}`, rtext.replace(/\(aicc_tls\) \{\n\ttls internal\n\}/, `(aicc_tls) {\n\ttls ${c} ${k}\n}`));
+  const ok = mkCert("good"); rgood("manual certificate: valid, both SANs, key 0600, key matches", {}, withTls(ok.c, ok.k));
+  rbad("manual certificate file missing", {}, /TLS certificate file .* is not readable/, withTls(path.join(dir, "missing.pem"), ok.k));
+  const mk2 = mkCert("wrongsan", { san: "DNS:www.copilt.org" }); rbad("manual certificate lacks the apex SAN", {}, /has no SAN DNS:copilt\.org/, withTls(mk2.c, mk2.k));
+  const mk3 = mkCert("openkey", { mode: 0o644 }); rbad("manual key is group/world readable", {}, /must not be group\/world accessible/, withTls(mk3.c, mk3.k));
+  const mk4 = mkCert("other"); rbad("manual key does not belong to the certificate", {}, /does not belong to certificate/, withTls(ok.c, mk4.k));
+  const mk5 = mkCert("expired", { days: 0 }); rbad("manual certificate has EXPIRED", {}, /has EXPIRED/, withTls(mk5.c, mk5.k));
+  const mk6 = mkCert("soon", { days: 10 }); const rSoon = R({}, withTls(mk6.c, mk6.k)); S.check("manual certificate expiring in 10 days: still starts (exit 0) but WARNS", rSoon.code === 0 && /expires within 21 days/.test(rSoon.out), `exit ${rSoon.code}: ${rSoon.out.trim().split("\n")[0].slice(0, 150)}`);
+  fs.writeFileSync(path.join(dir, "garbage.pem"), "not a cert"); rbad("manual certificate file is not PEM", {}, /not a PEM certificate/, withTls(path.join(dir, "garbage.pem"), ok.k));
+
+  // ---------------- stage mode (the render the Linux staging host gets; checked with `caddy adapt` only: no ACME provisioning) ----------------
+  const sg = sgood("a complete stage environment (stage render, php_fastcgi, unix socket, identity, loopback operator listener)", {});
+  const sOut = sh("bash", [script, "--mode", "stage", "--caddyfile", stageFile, "--caddy", P.caddy, "--no-validate"], { env: { PATH: process.env.PATH, HOME: process.env.HOME, ...sbase } });
+  S.check("stage: `caddy adapt` shows listeners :80, :443 and 127.0.0.1:8443 only, with protocols h1 and h2 (no h3)", /adapted listeners: .*127\.0\.0\.1:8443/.test(sOut.out) && /protocols h1, h2/.test(sOut.out), (sOut.out.match(/adapted listeners:[^\n]*/) || ["(no line)"])[0]);
+  S.check("stage: the Let's Encrypt production CA is the default and is reported", /ACME CA Let's Encrypt production/.test(sOut.out), (sOut.out.match(/ACME[^\n]*/) || [""])[0]);
+  sbad("AICC_PUBLIC_HOST unset", { AICC_PUBLIC_HOST: undefined }, /AICC_PUBLIC_HOST is empty or unset/);
+  for (const h of ["www.copilt.org", "copilt.org", "api.copilt.org"]) sbad(`AICC_PUBLIC_HOST=${h} (a PRODUCTION name in stage mode)`, { AICC_PUBLIC_HOST: h, AICC_STAGE_HOST: h }, /is a PRODUCTION name/);
+  sbad("AICC_PUBLIC_HOST=blog.copilt.org (under the production domain, not stage*)", { AICC_PUBLIC_HOST: "blog.copilt.org", AICC_STAGE_HOST: "blog.copilt.org" }, /not a stage\* name/);
+  sbad("AICC_PUBLIC_HOST=stage..copilt.org (not a host name)", { AICC_PUBLIC_HOST: "stage..copilt.org", AICC_STAGE_HOST: "stage..copilt.org" }, /not a valid host name/);
+  sgood("AICC_PUBLIC_HOST=stage2.copilt.org", { AICC_PUBLIC_HOST: "stage2.copilt.org", AICC_STAGE_HOST: "stage2.copilt.org" });
+  sbad("AICC_STAGE_ID unset", { AICC_STAGE_ID: undefined }, /AICC_STAGE_ID is empty or unset/);
+  sbad("AICC_STAGE_ID too short", { AICC_STAGE_ID: "abc" }, /16 or more characters/);
+  sbad("AICC_STAGE_HOST differs from AICC_PUBLIC_HOST", { AICC_STAGE_HOST: "other.example" }, /AICC_STAGE_HOST=.* must equal AICC_PUBLIC_HOST/);
+  sbad("the stage Caddyfile has no identity route", {}, /no identity route/, write("Caddyfile.stage-noid", render(tpl, { mode: "stage", identity: null }).text));
+  sbad("the php-fpm socket does not exist", { AICC_PHP_FPM_SOCKET: `unix/${path.join(dir, "no.sock")}` }, /php-fpm socket .* does not exist/);
+  sbad("AICC_PHP_FPM_SOCKET is a TCP address (no HTTP/fastcgi upstream port may exist)", { AICC_PHP_FPM_SOCKET: "127.0.0.1:9000" }, /must be unix\/\/absolute\/path/);
+  sbad("AICC_PHP_FPM_SOCKET points at a regular file", { AICC_PHP_FPM_SOCKET: `unix/${path.join(root, "index.html")}` }, /does not exist/);
+  sbad("AICC_WP_ROOT unset", { AICC_WP_ROOT: undefined }, /AICC_WP_ROOT is empty or unset/);
+  sbad("AICC_WP_ROOT is not a WordPress docroot", { AICC_WP_ROOT: root }, /not a WordPress docroot/);
+  sbad("AICC_OPERATOR_CIDRS set in stage mode (the public allowlist is gone)", { AICC_OPERATOR_CIDRS: "203.0.113.7/32" }, /public allowlist is gone/);
+  const sOv = T({ AICC_OPERATOR_CIDRS: "203.0.113.7/32", AICC_ALLOW_OPERATOR_CIDRS: "1" }); S.check("POSITIVE-WITH-OVERRIDE: AICC_ALLOW_OPERATOR_CIDRS=1 lets it through and says so", sOv.code === 0 && /AICC_ALLOW_OPERATOR_CIDRS is set/.test(sOv.out), `exit ${sOv.code}`);
+  sbad("AICC_ACME_EMAIL unset", { AICC_ACME_EMAIL: undefined }, /AICC_ACME_EMAIL is empty or not an e-mail address/);
+  sbad("AICC_ACME_EMAIL=not-an-email", { AICC_ACME_EMAIL: "not-an-email" }, /AICC_ACME_EMAIL/);
+  sbad("AICC_ACME_CA is ZeroSSL (only Let's Encrypt is approved)", { AICC_ACME_CA: "https://acme.zerossl.com/v2/DV90" }, /is not Let's Encrypt/);
+  const sLe = T({ AICC_ACME_CA: "https://acme-staging-v02.api.letsencrypt.org/directory" }); S.check("AICC_ACME_CA = the Let's Encrypt STAGING directory: starts (exit 0) but WARNS that browsers will not trust it", sLe.code === 0 && /STAGING directory/.test(sLe.out), `exit ${sLe.code}`);
+  sbad("local_certs in a stage Caddyfile (certificates from Caddy's own CA)", {}, /local_certs \/ tls internal/, write("Caddyfile.stage-local", stageText.replace("\temail {$AICC_ACME_EMAIL}\n", "\temail {$AICC_ACME_EMAIL}\n\tlocal_certs\n")));
+  sbad("`tls internal` in a stage Caddyfile", {}, /local_certs \/ tls internal/, write("Caddyfile.stage-internal", stageText.replace(/\(aicc_tls\) \{\n(?:(?!\}\n)[^\n]*\n)*\}\n/, "(aicc_tls) {\n\ttls internal\n}\n")));
+  sgood("`tls internal` in a stage Caddyfile WITH the explicit check-build override AICC_ALLOW_INTERNAL_TLS=1", { AICC_ALLOW_INTERNAL_TLS: "1" }, write("Caddyfile.stage-internal2", stageText.replace(/\(aicc_tls\) \{\n(?:(?!\}\n)[^\n]*\n)*\}\n/, "(aicc_tls) {\n\ttls internal\n}\n")));
+  sbad("pre-issued certificate files in a stage Caddyfile (Option A is not the plan)", {}, /automatic HTTPS/, write("Caddyfile.stage-manual", stageText.replace(/\(aicc_tls\) \{\n(?:(?!\}\n)[^\n]*\n)*\}\n/, `(aicc_tls) {\n\ttls ${ok.c} ${ok.k}\n}\n`)));
+  sbad("reverse_proxy WordPress origin in a stage Caddyfile (an HTTP upstream port)", {}, /selects the reverse_proxy WordPress origin/, write("Caddyfile.stage-proxy", stageText.replace("(wp_proxy) {\n\timport wp_proxy_fastcgi\n}", "(wp_proxy) {\n\timport wp_proxy_http\n}")));
+  sbad("the stage Caddyfile's operator listener binds 0.0.0.0", {}, /exactly one 'bind'/, write("Caddyfile.stage-bind", stageText.replace("\tbind 127.0.0.1\n", "\tbind 0.0.0.0\n")));
+  sbad("a second bind in the stage Caddyfile", {}, /exactly one 'bind'/, write("Caddyfile.stage-bind2", stageText.replace("\tbind 127.0.0.1\n", "\tbind 127.0.0.1\n\tbind 192.0.2.1\n")));
+  sbad("HTTP/3 left on in the stage Caddyfile", {}, /HTTP\/3 is not switched off/, write("Caddyfile.stage-h3", stageText.replace("\t\tprotocols h1 h2\n", "")));
+  sbad("metrics routed publicly in the stage Caddyfile", {}, /'metrics' appears 2 times/, write("Caddyfile.stage-metrics", stageText.replace("\timport aicc_stage_identity\n\n\t# WordPress admin surface", "\timport aicc_stage_identity\n\thandle /metrics {\n\t\tmetrics\n\t}\n\n\t# WordPress admin surface")));
+  sbad("the stage admin API on a non-loopback address", { AICC_ADMIN_ADDR: "0.0.0.0:2019" }, /admin API address '0\.0\.0\.0:2019' is not loopback/);
+  sgood("the stage admin API on a unix socket", { AICC_ADMIN_ADDR: "unix//run/aicc-edge/admin.sock" });
+  const sOpPort = sh("bash", [script, "--mode", "stage", "--caddyfile", stageFile, "--caddy", P.caddy, "--no-validate", "--quiet"], { env: { PATH: process.env.PATH, HOME: process.env.HOME, ...sbase, AICC_OPERATOR_PORT: "9443" } });
+  S.check("a stage operator port other than the one in the adapted listener list is refused only if it differs (9443 is a valid port, still loopback)", sOpPort.code === 0, `exit ${sOpPort.code}`);
+  sbad("operator port 80", { AICC_OPERATOR_PORT: "80" }, /AICC_OPERATOR_PORT=80/);
+  void sg;
+
+  // ---------------- production mode (rendered, NOT activated) ----------------
+  const pbase = { ...sbase, AICC_PUBLIC_HOST: "www.copilt.org", AICC_STAGE_ID: undefined, AICC_STAGE_HOST: undefined };
+  const P1 = (over, file = prodFile, extra = ["--mode", "production"]) => run(pbase, over, file, extra);
+  const pbad = bad(P1), pgood = good(P1);
+  pbad("production mode without the cutover opt-in (the production render is not activated)", {}, /mode production is refused/);
+  pgood("production render with AICC_ALLOW_PRODUCTION_MODE=1 (cutover day only)", { AICC_ALLOW_PRODUCTION_MODE: "1" });
+  pbad("production mode with AICC_PUBLIC_HOST=stage.copilt.org", { AICC_ALLOW_PRODUCTION_MODE: "1", AICC_PUBLIC_HOST: "stage.copilt.org" }, /the production render serves www\.copilt\.org/);
+  pbad("production mode with AICC_STAGE_ID set (the production build never carries a stage identity)", { AICC_ALLOW_PRODUCTION_MODE: "1", AICC_STAGE_ID: "0123456789abcdef0123", AICC_STAGE_HOST: "www.copilt.org" }, /AICC_STAGE_ID is set in production mode/);
+  pbad("production mode with the identity route in the Caddyfile", { AICC_ALLOW_PRODUCTION_MODE: "1" }, /contains the stage identity route/, write("Caddyfile.prod-id", replaceSnippet(tpl, "aicc_stage_identity", identitySnippetBody("staging"))));
   // the rehearsal runner itself calls the preflight (exit code 4) and the systemd unit template does too
-  const rr = sh("node", [path.join(REPO_ROOT, "scripts/rehearsal/rehearsal.mjs"), "validate", "--name", "preflighttest", "--http-port", "18130", "--https-port", "18456", "--admin", "127.0.0.1:12026", "--operator-cidrs", ""]);
-  S.check("the rehearsal runner (rehearsal.mjs validate/start/reload) runs the preflight and stops with exit 4 on an empty operator list", rr.code === 4 && /AICC_OPERATOR_CIDRS is empty or unset/.test(rr.out), `exit ${rr.code}: ${rr.out.trim().split("\n")[0].slice(0, 150)}`);
+  const rr = sh("node", [path.join(REPO_ROOT, "scripts/rehearsal/rehearsal.mjs"), "validate", "--name", "preflighttest", "--http-port", "18130", "--https-port", "18456", "--admin", "127.0.0.1:12026", "--operator-cidrs", "not-a-cidr"]);
+  S.check("the rehearsal runner (rehearsal.mjs validate/start/reload) runs the preflight and stops with exit 4 on an invalid optional operator list", rr.code === 4 && /is not an IPv4\/IPv6 address or CIDR/.test(rr.out), `exit ${rr.code}: ${rr.out.trim().split("\n")[0].slice(0, 150)}`);
+  const rr2 = sh("node", [path.join(REPO_ROOT, "scripts/rehearsal/rehearsal.mjs"), "validate", "--name", "preflighttest", "--http-port", "18130", "--https-port", "18456", "--admin", "127.0.0.1:12026", "--upstream-mode", "fastcgi", "--fpm-socket", path.join(dir, "missing.sock")]);
+  S.check("the rehearsal runner stops with exit 4 when the php-fpm socket of a fastcgi render does not exist (a missing socket is a branded 502 on every WordPress route, `caddy validate` says valid)", rr2.code === 4 && /php-fpm socket .* does not exist/.test(rr2.out), `exit ${rr2.code}: ${rr2.out.trim().split("\n")[0].slice(0, 150)}`);
   const unit = fs.readFileSync(path.join(REPO_ROOT, "docs/cutover/caddy-edge.service.template"), "utf8");
   S.check("the systemd unit template runs the preflight as ExecStartPre and in ExecReload", /^ExecStartPre=.*aicc-edge-preflight/m.test(unit) && /^ExecReload=.*aicc-edge-preflight/m.test(unit), "ExecStartPre and ExecReload call aicc-edge-preflight (an install copy of scripts/ops/edge-preflight.sh)");
-  // the preflight really catches what the review found Caddy does not: the real Caddy starts with an empty list and denies everyone
-  const emptyCaddy = path.join(dir, "empty-cidr"); fs.mkdirSync(emptyCaddy, { recursive: true });
-  const inst = { ...settings(), name: "emptycidr", httpPort: 18131, httpsPort: 18457, admin: "127.0.0.1:12027", upstream: WP_UPSTREAM, staticRoot: P.current, operatorCidrs: "" };
-  const g = generate(inst);
-  const direct = sh(P.caddy, ["validate", "--config", g.file, "--adapter", "caddyfile"], { env: { ...envFor(inst), AICC_OPERATOR_CIDRS: "" } });
-  S.check("control: the real `caddy validate` alone says \"Valid configuration\" for the EMPTY operator list (this is why the preflight exists)", direct.code === 0 && /Valid configuration/.test(direct.out), direct.out.split("\n").filter((l) => !l.startsWith("{")).join(" ").trim());
-  fs.rmSync(path.join(P.generated, "Caddyfile.emptycidr"), { force: true }); fs.rmSync(path.join(P.generated, "Caddyfile.preflighttest"), { force: true });
+  // the preflight catches what Caddy does not: the real Caddy validates a fastcgi render whose socket is missing
+  const g = generate({ ...fcgiInst, fpmSocket: path.join(dir, "missing.sock"), name: "emptysock" });
+  const direct = sh(P.caddy, ["validate", "--config", g.file, "--adapter", "caddyfile"], { env: { ...envFor({ ...fcgiInst, fpmSocket: path.join(dir, "missing.sock"), name: "emptysock" }) } });
+  S.check("control: the real `caddy validate` alone says \"Valid configuration\" although the php-fpm socket does not exist (this is why the preflight exists)", direct.code === 0 && /Valid configuration/.test(direct.out), direct.out.split("\n").filter((l) => !l.startsWith("{")).join(" ").trim());
+  for (const f of ["Caddyfile.emptysock", "Caddyfile.preflighttest", "Caddyfile.pfproxy", "Caddyfile.pffcgi"]) fs.rmSync(path.join(P.generated, f), { force: true });
   fs.rmSync(dir, { recursive: true, force: true });
   S.save();
   return [S];
@@ -1564,6 +1694,7 @@ async function mutation() {
   const T = cpEchoToken();
   const base = fs.readFileSync(P.template, "utf8");
   const I = { name: "mut", httpPort: 18160, httpsPort: 18460 };
+  const MUT_FCGI = UPSTREAM_MODE === "fastcgi", ACTIVE = MUT_FCGI ? "wp_proxy_fastcgi" : "wp_proxy_http";
   const big = path.join(dir, "body.bin"); fs.writeFileSync(big, Buffer.alloc(4 * 1024 * 1024, 0x61));
   // throwaway pair for the Option A detector
   const cert = path.join(dir, "certs/fullchain.pem"), key = path.join(dir, "certs/privkey.pem");
@@ -1583,10 +1714,37 @@ async function mutation() {
     },
     async "unknown Host on :80 -> exactly 421 'Misdirected request'"(R) { const r = await R("http://copilt.org/product", { headers: { Host: "evil.example" } }); return r.status === 421 && r.body.trim() === "Misdirected request" && !(r.headers.location || []).length ? [] : [`status ${r.status} body ${JSON.stringify(r.body.slice(0, 30))} location ${(r.headers.location || [])[0]}`]; },
     async "client-supplied identity headers never reach WordPress"(R) {
-      const h = {}; for (const n of spoofNames) h[n] = "6.6.6.6"; h["X-Forwarded-For"] = "6.6.6.6, 7.7.7.7"; h["X-Forwarded-Proto"] = "http"; h["X-Forwarded-Host"] = "evil.example"; h["X-Request-Id"] = "attacker-id";
+      const h = {}; for (const n of spoofNames) h[n] = "6.6.6.6"; h["X-Forwarded-For"] = "6.6.6.6, 7.7.7.7"; h["X-Forwarded-Proto"] = "http"; h["X-Forwarded-Host"] = "evil.example"; h["X-Request-Id"] = "attacker-id"; h.Via = "1.1 evil";
       const r = await R(`https://www.copilt.org/wp-json/?__rehearsal_echo=${T}`, { headers: h }); let j = {}; try { j = JSON.parse(r.body); } catch { return ["no echo"]; }
       const seen = j.headers || {}; const bad = spoofNames.filter((n) => n.toLowerCase() in seen).map((n) => `leaked ${n}`);
-      if (seen["x-forwarded-for"] !== "127.0.0.1") bad.push(`xff=${seen["x-forwarded-for"]}`); if (seen["x-forwarded-proto"] !== "https") bad.push(`xfp=${seen["x-forwarded-proto"]}`); if (seen["x-forwarded-host"] !== "www.copilt.org") bad.push(`xfh=${seen["x-forwarded-host"]}`); if (seen["x-request-id"] === "attacker-id" || !seen["x-request-id"]) bad.push(`request-id=${seen["x-request-id"]}`);
+      if (MUT_FCGI) {
+        // php_fastcgi: PHP reads REMOTE_ADDR + HTTPS from Caddy; NO forwarding header of any kind may exist, and the client address is the real peer
+        for (const n of ["x-forwarded-for", "x-forwarded-proto", "x-forwarded-host", "via"]) if (n in seen) bad.push(`${n}=${seen[n]}`);
+        if (j.remote_addr !== "127.0.0.1") bad.push(`REMOTE_ADDR=${j.remote_addr}`); if (j.https_server_var !== "on") bad.push(`HTTPS=${j.https_server_var}`);
+      } else {
+        if (seen["x-forwarded-for"] !== "127.0.0.1") bad.push(`xff=${seen["x-forwarded-for"]}`); if (seen["x-forwarded-proto"] !== "https") bad.push(`xfp=${seen["x-forwarded-proto"]}`); if (seen["x-forwarded-host"] !== "www.copilt.org") bad.push(`xfh=${seen["x-forwarded-host"]}`);
+      }
+      if (seen["x-request-id"] === "attacker-id" || !seen["x-request-id"]) bad.push(`request-id=${seen["x-request-id"]}`);
+      return bad;
+    },
+    async "/metrics is a plain 404 on the public AND the operator listener, never Prometheus text"(R, RO) {
+      const bad = [];
+      for (const [label, fn] of [["public", R], ["operator", RO]]) for (const p of ["/metrics", "/metrics/", "/he/metrics"]) { const r = await fn(`https://www.copilt.org${p}`); if (r.status !== 404 || /# (HELP|TYPE) /.test(r.body) || /caddy_http|go_gc/.test(r.body)) bad.push(`${label} ${p} -> ${r.status} ${r.body.slice(0, 40)}`); }
+      return bad;
+    },
+    async "PHP runs only through WordPress's entry points; private files are 404 (public + operator)"(R, RO) {
+      const bad = [];
+      for (const [label, fn] of [["public", R], ["operator", RO]]) for (const p of ["/wp-content/plugins/woocommerce/woocommerce.php", "/wp-includes/version.php", "/wp-content/uploads/x.php", "/wp-config.php", "/wp-content/debug.log", "/wp-content/plugins/woocommerce/readme.txt", "/wp-content/uploads/.htaccess"]) { const r = await fn(`https://www.copilt.org${p}`); if (r.status !== 404 || (r.headers["x-rehearsal-upstream"] || []).length) bad.push(`${label} ${p} -> ${r.status}${(r.headers["x-rehearsal-upstream"] || []).length ? " (reached PHP)" : ""}`); }
+      return bad;
+    },
+    async "HTTP/3 is off: the instance has no UDP socket at all"(R, RO, ctx) { const u = sh("lsof", ["-nP", "-a", "-p", String(ctx.pid), "-iUDP"]).stdout.split("\n").filter((x) => x && !/^COMMAND/.test(x)); return u.length ? [`UDP sockets: ${u.map((x) => x.split(/\s+/).slice(8).join(" ")).join(", ")}`] : []; },
+    async "a request whose Host differs from the TLS server name is 421 (strict SNI), not Caddy's empty 200"(R) { const r = await R("https://www.copilt.org/wp-admin/", { headers: { Host: "localhost" } }); return r.status === 421 ? [] : [`status ${r.status}`]; },
+    async "the operator listener is bound to loopback only and serves /wp-admin/ + /wp-login.php (the public one denies them)"(R, RO, ctx) {
+      const bad = [];
+      const l = sh("lsof", ["-nP", `-iTCP:${ctx.opPort}`, "-sTCP:LISTEN"]).stdout.split("\n").filter((x) => x && !/^COMMAND/.test(x));
+      if (!l.length) bad.push("no listener on the operator port"); for (const x of l) { const addr = x.split(/\s+/)[8] || ""; if (!/^(127\.0\.0\.1|\[::1\]):/.test(addr)) bad.push(`operator listener bound to ${addr}`); }
+      const o = await RO("https://www.copilt.org/wp-login.php"); if (o.status !== 200) bad.push(`operator /wp-login.php ${o.status}`);
+      const p = await R("https://www.copilt.org/wp-login.php"); if (p.status !== 403) bad.push(`public /wp-login.php ${p.status}`);
       return bad;
     },
     async "wp-login.php cannot be used by a non-operator to log in (POST ?loggedout=true / ?ACTION=logout)"(R) {
@@ -1598,14 +1756,14 @@ async function mutation() {
     async "TRACE -> 405"(R) { const r = await R("https://www.copilt.org/pricing/", { method: "TRACE" }); return r.status === 405 ? [] : [`status ${r.status}`]; },
     async "dot-segments -> 400"(R) { const r = await R("https://www.copilt.org/pricing/../wp-admin/post.php"); return r.status === 400 ? [] : [`status ${r.status}`]; },
     async "404 and 5xx pages carry HSTS/nosniff/request-id and no Server"(R) { const r = await R("https://www.copilt.org/nothing-here/"); const bad = []; if (r.status !== 404) bad.push(`status ${r.status}`); for (const h of ["strict-transport-security", "x-content-type-options", "x-request-id"]) if ((r.headers[h] || []).length !== 1) bad.push(h); if ((r.headers.server || []).length) bad.push("server header"); return bad; },
-    async "Alt-Svc is one short value"(R) { const r = await R("https://www.copilt.org/"); const v = r.headers["alt-svc"] || []; return v.length === 1 && /ma=3600$/.test(v[0]) ? [] : [JSON.stringify(v)]; },
+    async "no Alt-Svc on any answer (HTTP/3 is off)"(R) { const bad = []; for (const p of ["/", "/pricing/", "/nothing-here/"]) { const r = await R(`https://www.copilt.org${p}`); const v = r.headers["alt-svc"] || []; if (v.length) bad.push(`${p} ${JSON.stringify(v)}`); } return bad; },
     async "no Via/X-Powered-By on proxied responses"(R) { const r = await R("https://www.copilt.org/pricing/"); return ["via", "x-powered-by", "server"].filter((h) => (r.headers[h] || []).length).map((h) => `${h} present`); },
     async "/wp-admin/ and /xmlrpc.php are 403 for a non-operator"(R) { const bad = []; for (const p of ["/wp-admin/", "/xmlrpc.php", "/wp-cron.php"]) { const r = await R(`https://www.copilt.org${p}`); if (r.status !== 403) bad.push(`${p} ${r.status}`); } return bad; },
     async "wp-activate / wp-signup / 50x.html are edge 404s"(R) { const bad = []; for (const p of ["/wp-activate.php", "/wp-signup.php", "/50x.html"]) { const r = await R(`https://www.copilt.org${p}`); if (r.status !== 404 || (r.headers["x-rehearsal-upstream"] || []).length) bad.push(`${p} ${r.status}`); } return bad; },
   };
   const optA = async (text) => { // Option A structure: the mutated template must still validate with a manual `tls <cert> <key>`
     const f = path.join(dir, "optA.template"); fs.writeFileSync(f, text);
-    const cfg = { ...settings(), name: "mutopta", httpPort: 18161, httpsPort: 18461, admin: "127.0.0.1:12031", upstream: WP_UPSTREAM, staticRoot: P.current, wpTimeout: "60s", variant: "", template: f, tlsFiles: `${cert},${key}`, storage: path.join(dir, "storage-opta") };
+    const cfg = { ...settings(), name: "mutopta", httpPort: 18161, httpsPort: 18461, admin: "127.0.0.1:12031", upstream: WP_UPSTREAM, staticRoot: P.current, wpTimeout: "60s", variant: "", template: f, upstreamMode: UPSTREAM_MODE, tlsFiles: `${cert},${key}`, storage: path.join(dir, "storage-opta") };
     const g = generate(cfg); // (the generator's own safety rules are bypassed on purpose: this detector must be Caddy itself)
     const v = sh(P.caddy, ["validate", "--config", g.file, "--adapter", "caddyfile"], { env: envFor(cfg) });
     fs.rmSync(g.file, { force: true });
@@ -1613,14 +1771,17 @@ async function mutation() {
   };
   const runOn = async (name, text) => {
     const f = path.join(dir, `${name}.template`); fs.writeFileSync(f, text);
-    const cfg = { ...settings(), ...I, admin: "127.0.0.1:12030", upstream: WP_UPSTREAM, staticRoot: P.current, wpTimeout: "60s", variant: "", template: f, operatorCidrs: "192.0.2.1/32" }; // same storage as the standing edge: same local CA, so the harness trusts the scratch instance
+    // same storage as the standing edge: same local CA, so the harness trusts the scratch instance. noDefaultBind: the scratch instance has NO global default_bind, so a missing site-level `bind` shows as a wildcard operator listener (lsof)
+    const cfg = { ...settings(), ...I, admin: "127.0.0.1:12030", upstream: WP_UPSTREAM, staticRoot: P.current, wpTimeout: "60s", variant: "", template: f, operatorCidrs: "192.0.2.1/32", upstreamMode: UPSTREAM_MODE, noDefaultBind: true, mutant: true };
     const g = generate(cfg);
     const v = sh(P.caddy, ["validate", "--config", g.file, "--adapter", "caddyfile"], { env: envFor(cfg) });
     if (v.code !== 0) return { startFailed: v.out.split("\n").filter((l) => /error/.test(l)).join(" ").slice(0, 200), fired: [] };
     await start(cfg, { quiet: true });
     const R = (url, o = {}) => req(I, url, o);
+    const RO = (url, o = {}) => req(I, url, { ...o, operator: true });
+    const ctx = { opPort: operatorPortOf(cfg), pid: readPid(cfg.name) };
     const fired = [];
-    for (const [dn, fn] of Object.entries(detectors)) { let bad = []; try { bad = await fn(R); } catch (e) { bad = [`detector error ${String(e).slice(0, 80)}`]; } if (bad.length) fired.push({ detector: dn, evidence: bad.slice(0, 3).join("; ") }); }
+    for (const [dn, fn] of Object.entries(detectors)) { let bad = []; try { bad = await fn(R, RO, ctx); } catch (e) { bad = [`detector error ${String(e).slice(0, 80)}`]; } if (bad.length) fired.push({ detector: dn, evidence: bad.slice(0, 3).join("; ") }); }
     await stop(cfg, { quiet: true });
     return { fired };
   };
@@ -1629,23 +1790,33 @@ async function mutation() {
   const baseOptA = await optA(base);
   S.check("baseline (unmutated template) on a scratch instance: every real-Caddy detector is green", baseRun.fired.length === 0 && !baseRun.startFailed, baseRun.fired.map((x) => `${x.detector}: ${x.evidence}`).join(" | ") || baseRun.startFailed || "all 13 detectors pass");
   S.check("baseline: the Option A structure (`tls <cert> <key>`) validates", baseOptA.length === 0, baseOptA.join(" "));
+  // remove a line from ONE snippet (the template has two WordPress origin forms; only the active one can matter to the real run)
+  const rmIn = (text, snippet, line) => { const i = text.indexOf(`(${snippet}) {`); if (i < 0) throw new Error("mutant setup: " + snippet); const j = text.indexOf("\n}\n", i); const body = text.slice(i, j); const k = body.split("\n").findIndex((l) => l.trim() === line.trim()); if (k < 0) throw new Error(`mutant setup: ${line} not in ${snippet}`); const lines = body.split("\n"); lines.splice(k, 1); return text.slice(0, i) + lines.join("\n") + text.slice(j); };
   const rmLine = (text, line, count = 1) => { let c = 0; return text.split("\n").filter((l) => { if (l.trim() === line.trim() && c < count) { c++; return false; } return true; }).join("\n"); };
   const afterBlock = (text, head, from, to) => { const i = text.indexOf(head); if (i < 0) throw new Error("mutant setup: " + head); const j = text.indexOf(from, i); if (j < 0) throw new Error("mutant setup: " + from); return text.slice(0, j) + to + text.slice(j + from.length); };
   const MUTANTS = [
     ["M01 remove `defer` from the security_headers block (expected equivalent on the routes WordPress sends X-Frame-Options/Referrer-Policy: only Cache-Control was ever seen duplicated, see M02)", (t) => afterBlock(t, "(security_headers) {", "\t\tdefer\n", "")],
     ["M02 remove `defer` from to_wordpress_nocache (Cache-Control)", (t) => afterBlock(t, "(to_wordpress_nocache) {", "\t\tdefer\n", "")],
     ["M03 delete the catch-all http:// 421 block", (t) => t.replace(/http:\/\/ \{\n[\s\S]*?\n\}\n/, "")],
-    ["M04 remove `header_up -Client-IP`", (t) => rmLine(t, "header_up -Client-IP")],
-    ["M05 remove `header_up -CF-Connecting-IP`", (t) => rmLine(t, "header_up -CF-Connecting-IP")],
+    ["M04 remove `header_up -Client-IP` (active origin form)", (t) => rmIn(t, ACTIVE, "header_up -Client-IP")],
+    ["M05 remove `header_up -CF-Connecting-IP` (active origin form)", (t) => rmIn(t, ACTIVE, "header_up -CF-Connecting-IP")],
     ["M06 restore the OLD wp-login exception (any method, case-insensitive)", (t) => t.replace(/\t\tnot expression \{http\.request\.method\} in \[[^\n]*\n/, "\t\tnot expression {http.request.uri.query}.matches('(?i)(^|&)(action=logout|loggedout=true)(&|$)')\n")],
-    ["M07 remove `header_up X-Forwarded-For {remote_host}` (expected equivalent: Caddy overwrites it itself)", (t) => rmLine(t, "header_up X-Forwarded-For {remote_host}")],
-    ["M08 remove `header_up X-Forwarded-Proto {scheme}` (expected equivalent)", (t) => rmLine(t, "header_up X-Forwarded-Proto {scheme}")],
-    ["M09 remove `header_up X-Forwarded-Host {host}` (expected equivalent)", (t) => rmLine(t, "header_up X-Forwarded-Host {host}")],
+    ...(MUT_FCGI ? [
+      ["M07 remove `header_up -X-Forwarded-For` (fastcgi: Caddy's own XFF would reach PHP: a dependency the design removes)", (t) => rmIn(t, ACTIVE, "header_up -X-Forwarded-For")],
+      ["M08 remove `header_up -X-Forwarded-Proto` (fastcgi)", (t) => rmIn(t, ACTIVE, "header_up -X-Forwarded-Proto")],
+      ["M09 remove `header_up -X-Forwarded-Host` (fastcgi)", (t) => rmIn(t, ACTIVE, "header_up -X-Forwarded-Host")],
+      ["M09b remove `header_up -Via` (fastcgi)", (t) => rmIn(t, ACTIVE, "header_up -Via")],
+    ] : [
+      ["M07 remove `header_up X-Forwarded-For {remote_host}` (expected equivalent: Caddy overwrites it itself)", (t) => rmIn(t, ACTIVE, "header_up X-Forwarded-For {remote_host}")],
+      ["M08 remove `header_up X-Forwarded-Proto {scheme}` (expected equivalent)", (t) => rmIn(t, ACTIVE, "header_up X-Forwarded-Proto {scheme}")],
+      ["M09 remove `header_up X-Forwarded-Host {host}` (expected equivalent)", (t) => rmIn(t, ACTIVE, "header_up X-Forwarded-Host {host}")],
+    ]),
     ["M10 remove the request body cap from to_wordpress_nocache", (t) => afterBlock(t, "(to_wordpress_nocache) {", "\timport wp_body_cap\n", "")],
     ["M11 remove the TRACE/TRACK/CONNECT guard", (t) => t.replace(/\t@bad_method method TRACE TRACK CONNECT\n\thandle @bad_method \{\n(?:\t\t[^\n]*\n)*\t\}\n/, "")],
     ["M12 remove the dot-segment guard (bad_path)", (t) => t.replace(/\t@bad_path vars_regexp[^\n]*\n\thandle @bad_path \{\n(?:\t\t[^\n]*\n)*\t\}\n/, "")],
     ["M13 remove `import security_headers` from handle_errors", (t) => afterBlock(t, "\thandle_errors {", "\t\timport security_headers\n", "")],
-    ["M14 remove the Alt-Svc override", (t) => t.replace(/\t\t# Caddy advertises h3[^\n]*\n\t\tAlt-Svc [^\n]*\n/, "")],
+    ["M14 HTTP/3 turned back on (the `protocols h1 h2` line removed): Caddy advertises Alt-Svc again", (t) => t.replace("\t\tprotocols h1 h2\n", "")],
+    ["M14b an explicit Alt-Svc value set again", (t) => t.replace("\t\t-Alt-Svc\n", '\t\tAlt-Svc "h3=\\":443\\"; ma=3600"\n')],
     ["M15 remove `-Via` and `-Server` from security_headers", (t) => rmLine(rmLine(t, "-Via"), "-Server")],
     ["M16 remove `request_header X-Request-Id` (client-chosen id passes)", (t) => rmLine(t, "request_header X-Request-Id {http.request.uuid}")],
     ["M17 the /wp-admin/ deny rule removed (wp-admin public)", (t) => t.replace(/\t@wp_admin_deny \{\n(?:\t\t[^\n]*\n)*\t\}\n\thandle @wp_admin_deny \{\n(?:\t\t[^\n]*\n)*\t\}\n/, "")],
@@ -1653,13 +1824,20 @@ async function mutation() {
     ["M18 xmlrpc deny removed", (t) => t.replace(/\t@xmlrpc_deny path_regexp[^\n]*\n\thandle @xmlrpc_deny \{\n(?:\t\t[^\n]*\n)*\t\}\n/, "")],
     ["M19 `auto_https disable_redirects` removed (the explicit catch-all still answers: expected equivalent)", (t) => rmLine(t, "auto_https disable_redirects")],
     ["M20 wp-activate/wp-signup/50x.html routed to WordPress/static again (dup_error pattern shrunk)", (t) => t.replace("|^/(?:wp-activate|wp-signup)\\.php$|^/50x\\.html$", "")],
+    ["M23 metrics routed on the public site (handle /metrics { metrics })", (t) => t.replace("\timport aicc_stage_identity\n\n\t# WordPress admin surface", "\timport aicc_stage_identity\n\thandle /metrics {\n\t\tmetrics\n\t}\n\n\t# WordPress admin surface")],
+    ["M24 the PHP entry-point rule removed from BOTH routing blocks (any plugin/uploads .php would be handed to PHP)", (t) => t.replace(/\t@php_direct \{\n(?:\t\t[^\n]*\n)*\t\}\n\thandle @php_direct \{\n(?:\t\t[^\n]*\n)*\t\}\n/g, "")],
+    ["M25 the private-file rule (wp_hidden) removed from both routing blocks", (t) => t.replace(/\t@wp_hidden path_regexp[^\n]*\n\thandle @wp_hidden \{\n(?:\t\t[^\n]*\n)*\t\}\n/g, "")],
+    ["M26 strict_sni_host removed (a foreign Host over a valid SNI gets an empty 200)", (t) => t.replace("\t\tstrict_sni_host on\n", "")],
+    ["M27 the operator listener loses `bind 127.0.0.1` (it would listen on every address)", (t) => t.replace("\tbind 127.0.0.1\n", "")],
+    ["M28 the operator listener binds 0.0.0.0", (t) => t.replace("\tbind 127.0.0.1\n", "\tbind 0.0.0.0\n")],
+    ["M29 the operator routing keeps the public wp-login deny (the operator could not log in)", (t) => t.replace("# BEGIN GENERATED: routing operator\n", "# BEGIN GENERATED: routing operator\n\t@op_login_deny path /wp-login.php\n\thandle @op_login_deny {\n\t\trespond \"Forbidden\" 403\n\t}\n")],
   ];
   const optAMutants = [
     ["M21 import aicc_tls into the http:// apex block (Option A: validate must fail)", (t) => t.replace("http://copilt.org, http://www.copilt.org {\n\timport aicc_site_hook\n", "http://copilt.org, http://www.copilt.org {\n\timport aicc_site_hook\n\timport aicc_tls\n")],
     ["M22 one mixed http:// + https:// apex block again (Option A: validate must fail)", (t) => t.replace("http://copilt.org, http://www.copilt.org {\n\timport aicc_site_hook\n", "http://copilt.org, https://copilt.org, http://www.copilt.org {\n\timport aicc_site_hook\n\timport aicc_tls\n").replace(/https:\/\/copilt\.org \{\n(?:(?!\}\n)[^\n]*\n)*\}\n/, "")],
   ];
   for (const [name, fn] of MUTANTS) {
-    const id = name.slice(0, 3);
+    const id = name.split(" ")[0];
     const text = fn(base);
     if (text === base) { S.check(`${id}: mutant setup changed the template`, false, name); continue; }
     const r = await runOn(id, text);
@@ -1694,9 +1872,10 @@ async function throttle() {
   const login = "throttle-" + Math.random().toString(36).slice(2, 8), PASS = "Throttle-Test-2026!";
   wp("user", "create", login, `${login}@example.test`, "--role=customer", `--user_pass=${PASS}`);
   wp("transient", "delete", "--all");
-  const launch = (ip) => chromium.launch({ executablePath: exe, args: [`--host-resolver-rules=MAP www.copilt.org ${ip}, MAP copilt.org ${ip}`, `--ignore-certificate-errors-spki-list=${spki}`] });
+  const tg = guardFor(EDGE);
+  const launch = (ip) => chromium.launch({ executablePath: exe, args: [...tg.browserArgs({ ip: ip.replace(/^\[|\]$/g, "") }), `--ignore-certificate-errors-spki-list=${spki}`, ...(process.env.AICC_CHROME_NETLOG ? [`--log-net-log=${process.env.AICC_CHROME_NETLOG}.${ip.replace(/\W/g, "")}`] : [])] });
   const attempt = async (page, user, pass) => {
-    await page.goto("https://www.copilt.org/my-account/", { waitUntil: "domcontentloaded" });
+    for (let i = 0; ; i++) { try { await page.goto("https://www.copilt.org/my-account/", { waitUntil: "domcontentloaded" }); break; } catch (e) { if (i < 3 && /ERR_NETWORK_CHANGED/.test(String(e))) { await sleep(500); continue; } throw e; } } // Chrome reports ERR_NETWORK_CHANGED when the Mac changes interface; retry the navigation only
     await page.fill("#username", user); await page.fill("#password", pass);
     await Promise.all([page.waitForNavigation({ waitUntil: "domcontentloaded" }), page.click("button[name=login]")]);
     const err = (await page.locator(".woocommerce-error").allInnerTexts()).join(" | ").replace(/\s+/g, " ").trim();
@@ -1706,7 +1885,7 @@ async function throttle() {
   const GENERIC = /username or password is incorrect/i, LOCKED = /too many failed sign-in attempts/i;
   const b6 = await launch("[::1]");
   try {
-    const ctx = await b6.newContext(); const pg = await ctx.newPage();
+    const ctx = await b6.newContext(); await tg.guardBrowser(ctx); const pg = await ctx.newPage();
     const first = await attempt(pg, login, "wrong-1");
     S.check("real Chrome from the client address ::1: a wrong password for a REAL account shows the generic error", GENERIC.test(first.err) && !first.signedIn, first.err);
     const ghost = await attempt(pg, "no-such-user-" + login, "wrong-1");
@@ -1729,7 +1908,7 @@ async function throttle() {
   } finally { await b6.close(); }
   const b4 = await launch("127.0.0.1");
   try {
-    const ctx = await b4.newContext(); const pg = await ctx.newPage();
+    const ctx = await b4.newContext(); await tg.guardBrowser(ctx); const pg = await ctx.newPage();
     for (let i = 0; i < 12; i++) await attempt(pg, login, "wrong-op-" + i);
     const ok = await attempt(pg, login, PASS);
     S.check("an operator address (127.0.0.1/32 in AICC_LM_OPERATOR_CIDRS) is never locked: 12 failures, then the correct password signs in", ok.signedIn && !ok.err, ok.err || "signed in");
@@ -1747,49 +1926,203 @@ async function throttle() {
 
 /* ------------------------------------------------------------------ staging: the runbook's hard gate as a tool (E3) */
 async function staging() {
-  const S = new Section("20-staging-replay-tool", "scripts/staging-replay.mjs (`npm run staging:replay`) against the rehearsal edges: it works from the tool alone, and it catches a broken edge");
+  const S = new Section("20-staging-replay-tool", "scripts/staging-replay.mjs (`npm run staging:replay`) against the rehearsal edges: fail-closed, works from the tool alone, and it catches a broken edge");
   await ensureInstances();
   const tool = path.join(REPO_ROOT, "scripts/staging-replay.mjs");
-  const run = (args, timeoutMs = 300000) => sh("node", [tool, ...args], { timeout: timeoutMs });
+  const audit = path.join(P.evidence, "staging-replay", "guard-audit.jsonl");
+  fs.mkdirSync(path.dirname(audit), { recursive: true }); fs.rmSync(audit, { force: true });
+  const run = (args, timeoutMs = 300000) => sh("node", [tool, ...args, "--audit", audit], { timeout: timeoutMs });
   const out = path.join(P.evidence, "staging-replay");
-  fs.mkdirSync(out, { recursive: true });
-  const summary = (r) => (r.out.match(/cases: .*|PASS: .*|FAIL: .*/g) || []).join(" | ");
-  const std = run(["--edge-ip", "127.0.0.1", "--cacert", P.rootCrt, "--source", "operator", "--ci-fs", "accept", "--json", path.join(out, "standing-edge-operator.json")]);
-  S.check("standing edge on :80/:443, source=operator (the replay uses --edge-ip/--cacert only; no marker header, no rehearsal code): every applicable case passes", std.code === 0 && /PASS: every applicable case/.test(std.out), summary(std));
-  const twin = run(["--base", `https://127.0.0.1:${PUBLIC.httpsPort}`, "--http-port", String(PUBLIC.httpPort), "--location-port", String(PUBLIC.httpsPort), "--cacert", P.rootCrt, "--source", "public", "--ci-fs", "accept", "--json", path.join(out, "twin-public.json")]);
-  S.check("twin (operator list = 192.0.2.1/32), source=public: every applicable case passes, including every wp-admin/wp-login/xmlrpc/wp-cron denial", twin.code === 0 && /PASS: every applicable case/.test(twin.out), summary(twin));
+  const summary = (r) => (r.out.match(/cases: .*|egress audit: .*|PASS: .*|FAIL: .*/g) || []).join(" | ");
+  const std = run(["--rehearsal", "edge", "--source", "operator", "--ci-fs", "accept", "--json", path.join(out, "standing-edge-operator.json")]);
+  S.check("standing edge, source=operator (the loopback OPERATOR listener, as through the SSH tunnel; the tool needs only --rehearsal here, no marker header, no rehearsal code): every applicable case passes", std.code === 0 && /PASS: every applicable case/.test(std.out), summary(std));
+  const pub = run(["--rehearsal", "edge", "--source", "public", "--ci-fs", "accept", "--json", path.join(out, "standing-edge-public.json")]);
+  S.check("standing edge, source=public (:443): every applicable case passes, including every wp-admin/wp-login/xmlrpc/wp-cron denial even though the client is 127.0.0.1", pub.code === 0 && /PASS: every applicable case/.test(pub.out), summary(pub));
+  const twin = run(["--rehearsal", "public", "--source", "public", "--ci-fs", "accept", "--json", path.join(out, "twin-public.json")]);
+  S.check("twin (:18443, optional CIDR list = 192.0.2.1/32), source=public: every applicable case passes", twin.code === 0 && /PASS: every applicable case/.test(twin.out), summary(twin));
   const j = JSON.parse(fs.readFileSync(path.join(out, "twin-public.json"), "utf8"));
   S.check("the twin run covered the wp-login bypass cases of the security review (POST ?loggedout=true, ?ACTION=logout, ...)", j.rows.filter((r) => /wp-login\.php/.test(r.request) && /^(POST|PUT|DELETE|OPTIONS)/.test(r.request) && r.result === "PASS").length >= 10, `${j.rows.filter((r) => /wp-login\.php/.test(r.request) && r.result === "PASS").length} wp-login cases passed`);
-  const nopost = run(["--base", `https://127.0.0.1:${PUBLIC.httpsPort}`, "--http-port", String(PUBLIC.httpPort), "--location-port", String(PUBLIC.httpsPort), "--cacert", P.rootCrt, "--no-post", "--no-sweep", "--ci-fs", "accept", "--json", path.join(out, "twin-no-post.json")]);
+  S.check("the run's identity was verified before anything else and the report says so; the guard counted 0 violations and 0 sends to any address but 127.0.0.1", j.identity?.verified === true && j.guard.violations === 0 && j.guard.offTargetSends === 0, JSON.stringify(j.guard).slice(0, 200));
+  const nopost = run(["--rehearsal", "public", "--no-post", "--no-sweep", "--ci-fs", "accept", "--json", path.join(out, "twin-no-post.json")]);
   const jp = JSON.parse(fs.readFileSync(path.join(out, "twin-no-post.json"), "utf8"));
   S.check("--no-post sends nothing but GET/HEAD/OPTIONS (every state-changing case is reported SKIP)", nopost.code === 0 && jp.rows.filter((r) => r.result === "SKIP" && /--no-post/.test(r.note)).length > 20 && !jp.rows.some((r) => /^(POST|PUT|DELETE|PATCH)/.test(r.request) && r.result !== "SKIP"), `${jp.rows.filter((r) => /--no-post/.test(r.note || "")).length} skipped`);
-  const strict = run(["--edge-ip", "127.0.0.1", "--cacert", P.rootCrt, "--source", "operator", "--no-sweep", "--ci-fs", "expect-404"]);
+  const strict = run(["--rehearsal", "edge", "--source", "public", "--no-sweep", "--ci-fs", "expect-404"]);
   S.check("--ci-fs expect-404 (the Linux default) FAILS on this macOS volume: /Pricing/ and /PRODUCT/ are 200 here (case-insensitive file system), and the tool says so", strict.code === 1 && /\/Pricing\/|\/PRODUCT\//.test(strict.out), summary(strict));
-  const notrust = run(["--edge-ip", "127.0.0.1", "--source", "operator", "--no-sweep"]);
-  S.check("without --cacert/--insecure the rehearsal CA is not trusted: the tool refuses to continue (exit 2) instead of silently disabling verification", notrust.code === 2 && /cannot reach the edge/.test(notrust.out), notrust.out.trim().split("\n").pop().slice(0, 160));
-  const both = run(["--edge-ip", "127.0.0.1", "--insecure", "--cacert", P.rootCrt]);
+  const id = stageId();
+  const explicit = ["--stage-host", STAGE_REHEARSAL_HOST, "--stage-ip", "127.0.0.1", "--port", String(PUBLIC.httpsPort), "--http-port", String(PUBLIC.httpPort), "--stage-id", id, "--alias-host", "www.copilt.org", "--alias-host", "copilt.org", "--alias-production-names", "--loopback-rehearsal", "--allow-dns-mismatch", "--location-port", String(PUBLIC.httpsPort), "--ci-fs", "accept", "--no-sweep"];
+  const notrust = run(explicit);
+  S.check("explicit flags without --cacert/--insecure: the rehearsal CA is not trusted, the identity probe fails TLS verification and the tool REFUSES (exit 3) instead of silently disabling verification", notrust.code === 3 && /\[identity-unreachable\]/.test(notrust.out), notrust.out.trim().split("\n")[0].slice(0, 200));
+  const both = run([...explicit, "--insecure", "--cacert", P.rootCrt]);
   S.check("--insecure together with --cacert is refused (exit 2)", both.code === 2, both.out.trim().slice(0, 100));
-  const ins = run(["--edge-ip", "127.0.0.1", "--insecure", "--source", "operator", "--no-sweep", "--ci-fs", "accept"]);
-  S.check("--insecure works only when given, and the report says the certificate was NOT verified", ins.code === 0 && /CERTIFICATE NOT VERIFIED/.test(ins.out), summary(ins));
+  const ins = run([...explicit, "--insecure"]);
+  S.check("explicit flags (--stage-host/--stage-ip/--port/--stage-id, DNS exception, aliases) + --insecure work against the twin, and the report says the certificate was NOT verified", ins.code === 0 && /CERTIFICATE NOT VERIFIED/.test(ins.out), summary(ins));
+  const wrong = run(explicit.map((x) => (x === id ? "ffffffffffffffffffffffff" : x)).concat(["--cacert", P.rootCrt]));
+  S.check("the same run with a WRONG --stage-id is refused (exit 3, identity-mismatch): the tool will not talk to a server it cannot identify", wrong.code === 3 && /\[identity-mismatch\]/.test(wrong.out), wrong.out.trim().split("\n")[0].slice(0, 200));
+  const prod = run(["--stage-host", "www.copilt.org", "--stage-ip", "127.0.0.1", "--port", "443", "--stage-id", id, "--cacert", P.rootCrt]);
+  S.check("a PRODUCTION name as --stage-host is refused (exit 3, nothing sent), even with a loopback IP and the right id", prod.code === 3 && /\[production-host\]/.test(prod.out), prod.out.trim().split("\n")[0].slice(0, 200));
   // a broken edge must FAIL the gate: the pre-fix wp-login exception on a scratch instance
   const base = fs.readFileSync(P.template, "utf8");
   const mutated = base.replace(/\t\tnot expression \{http\.request\.method\} in \[[^\n]*\n/, "\t\tnot expression {http.request.uri.query}.matches('(?i)(^|&)(action=logout|loggedout=true)(&|$)')\n");
   const dir = path.join(P.home, "run/staging-mut"); fs.mkdirSync(dir, { recursive: true });
   const tf = path.join(dir, "mutant.template"); fs.writeFileSync(tf, mutated);
-  const cfg = { ...settings(), name: "mut", httpPort: 18160, httpsPort: 18460, admin: "127.0.0.1:12030", upstream: WP_UPSTREAM, staticRoot: P.current, wpTimeout: "60s", variant: "", template: tf, operatorCidrs: "192.0.2.1/32" };
+  const cfg = { ...settings(), name: "mut", httpPort: 18160, httpsPort: 18460, admin: "127.0.0.1:12030", upstream: WP_UPSTREAM, staticRoot: P.current, wpTimeout: "60s", variant: "", template: tf, operatorCidrs: "192.0.2.1/32", upstreamMode: UPSTREAM_MODE };
   await start(cfg, { quiet: true });
-  const bad = run(["--base", "https://127.0.0.1:18460", "--http-port", "18160", "--location-port", "18460", "--cacert", P.rootCrt, "--source", "public", "--ci-fs", "accept", "--no-sweep"]);
+  const bad = run(["--stage-host", STAGE_REHEARSAL_HOST, "--stage-ip", "127.0.0.1", "--port", "18460", "--http-port", "18160", "--stage-id", id, "--alias-host", "www.copilt.org", "--alias-host", "copilt.org", "--alias-production-names", "--loopback-rehearsal", "--allow-dns-mismatch", "--location-port", "18460", "--cacert", P.rootCrt, "--source", "public", "--ci-fs", "accept", "--no-sweep"]);
   await stop(cfg, { quiet: true });
   fs.rmSync(dir, { recursive: true, force: true }); fs.rmSync(path.join(P.generated, "Caddyfile.mut"), { force: true });
   S.check("the gate FAILS on an edge that still has the old wp-login exception (exit 1, and the failing wp-login cases are named)", bad.code === 1 && /FAIL POST https:\/\/www\.copilt\.org\/wp-login\.php\?loggedout=true/.test(bad.out), summary(bad) + " | " + (bad.out.match(/FAIL [^\n]*wp-login[^\n]*/g) || []).slice(0, 2).join(" ; "));
+  const rep = auditReportOf(audit);
+  S.check("the replay runs' egress audit file: every send went to 127.0.0.1, zero violations, zero production-name sends", rep.offTargetSends === 0 && rep.violations === 0 && rep.productionDirect === 0 && rep.sends > 500, JSON.stringify({ sends: rep.sends, refusals: rep.refusals, violations: rep.violations, offTargetSends: rep.offTargetSends, codes: rep.refusalCodes }).slice(0, 300));
+  S.data.audit = rep;
   S.save();
   return [S];
 }
 
-const SECTIONS = { staging, throttle, mutation, ops: opsSection, release: releaseSection, preflight: preflightSection, optiona, apexpost, safety, rollback, tls: tlsSection, restart, routing, behavior, admin, errors, break: breakIt, logging, demo };
+/* ------------------------------------------------------------------ 21: the STAGE topology through php_fastcgi + a real php-fpm on a unix socket */
+async function stagefcgi() {
+  const S = new Section("21-stage-fastcgi", "The Linux staging architecture on this Mac: stage topology (one host), php_fastcgi over a unix socket to a real php-fpm, the loopback operator listener, private metrics, no HTTP/3");
+  const ST = INSTANCES.stage;
+  sh("bash", [P.fpmScript, "start"]);
+  const cfg = { ...settings(), ...ST, upstream: WP_UPSTREAM, staticRoot: P.current, wpTimeout: "60s", variant: "", upstreamMode: "fastcgi" };
+  if (alive(readPid("stage"))) await reload(cfg, { quiet: true }); else await start(cfg, { quiet: true });
+  await verifyInstance(ST);
+  const H = STAGE_REHEARSAL_HOST, T = cpEchoToken();
+  const R = (p, o = {}) => req(ST, `https://${H}${p}`, o);
+  const RO = (p, o = {}) => req(ST, `https://${H}${p}`, { ...o, operator: true });
+  const one = (r, h) => (r.headers[h] || [])[0];
+  // 1. the whole path: Caddy -> unix socket -> php-fpm -> WordPress (marker header from the fpm pool's auto_prepend_file)
+  const home = await R("/"), pr = await R("/pricing/"), rest = await R("/wp-json/aicc-license/v1/plans");
+  S.check("static home is served by Caddy from the release (200, no PHP marker)", home.status === 200 && !one(home, "x-rehearsal-upstream"), `${home.status}`);
+  S.check("/pricing/ and the license REST route are answered by WordPress through php_fastcgi (php-fpm marker header present, status < 500)", one(pr, "x-rehearsal-upstream") === "wordpress" && pr.status < 500 && one(rest, "x-rehearsal-upstream") === "wordpress" && rest.status === 200, `${pr.status} / ${rest.status}`);
+  const fpmLog = (() => { try { return fs.readFileSync(path.join(P.fpmBase, "log/access.log"), "utf8"); } catch { return ""; } })();
+  S.check("php-fpm's own access log shows the requests (the php -S fixture was NOT involved: the upstream is the unix socket)", /GET \/index\.php/.test(fpmLog) || /GET \/wp-json/.test(fpmLog) || fpmLog.length > 0, `${fpmLog.split("\n").length} lines`);
+  const accessEntry = readAccessLog().map.get(pr.reqId);
+  S.check("the edge access log names the upstream as the unix socket and the listener as public", !!accessEntry && /aicc-cp\.sock/.test(accessEntry.upstream || "") && accessEntry.listener === "public", `${accessEntry?.upstream} / ${accessEntry?.listener}`);
+  // 2. forged identity headers never reach PHP; REMOTE_ADDR/HTTPS are Caddy's
+  const forged = { "X-Forwarded-For": "203.0.113.9, 198.51.100.7", "X-Real-IP": "203.0.113.10", Forwarded: "for=203.0.113.11;proto=http;host=evil.example", "X-Forwarded-Host": "evil.example", "X-Forwarded-Proto": "http", "Client-IP": "203.0.113.12", "True-Client-IP": "203.0.113.13", "CF-Connecting-IP": "203.0.113.14", "X-Client-IP": "203.0.113.15", "X-Cluster-Client-IP": "203.0.113.16", "X-Originating-IP": "203.0.113.17", "Fastly-Client-IP": "203.0.113.18", "Forwarded-For": "203.0.113.19", "X-Forwarded": "x", "X-Forwarded-Port": "8080", "X-Forwarded-Scheme": "http", "X-Forwarded-Ssl": "off", "Front-End-Https": "off", "X-Url-Scheme": "http", "X-Forwarded-Server": "evil", "X-Original-URL": "/wp-admin/", "X-Rewrite-URL": "/wp-admin/", Via: "1.1 evil", "X-Request-Id": "attacker-id" };
+  const e1 = await R(`/wp-json/?__rehearsal_echo=${T}`, { headers: forged });
+  let j1 = {}; try { j1 = JSON.parse(e1.body); } catch { /* checked below */ }
+  const seen = j1.headers || {};
+  const leaked = Object.keys(forged).filter((k) => k.toLowerCase() !== "x-request-id" && k.toLowerCase() in seen);
+  S.check(`FORGED forwarding/identity headers (${Object.keys(forged).length - 1} names, X-Forwarded-For/-Proto/-Host, Forwarded, X-Real-IP, Client-IP, Via, ...) never reach PHP as HTTP_* (none of them appears in the echoed request headers)`, leaked.length === 0 && e1.status === 200, leaked.length ? `LEAKED: ${leaked.join(", ")}` : `0 of ${Object.keys(forged).length - 1} leaked; PHP saw: ${Object.keys(seen).sort().join(", ")}`);
+  S.check("PHP's REMOTE_ADDR is the real peer (127.0.0.1) and HTTPS=on is set by Caddy; WordPress is_ssl() is true WITHOUT any X-Forwarded-Proto; the plugin's client IP is the peer, never the forged value", j1.remote_addr === "127.0.0.1" && j1.https_server_var === "on" && j1.is_ssl === true && j1.cp_client_ip === "127.0.0.1", JSON.stringify({ remote: j1.remote_addr, https: j1.https_server_var, ssl: j1.is_ssl, cp: j1.cp_client_ip }));
+  S.check("the request id is the edge's, not the client's", seen["x-request-id"] && seen["x-request-id"] !== "attacker-id", seen["x-request-id"]);
+  const e6 = await R(`/wp-json/?__rehearsal_echo=${T}`, { headers: { "X-Forwarded-For": "203.0.113.9" }, connectIp: "::1" });
+  let j6 = {}; try { j6 = JSON.parse(e6.body); } catch { /* below */ }
+  S.check("over IPv6 loopback the real peer is ::1 (REMOTE_ADDR), the forged XFF is ignored", j6.remote_addr === "::1" && !("x-forwarded-for" in (j6.headers || {})), JSON.stringify({ remote: j6.remote_addr, status: e6.status }));
+  // 3. the operator listener
+  const lg = await RO("/wp-login.php"), pubLg = await R("/wp-login.php");
+  S.check("operator listener serves /wp-login.php (200 from WordPress), the public listener denies it (403 from the edge)", lg.status === 200 && one(lg, "x-rehearsal-upstream") === "wordpress" && pubLg.status === 403 && !one(pubLg, "x-rehearsal-upstream"), `${lg.status} / ${pubLg.status}`);
+  const opEntry = readAccessLog().map.get(lg.reqId);
+  S.check("the access log records listener=operator for the tunnel request and the real peer address", opEntry?.listener === "operator" && opEntry.request?.remote_ip === "127.0.0.1", `${opEntry?.listener} ${opEntry?.request?.remote_ip}`);
+  const opPort = operatorPortOf(ST);
+  const lsofOp = sh("lsof", ["-nP", `-iTCP:${opPort}`, "-sTCP:LISTEN"]).stdout.split("\n").filter((l) => l && !/^COMMAND/.test(l)).map((l) => l.split(/\s+/)[8]);
+  S.check(`BIND CHECK: the operator port ${opPort} listens on 127.0.0.1 only (lsof: ${lsofOp.join(", ")})`, lsofOp.length > 0 && lsofOp.every((a) => /^127\.0\.0\.1:/.test(a)), lsofOp.join(", "));
+  const lan = sh("bash", ["-c", "ipconfig getifaddr en0 || ipconfig getifaddr en1"]).stdout.trim();
+  if (lan) {
+    const viaLan = await new Promise((resolve) => { const s = net.connect({ host: lan, port: opPort }); s.setTimeout(2500); s.on("connect", () => { s.destroy(); resolve("CONNECTED"); }); s.on("timeout", () => { s.destroy(); resolve("timeout"); }); s.on("error", (e) => resolve(e.code)); });
+    S.check(`the operator listener cannot be reached from a non-loopback address: a TCP connect to this Mac's LAN address ${lan.replace(/\.\d+$/, ".x")}:${opPort} is refused`, viaLan === "ECONNREFUSED", viaLan);
+  } else S.info("LAN bind check skipped", "no LAN interface address");
+  const via6 = await new Promise((resolve) => { const s = net.connect({ host: "::1", port: opPort }); s.setTimeout(2500); s.on("connect", () => { s.destroy(); resolve("CONNECTED"); }); s.on("timeout", () => { s.destroy(); resolve("timeout"); }); s.on("error", (e) => resolve(e.code)); });
+  S.check("and not over ::1 either (the listener is 127.0.0.1 only)", via6 === "ECONNREFUSED", via6);
+  // 4. operator surfaces + spoofing on the stage topology
+  for (const [label, hdr] of [["X-Forwarded-For: 127.0.0.1", { "X-Forwarded-For": "127.0.0.1" }], [`Host: ${H}:${opPort}`, { Host: `${H}:${opPort}` }], ["Host: localhost", { Host: "localhost" }], ["Forwarded: for=127.0.0.1", { Forwarded: "for=127.0.0.1" }]]) for (const p of ["/wp-admin/", "/wp-login.php", "/wp-cron.php"]) {
+    const r = await R(p, { headers: hdr });
+    S.check(`public request with ${label} to ${p}: no operator treatment`, [403, 421].includes(r.status) && !one(r, "x-rehearsal-upstream"), `${r.status}`);
+  }
+  // 5. HTTP/3 off, metrics private, stage-only headers, strict SNI
+  const sweepPaths = ["/", "/pricing/", "/he/", "/nothing/", "/robots.txt", "/wp-json/aicc-license/v1/plans", "/wp-admin/", "/xmlrpc.php", "/50x.html"];
+  let alt = 0, noindex = 0, total = 0;
+  for (const p of sweepPaths) { const r = await R(p); total++; if ((r.headers["alt-svc"] || []).length) alt++; if (/noindex/.test(one(r, "x-robots-tag") || "")) noindex++; }
+  S.check(`no Alt-Svc on any of ${total} answers (HTTP/3 off); X-Robots-Tag noindex on every one of them (the staging host is never indexable)`, alt === 0 && noindex === total, `alt-svc ${alt}, noindex ${noindex}/${total}`);
+  const udp = sh("lsof", ["-nP", "-a", "-p", String(readPid("stage")), "-iUDP"]).stdout.split("\n").filter((l) => l && !/^COMMAND/.test(l));
+  S.check("the stage edge has no UDP socket at all", udp.length === 0, udp.join(" | ") || "none");
+  const metricsPaths = ["/metrics", "/metrics/", "/he/metrics", "/metrics?x=1", "/wp-json/metrics", "/admin/metrics", "//metrics"];
+  const mrows = [];
+  for (const p of metricsPaths) for (const [label, fn] of [["public", R], ["operator", RO]]) { const r = await fn(p); const text = /# (HELP|TYPE) |caddy_http_|go_gc_/.test(r.body || ""); mrows.push({ p, label, status: r.status, text }); }
+  S.check(`/metrics on every public and operator route (${mrows.length} requests) is never Prometheus text`, mrows.every((x) => !x.text), JSON.stringify(mrows.filter((x) => x.text)));
+  S.check("and the routes that are Caddy's own answer to /metrics are the normal 404 (the WordPress-owned `/wp-json/metrics` is WordPress's REST 404)", mrows.filter((x) => !/wp-json/.test(x.p)).every((x) => x.status === 404 || x.status === 301), JSON.stringify(mrows.filter((x) => !/wp-json/.test(x.p) && x.status !== 404).map((x) => `${x.p} ${x.label} ${x.status}`)));
+  const adminM = await loopbackFetch(`http://${ST.admin}/metrics`, { headers: { Origin: `http://${ST.admin}` } });
+  const mt = await adminM.text();
+  S.check(`the admin API on ${ST.admin} (loopback) DOES serve the Prometheus text (${mt.split("\n").length} lines): metrics are enabled, privately`, adminM.status === 200 && /# HELP caddy_/.test(mt) && /caddy_http_requests_total|caddy_http_request_duration_seconds/.test(mt), `${adminM.status} ${mt.length} bytes`);
+  const sni = await R("/wp-admin/", { headers: { Host: "localhost" } });
+  S.check("strict SNI: a foreign Host over a valid SNI is 421, not Caddy's empty 200", sni.status === 421, `${sni.status}`);
+  // 6. PHP entry points and private files on the stage topology
+  for (const p of ["/wp-content/plugins/woocommerce/woocommerce.php", "/wp-includes/version.php", "/wp-config.php", "/wp-content/uploads/x.php", "/wp-content/debug.log", "/wp-content/plugins/woocommerce/readme.txt"]) {
+    const r = await R(p); const o = await RO(p);
+    S.check(`${p}: 404 from the edge on both listeners, PHP never reached`, r.status === 404 && o.status === 404 && !one(r, "x-rehearsal-upstream") && !one(o, "x-rehearsal-upstream"), `${r.status}/${o.status}`);
+  }
+  const asset = await R("/wp-includes/js/jquery/jquery.min.js");
+  S.check("a real WordPress file under /wp-includes is served by Caddy from the docroot (200, JavaScript, no PHP)", asset.status === 200 && /javascript/.test(one(asset, "content-type") || "") && !one(asset, "x-rehearsal-upstream"), `${asset.status} ${one(asset, "content-type")}`);
+  // 7. failure: php-fpm stopped -> branded 502 for WordPress routes, static unaffected; recovery
+  sh("bash", [P.fpmScript, "stop"]);
+  const down = await R("/pricing/"), downStatic = await R("/product/"), downOp = await RO("/wp-login.php");
+  S.check("php-fpm stopped: WordPress routes answer the branded 502 on both listeners, the static site still answers 200", down.status === 502 && /temporarily unavailable/i.test(down.body) && downOp.status === 502 && downStatic.status === 200, `${down.status} / op ${downOp.status} / static ${downStatic.status}`);
+  const t0 = now(); sh("bash", [P.fpmScript, "start"]);
+  let rec = -1; for (let i = 0; i < 100; i++) { const r = await R("/pricing/"); if (r.status === 200) { rec = now() - t0; break; } await sleep(100); }
+  S.check("php-fpm restarted: the next WordPress request succeeds without reloading Caddy", rec > 0, `${rec} ms from the start command`);
+  // 8. the stage replay (public and operator) with the real tool
+  const tool = path.join(REPO_ROOT, "scripts/staging-replay.mjs");
+  const out = path.join(P.evidence, "staging-replay"); fs.mkdirSync(out, { recursive: true });
+  const rp = sh("node", [tool, "--rehearsal", "stage", "--source", "public", "--ci-fs", "accept", "--json", path.join(out, "stage-public.json")], { timeout: 400000 });
+  const ro = sh("node", [tool, "--rehearsal", "stage", "--source", "operator", "--ci-fs", "accept", "--json", path.join(out, "stage-operator.json")], { timeout: 400000 });
+  const sm = (r) => (r.out.match(/staging-replay: [^\n]*|cases: .*|sweep: .*|PASS: .*|FAIL: .*/g) || []).join(" | ").slice(0, 600);
+  S.check("staging:replay against the STAGE instance, public listener: every applicable case passes (stage topology, retargeted matrix, sweep)", rp.code === 0 && /PASS: every applicable case/.test(rp.out), sm(rp));
+  S.check("staging:replay against the STAGE instance through the OPERATOR listener: every applicable case passes (the operator cases: wp-admin, wp-login, wp-cron served)", ro.code === 0 && /PASS: every applicable case/.test(ro.out), sm(ro));
+  const jr = JSON.parse(fs.readFileSync(path.join(out, "stage-public.json"), "utf8")), jo = JSON.parse(fs.readFileSync(path.join(out, "stage-operator.json"), "utf8"));
+  S.data.replay = { publicPass: jr.counts.pass, publicSkip: jr.counts.skipped, operatorPass: jo.counts.pass, operatorSkip: jo.counts.skipped, leftHost: jr.leftHost };
+  S.note(`stage replay: public ${jr.counts.pass} pass / ${jr.counts.skipped} skip; operator listener ${jo.counts.pass} pass / ${jo.counts.skipped} skip. WordPress's home/siteurl in the fixture is https://www.copilt.org, so its canonical redirects point at that host: the sweep does NOT follow them (recorded: ${Object.keys(jr.leftHost || {}).join("; ") || "none"}).`);
+  S.save();
+  return [S];
+}
+
+
+/* ------------------------------------------------------------------ 22: the CP fixture's OWN outbound HTTP (WordPress) is fail closed too */
+async function fixtureegress() {
+  const S = new Section("22-fixture-egress", "The Control Plane fixture's own outbound HTTP: WordPress could post to the REAL www.copilt.org (Action Scheduler async runner) or to wordpress.org; now only www.copilt.org/copilt.org -> 127.0.0.1 and loopback are reachable");
+  await ensureInstances();
+  const logf = path.join(P.logs, "cp-egress-blocked.log");
+  fs.rmSync(logf, { force: true });
+  const php = `
+$out = array();
+foreach (array("https://api.wordpress.org/core/version-check/1.7/","https://api.copilt.org/v1/health","https://woocommerce.com/wp-json/","https://www.copilt.org:8443/x","http://127.0.0.1:8982/","https://localhost:9111/","https://www.copilt.org/robots.txt","https://copilt.org/robots.txt") as $u) {
+  $r = wp_remote_get($u, array("timeout"=>10, "sslcertificates"=>"${P.rootCrt}"));
+  $out[$u] = is_wp_error($r) ? "ERR:".$r->get_error_code() : wp_remote_retrieve_response_code($r);
+}
+echo wp_json_encode($out);`;
+  const r = sh("bash", [P.cpFixture, "wp", "eval", php]);
+  let j = {}; try { j = JSON.parse(r.stdout.trim().split("\n").pop()); } catch { /* checked below */ }
+  const blocked = ["https://api.wordpress.org/core/version-check/1.7/", "https://api.copilt.org/v1/health", "https://woocommerce.com/wp-json/", "https://www.copilt.org:8443/x", "http://127.0.0.1:8982/", "https://localhost:9111/"];
+  S.check("WordPress's HTTP API refuses wordpress.org, api.copilt.org, woocommerce.com, a non-default port on the site host and the QA / owner-fixture loopback ports BEFORE any DNS lookup or connection (WP_Error aicc_egress_blocked)", blocked.every((u) => j[u] === "ERR:aicc_egress_blocked"), JSON.stringify(blocked.map((u) => [u.slice(0, 40), j[u]])));
+  S.check("the site's own names (www.copilt.org, copilt.org) are reachable from WordPress, forced to 127.0.0.1 (the REHEARSAL EDGE answers, 200), never the public site", j["https://www.copilt.org/robots.txt"] === 200 && j["https://copilt.org/robots.txt"] === 200, `${j["https://www.copilt.org/robots.txt"]} / ${j["https://copilt.org/robots.txt"]}`);
+  const lines = fs.existsSync(logf) ? fs.readFileSync(logf, "utf8").split("\n").filter(Boolean).map((l) => { try { return JSON.parse(l); } catch { return {}; } }) : [];
+  S.check("every blocked attempt is logged (host, port, path, method; no query string, no body) to logs/cp-egress-blocked.log", lines.length === blocked.length && lines.every((l) => l.host && !("query" in l)), `${lines.length} lines: ${lines.map((l) => l.host).join(", ")}`);
+  const hosts = new Set(lines.map((l) => l.host));
+  S.check("none of the logged attempts names the public production site host as an allowed destination (www.copilt.org appears only with a blocked port)", [...hosts].every((h) => h !== "copilt.org") && lines.filter((l) => l.host === "www.copilt.org").every((l) => l.port === 8443), [...hosts].join(", "));
+  // the web server / pool that answers THROUGH THE EDGE runs the guard (response header set by the guard itself), and the pool config names it
+  const hdr = await req(PUBLIC, "https://www.copilt.org/pricing/");
+  const hdrStage = await req(INSTANCES.stage, `https://${STAGE_REHEARSAL_HOST}/pricing/`);
+  S.check("the PHP process that answers through the edge runs scripts/rehearsal/egress-guard.php (response header X-Rehearsal-Egress-Guard: on) for the configured upstream mode, and the php-fpm pool config loads it too", (hdr.headers["x-rehearsal-egress-guard"] || [])[0] === "on" && (hdrStage.headers["x-rehearsal-egress-guard"] || [])[0] === "on" && /egress-guard\.php/.test(fs.readFileSync(path.join(P.fpmBase, "php-fpm.conf"), "utf8")), `edge(${UPSTREAM_MODE}) ${(hdr.headers["x-rehearsal-egress-guard"] || ["-"])[0]}; stage(fastcgi) ${(hdrStage.headers["x-rehearsal-egress-guard"] || ["-"])[0]}`);
+  // kernel level: the same profile denies a connect to a TEST-NET address (192.0.2.1 is unroutable, so even a failure of the profile could reach nobody)
+  const sb = sh("sandbox-exec", ["-f", path.join(REPO_ROOT, "scripts/rehearsal/loopback-only.sb"), "bash", "-c", "nc -z -w 2 192.0.2.1 443 && echo CONNECTED || echo denied-or-unreachable; nc -z -w 2 127.0.0.1 443 && echo loopback-ok"]);
+  S.check("the loopback-only sandbox profile used for the fixture's PHP lets loopback through (127.0.0.1:443 reachable)", /loopback-ok/.test(sb.out), sb.out.trim().replace(/\n/g, " | "));
+  S.check("and the kernel denies a non-loopback connect attempted under it (TEST-NET 192.0.2.1:443; no packet leaves)", !/CONNECTED/.test(sb.out) && /denied-or-unreachable/.test(sb.out), sb.out.trim().replace(/\n/g, " | "));
+  // Action Scheduler's async runner: a public admin-ajax request makes WordPress post to its own admin-ajax.php (https://www.copilt.org/...): it must arrive at the EDGE, not at the Internet
+  const t0 = Date.now();
+  await req(PUBLIC, "https://www.copilt.org/wp-admin/admin-ajax.php?action=heartbeat", { method: "POST", body: "action=heartbeat" });
+  await sleep(2500);
+  const { all } = readAccessLog();
+  const nested = all.filter((e) => Date.parse(new Date(e.ts * 1000).toISOString()) >= t0 - 500 && /as_async_request_queue_runner|admin-ajax\.php/.test(e.request?.uri || ""));
+  S.info("WordPress's own loopback request to the site URL (Action Scheduler async runner) lands on the edge", `${nested.length} admin-ajax request(s) in the edge log during the probe window (the first is ours; further ones are WordPress calling its own site URL, now forced to 127.0.0.1)`);
+  S.note("Measured on 2026-10-21 with the macOS sandbox log: before this change the fixture's PHP attempted outbound connections to port 443 (php ... deny(1) network-outbound remote:*:443) during earlier rehearsal runs. Those were WordPress's own requests (to the site URL https://www.copilt.org, a REAL public host, and probably update/marketplace checks), not requests of the test runners. Earlier rehearsal runs on this Mac therefore likely sent real requests from the fixture to the public site (UNVERIFIED: the destination is redacted in the sandbox log).");
+  S.save();
+  return [S];
+}
+
+const SECTIONS = { fixtureegress, stagefcgi, staging, throttle, mutation, ops: opsSection, release: releaseSection, preflight: preflightSection, optiona, apexpost, safety, rollback, tls: tlsSection, restart, routing, behavior, admin, errors, break: breakIt, logging, demo };
 export async function main(args) {
   ensureDirs();
-  const ORDER = ["routing", "behavior", "admin", "errors", "break", "logging", "demo", "restart", "tls", "rollback", "apexpost", "optiona", "preflight", "release", "ops", "mutation", "throttle", "staging", "safety"];
+  const ORDER = ["routing", "behavior", "admin", "errors", "break", "logging", "demo", "restart", "tls", "rollback", "apexpost", "optiona", "preflight", "release", "ops", "mutation", "throttle", "staging", "stagefcgi", "fixtureegress", "safety"];
   const want = args.length && args[0] !== "all" ? args : ORDER;
   let failed = 0;
   console.log(caddyVersion());
@@ -1800,6 +2133,9 @@ export async function main(args) {
     const out = await fn();
     for (const s of [].concat(out)) failed += s.failed;
   }
+  const gv = allGuards().reduce((n, g) => n + g.violations.length, 0), gc = allGuards().reduce((n, g) => n + g.summary().checked + g.summary().browserChecked, 0);
+  console.log(`egress guard: ${allGuards().length} guard(s), ${gc} requests checked, ${gv} violation(s)`);
+  if (gv) { console.error("GUARD: a request tried to leave the allowed hosts: the run is invalid (exit code 3)"); process.exit(3); }
   console.log(failed ? `FAILED checks: ${failed}` : "ALL CHECKS PASSED");
   process.exit(failed ? 1 : 0);
 }
