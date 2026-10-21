@@ -188,7 +188,8 @@ export class StageRemote {
   startEcho({ stageHost, stageId, hostPort = 18481 }) {
     if (!/^[a-z0-9.-]+$/.test(stageHost) || !/^[A-Za-z0-9_-]{8,}$/.test(stageId) || !(hostPort > 18000 && hostPort < 19000)) throw new Error("bad echo parameters");
     const tag = crypto.randomBytes(4).toString("hex");
-    const D = `/tmp/aicc-s9-${tag}`;
+    // NOT under /tmp: the PHP-FPM unit has PrivateTmp=yes (infra/systemd/overrides), so a docroot in /tmp is invisible to PHP ("No input file specified"). /var/lib is readable by the pool and not served by the public edge.
+    const D = `/var/lib/aicc-s9-${tag}`;
     const unit = `aicc-s9-echo-${tag}`;
     const echoPhp = [
       "<?php",

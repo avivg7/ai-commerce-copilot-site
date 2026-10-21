@@ -339,7 +339,7 @@ PII = [re.compile(p) for p in (r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,
 
 def sanitize(text: str) -> str:
     # strip control and zero-width/format characters FIRST: a token or address split by an invisible character must still match the patterns below
-    text = "".join(c for c in text if (c == "\n" or c >= " ") and unicodedata.category(c) not in ("Cf", "Cc", "Cs"))
+    text = "".join(c for c in text if c == "\n" or (c >= " " and unicodedata.category(c) not in ("Cf", "Cc", "Cs")))   # keep the line structure: \n is category Cc
     for rx in PII:
         text = rx.sub("[redacted]", text)
     return text[:3500]

@@ -43,7 +43,7 @@ def scan_pii(text: str) -> list:
 def sanitize(text: str) -> str:
     """Defence in depth: strip control and zero-width/format characters FIRST (so an invisible character cannot split a token or address past the patterns),
     redact anything that matches a PII/secret pattern, cap the length."""
-    text = "".join(ch for ch in text if (ch == "\n" or ch >= " ") and unicodedata.category(ch) not in ("Cf", "Cc", "Cs"))
+    text = "".join(ch for ch in text if ch == "\n" or (ch >= " " and unicodedata.category(ch) not in ("Cf", "Cc", "Cs")))   # keep the line structure: \n is category Cc
     for name, rx in PII_PATTERNS.items():
         text = rx.sub(f"[redacted:{name}]", text)
     return text[:MAX_LEN]

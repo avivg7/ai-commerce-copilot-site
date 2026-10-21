@@ -105,5 +105,14 @@ class SanitiserOrder(unittest.TestCase):
         self.assertNotIn("123456789:", S.sanitize("x 123456789:ABCdefGhIJKlmNoPQRsTUV\x01wxyZ0123456789 y"))
 
 
+class LineStructure(unittest.TestCase):
+    def test_sanitize_keeps_newlines(self):
+        self.assertEqual(S.sanitize("a\nb\u200bc\x01d"), "a\nbcd")
+        n = S.Notifier("", "obs", dry_run=True, out=io.StringIO(), log=lambda m: None, environ={})
+        msg = n.render("DOWN", "tgt", "boom")
+        self.assertEqual(msg.count("\n"), 2)
+        self.assertTrue(msg.startswith("[DOWN] tgt\n"))
+
+
 if __name__ == "__main__":
     unittest.main()

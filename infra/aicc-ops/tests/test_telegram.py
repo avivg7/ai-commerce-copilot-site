@@ -346,3 +346,11 @@ class ReviewFixTests(TmpCase):
         out = tg.sanitize("tok 123456789:ABCdefGhIJKl​mNoPQRsTUVwxyZ0123456789 end")
         self.assertNotIn("ABCdef", out)
         self.assertNotIn("123456789:", tg.sanitize("x 123456789:ABCdefGhIJKlmNoPQRsTUV\x01wxyZ0123456789 y"))
+
+
+    def test_sanitize_keeps_the_line_structure_of_every_template(self):
+        # regression (found by a live dry-run): stripping control characters first must not strip the newline
+        self.assertEqual(tg.sanitize("a\nb\u200bc\x01d"), "a\nbcd")
+        out = tg.render(NOTE, "aicc-test")
+        self.assertGreaterEqual(out.count("\n"), 2)
+        self.assertTrue(out.startswith("[WARNING] aicc-test\n"))
