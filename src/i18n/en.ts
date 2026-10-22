@@ -156,7 +156,7 @@ export const en = {
       countHelper: "Count the stores you want to connect. Solo covers 1, Studio up to 3, Agency up to 10.",
       term: "Fixed 365-day plan. Renewal is manual.",
       renewal: "You stay in control: AICC never renews your plan automatically.",
-      guarantee: "14-day money-back guarantee on your first purchase",
+      guarantee: "14-day money-back guarantee on your initial plan purchase",
       usd: "All prices are in US dollars (USD).",
     },
     toc: "On this page",
@@ -619,7 +619,7 @@ export const en = {
     pricing: {
       confidence: {
         price: "Plans from {priceSolo} a year",
-        guarantee: "14-day money-back guarantee on your first purchase",
+        guarantee: "14-day money-back guarantee on your initial plan purchase",
         renewal: "No automatic renewal",
       },
       title: "One full product. Priced by how many stores.",
@@ -931,7 +931,7 @@ export const en = {
     terms: {
       title: "Term, renewal and refunds",
       try: {
-        title: "Try it",
+        title: "Money-back guarantee",
         body: "Your initial plan purchase includes a 14-day money-back guarantee. The 14 days start when payment is received and your plan is issued. Import your past orders (optional) on day one to see learned partners sooner. See the [Refund Policy](route:refund-policy) for full terms.",
       },
       renewal: {
