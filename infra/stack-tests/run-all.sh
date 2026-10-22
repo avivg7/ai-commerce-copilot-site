@@ -3,7 +3,7 @@
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 total_pass=0; total_fail=0; total_skip=0; failed=""
-SUITES="test_lint.sh test_provision.sh test_backup.sh test_release.sh"
+SUITES="test_lint.sh test_provision.sh test_promote.sh test_backup.sh test_release.sh"
 [ "${AICC_INFRA_TEST_UBUNTU:-1}" = "0" ] || SUITES="$SUITES test_ubuntu.sh"      # needs the Docker daemon; prints "skipped" without it
 for t in $SUITES; do
   echo; echo "################ $t"

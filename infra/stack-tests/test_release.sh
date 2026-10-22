@@ -447,7 +447,7 @@ t_rc "production: a known-hosts file without an entry for the target address is 
 t_rc "production: the staging host name is REFUSED" 3 PDEP --kind site --artifact "$PART" --stage-host stage.copilt.org --stage-ip "$PIP" --stage-id "$SID" --confirm-production "$PID_"
 t_rc "production: copilt.org (apex) as the target is REFUSED" 3 PDEP --kind site --artifact "$PART" --stage-host copilt.org --stage-ip "$PIP" --stage-id "$SID" --confirm-production "$PID_"
 t_rc "production: api.copilt.org is REFUSED" 3 PDEP --kind site --artifact "$PART" --stage-host api.copilt.org --stage-ip "$PIP" --stage-id "$SID" --confirm-production "$PID_"
-for ip in 139.59.157.231 185.199.108.153 157.230.110.211 206.189.248.204; do t_rc "production: the address $ip (API Droplet / GitHub Pages / STAGING Droplet or its Reserved IP) is REFUSED" 3 PDEP --kind site --artifact "$PART" --stage-host www.copilt.org --stage-ip $ip --stage-id "$SID" --confirm-production "$PID_"; done
+for ip in 139.59.157.231 185.199.108.153 185.199.111.153; do t_rc "production: the address $ip (API Droplet / GitHub Pages) is REFUSED" 3 PDEP --kind site --artifact "$PART" --stage-host www.copilt.org --stage-ip $ip --stage-id "$SID" --confirm-production "$PID_"; done
 t_rc "production: a key not named aicc_cp_prod* is REFUSED" 3 env PATH="$STUB:$PATH" bash "$REL/deploy-release.sh" --env production --key "$FAKEKEY" --kind site --artifact "$PART" --stage-host www.copilt.org --stage-ip "$PIP" --stage-id "$SID" --confirm-production "$PID_"
 t_rc "production: the API Droplet's key is REFUSED" 3 env PATH="$STUB:$PATH" bash "$REL/deploy-release.sh" --env production --key "$PRODKEY" --kind site --artifact "$PART" --stage-host www.copilt.org --stage-ip "$PIP" --stage-id "$SID" --confirm-production "$PID_"
 t_rc "production: no --confirm-production is REFUSED" 3 PDEP --kind site --artifact "$PART" --stage-host www.copilt.org --stage-ip "$PIP" --stage-id "$SID"
@@ -477,6 +477,16 @@ t_eq "production cp: backup happens BEFORE the first rsync" "$(grep -nE 'aicc-ba
 STUB_BACKUP_RC=1 t_rc "production cp: a FAILED pre-release backup blocks the deploy (exit 1, nothing uploaded)" 1 PDEP --kind cp --artifact "$PCP" --stage-host www.copilt.org --stage-ip "$PIP" --stage-id "$SID" --confirm-production "$CID_"
 t_eq "...no rsync happened" "$(grep -c '^rsync' "$CALLS" || true)" "0"
 STUB_ENV=production STUB_HOSTNAME=www.copilt.org STUB_ACTIVATE_RC=3 t_rc "production cp: a rolled-back activation exits 3" 3 PDEP --kind cp --artifact "$PCP" --stage-host www.copilt.org --stage-ip "$PIP" --stage-id "$SID" --confirm-production "$CID_"
+
+# Owner decision 2026-10-22: the staging Droplet is promoted in place, so its two addresses are acceptable production targets ONLY when the host identity says production
+KNOWNP="$TMP/known_hosts_promoted"; printf '%s\n' "157.230.110.211 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAItestonlytestonlytestonlytestonlytestonlytest" "206.189.248.204 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAItestonlytestonlytestonlytestonlytestonlytest" > "$KNOWNP"
+PDEP2() { PATH="$STUB:$PATH" bash "$REL/deploy-release.sh" --env production --key "$PK" --known-hosts "$KNOWNP" "$@"; }
+: > "$CALLS"
+for ip in 157.230.110.211 206.189.248.204; do
+  t_ok "promoted host: $ip is accepted as a production target when the identity says production (dry-run)" PDEP2 --kind site --artifact "$PART" --stage-host www.copilt.org --stage-ip $ip --stage-id "$SID" --confirm-production "$PID_" --dry-run
+  STUB_ENV=staging STUB_HOSTNAME=stage.copilt.org t_rc "promoted host: $ip while the host still says STAGING is refused by the identity gate before any upload" 3 PDEP2 --kind site --artifact "$PART" --stage-host www.copilt.org --stage-ip $ip --stage-id "$SID" --confirm-production "$PID_"
+done
+t_eq "promoted host: the refused runs sent no rsync" "$(grep -c '^rsync' "$CALLS" || true)" "0"
 
 unset STUB_ENV STUB_HOSTNAME
 t_summary
