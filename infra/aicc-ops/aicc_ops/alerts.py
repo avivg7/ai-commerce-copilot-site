@@ -391,6 +391,50 @@ def r_reboot_required(ctx, p):
                 text=f"a reboot is pending{since}: updates were installed that stay inactive until the host is restarted (schedule a maintenance window; restart is NOT automatic)")]
 
 
+def r_secupd_pending(ctx, p):
+    """The hourly job should install a security update within about an hour; one that stays pending is held back or failing. Numbers only: no package names in the message."""
+    cnt = ctx.latest("secupdates.pending_count")
+    if cnt is None:
+        return []
+    h = (ctx.latest("secupdates.pending_oldest_age_s") or 0) / 3600
+    sev = _sev(h, p["warn_h"], p["crit_h"]) if cnt > 0 else None
+    return [Obs("security_updates_pending", "pending", sev is not None, clear=cnt == 0 or h < p["clear_h"], severity=sev or WARNING,
+                text=f"{int(cnt)} security update(s) have been waiting {h:.0f} h although the hourly job runs (warn >= {p['warn_h']} h, critical >= {p['crit_h']} h): "
+                     f"see `systemctl status aicc-security-updates` and /var/log/unattended-upgrades/")]
+
+
+def r_secupd_stale(ctx, p):
+    """Is the hourly security-update job itself completing? A missing status file only matters once the host has been up for a while."""
+    age = ctx.latest("secupdates.last_run_age_s")
+    if age is None:
+        if ctx.latest("secupdates.status_present") == 0:
+            up = ctx.latest("uptime.seconds")
+            if up is not None and up / 3600 < p["absent_after_h"]:
+                return [Obs("security_updates_stale", "run", False, clear=True)]
+            return [Obs("security_updates_stale", "run", True, severity=WARNING,
+                        text="no security-update status file yet: the hourly job (aicc-security-updates.timer) has never completed on this host")]
+        return []
+    h = age / 3600
+    sev = _sev(h, p["warn_h"], p["crit_h"])
+    out = [Obs("security_updates_stale", "run", sev is not None, clear=h < p["clear_h"], severity=sev or WARNING,
+               text=f"the hourly security-update job has not completed for {h:.0f} h (warn >= {p['warn_h']} h, critical >= {p['crit_h']} h): new security fixes would not be installed")]
+    ok = ctx.latest("secupdates.last_ok")
+    if ok is not None:
+        out.append(Obs("security_updates_stale", "result", ok == 0, clear=ok == 1, severity=WARNING,
+                       text="the last security-update run reported an error (package list refresh or unattended-upgrade failed)"))
+    return out
+
+
+def r_secupd_services(ctx, p):
+    """After an update a running service can still execute the replaced binary or library. PHP-FPM is reloaded by the job itself; this fires if anything is left."""
+    n = ctx.latest("secupdates.stale_services")
+    if n is None:
+        return []
+    return [Obs("services_need_restart", "services", n > 0, clear=n == 0, severity=WARNING,
+                text=f"{int(n)} running service(s) still use replaced code after a security update (PHP-FPM is reloaded automatically; MySQL or SSH need a planned restart): "
+                     f"read /var/lib/aicc/status/security-updates.json on the host")]
+
+
 def r_cron(ctx, p):
     v = ctx.latest("cp.wc_cron_last_run_age_seconds")
     if v is None:
@@ -474,6 +518,10 @@ def default_rules(cfg: dict) -> list:
         RuleSpec("backend_5xx", "Elevated API 5xx rate", r_backend_5xx, dict(window_samples=w10, interval_s=iv, min_requests=20, warn=5.0, crit=25.0, clear=2.0), for_samples=2, clear_samples=4),
         # architecture review M-2: unattended-upgrades never reboots (Automatic-Reboot false); this tells the operator a reboot is waiting. Sustain 1 sample, one notice per day at most.
         RuleSpec("reboot_required", "Host reboot pending", r_reboot_required, for_samples=1, clear_samples=1, cooldown_s=86400),
+        # security-update freshness (WS14): the hourly job replaces the once-a-day apt timer as the thing that installs fixes; these three tell the operator when it stops doing so.
+        RuleSpec("security_updates_pending", "Security updates waiting", r_secupd_pending, dict(warn_h=6, crit_h=24, clear_h=3), for_samples=2, clear_samples=2, cooldown_s=21600),
+        RuleSpec("security_updates_stale", "Security-update job not completing", r_secupd_stale, dict(warn_h=4, crit_h=12, clear_h=2, absent_after_h=3), for_samples=2, clear_samples=2, cooldown_s=21600),
+        RuleSpec("services_need_restart", "Running services use replaced code", r_secupd_services, for_samples=10, clear_samples=2, cooldown_s=43200),
         # The system cron (aicc-wp-cron.timer) runs every 2 minutes (WP_CRON_CADENCE_S); the thresholds below must stay far above it (tests/test_alerts.py::CronCadence).
         RuleSpec("wc_cron_stale", "Scheduled actions stale", r_cron, dict(warn_s=3600, crit_s=14400, clear_s=1800), for_samples=2, clear_samples=2, cooldown_s=3600),
     ]

@@ -1,0 +1,21 @@
+# Hourly: refresh package lists, install security updates (unattended-upgrade, same policy as the daily job), prove the running services are patched, write
+# /var/lib/aicc/status/security-updates.json for AICC Ops. Script: infra/systemd/aicc-security-updates.sh. Manual run: sudo systemctl start aicc-security-updates.service
+# Deliberately NOT sandboxed with ProtectSystem=strict: apt/dpkg must write the whole system. It is niced, memory/task capped and idle-IO so it never competes with customers.
+[Unit]
+Description=AICC security updates (refresh lists, unattended-upgrade, verify running services)
+After=network-online.target
+Wants=network-online.target
+OnFailure=aicc-notify-failure@%n.service
+
+[Service]
+Type=oneshot
+User=root
+ExecStart=/usr/local/sbin/aicc-security-updates
+ExecStartPost=-+/usr/local/sbin/aicc-unit-status ok %n
+TimeoutStartSec=45min
+Nice=10
+IOSchedulingClass=idle
+MemoryMax=768M
+TasksMax=256
+PrivateTmp=true
+ProtectHome=true

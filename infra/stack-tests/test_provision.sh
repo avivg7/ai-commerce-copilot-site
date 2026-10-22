@@ -463,6 +463,38 @@ if [ -x "$LOCALMY/mysqld" ]; then
     t_eq "...with zero events" "$(jq -r '[.log_present,.events_15m]|join(",")' "$FL/st/fpm-log.json")" "false,0"
     t_rc "a non-numeric AICC_NOW is refused" 2 env AICC_FPM_LOG="$FL/php.log" AICC_STATUS_DIR="$FL/st" AICC_NOW=abc bash "$INFRA/systemd/aicc-fpm-log-status.sh"
 
+        echo "== aicc-security-updates.sh (hourly security updates; numbers and package names only) =="
+    SU="$TMP/secupd"; mkdir -p "$SU/bin" "$SU/proc/4242"
+    printf '#!/bin/bash\nif [[ "$*" == *" -s "* || "$*" == *"-s -o"* ]]; then cat "$FAKE_INST"; fi\nexit 0\n' > "$SU/bin/apt-get"
+    printf '#!/bin/bash\n[ "$#" -eq 0 ] || { echo "unattended-upgrade: error: unrecognized arguments: $*" >&2; exit 2; }\nif [ -n "${FAKE_UU_LOCK:-}" ] && [ ! -e "$FAKE_UU_LOCK" ]; then : > "$FAKE_UU_LOCK"; echo "Could not get lock /var/lib/dpkg/lock-frontend" >&2; exit 1; fi\n: > "$FAKE_INST"\nexit "${FAKE_UU_RC:-0}"\n' > "$SU/bin/uu"
+    printf '#!/bin/bash\nif [[ "$1" == show ]]; then for a in "$@"; do [[ "$a" == php8.3-fpm.service ]] && { echo 4242; exit 0; }; done; echo 0; exit 0; fi\nif [[ "$1" == reload ]]; then : > "$FAKE_PROC/4242/maps"; fi\nexit 0\n' > "$SU/bin/systemctl"
+    chmod +x "$SU/bin/"*
+    printf 'Inst libnss3 [2:3.98-1ubuntu0.2] (2:3.98-1ubuntu0.3 Ubuntu:24.04/noble-updates, Ubuntu:24.04/noble-security [amd64])\nInst vim [1] (2 Ubuntu:24.04/noble-updates [amd64])\n' > "$SU/inst"
+    echo "7f00-7f01 r-xp 00000000 fd:01 1 /usr/lib/x86_64-linux-gnu/libssl.so.3 (deleted)" > "$SU/proc/4242/maps"
+    SUENV=(env FAKE_INST="$SU/inst" FAKE_PROC="$SU/proc" AICC_APT_GET="$SU/bin/apt-get" AICC_UNATTENDED_UPGRADE="$SU/bin/uu" AICC_SYSTEMCTL="$SU/bin/systemctl" AICC_PROC_ROOT="$SU/proc" AICC_REBOOT_FILE="$SU/none" AICC_STATUS_DIR="$SU/st" AICC_STATE_DIR="$SU/state" AICC_RELOAD_SETTLE=0 AICC_RETRY_SLEEP=0)
+    t_ok "the job runs: only the SECURITY update is installed, a stale PHP-FPM is reloaded" "${SUENV[@]}" AICC_NOW=1800000000 bash "$INFRA/systemd/aicc-security-updates.sh"
+    t_eq "...the security package is reported as upgraded (the non-security one is not)" "$(jq -r '.upgraded|join(",")' "$SU/st/security-updates.json")" "libnss3"
+    t_eq "...nothing is pending and PHP-FPM was reloaded and is no longer stale" "$(jq -r '[.pending_count,(.reloaded|join(",")),(.stale_services|length),.ok]|join("|")' "$SU/st/security-updates.json")" "0|php8.3-fpm|0|true"
+    t_eq "...its keys are exactly the documented ones" "$(jq -r 'keys|join(",")' "$SU/st/security-updates.json")" "finished_epoch,ok,pending_count,pending_oldest_epoch,reboot_required,reloaded,schema,stale_services,ts,update_rc,upgrade_rc,upgraded"
+    perm() { stat -c %a "$1" 2>/dev/null || stat -f %Lp "$1"; }
+    t_eq "...the status file is world-readable (AICC Ops reads it) and the state file is root-only" "$(perm "$SU/st/security-updates.json") $(perm "$SU/state/security-updates.pending.json")" "644 600"
+    printf 'Inst libnss3 [2:3.98-1ubuntu0.2] (2:3.98-1ubuntu0.3 Ubuntu:24.04/noble-updates, Ubuntu:24.04/noble-security [amd64])\n' > "$SU/inst"; rm -f "$SU/lock"
+    t_ok "a held dpkg lock is retried (bounded) and the upgrade then succeeds; the fake rejects ANY argument like the real argparse tool (rc 2)" "${SUENV[@]}" FAKE_UU_LOCK="$SU/lock" AICC_LOCK_RETRY_SLEEP=0 AICC_NOW=1800001800 bash "$INFRA/systemd/aicc-security-updates.sh"
+    t_eq "...and the retry installed the update" "$(jq -r '[.ok,.upgrade_rc,.pending_count]|join(",")' "$SU/st/security-updates.json")" "true,0,0"
+    printf 'Inst openssl [1] (2 Ubuntu:24.04/noble-security [amd64])\n' > "$SU/inst"; : > "$SU/proc/4242/maps"
+    t_rc "a failing unattended-upgrade makes the unit FAIL (rc 1) ..." 1 "${SUENV[@]}" FAKE_UU_RC=1 AICC_NOW=1800003600 bash "$INFRA/systemd/aicc-security-updates.sh"
+    t_eq "...but the status file is still written, ok=false, with the failure code" "$(jq -r '[.ok,.upgrade_rc]|join(",")' "$SU/st/security-updates.json")" "false,1"
+    printf 'Inst openssl [1] (2 Ubuntu:24.04/noble-security [amd64])\n' > "$SU/inst"
+    t_ok "a held-back update stays pending and keeps its FIRST-SEEN time across runs" bash -c "printf '#!/bin/bash\nexit 0\n' > '$SU/bin/uu'; chmod +x '$SU/bin/uu'; env FAKE_INST='$SU/inst' FAKE_PROC='$SU/proc' AICC_APT_GET='$SU/bin/apt-get' AICC_UNATTENDED_UPGRADE='$SU/bin/uu' AICC_SYSTEMCTL='$SU/bin/systemctl' AICC_PROC_ROOT='$SU/proc' AICC_REBOOT_FILE='$SU/none' AICC_STATUS_DIR='$SU/st' AICC_STATE_DIR='$SU/state' AICC_RELOAD_SETTLE=0 AICC_RETRY_SLEEP=0 AICC_NOW=1800007200 bash '$INFRA/systemd/aicc-security-updates.sh' && env FAKE_INST='$SU/inst' FAKE_PROC='$SU/proc' AICC_APT_GET='$SU/bin/apt-get' AICC_UNATTENDED_UPGRADE='$SU/bin/uu' AICC_SYSTEMCTL='$SU/bin/systemctl' AICC_PROC_ROOT='$SU/proc' AICC_REBOOT_FILE='$SU/none' AICC_STATUS_DIR='$SU/st' AICC_STATE_DIR='$SU/state' AICC_RELOAD_SETTLE=0 AICC_RETRY_SLEEP=0 AICC_NOW=1800010800 bash '$INFRA/systemd/aicc-security-updates.sh'"
+    t_eq "...pending since the first run (an hour-old first-seen time is not reset by a later run)" "$(jq -r '[.pending_count,.pending_oldest_epoch]|join(",")' "$SU/st/security-updates.json")" "1,1800007200"
+    t_rc "a non-numeric AICC_NOW is refused" 2 "${SUENV[@]}" AICC_NOW=abc bash "$INFRA/systemd/aicc-security-updates.sh"
+    t_contains "the timer runs hourly with jitter and catches up after downtime" "$(cat "$INFRA/systemd/aicc-security-updates.timer")" "OnCalendar=*-*-* *:23:00"
+    t_contains "...Persistent" "$(cat "$INFRA/systemd/aicc-security-updates.timer")" "Persistent=true"
+    t_contains "the unit reports failures to AICC Ops through the failure hook" "$(cat "$INFRA/systemd/aicc-security-updates.service")" "OnFailure=aicc-notify-failure@%n.service"
+
+        echo "== logrotate: no second stanza for a file Ubuntu's mysql-server rule already rotates =="
+    t_eq "no AICC logrotate file claims a path under /var/log/mysql/ (Ubuntu's /var/log/mysql/*log glob covers it; a duplicate makes logrotate exit 1 nightly: seen on the host 2026-10-21/22)" "$(grep -l '^[[:space:]]*/var/log/mysql/' "$INFRA"/logrotate/* 2>/dev/null | wc -l | tr -d ' ')" "0"
+
 echo "== backup / restore as the REAL backup account against the throwaway server =="
     BKDIR="$TMP/bk"; SH="$TMP/shared"; EC="$TMP/edgeconf"; mkdir -p "$SH/uploads/2026" "$EC" "$TMP/rel/site" "$TMP/rel/cp"; echo img > "$SH/uploads/2026/a.jpg"; echo "<?php // x" > "$SH/wp-config.php"; echo cfg > "$EC/Caddyfile"
     ln -s "$TMP/rel/site/releases/R1" "$TMP/rel/site/current"

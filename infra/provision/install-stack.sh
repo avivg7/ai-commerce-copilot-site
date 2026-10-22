@@ -313,6 +313,7 @@ step_scripts() {
   local ops="$BUNDLE/scripts/ops"
   install_file "$INFRA/systemd/aicc-unit-status.sh"          "$SBIN/aicc-unit-status" 0755 root:root
   install_file "$INFRA/systemd/aicc-fpm-log-status.sh"       "$SBIN/aicc-fpm-log-status" 0755 root:root
+  install_file "$INFRA/systemd/aicc-security-updates.sh"      "$SBIN/aicc-security-updates" 0755 root:root
   if [ -f "$ops/edge-preflight.sh" ]; then install_file "$ops/edge-preflight.sh" "$SBIN/aicc-edge-preflight" 0755 root:root
   else die "scripts/ops/edge-preflight.sh missing from the bundle ($ops)"; fi
   [ -f "$ops/cert-expiry-check.sh" ] && install_file "$ops/cert-expiry-check.sh" "$SBIN/aicc-cert-expiry-check" 0755 root:root || warn "cert-expiry-check.sh not in bundle"
@@ -358,7 +359,7 @@ step_systemd() {
     systemctl daemon-reload
     if command -v systemd-analyze >/dev/null 2>&1; then
       systemd-analyze verify /etc/systemd/system/aicc-edge.service /etc/systemd/system/aicc-wp-cron.service /etc/systemd/system/aicc-backup.service \
-        /etc/systemd/system/aicc-cert-expiry.service /etc/systemd/system/aicc-wp-cron.timer /etc/systemd/system/aicc-backup.timer /etc/systemd/system/aicc-cert-expiry.timer \
+        /etc/systemd/system/aicc-cert-expiry.service /etc/systemd/system/aicc-security-updates.service /etc/systemd/system/aicc-wp-cron.timer /etc/systemd/system/aicc-backup.timer /etc/systemd/system/aicc-cert-expiry.timer /etc/systemd/system/aicc-security-updates.timer \
         || die "systemd-analyze verify reported problems (read above); units are installed but NOT enabled"
       info "systemd-analyze verify: no problems"
     fi
@@ -368,7 +369,8 @@ step_systemd() {
 step_logrotate() {
   step "logrotate"
   install_file "$INFRA/logrotate/aicc-php"    /etc/logrotate.d/aicc-php 0644 root:root
-  install_file "$INFRA/logrotate/aicc-mysql"  /etc/logrotate.d/aicc-mysql 0644 root:root
+  # (no aicc-mysql file: Ubuntu's own /etc/logrotate.d/mysql-server already rotates /var/log/mysql/*log, slow.log included; a second stanza for the same file makes logrotate exit 1 every night)
+  if is_linux && [ -z "$AICC_PREFIX" ] && ! is_dry && [ -f /etc/logrotate.d/aicc-mysql ]; then rm -f /etc/logrotate.d/aicc-mysql; info "removed the superseded /etc/logrotate.d/aicc-mysql"; fi
   install_file "$INFRA/logrotate/aicc-backup" /etc/logrotate.d/aicc-backup 0644 root:root
   if ! is_dry && is_linux && [ -z "$AICC_PREFIX" ]; then logrotate --debug /etc/logrotate.conf >/dev/null 2>&1 || die "logrotate --debug reports an error in the new config"; info "logrotate --debug: OK (Caddy rotates its own logs: roll_size/roll_keep in the Caddyfile)"; fi
 }
@@ -474,10 +476,10 @@ step_enable_edge() {
 step_enable_timers() {
   step "enable-timers: wp-cron every 2 minutes, daily backup, daily certificate check"
   require_root
-  local timers="aicc-wp-cron.timer aicc-backup.timer aicc-cert-expiry.timer aicc-fpm-log-status.timer"
+  local timers="aicc-wp-cron.timer aicc-backup.timer aicc-cert-expiry.timer aicc-fpm-log-status.timer aicc-security-updates.timer"
   # dark production: the edge serves Caddy's 12-hour INTERNAL certificate, so the certificate-expiry check would fail every day; `promote-to-production.sh final-edge` enables it
   if [ "$(sed -n 's/^AICC_ENV=//p' "$(P /etc/aicc-stage-identity)" 2>/dev/null | head -1)" = production ] && grep -q '^AICC_ALLOW_INTERNAL_TLS=1$' "$(P /etc/aicc-edge/edge.env)" 2>/dev/null; then
-    timers="aicc-wp-cron.timer aicc-backup.timer aicc-fpm-log-status.timer"; info "dark production: aicc-cert-expiry.timer stays OFF until final-edge"
+    timers="aicc-wp-cron.timer aicc-backup.timer aicc-fpm-log-status.timer aicc-security-updates.timer"; info "dark production: aicc-cert-expiry.timer stays OFF until final-edge"
   fi
   if is_dry; then would "systemctl enable --now $timers"; return 0; fi
   systemctl enable --now $timers

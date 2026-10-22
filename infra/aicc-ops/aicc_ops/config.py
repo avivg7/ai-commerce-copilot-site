@@ -83,6 +83,10 @@ DEFAULTS: dict = {
             "status_file": "/srv/aicc/backups/status.json",
             "offhost_ack_file": "/srv/aicc/backups/offhost-ack.json",   # written by the owner's Mac after a verified pull (schema 1); "" disables
         },
+        "secupdates": {                  # hourly security-update job (infra/systemd/aicc-security-updates.sh) -> status file; "" disables the read
+            "enabled": True, "interval_s": 300, "timeout_s": 5,
+            "status_file": "/var/lib/aicc/status/security-updates.json",
+        },
         "unitstatus": {
             "enabled": True, "interval_s": 60, "timeout_s": 5,
             "dir": "/var/lib/aicc/status",  # unit-<name>.json files written by aicc-unit-status (OnFailure= hook)
