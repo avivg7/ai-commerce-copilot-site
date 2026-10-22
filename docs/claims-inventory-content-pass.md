@@ -29,7 +29,7 @@ the corrections are listed at the end ("What the review changed"). The first inv
 | Hero | Learned from your own orders | BE `recommendation_engine.py:59-140` (counting; no ML) | SUPPORTED |
 | Hero | You control what gets recommended | Pin and exclude are strong, prefer and deprioritize are one-place nudges (`recommendation_policy.py:288-408`); the page says "nudge one place" wherever it matters | OWNER (supported per product; not "full control") |
 | Hero | Placing an order never waits on AICC (was "your checkout stays independent of AICC") | PL `class-aicc-orders.php:417-426` (order sync queued with `as_enqueue_async_action`), `class-aicc-tracker.php:220-224`, `class-aicc-widget.php:1134-1140`; handlers `AICC_Fail_Soft`-wrapped. "Independent" was too strong: AICC code runs in the checkout request (visitor-id stamp, queue write) and the consented `checkout_start` event calls the backend with a 2s timeout (`class-aicc-rest-api.php:155-196`) | SUPPORTED (reworded) |
-| Hero | Plans from $99 a year · 14-day money-back guarantee on your first purchase · No automatic renewal | facts; CP `scripts/bootstrap-commercial-products.php:76-107`; `class-aicc-lm-license.php:22,133-177` | POLICY |
+| Hero | Plans from $99 a year · 14-day money-back guarantee on your initial plan purchase · No automatic renewal | facts; CP `scripts/bootstrap-commercial-products.php:76-107`; `class-aicc-lm-license.php:22,133-177` | POLICY |
 | Loop strip | Your orders, pairs found, shown to shoppers, clicks and carts counted, insights, your rules, learns from new orders | Each step maps to a section of this table. "Learns" means counting (BE recomputes pair counts; no ML) | SUPPORTED |
 | Loop strip note | Once your store is ready the widget starts with same-category and newest products, then moves to real pairs as orders are counted; import past orders (optional) to start with pairs already learned | BE `legacy_recommendations.py:134,175,199` (three tiers); PL `class-aicc-onboarding.php:410` (needs at least 2 in-stock products); pairs are recalculated rate-limited (`BE config.py:145-146`). No duration is claimed | SUPPORTED |
 | Demo | WooCommerce can tell which products share a category; AICC adds which products customers actually buy together, with sensible fallbacks where history is thin | WC `includes/wc-product-functions.php:1441-1442` (related = shared category and tags); BE three tiers | SUPPORTED |
@@ -171,7 +171,7 @@ Still different from the Control Plane by design: the site's accessibility state
 * **Home "Thin history gets a safe fallback"** says learned partners and fallbacks share the widget heading today (PL widget strings: same heading for fallback items); the dashboard preview shows which is which. SUPPORTED.
 * **Associated orders** count at the full order total (Understand tab and Product measurement; facts `attributionCredit`). SUPPORTED.
 * **Data and trust, short version**: "It does receive pseudonymous identifiers (a hashed email, customer and visitor IDs), billing country and order contents." Same facts as the lists below it. SUPPORTED (legal text: counsel review).
-* **Pricing "Try it"**: the optional import is suggested as the way to see learned partners sooner. POLICY.
+* **Pricing "Money-back guarantee" panel** (formerly headed "Try it", renamed so it cannot read as a trial): the optional import is suggested as the way to see learned partners sooner. POLICY.
 
 ## Positioning v3 (owner direction 2026-10-18/19)
 

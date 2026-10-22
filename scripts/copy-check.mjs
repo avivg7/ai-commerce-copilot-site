@@ -2,6 +2,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { ROOT } from "./lib/load.mjs";
+import { truthProblems, selfTestProblems, TRUTH_RULES } from "./lib/launch-truth.mjs";
 
 // "Watch demo" is allowed since the owner visual pass: the modal is an honest labelled placeholder until a real video is configured,
 // and `npm run launch:check` blocks a production launch while the placeholder is active.
@@ -83,6 +84,11 @@ function stripComments(src) {
   const missed = bad.filter((t) => !rule(t)), wrong = ok.filter((t) => rule(t));
   if (missed.length || wrong.length) { console.error(`FAIL: self-test of the import / badge rules: missed [${missed}] flagged [${wrong}]`); process.exit(1); }
 }
+// Launch-truth rules (scripts/lib/launch-truth.mjs, shared with content:check): self-tested here on every run, applied to every source line below.
+{
+  const bad = selfTestProblems();
+  if (bad) { console.error(`FAIL: self-test of the launch-truth rules: ${bad}`); process.exit(1); }
+}
 const hits = [];
 let scanned = 0;
 for (const f of [...files(path.join(ROOT, "src")), ...files(path.join(ROOT, "docs")), path.join(ROOT, "README.md")]) {
@@ -90,9 +96,10 @@ for (const f of [...files(path.join(ROOT, "src")), ...files(path.join(ROOT, "doc
   const text = stripComments(fs.readFileSync(f, "utf8"));
   text.split("\n").forEach((line, i) => {
     for (const [re, why] of RULES) if (re.test(line)) hits.push(`${path.relative(ROOT, f)}:${i + 1}  [${why}]  ${line.trim().slice(0, 110)}`);
+    for (const p of truthProblems(line, { publicCopy: /^src\//.test(path.relative(ROOT, f)) })) hits.push(`${path.relative(ROOT, f)}:${i + 1}  [${p.why}]  ${line.trim().slice(0, 110)}`);
   });
 }
-console.log(`copy:check  scanned ${scanned} source files, ${RULES.length} rules`);
+console.log(`copy:check  scanned ${scanned} source files, ${RULES.length}+${TRUTH_RULES.length} rules`);
 if (hits.length) {
   console.error(`FAIL: ${hits.length} banned phrase(s)`);
   hits.slice(0, 80).forEach((h) => console.error("  " + h));

@@ -91,6 +91,15 @@ export const STRUCTURED_OFFERS = process.env.NEXT_PUBLIC_AICC_STRUCTURED_OFFERS 
 export const LEGAL_REVIEW_APPROVED = process.env.NEXT_PUBLIC_LEGAL_REVIEW_APPROVED === "true";
 export const LEGAL_DRAFT_NOTICE = !LEGAL_REVIEW_APPROVED && process.env.NEXT_PUBLIC_LEGAL_DRAFT_NOTICE !== "off";
 
+/**
+ * Machine-translation disclosure on the he / es / ru legal pages ("this is a draft translation, not reviewed by native speakers, English prevails").
+ * It is a SEPARATE statement from the English legal approval: counsel approving the English text says nothing about the Hebrew, Spanish and Russian drafts,
+ * so approving the English text must NOT remove it (it used to disappear with LEGAL_DRAFT_NOTICE). It goes away only when a native-speaking legal reviewer has
+ * approved the translations AND the build says so: NEXT_PUBLIC_LEGAL_TRANSLATIONS_REVIEWED=true. NEXT_PUBLIC_LEGAL_DRAFT_NOTICE=off (screenshots) does not hide it.
+ * `npm run launch:check` reports it, `npm run test:approved` asserts it is still published on an approved build.
+ */
+export const LEGAL_TRANSLATIONS_REVIEWED = process.env.NEXT_PUBLIC_LEGAL_TRANSLATIONS_REVIEWED === "true";
+
 /** Owner-supplied values. Unset means the page renders one plain muted line (pending.line). Never invent these. */
 export const COMPANY = {
   legalName: process.env.NEXT_PUBLIC_AICC_LEGAL_NAME || "",

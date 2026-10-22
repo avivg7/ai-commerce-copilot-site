@@ -621,7 +621,7 @@ for (const route of ["", "product"]) {
     await p.waitForTimeout(300);
     check("loop strip[home]: the Control step opens the Control tab of the workspace", await p.evaluate(() => document.getElementById("ws-t-control").getAttribute("aria-selected") === "true" && location.hash === "#workspace"));
     const f = await p.evaluate(() => ({ conf: document.querySelector(".aicc-pricing-confidence")?.textContent.replace(/\s+/g, " ").trim(), inHero: !!document.querySelector(".aicc-hero .aicc-hero__confidence, .aicc-hero .aicc-pricing-confidence"), heroText: document.querySelector(".aicc-hero").innerText, inPricing: !!document.querySelector("[aria-labelledby=pricing-title] .aicc-pricing-confidence") }));
-    check(`conversion pass: price, guarantee and renewal facts sit under the pricing cards, not in the hero (${f.conf})`, /Plans from \$99 a year/.test(f.conf) && /14-day money-back guarantee on your first purchase/.test(f.conf) && /No automatic renewal/.test(f.conf) && f.inPricing && !f.inHero && !/money-back|automatic renewal|a year/i.test(f.heroText), JSON.stringify(f));
+    check(`conversion pass: price, guarantee and renewal facts sit under the pricing cards, not in the hero (${f.conf})`, /Plans from \$99 a year/.test(f.conf) && /14-day money-back guarantee on your initial plan purchase/.test(f.conf) && /No automatic renewal/.test(f.conf) && f.inPricing && !f.inHero && !/money-back|automatic renewal|a year/i.test(f.heroText), JSON.stringify(f));
   }
   await ctx.close();
 }

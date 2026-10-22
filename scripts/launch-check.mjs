@@ -44,11 +44,20 @@ const approved = env.NEXT_PUBLIC_LEGAL_REVIEW_APPROVED === "true";
 let flagged = 0;
 for (const doc of Object.values(LEGAL_DOCS)) for (const sec of doc.sections) for (const b of sec.blocks) if (b.legalReview) flagged++;
 const faqFlagged = FAQ.filter((f) => f.legalReview).length;
+const translatedLocales = Object.entries(TRANSLATION_REVIEW).filter(([, v]) => v !== "source-draft-pending-legal-review").map(([l]) => l).join(", ");
+const translationsReviewed = env.NEXT_PUBLIC_LEGAL_TRANSLATIONS_REVIEWED === "true";
 if (!approved) {
   problems.push(`legal review not approved: ${flagged} flagged legal blocks and ${faqFlagged} flagged FAQ answers would be published as drafts (set NEXT_PUBLIC_LEGAL_REVIEW_APPROVED=true only after a lawyer approves them)`);
-  problems.push(`draft translations: ${Object.entries(TRANSLATION_REVIEW).filter(([, v]) => v !== "source-draft-pending-legal-review").map(([l]) => l).join(", ")} legal text needs native legal review`);
+  problems.push(`draft translations: ${translatedLocales} legal text needs native legal review`);
   problems.push(`marketing copy with legal weight needs the same approval: ${LEGAL_REVIEW_KEYS.join(", ")}`);
 }
+// Approving the ENGLISH legal text says nothing about the Hebrew, Spanish and Russian drafts (they are machine drafts). The machine-translation disclosure on those legal pages therefore
+// stays published until a native-speaking legal reviewer has approved them AND the build says so (NEXT_PUBLIC_LEGAL_TRANSLATIONS_REVIEWED=true). Shipping with the disclosure is allowed (a note,
+// not a blocker); claiming the review without the English approval is not.
+if (translationsReviewed && !approved) problems.push("NEXT_PUBLIC_LEGAL_TRANSLATIONS_REVIEWED=true without NEXT_PUBLIC_LEGAL_REVIEW_APPROVED=true: the translations cannot be reviewed before the English text is approved");
+if (approved) console.log(translationsReviewed
+  ? `translations (${translatedLocales}): marked native-reviewed by NEXT_PUBLIC_LEGAL_TRANSLATIONS_REVIEWED=true: the machine-translation disclosure is NOT published; only set it after a native-speaking legal reviewer approved them`
+  : `translations (${translatedLocales}): legal pages ship with the machine-translation disclosure ("draft translation, not reviewed by native speakers, English prevails") until NEXT_PUBLIC_LEGAL_TRANSLATIONS_REVIEWED=true`);
 {
   // The Watch demo video is the owner-approved master, served first-party from public/demo/ (src/lib/brand.ts defaults).
   const demoDir = path.join(ROOT, "public/demo");
@@ -95,6 +104,21 @@ if (fs.existsSync(out)) {
     for (const [f, files] of hits) problems.push(`built output contains a payment placeholder (${f}) in ${files.slice(0, 3).join(", ")}${files.length > 3 ? ` and ${files.length - 3} more` : ""}: the QA checkout's "Direct bank transfer" must never be published`);
   }
   if (drafts) problems.push(`built output contains ${drafts} draft notices`);
+  {
+    // The machine-translation disclosure must be on every he / es / ru legal page of a build unless the translations were marked reviewed (and on none of the English pages).
+    const LEGAL_ROUTES = ["privacy", "terms", "refund-policy", "data-and-trust", "accessibility"];
+    const missing = [], leaked = [];
+    for (const loc of ["he", "es", "ru"]) for (const r of LEGAL_ROUTES) {
+      const f = path.join(out, loc, r, "index.html");
+      if (!fs.existsSync(f)) continue;
+      const has = fs.readFileSync(f, "utf8").includes('data-translation-draft="true"');
+      if (!has && !translationsReviewed) missing.push(`${loc}/${r}`);
+      if (has && translationsReviewed) leaked.push(`${loc}/${r}`);
+    }
+    for (const r of LEGAL_ROUTES) { const f = path.join(out, r, "index.html"); if (fs.existsSync(f) && fs.readFileSync(f, "utf8").includes('data-translation-draft="true"')) leaked.push(`en/${r}`); }
+    if (missing.length) problems.push(`built output lacks the machine-translation disclosure on ${missing.join(", ")} (NEXT_PUBLIC_LEGAL_TRANSLATIONS_REVIEWED is not true)`);
+    if (leaked.length) problems.push(`built output carries the machine-translation disclosure where it should not be: ${leaked.join(", ")}`);
+  }
   // Origin / SEO gate (same audit as `npm run seo:check`): canonical host, sitemap, robots, hreflang, no apex / http / localhost / GitHub Pages.
   const seo = auditBuild({ outDir: out });
   const seoErrors = seo.issues.filter((i) => i.level === "error");

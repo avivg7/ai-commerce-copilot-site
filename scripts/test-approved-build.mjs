@@ -54,6 +54,15 @@ if (pending) errors.push(`${pending} pending lines in the approved build`);
 if (drafts) errors.push(`${drafts} draft notices in the approved build`);
 const ACTIVE = Object.keys(JSON.parse(fs.readFileSync(path.join(ROOT, "brand/content/faq.en.json"), "utf8")).items).length;
 if (faq.length !== ACTIVE) errors.push(`FAQPage JSON-LD has ${faq.length} answers, expected all ${ACTIVE} active questions once approved`);
+// Approving the ENGLISH legal text must not remove the machine-translation disclosure from the he / es / ru legal pages (they are machine drafts; only a native-speaking legal
+// reviewer plus NEXT_PUBLIC_LEGAL_TRANSLATIONS_REVIEWED=true may). English legal pages never carry it. (Added by the legal / marketing-truth pass: it used to vanish with the draft notice.)
+for (const r of ["privacy", "terms", "refund-policy", "data-and-trust", "accessibility"]) {
+  for (const loc of ["he", "es", "ru"]) if (!fs.readFileSync(path.join(OUT, loc, r, "index.html"), "utf8").includes('data-translation-draft="true"')) errors.push(`${loc}/${r}: the machine-translation disclosure is missing on an approved build (English approval must not remove it)`);
+  if (fs.readFileSync(path.join(OUT, r, "index.html"), "utf8").includes('data-translation-draft="true"')) errors.push(`${r}: the English page carries the machine-translation disclosure`);
+}
+if (!/legal pages ship with the machine-translation disclosure/.test(l.stdout)) errors.push("launch:check did not report that the translations ship with the machine-translation disclosure");
+// Every owner value is supplied on this build: the Data and trust page must stop saying that those details "will be published before launch".
+for (const loc of ["", "he/", "es/", "ru/"]) if (fs.readFileSync(path.join(OUT, loc, "data-and-trust/index.html"), "utf8").includes('id="dataTrust-pending"')) errors.push(`${loc || "en/"}data-and-trust: still carries the "What we haven't finalized" section although every owner value is supplied`);
 const priv = fs.readFileSync(path.join(OUT, "privacy/index.html"), "utf8");
 if (!priv.includes("support@example.test")) errors.push("support email value not rendered");
 const home = fs.readFileSync(path.join(OUT, "index.html"), "utf8");

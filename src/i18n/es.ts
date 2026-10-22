@@ -147,7 +147,7 @@ export const es: DeepPartial<Dictionary> = {
       countHelper: "Cuente las tiendas que quiere conectar. El plan Solo cubre 1, Studio hasta 3 y Agency hasta 10.",
       term: "Plan fijo de 365 días. La renovación es manual.",
       renewal: "Usted mantiene el control: sin cobros automáticos. AICC nunca renueva su plan por su cuenta.",
-      guarantee: "Garantía de devolución del dinero de 14 días en su primera compra",
+      guarantee: "Garantía de devolución del dinero de 14 días en la compra inicial de su plan",
       usd: "Todos los precios están en dólares estadounidenses (USD).",
     },
     toc: "En esta página",
@@ -598,7 +598,7 @@ export const es: DeepPartial<Dictionary> = {
     pricing: {
       confidence: {
         price: "Planes desde {priceSolo} al año",
-        guarantee: "Garantía de devolución del dinero de 14 días en su primera compra",
+        guarantee: "Garantía de devolución del dinero de 14 días en la compra inicial de su plan",
         renewal: "Renovación manual, sin cobros automáticos",
       },
       title: "Un producto completo. El precio depende de cuántas tiendas.",
@@ -906,7 +906,7 @@ export const es: DeepPartial<Dictionary> = {
     terms: {
       title: "Duración, renovación y reembolsos",
       try: {
-        title: "Pruébelo",
+        title: "Garantía de devolución del dinero",
         body: "La compra inicial de su plan incluye una garantía de devolución del dinero de 14 días. Los 14 días empiezan cuando se recibe el pago y se emite su plan. Importe sus pedidos anteriores (opcional) desde el primer día para ver antes los acompañantes aprendidos. Consulte la [política de reembolso](route:refund-policy) para ver las condiciones completas.",
       },
       renewal: {
