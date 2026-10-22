@@ -1,6 +1,6 @@
 # infra/
 
-Deployment-side material for the AICC staging/production Linux host. Written and tested locally first; since 2026-10-21 it is also **installed and running on the Linux staging host `stage.copilt.org`** (the independent review compared ten installed files byte for byte with the repository and found them identical; evidence in `~/Downloads/AICC-cutover-evidence/linux-stage/`). **Nothing here has been run for PRODUCTION**: there is no production host, no production wp-config/release path and no production Caddy start on Linux (`docs/cutover/runbook.md` sections 10 and 11).
+Deployment-side material for the AICC staging/production Linux host. Written and tested locally first; since 2026-10-21 it is also **installed and running on the Linux staging host `stage.copilt.org`** (the independent review compared ten installed files byte for byte with the repository and found them identical; evidence in `~/Downloads/AICC-cutover-evidence/linux-stage/`). **Nothing here has been run for PRODUCTION on the live host yet.** Since 2026-10-22 the production host is the existing Droplet promoted in place: `provision/promote-to-production.sh`, the production wp-config region/renderer, the production AICC Ops config, sentinel targets and the production-named backup tooling are written and tested on the Mac; see `docs/cutover/production-promotion.md` (conversion not executed).
 
 | Directory | What it is |
 |---|---|

@@ -1,4 +1,5 @@
 # AICC Sentinel targets for PRODUCTION www.copilt.org.   *** NOT ACTIVE. DO NOT INSTALL OR ENABLE BEFORE THE CUTOVER. ***
+# (2026-10-22: the ACTIVE production targets are now targets.production.toml, with the Reserved IP filled in; this example stays as the disabled reference.)
 # Nothing in this repository references this file; the installer and the CI example use targets.stage.toml. At cutover the owner copies this file,
 # reviews every line against the live site, removes the "enabled = false" lines and installs it deliberately. Until then www.copilt.org belongs to the old site.
 #

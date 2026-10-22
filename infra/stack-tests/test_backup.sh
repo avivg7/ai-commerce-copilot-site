@@ -410,6 +410,7 @@ echo "== RPO/RTO documentation exists and does not claim an unproven restore tim
 t_ok "README-backup.md documents RPO and RTO" bash -c "grep -q 'RPO' '$BKP/README-backup.md' && grep -q 'RTO' '$BKP/README-backup.md'"
 t_ok "README-backup.md states what the RTO figure does NOT cover (whole-Droplet loss)" grep -qi 'does \*\*not\*\* cover loss of the whole Droplet' "$BKP/README-backup.md"
 t_ok "README-backup.md names the Mac-offline limit of the off-host copy" grep -qi 'When the Mac sleeps or is offline no copy leaves the host' "$BKP/README-backup.md"
+t_ok "README-backup.md has the production section: names, honest Mac limits, whole-Droplet scenario, second-copy options" bash -c "grep -q '^## Production (the promoted host' '$BKP/README-backup.md' && grep -q 'as available as your Mac' '$BKP/README-backup.md' && grep -q 'Whole-Droplet loss is \*\*documented, not timed\*\*' '$BKP/README-backup.md' && grep -q 'Free second-copy options' '$BKP/README-backup.md'"
 t_fail "README-backup.md has no unfilled drill placeholder" grep -q 'DRILL_RESULT_PLACEHOLDER' "$BKP/README-backup.md"
 
 t_summary

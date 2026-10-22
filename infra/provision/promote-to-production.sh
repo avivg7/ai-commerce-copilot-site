@@ -227,6 +227,12 @@ step_identity() {
     "# PRODUCTION Control Plane + edge. Promoted in place from the staging Droplet $(date -u +%Y-%m-%d); the file name /etc/aicc-stage-identity is historical." \
     "# The id is an identifier, not a secret: deploy-release.sh, the backup pull and the restore tool compare it. Never point www/api traffic at a host that does not say production." \
     "AICC_STAGE_ID=$id" | { if is_dry; then cat >/dev/null; would "write $IDENT (0644 root): AICC_ENV=production AICC_HOSTNAME=$PROD_HOST AICC_STAGE_ID=<new random 32 hex>"; else install_text "$IDENT" 0644 root:root; fi; }
+  # deployment records continue in the SAME file; one boundary record makes `aicc-deploy-status` show where staging ended and production began
+  if is_dry; then would "append a promotion boundary record to /var/lib/aicc/deployments.jsonl"; else
+    mkdir -p "$(P /var/lib/aicc)"
+    jq -n -c --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg op "${SUDO_USER:-root}" --arg h "$(hostname 2>/dev/null || echo host)" \
+      '{ts:$ts,outcome:"promoted_to_production",kind:"host",release_id:"-",previous:"-",operator:$op,tarball_sha256:"-",source_commit:"-",target:"production",host:$h}' >> "$(P /var/lib/aicc/deployments.jsonl)"
+  fi
   mark_done identity
 }
 
@@ -482,6 +488,8 @@ cmd_rollback() {
   gzip -dc "$b/staging-db.sql.gz" | "$MYSQL" --protocol=socket --socket="$SOCKET" -uroot --binary-mode aicc_cp
   if [ -d "$b/backups-stage" ]; then rm -rf "$(P "$BACKUPS")"; mv "$b/backups-stage" "$(P "$BACKUPS")"; fi
   rm -rf "$(P "$STATE_DIR")"
+  jq -n -c --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg op "${SUDO_USER:-root}" --arg h "$(hostname 2>/dev/null || echo host)" \
+    '{ts:$ts,outcome:"demoted_to_staging",kind:"host",release_id:"-",previous:"-",operator:$op,tarball_sha256:"-",source_commit:"-",target:"stage",host:$h}' >> "$(P /var/lib/aicc/deployments.jsonl)" || true
   for u in mysql php8.3-fpm aicc-edge aicc-wp-cron.timer aicc-backup.timer; do svc start "$u" || true; done
   svc restart aicc-ops || true
   info "rolled back to staging (identity, configuration, secrets, database, backup directory). The bundle is kept: $BUNDLE_ARG"

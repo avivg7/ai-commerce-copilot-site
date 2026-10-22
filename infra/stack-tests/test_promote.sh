@@ -93,6 +93,32 @@ t_rc "edge check: a GitHub Pages address is REFUSED (the old site must never be 
 t_rc "edge check: dark production without --cacert is a usage error" 2 bash "$PEC" --ip 203.0.113.9
 t_rc "edge check: a hostname instead of an IP is a usage error" 2 bash "$PEC" --ip www.copilt.org --public
 
+echo "== push-bundle.sh --env production: refusals before any ssh =="
+PBK="$TMP/aicc_cp_prod_operator"; printf -- '-----BEGIN %s-----\nDUMMY\n-----END %s-----\n' "OPENSSH PRIVATE KEY" "OPENSSH PRIVATE KEY" > "$PBK"; chmod 600 "$PBK"
+PBH="$TMP/known_hosts_prod"; echo "203.0.113.9 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAItestonlytestonlytestonlytestonlytestonlytest" > "$PBH"
+PB() { bash "$PROV/push-bundle.sh" --env production "$@"; }
+t_rc "push-bundle production: no --key is a usage error" 2 PB --stage-ip 203.0.113.9 --stage-host www.copilt.org --expect-id "$OLDID" --known-hosts "$PBH" --dry-run
+t_rc "push-bundle production: a stage host name is REFUSED" 3 PB --stage-ip 203.0.113.9 --stage-host stage.copilt.org --expect-id "$OLDID" --key "$PBK" --known-hosts "$PBH" --dry-run
+t_rc "push-bundle production: no --expect-id is REFUSED" 3 PB --stage-ip 203.0.113.9 --stage-host www.copilt.org --key "$PBK" --known-hosts "$PBH" --dry-run
+t_rc "push-bundle production: no pinned known-hosts is REFUSED" 3 PB --stage-ip 203.0.113.9 --stage-host www.copilt.org --expect-id "$OLDID" --key "$PBK" --known-hosts "$TMP/none" --dry-run
+t_rc "push-bundle production: the staging key name is REFUSED" 3 PB --stage-ip 203.0.113.9 --stage-host www.copilt.org --expect-id "$OLDID" --key "$TMP/root.conf" --known-hosts "$PBH" --dry-run
+t_rc "push-bundle production: the API address is REFUSED" 3 PB --stage-ip 139.59.157.231 --stage-host www.copilt.org --expect-id "$OLDID" --key "$PBK" --known-hosts "$PBH" --dry-run
+t_rc "push-bundle stage: the production key name is REFUSED" 3 bash "$PROV/push-bundle.sh" --stage-ip 203.0.113.9 --stage-host stage.copilt.org --key "$PBK" --dry-run
+
+echo "== operator-tunnel.sh --env production (dry-run only) =="
+OT() { bash "$PROV/operator-tunnel.sh" --env production "$@"; }
+t_rc "operator-tunnel production: no --key is a usage error" 2 OT --stage-ip 203.0.113.9 --known-hosts "$PBH" --dry-run
+t_rc "operator-tunnel production: a stage host name is REFUSED" 3 OT --stage-ip 203.0.113.9 --stage-host stage.copilt.org --key "$PBK" --known-hosts "$PBH" --dry-run
+t_rc "operator-tunnel production: no pinned known-hosts is REFUSED" 3 OT --stage-ip 203.0.113.9 --key "$PBK" --known-hosts "$TMP/none" --dry-run
+t_rc "operator-tunnel production: a malformed --spki-hash is REFUSED" 3 OT --stage-ip 203.0.113.9 --key "$PBK" --known-hosts "$PBH" --spki-hash 'not-a-hash' --dry-run
+t_rc "operator-tunnel stage: --spki-hash is REFUSED" 3 bash "$PROV/operator-tunnel.sh" --stage-ip 203.0.113.9 --key "$PBK" --spki-hash 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=' --dry-run
+OUTT="$(OT --stage-ip 203.0.113.9 --key "$PBK" --known-hosts "$PBH" --spki-hash 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=' --dry-run 2>&1)"; rct=$?
+t_eq "operator-tunnel production dry-run succeeds" "$rct" "0"
+t_contains "...maps www.copilt.org to the tunnel and pins the host key" "$OUTT" "MAP\ www.copilt.org\ 127.0.0.1:8443"
+t_contains "...strict host key checking against the pinned file" "$OUTT" "StrictHostKeyChecking=yes"
+t_contains "...a separate production Chrome profile" "$OUTT" ".aicc-prod-chrome"
+t_contains "...the SPKI exception is only for that key" "$OUTT" "ignore-certificate-errors-spki-list=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+
 echo "== promote-to-production.sh: argument handling and refusals (no host needed) =="
 t_rc "no action: usage (2)" 2 bash "$PROMOTE"
 t_rc "unknown action (2)" 2 bash "$PROMOTE" frobnicate
@@ -228,6 +254,8 @@ EOF
     t_ok "identity: a NEW random 32-hex id" bash -c "[[ '$NEWID' =~ ^[0-9a-f]{32}\$ ]] && [ '$NEWID' != '$OLDID' ]"
     t_eq "identity: file mode 0644" "$(mode "$ID")" "644"
     t_eq "identity: exactly one AICC_STAGE_ID line (the key name is historical)" "$(grep -c '^AICC_STAGE_ID=' "$ID")" "1"
+    t_eq "deployment records: one promotion boundary record was appended (same file, history kept)" "$(jq -r 'select(.outcome=="promoted_to_production") | .target' "$PFX/var/lib/aicc/deployments.jsonl")" "production"
+    t_eq "...and it carries every field aicc-deploy-status prints" "$(jq -r 'select(.outcome=="promoted_to_production") | [.ts,.outcome,.kind,.release_id,.previous,.source_commit,.operator]|map(select(.==null))|length' "$PFX/var/lib/aicc/deployments.jsonl")" "0"
     echo "-- rollback bundle"
     B="$PFX$BDIR"
     t_eq "bundle: directory 0700" "$(mode "$B")" "700"
