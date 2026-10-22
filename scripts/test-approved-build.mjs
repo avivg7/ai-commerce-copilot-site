@@ -61,6 +61,8 @@ for (const r of ["privacy", "terms", "refund-policy", "data-and-trust", "accessi
   if (fs.readFileSync(path.join(OUT, r, "index.html"), "utf8").includes('data-translation-draft="true"')) errors.push(`${r}: the English page carries the machine-translation disclosure`);
 }
 if (!/legal pages ship with the machine-translation disclosure/.test(l.stdout)) errors.push("launch:check did not report that the translations ship with the machine-translation disclosure");
+// Every owner value is supplied on this build: the Data and trust page must stop saying that those details "will be published before launch".
+for (const loc of ["", "he/", "es/", "ru/"]) if (fs.readFileSync(path.join(OUT, loc, "data-and-trust/index.html"), "utf8").includes('id="dataTrust-pending"')) errors.push(`${loc || "en/"}data-and-trust: still carries the "What we haven't finalized" section although every owner value is supplied`);
 const priv = fs.readFileSync(path.join(OUT, "privacy/index.html"), "utf8");
 if (!priv.includes("support@example.test")) errors.push("support email value not rendered");
 const home = fs.readFileSync(path.join(OUT, "index.html"), "utf8");
