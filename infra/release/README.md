@@ -59,3 +59,8 @@ After the swap (and, for the Control Plane, the PHP-FPM reload) `smoke-cp.sh` / 
 ## Deployment record and status
 
 Every activation and rollback appends one JSON line to `/var/lib/aicc/deployments.jsonl` (0644; `AICC_DEPLOY_LOG` overrides in sandboxes): timestamp, outcome (`ok`, `rolled_back`, `critical`, `manual_rollback`), kind, release id, previous release, tarball sha256, source commit, build target, host and the sudo user (always the shared `aicc` account over the deploy path). A FIRST release that fails its health gate writes no record. `sudo aicc-deploy-status [--last N] [--json]` prints what is live, what the rollback target is (with sha256 prefix, commit and target of each build) and the last N records. `activation.log` in each kind directory additionally carries `sha256=... commit=... target=...` for the live release.
+
+
+## Plugin releases (private store, 2026-10-23)
+
+The AICC **Plugin** ZIP is not a site or Control Plane release: it is published into the Control Plane's private release store (`/srv/aicc/shared/plugin-releases`, `AICC_LM_PLUGIN_RELEASE_DIR`) with `infra/release/publish-plugin-release.sh` (Mac side: verifies the Plugin repo's `bin/build-release.sh` output locally, pushes it over the same fail-closed SSH gates as `deploy-release.sh`, then runs the Control Plane's `scripts/plugin-release/install-plugin-release.sh` as root with `--expect-sha256`; `--set-current` flips the pointer, `--point-at <version>` rolls back or forward; production is a dry run unless `--apply` and needs `--confirm-production <version>`). Tests: `infra/stack-tests/test_plugin_publish.sh` (stubs, plus a compatibility run of the real installer when its worktree exists). Runbook step: `docs/cutover/production-promotion.md` 6.10.

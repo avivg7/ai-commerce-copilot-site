@@ -284,9 +284,13 @@ step_db() {
 step_wpconfig() {
   step "wp-config (production template; new salts; owner-provided plugin secrets)"
   if is_done wpconfig; then info "already done"; return 0; fi
+  # the private Plugin release store the wp-config points at: created (never emptied) if missing; its content is NOT part of the staging state that is replaced
+  if is_dry; then would "ensure /srv/aicc/shared/plugin-releases exists (root:aicc-cp 0750; contents untouched)"; else
+    mkdir -p "$(P /srv/aicc/shared/plugin-releases)"; chmod 750 "$(P /srv/aicc/shared/plugin-releases)"; [ -n "$AICC_PREFIX" ] || chown root:aicc-cp /srv/aicc/shared/plugin-releases
+  fi
   local args=(--env production --confirm-production)
   is_dry && args+=(--dry-run)
-  if [ -n "$AICC_PREFIX" ]; then args+=(--out "$(P "$WPCFG")" --secrets-dir "$(P "$SECRETS")" --owner "$(id -un):$(id -gn)"); fi
+  if [ -n "$AICC_PREFIX" ]; then args+=(--out "$(P "$WPCFG")" --secrets-dir "$(P "$SECRETS")" --mail-dir "$(P /etc/aicc-mail)" --plugin-release-dir "$(P /srv/aicc/shared/plugin-releases)" --owner "$(id -un):$(id -gn)"); fi
   AICC_TEST_HARNESS="${AICC_TEST_HARNESS:-0}" bash "$SELF/render-wp-config.sh" "${args[@]}"
   mark_done wpconfig
 }

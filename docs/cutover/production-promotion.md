@@ -20,6 +20,8 @@ Related documents: `production-path.md` (configuration and deploy path), `runboo
 | D8 | **Deployment records continue** in the same `/var/lib/aicc/deployments.jsonl`; the promotion appends one boundary record (`outcome: promoted_to_production`), a rollback appends `demoted_to_staging`. `aicc-deploy-status` shows it. | Continuity of "what was live when" without rewriting history. | - |
 | D9 | **Mail:** production uses the Control Plane's SMTP layer, configured by constants + `/etc/aicc-mail/smtp.env` (section 8); staging's mail sink is not carried over. | See section 8. | The SMTP provider account is an owner action. |
 | D10 | **No deploy of the old tooling's assumptions:** `deploy-release.sh --env production` no longer refuses the Droplet's two addresses (it used to treat them as "the staging Droplet"); the identity gate (host says `AICC_ENV=production` with this name and id) is what protects a non-promoted host. | The owner decision above makes these addresses the production target. | A production deploy aimed at the Droplet BEFORE the promotion is refused by the identity gate (tested). |
+| D11 | **`AICC_LM_TRUSTED_PROXIES` stays EMPTY in production** (verified, below). | With `php_fastcgi` over a unix socket there is no proxy hop in front of PHP: Caddy's FastCGI transport passes the connection peer as `REMOTE_ADDR`, the edge strips every forwarding header (`X-Forwarded-For`, `Forwarded`, `X-Real-IP`, ... , so a client cannot forge one), and the plugin's `AICC_LM_Client_IP` uses `REMOTE_ADDR` unless the peer is listed. Evidence: (a) the real-Caddy + real php-fpm rehearsal (`scripts/rehearsal/run-tests.mjs` sections "php_fastcgi" and 2070-2081): PHP's `REMOTE_ADDR` is the real peer (`127.0.0.1`; `::1` over IPv6, which is a different bucket), forged `X-Forwarded-For` never reaches PHP, `cp_client_ip` (the value the rate limiters use) equals the peer; (b) on the live host the edge access log shows **10,682 distinct `remote_ip` values** in its last 20,000 lines (top address 3 %), i.e. Caddy sees real clients, and that is the value it hands to PHP; (c) the CP launch gate rule 5g-2 ("AICC_LM_TRUSTED_PROXIES is empty ... all clients share one bucket") describes a reverse-proxy topology and is a **false WARN here** (report-only; the CP should make it conditional on a non-fastcgi topology). Listing the edge address would change nothing (the header is stripped) and listing anything else would trust a client-controlled value if the strip lines were ever lost. Proof on the real host: step 6.7b. | - |
+| D12 | **The private Plugin release store `/srv/aicc/shared/plugin-releases` (`AICC_LM_PLUGIN_RELEASE_DIR`) is created by `install-stack.sh` and by the promotion (`root:aicc-cp 0750`, contents never touched by the promotion) and IS in the files archive of the backup.** | It is not under any web root (static root `/srv/aicc/site/current`, PHP docroot `/srv/aicc/cp/current`, uploads `/srv/aicc/shared/uploads`: a sibling, not a child), no Caddy route serves it, Caddy's group (`aicc-edge`) cannot read it, and PHP gets read-only access. Releases are immutable and re-publishable from the Plugin repo, but a rebuild is only byte-identical if the toolchain is, and customers' updaters verify against the stored manifest: copying ~1 MB per release is cheaper than reasoning about it. `aicc-restore` restores the store only when the archive carries one (an older archive never deletes the live store). | ~1 MB per release in every hourly archive (a handful of releases: negligible). |
 
 ### Secrets and who holds what
 
@@ -89,6 +91,7 @@ T-3d  owner gates that need lead time: Telegram bot + token on the host, DO aler
       second operator key + console recovery rehearsed (ssh-access.md 3.4)                                     (sections 7, 8; alerting.md)
 T-2d  build + validate (Mac) -> push bundle -> secrets placed -> check (read-only gates)                          step 6.1 - 6.3
 T-2d  STOP: owner approval -> apply (dark production) -> start -> wp-install -> seed -> first backup -> deploys   step 6.4 - 6.8
+      publish the first Plugin release (CP launch gate 5g)                                                      step 6.10
       LOWER DNS TTLs (section 7) the same day, after the host is dark and verified
 T-1d  soak 24 h dark: AICC Ops, hourly backups + Mac pulls, production-edge-check, DO policies, test alerts      step 6.9
 T0    STOP: owner approval (section 9) -> DNS edit -> final-edge -> verify -> HSTS 300 stays -> announce
@@ -232,6 +235,15 @@ infra/provision/operator-tunnel.sh --env production --stage-ip $HOSTIP --key ~/.
 ```
 Full route proof (270 matrix cases) is `npm run staging:replay` against the production topology; it requires the stage identity route and therefore cannot run against a production-identity host, so the dark gate is `production-edge-check.sh` plus the Mac rehearsal's 20-section replay already recorded (`rehearsal.md`); the **first full replay against the live names is step 9.4**.
 
+### 6.7b Client-address proof (why `AICC_LM_TRUSTED_PROXIES` stays empty, D11)
+
+The REST throttle is 30 requests per 60 s per client address. Two sources: the Mac (its public address) and the host's own loopback.
+```bash
+for i in $(seq 1 31); do curl -s -o /dev/null -w '%{http_code} ' --cacert ~/aicc-promotion/caddy-root.crt --resolve www.copilt.org:443:$HOSTIP -X POST -H 'Content-Type: application/json' -d '{"license_key":"smoke-test"}' https://www.copilt.org/wp-json/aicc-license/v1/validate; done; echo   # the 31st (at the latest) is 429
+$PSSH 'curl -s -o /dev/null -w "%{http_code}\n" -k --resolve www.copilt.org:443:127.0.0.1 -X POST -H "Content-Type: application/json" -d "{\"license_key\":\"smoke-test\"}" https://www.copilt.org/wp-json/aicc-license/v1/validate'   # a DIFFERENT source, same minute: NOT 429
+```
+If the second request is also 429, the buckets collapsed to one address: stop, and read `REMOTE_ADDR` as PHP sees it before touching any setting (the fix would be in the Caddy transport, not in a trusted-proxy list).
+
 ### 6.8 Backups, off-host copy, alerts in production mode
 
 ```bash
@@ -251,6 +263,23 @@ Then run the Telegram verification checklist (`alerting.md` section 1) so the pr
 ### 6.9 Soak (24 h dark)
 
 AICC Ops overview shows no CRITICAL; 24 hourly backups with Mac acks; `production-edge-check.sh` still green; the DO policies exist; the test alert (section 1c of `alerting.md`) was received; `aicc-cert-expiry` is off by design; `aicc-deploy-status` shows the expected releases; `aicc-restore scratch --production` of the newest set loads and fingerprints (non-destructive).
+
+### 6.10 Publish the first Plugin release (Control Plane launch gate 5g blocks launch until one is installed and verified)
+
+Needs the owner's decisions from the distribution workstream (first version number and customer-facing notes; `~/Downloads/AICC-launch-evidence/distribution/REPORT.md`). Build on the Mac from a clean Plugin commit, then publish; the host-side installer (`scripts/plugin-release/install-plugin-release.sh` of the Control Plane, run as root through sudo) re-validates everything, refuses an installed version being overwritten, and makes `current` atomic. **Never run this against the live host without approval of this step.**
+```bash
+PLUGW=~/Projects/ai-commerce-copilot-worktrees/<the approved Plugin worktree>; CPW="/Users/avivgerman/Local Sites/woo-recommendation-qa/aicc-control-plane-worktrees/<the approved CP worktree>"
+( cd "$PLUGW" && bin/build-release.sh --out ~/aicc-plugin-dist )                 # ZIP + .sha256 + manifest; refuses a dirty tree
+PV=<the version>; D=~/aicc-plugin-dist
+PUB="infra/release/publish-plugin-release.sh --env production --stage-host www.copilt.org --stage-ip $HOSTIP --stage-id $NEWID --key $HOME/.ssh/aicc_cp_prod_operator --known-hosts $HOME/.ssh/known_hosts_aicc_prod --installer $CPW/scripts/plugin-release/install-plugin-release.sh"
+$PUB --zip $D/ai-commerce-copilot-$PV.zip --manifest $D/ai-commerce-copilot-$PV.manifest.json --sha256-file $D/ai-commerce-copilot-$PV.zip.sha256 --confirm-production $PV            # DRY RUN (production default): prints the plan
+$PUB --zip ... --manifest ... --sha256-file ... --confirm-production $PV --apply                                                      # stage the release (current unchanged)
+$PUB --zip ... --manifest ... --sha256-file ... --confirm-production $PV --apply --set-current                                          # make it current (idempotent for the same bytes)
+$PSSH 'stat -c "%U:%G %a %n" /srv/aicc/shared/plugin-releases /srv/aicc/shared/plugin-releases/current'                                 # root:aicc-cp 750 / 640
+$PSSH 'sudo env AICC_PRODUCTION=1 aicc-wp eval-file /var/lib/aicc-cp/seed/check-launch-blockers.php | grep -i "plugin download"'          # "current release <PV> ... (verified now)", and NO 5g blocker
+# roll back / forward later (nothing is ever deleted):  $PUB --point-at <previous version> --confirm-production <previous version> --apply
+```
+The release store is outside every web root and no route serves it; `production-edge-check.sh` asserts `/plugin-releases/...` is not served. A customer-side download test needs a paid plan and therefore waits for the commerce work; the CP suite proves the entitlement-gated download against a fixture. The store is in the backup (D12): the first production backup after this step contains it.
 
 ## 7. DNS TTL lowering plan (DNS edits are the owner's; this task changes none)
 
@@ -331,3 +360,23 @@ $PSSH 'sudo aicc-rollback-release --kind site'      # or --kind cp
 **Proven on the Mac (not on the host):** the conversion script against a temp host prefix and a throwaway MySQL: gates (right machine id, owner secrets present/mode/format, pre-cutover render only), bundle, identity, secrets rotation, database replacement with new passwords, production wp-config render, edge/unit/ops installation, idempotent resume, start/wp-install argument handling (stubs), `final-edge` gated by DNS, `dark-edge`, full rollback to the staging state including the database; the real Caddy 2.11.7 validates both renders; the real edge preflight accepts the files the promotion writes and refuses the wrong combinations; the production backup/pull/restore chain with the production identity in an isolated target (dr-rehearsal-production-mode.json: 58-table schema, 0 differing fingerprint lines after recovery from the off-host copy, 2.3 s isolated RTO); `npm run infra:test` 1,000+ checks, `ops:test`, `sentinel:test`.
 **Measured read-only on the host:** AICC Ops 24 h / 7 d metrics (`alerting.md` 1a), `aicc-restore scratch` of a real dump on the host's hardware (9.07 s load + fingerprint, live database untouched), outbound 2525/2587 reachability, the installed AICC Ops files are byte-identical to the repository.
 **Not proven (needs the host and the owner):** the conversion on the real host (`systemctl`, real MySQL 8.0, real `aicc-wp`), `wp core install --prompt` over a piped TTY, a production Caddy start on Linux with `tls internal`, the Let's Encrypt issuance for `www` and the apex, the final-edge restart gap, IPv6 (no AAAA is published and the guest has none), SMTP delivery, Telegram delivery, DigitalOcean emails, the GitHub Actions sentinel, an end-to-end `aicc-restore live` in production mode (it can only run on the real host; the staging-mode run is 60.4 s, `README-backup.md`).
+
+## 13. Host-readiness checklist (everything that must be green before the cutover gate, with the command that shows it)
+
+| # | Item | Command / evidence | Source |
+|---|---|---|---|
+| 1 | Identity is production, id recorded | `$PSSH 'cat /etc/aicc-stage-identity'` | 6.4 |
+| 2 | Services up, dark edge, cert timer off until cutover | `systemctl is-active mysql php8.3-fpm aicc-edge aicc-ops aicc-wp-cron.timer aicc-backup.timer` | 6.4 |
+| 3 | Production wp-config rendered from the production template; no staging host; webhook URL + owner secrets; `AICC_LM_PLUGIN_RELEASE_DIR` set; `AICC_LM_TRUSTED_PROXIES` empty (D11); mail region only with a valid `smtp.env` | `$PSSH 'sudo grep -c "stage.copilt.org" /srv/aicc/shared/wp-config.php'` must print 0 | 6.4, 8 |
+| 4 | Fresh WordPress at `https://www.copilt.org`, `blog_public` not 0, `coming_soon` still `yes` until a gateway exists | `aicc-wp option get home siteurl blog_public woocommerce_coming_soon` | 6.5 |
+| 5 | Seeded products, account-required checkout, legal documents; CP launch checker run (it lists the open launch items) | `check-launch-blockers.php` | 6.5 |
+| 6 | **Plugin release store holds a verified current release (rule 5g)** | step 6.10 | 6.10 |
+| 7 | Production site build deployed (no identity route, no noindex) | `production-edge-check.sh` 0 failed | 6.6, 6.7 |
+| 8 | Client addresses are per-source (rate-limit buckets do not collapse) | 6.7b | D11 |
+| 9 | Hourly backups ok, `restore_check ok`, Mac pull acknowledged for the production set, plugin store inside the archive | `status.json`, `offhost-ack.json`, `tar -tzf` | 6.8 |
+| 10 | Telegram TEST + WARNING/RECOVERED received, leak audit CLEAN; DO policies confirmed by the test e-mail | `alerting.md` 1b, 3 | alerting |
+| 11 | Mail: port 2525 open, `aicc-mail check|send-test|health --strict` green (or consciously accepted as "no customer mail yet") | 8 | email |
+| 12 | Second operator key + console recovery rehearsed; SSH-22 decision | `ssh-access.md` | |
+| 13 | CAA records published, DNS TTLs at 300 s for 24 h, `edge.copilt.org` A record in place | 7 | |
+| 14 | Observers: Mac sentinel on `targets.production.toml` ready, the Actions sentinel repo staged (not enabled before DNS) | 9.1, 10.2 | |
+| 15 | 24 h soak clean | 6.9 | |

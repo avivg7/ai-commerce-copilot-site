@@ -7,7 +7,7 @@
 # What one run produces, in /srv/aicc/backups (dir 0751 root, files 0600 root, status.json 0644):
 #   aicc_cp-<UTC>-<label>.sql.gz         mysqldump --single-transaction --routines --triggers --events --no-tablespaces, via the unix socket, account aicc_backup
 #   aicc_cp-<UTC>-<label>.sql.gz.sha256  "<hash>  <file>" (sha256sum -c compatible)
-#   aicc-files-<UTC>-<label>.tar.gz      WordPress persistent files in a SEPARATE 0600 archive: shared/uploads, shared/wp-config.php (secrets!), /etc/aicc-edge, /etc/aicc-ops/aicc-ops.toml (not its secrets.env),
+#   aicc-files-<UTC>-<label>.tar.gz      WordPress persistent files in a SEPARATE 0600 archive: shared/uploads, shared/plugin-releases (the private Plugin release store), shared/wp-config.php (secrets!), /etc/aicc-edge, /etc/aicc-ops/aicc-ops.toml (not its secrets.env),
 #                                        and pointers.txt (what site/cp current+previous pointed to). Caddy's certificate storage is NOT included (re-issuable,
 #                                        private keys stay on the host; use aicc-caddy-storage-backup for a deliberate encrypted copy).
 #   aicc-files-<UTC>-<label>.tar.gz.sha256
@@ -233,6 +233,8 @@ add_item() { # add_item <absolute path> : archived relative to /
   if [ -e "$1" ]; then TAR_ITEMS+=("${1#/}"); FILE_PATHS+=("$1"); else b_log "note: $1 does not exist (skipped)"; fi
 }
 add_item "$SHARED_DIR/uploads"; add_item "$SHARED_DIR/wp-config.php"; add_item "$EDGE_CONF"
+# the private Plugin release store (immutable ZIPs customers download + the `current` pointer; ~1 MB per release): included, because "rebuild it" is only as reproducible as the toolchain that day
+add_item "$SHARED_DIR/plugin-releases"
 # AICC Ops configuration (thresholds, host label); its secrets.env (Telegram) is deliberately NOT included
 if [ "$FIXTURE" = 0 ]; then add_item /etc/aicc-ops/aicc-ops.toml; fi
 if [ "$FIXTURE" = 0 ] && [ ! -f "$SHARED_DIR/wp-config.php" ]; then REASON="wp-config.php missing from $SHARED_DIR (a Control Plane without it cannot be restored)"; rm -rf "$PTR"; exit 1; fi

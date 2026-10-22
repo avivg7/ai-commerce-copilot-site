@@ -67,7 +67,7 @@ fi
 [ -f "$KEY" ] && [ -f "$OKEY" ] || { echo "key files not found" >&2; exit 2; }
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"; [ -n "$REPORT" ] || REPORT="$HOME/Downloads/AICC-cutover-evidence/linux-stage/dr-drill-$STAMP.json"
 if [ "$ENVN" = production ]; then KH="$KNOWN_HOSTS"; SHK=yes; else KH="$HOME/.ssh/known_hosts_aicc_stage"; SHK=accept-new; fi
-SSHO=(-i "$KEY" -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=15 -o StrictHostKeyChecking=$SHK -o UserKnownHostsFile="$KH" -o NumberOfPasswordPrompts=0)
+SSHO=(-i "$KEY" -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=15 -o StrictHostKeyChecking="$SHK" -o UserKnownHostsFile="$KH" -o NumberOfPasswordPrompts=0)
 if [ "$ENVN" = production ]; then RFLAG="--production"; WANT_ENV=production; CURLK=""; [ "$TLS" = dark ] && CURLK="-k"; else RFLAG=""; WANT_ENV=staging; CURLK=""; fi
 rem() { ssh "${SSHO[@]}" "aicc@$STAGE_IP" "$@"; }
 if [ "$DRY" = 1 ]; then echo "DRY-RUN: would run phases 0-6 against $STAGE_HOST ($STAGE_IP); report $REPORT. Nothing sent."; exit 0; fi

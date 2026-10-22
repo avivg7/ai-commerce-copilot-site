@@ -60,7 +60,7 @@ case "$KEY" in *aicc_digitalocean_prod*) refuse "never use the production key." 
 case "$LPORT" in 9111|9112|9113|9114|8981|8982|8983) refuse "port $LPORT belongs to the owner's QA fixtures" ;; esac
 CTL="$(mktemp -u "${TMPDIR:-/tmp}/aicc-tunnel.XXXXXX")"
 if [ "$ENVN" = production ]; then KH="$KNOWN_HOSTS"; SHK=yes; else KH="$HOME/.ssh/known_hosts_aicc_stage"; SHK=accept-new; fi
-SSH=(ssh -i "$KEY" -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=15 -o StrictHostKeyChecking=$SHK -o UserKnownHostsFile="$KH"
+SSH=(ssh -i "$KEY" -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=15 -o StrictHostKeyChecking="$SHK" -o UserKnownHostsFile="$KH"
      -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 -N -f -M -S "$CTL" -L "127.0.0.1:$LPORT:127.0.0.1:$RPORT" "$USER_NAME@$STAGE_IP")
 CHROME_APP="/Applications/Google Chrome.app"
 CHROME_ARGS=(--user-data-dir="$PROFILE" --host-resolver-rules="MAP $STAGE_HOST 127.0.0.1:$LPORT" --disable-quic --no-first-run --no-default-browser-check)

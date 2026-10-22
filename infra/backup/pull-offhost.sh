@@ -90,7 +90,7 @@ grep -q "PRIVATE KEY" "$KEY" 2>/dev/null || refuse "$KEY is not a private key fi
 [[ "$DEST" == /* ]] || { echo "--dest must be an absolute path" >&2; exit 2; }
 
 if [ "$ENVN" = production ]; then KH="$KNOWN_HOSTS"; SHK=yes; else KH="$HOME/.ssh/known_hosts_aicc_stage"; SHK=accept-new; fi
-SSH=(ssh -i "$KEY" -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=15 -o StrictHostKeyChecking=$SHK -o UserKnownHostsFile="$KH" -o ServerAliveInterval=15 "$USER_NAME@$STAGE_IP")
+SSH=(ssh -i "$KEY" -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=15 -o StrictHostKeyChecking="$SHK" -o UserKnownHostsFile="$KH" -o ServerAliveInterval=15 "$USER_NAME@$STAGE_IP")
 rem() { "${SSH[@]}" "$@"; }
 ts() { date -u +%Y-%m-%dT%H:%M:%SZ; }
 LOG="$DEST/pull.log"

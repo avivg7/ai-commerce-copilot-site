@@ -97,9 +97,15 @@ define( 'AICC_MAIL_REPLY_TO', 'support@copilt.org' );
 // ---- AICC Control Plane plugin ---------------------------------------------------------------------------------------------------------------------
 // Client IP: the plugin trusts X-Forwarded-For only from addresses listed here. EMPTY on purpose: PHP-FPM receives the real TCP peer as REMOTE_ADDR
 // from Caddy's FastCGI transport, so REMOTE_ADDR already IS the client (or 127.0.0.1 for an operator coming through the SSH tunnel).
+// VERIFIED 2026-10-23 (real-Caddy + real php-fpm rehearsal; the live edge log shows thousands of distinct client addresses): with php_fastcgi over a unix socket PHP's REMOTE_ADDR IS the client and every
+// forwarding header is stripped at the edge, so this stays EMPTY (docs/cutover/production-promotion.md D11). Listing any address would only create a path to trust a client-supplied header.
 define( 'AICC_LM_TRUSTED_PROXIES', array() );
 // Operators exempt from the login throttle: loopback only (the SSH tunnel). Nobody on the public internet is exempt.
 define( 'AICC_LM_OPERATOR_CIDRS', array( '127.0.0.1/32', '::1/128' ) );
+// Private Plugin release store (docs/plugin-delivery.md in the Control Plane): the immutable ZIPs customers download and the `current` pointer. ABSOLUTE, OUTSIDE every web root (the static root is
+// /srv/aicc/site/current, the PHP docroot /srv/aicc/cp/current; this directory is a sibling of uploads under /srv/aicc/shared and no Caddy route serves it), root:aicc-cp 0750 so PHP-FPM can read and
+// nothing but scripts/plugin-release/install-plugin-release.sh (run as root by infra/release/publish-plugin-release.sh) can write. Same value on staging and production (pinned by test_provision.sh).
+define( 'AICC_LM_PLUGIN_RELEASE_DIR', '/srv/aicc/shared/plugin-releases' );
 // CP -> Backend entitlement webhook: https, the production API host only (the Control Plane launch gate scripts/check-launch-blockers.php, enforced with AICC_PRODUCTION=1,
 // refuses a configuration whose effective URL is not https on the API host or whose outbound allow-list does not contain it).
 define( 'AICC_ENTITLEMENT_WEBHOOK_URL', 'https://api.copilt.org/v1/internal/entitlement/webhook' );

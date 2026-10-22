@@ -22,7 +22,7 @@
 #   safety_backup   aicc-backup --label manual  (what exists now is never destroyed without a copy; --no-safety-backup only for a drill that already has one)
 #   quiesce         stop aicc-wp-cron.timer/service and php8.3-fpm (no writer while the database is replaced)
 #   db_restore      DROP/CREATE the database, load the dump as root over the socket (definers kept), re-grant the application user
-#   files_restore   extract uploads, wp-config.php, /etc/aicc-edge and /etc/aicc-ops/aicc-ops.toml from the archive (paths are checked first: only those four roots are accepted; pointers.txt is read, never extracted)
+#   files_restore   extract uploads, plugin-releases (only if the archive has them), wp-config.php, /etc/aicc-edge and /etc/aicc-ops/aicc-ops.toml from the archive (paths are checked first: only those four roots are accepted; pointers.txt is read, never extracted)
 #   perms           ownership, modes, setgid, ACLs exactly as install-stack.sh creates them
 #   start           start php8.3-fpm and the cron timer
 #   health_gate     smoke-cp.sh (PHP + wp-config + DB + WordPress + WooCommerce + plugin), loopback /healthz through the edge, WordPress siteurl read back
@@ -100,7 +100,7 @@ verify_files() {
   # members), no devices, no absolute or .. names. `tar -tvz` prefixes every member with its type character.
   local listing; listing="$(tar -tvzf "$FILES")" || return 1
   if printf '%s\n' "$listing" | cut -c1 | grep -qvE '^[-d]$'; then echo "the archive contains members that are not plain files or directories (links, devices...)" >&2; return 1; fi
-  if tar -tzf "$FILES" | grep -vE '^(srv/aicc/shared/(uploads|wp-config\.php)|etc/aicc-edge|etc/aicc-ops/aicc-ops\.toml|pointers\.txt)(/|$)' | grep -q .; then echo "the archive contains paths outside the allowed roots" >&2; return 1; fi
+  if tar -tzf "$FILES" | grep -vE '^(srv/aicc/shared/(uploads|plugin-releases|wp-config\.php)|etc/aicc-edge|etc/aicc-ops/aicc-ops\.toml|pointers\.txt)(/|$)' | grep -q .; then echo "the archive contains paths outside the allowed roots" >&2; return 1; fi
   if tar -tzf "$FILES" | grep -qE '(^|/)\.\.(/|$)|^/'; then echo "the archive contains unsafe paths" >&2; return 1; fi
   # the archive must have been taken on THIS host: a files archive from another environment would replace wp-config.php with that environment's configuration
   local want_id have_id
@@ -200,6 +200,8 @@ s_db() {
 s_files() {
   [ "$FILES" = "none" ] && return 0
   rm -rf "$SHARED/uploads" || return 1; rm -f "$SHARED/wp-config.php" || return 1
+  # the Plugin release store is replaced only when the archive carries one (an archive taken before it existed must not delete the live store)
+  if tar -tzf "$FILES" | grep -q '^srv/aicc/shared/plugin-releases/'; then rm -rf "$SHARED/plugin-releases" || return 1; fi
   tar -xzpf "$FILES" -C / --no-same-owner --exclude=pointers.txt || return 1
 }
 s_perms() {
@@ -208,6 +210,9 @@ s_perms() {
   find "$SHARED/uploads" -perm /6000 ! -type d -exec chmod ug-s {} + || return 1        # a setuid/setgid file from an archive is never kept
   chown -R aicc-cp:aicc-edge "$SHARED/uploads" || return 1; chmod 2750 "$SHARED/uploads" || return 1
   setfacl -m "u:aicc:rx,g:aicc-edge:rx" "$SHARED/uploads" || return 1; setfacl -d -m "u:aicc:rx,g:aicc-edge:rx,o::---" "$SHARED/uploads" || return 1
+  if [ -d "$SHARED/plugin-releases" ]; then   # root:aicc-cp 0750 dirs / 0640 files: PHP reads, nothing but the installer writes
+    chown -R root:aicc-cp "$SHARED/plugin-releases" || return 1; find "$SHARED/plugin-releases" -type d -exec chmod 750 {} + || return 1; find "$SHARED/plugin-releases" -type f -exec chmod 640 {} + || return 1
+  fi
   if [ -f "$SHARED/wp-config.php" ]; then chown root:aicc-cp "$SHARED/wp-config.php" || return 1; chmod 640 "$SHARED/wp-config.php" || return 1; fi
   chown -R root:aicc-edge /etc/aicc-edge || return 1; chmod 750 /etc/aicc-edge || return 1
   if [ -f /etc/aicc-ops/aicc-ops.toml ]; then chown root:aicc-ops /etc/aicc-ops/aicc-ops.toml && chmod 640 /etc/aicc-ops/aicc-ops.toml || return 1; fi

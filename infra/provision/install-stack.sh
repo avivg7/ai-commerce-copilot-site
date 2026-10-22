@@ -153,6 +153,7 @@ step_users_dirs() {
   done
   ensure_dir 0755 root:root /srv/aicc/shared
   ensure_dir 2750 aicc-cp:aicc-edge /srv/aicc/shared/uploads
+  ensure_dir 0750 root:aicc-cp /srv/aicc/shared/plugin-releases   # private Plugin release store (AICC_LM_PLUGIN_RELEASE_DIR): PHP reads, only the root installer writes; not under any web root, not group aicc-edge (Caddy cannot read it)
   ensure_dir 0751 root:root /srv/aicc/backups        # x for others so AICC Ops can open status.json by name; dumps inside are 0600 root
   ensure_dir 0755 root:root /var/lib/aicc
   ensure_dir 0755 root:root /var/lib/aicc/status

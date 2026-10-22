@@ -128,7 +128,7 @@ req lp "$HOST" https "/wp-login.php?action=lostpassword"
 chk "/wp-login.php?action=lostpassword is 403 on the public listener (customers use /my-account/lost-password/)" "$([ "$(st lp)" = 403 ]; echo $?)"
 req idn "$HOST" https /.well-known/aicc-stage-identity
 chk "no staging identity route (404; a rehearsal or staging edge FAILS this on purpose)" "$([ "$(st idn)" = 404 ]; echo $?)"
-for p in /package.json /composer.json /.env /.git/config /wp-config.php /readme.html /wp-content/debug.log /license.txt; do
+for p in /package.json /composer.json /.env /.git/config /wp-config.php /readme.html /wp-content/debug.log /license.txt /plugin-releases/ /plugin-releases/current /srv/aicc/shared/plugin-releases/current; do
   req "m$$" "$HOST" https "$p"; c="$(st "m$$")"; chk "$p is not served ($c)" "$([ "$c" = 404 ] || [ "$c" = 403 ] || [ "$c" = 301 ] || [ "$c" = 308 ]; echo $?)"
 done
 

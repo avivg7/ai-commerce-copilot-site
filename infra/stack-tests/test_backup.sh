@@ -13,11 +13,12 @@ FXSOCK="$HOME/aicc-rehearsal/cp/mysql.sock"
 echo "== fixture run (database aicc_rehearsal_cp only) =="
 if [ -S "$FXSOCK" ] && [ -x "$LOCALMY/mysqldump" ]; then
   FXCNF="$TMP/fx.cnf"; printf '[client]\nuser=root\nsocket=%s\n' "$FXSOCK" > "$FXCNF"; chmod 600 "$FXCNF"
-  mkdir -p "$TMP/shared/uploads" "$TMP/edge"; echo up > "$TMP/shared/uploads/a.txt"; echo "<?php" > "$TMP/shared/wp-config.php"; echo cfg > "$TMP/edge/Caddyfile"
+  mkdir -p "$TMP/shared/uploads" "$TMP/edge"; echo up > "$TMP/shared/uploads/a.txt"; echo "<?php" > "$TMP/shared/wp-config.php"; echo cfg > "$TMP/edge/Caddyfile"; mkdir -p "$TMP/shared/plugin-releases/1.2.0"; echo 1.2.0 > "$TMP/shared/plugin-releases/current"; echo PK > "$TMP/shared/plugin-releases/1.2.0/z.zip"
   FX() { MYSQL_BIN="$LOCALMY/mysql" MYSQLDUMP_BIN="$LOCALMY/mysqldump" bash "$BKP/$1" --fixture-test --mysql-defaults-file "$FXCNF" --db aicc_rehearsal_cp --restore-db aicc_rehearsal_restore_check "${@:2}"; }
   BEFORE="$("$LOCALMY/mysql" --defaults-extra-file="$FXCNF" -N -e "SELECT COUNT(*) FROM aicc_rehearsal_cp.rhsl_options")"
   t_ok "fixture backup succeeds (dump, gzip -t, trailer, restore smoke, files archive)" FX aicc-backup.sh --backup-dir "$TMP/bk" --shared-dir "$TMP/shared" --edge-conf-dir "$TMP/edge" --release-root "$TMP/rel" --label manual
   t_eq "status.json: ok" "$(jq -r .status "$TMP/bk/status.json")" "ok"
+  t_ok "the files archive carries the private Plugin release store (current pointer + immutable release)" bash -c "tar -tzf \"$TMP\"/bk/aicc-files-*.tar.gz | grep -q 'plugin-releases/current' && tar -tzf \"$TMP\"/bk/aicc-files-*.tar.gz | grep -q 'plugin-releases/1.2.0/z.zip'"
   t_eq "status.json: restore_check ok" "$(jq -r .db_dump.restore_check "$TMP/bk/status.json")" "ok"
   t_eq "status.json: 57 tables restored" "$(jq -r .db_dump.tables "$TMP/bk/status.json")" "$("$LOCALMY/mysql" --defaults-extra-file="$FXCNF" -N -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='aicc_rehearsal_cp'")"
   t_eq "status.json has the keys AICC Ops needs (status, finished_epoch, last_success)" "$(jq -r '[has("status"), has("finished_epoch"), has("last_success")] | all' "$TMP/bk/status.json")" "true"
@@ -294,6 +295,8 @@ def make(fn, members, pointers):
         if pointers is not None: add(t, "pointers.txt", pointers.encode())
 good = [("srv/aicc/shared/wp-config.php", b"<?php"), ("srv/aicc/shared/uploads/a.jpg", b"img")]
 make("good.tgz", good, "# x\nhost_identity " + ident + "\n")
+make("withreleases.tgz", good + [("srv/aicc/shared/plugin-releases/current", b"1.2.0\n"), ("srv/aicc/shared/plugin-releases/1.2.0/ai-commerce-copilot-1.2.0.zip", b"PK")], "host_identity " + ident + "\n")
+make("badrelease.tgz", good + [("srv/aicc/shared/plugin-releases-evil/x", b"x")], "host_identity " + ident + "\n")
 make("hardlink.tgz", good + [("srv/aicc/shared/uploads/h", b"", tarfile.LNKTYPE, "etc/shadow")], "host_identity " + ident + "\n")
 make("symlink.tgz", good + [("srv/aicc/shared/uploads/l", b"", tarfile.SYMTYPE, "/etc")], "host_identity " + ident + "\n")
 make("abspath.tgz", good + [("/etc/cron.d/x", b"x")], "host_identity " + ident + "\n")
@@ -307,6 +310,9 @@ PY
 RV() { env AICC_TEST_HARNESS=1 AICC_IDENTITY_FILE="$IDF" bash "$BKP/aicc-restore.sh" verify "$@"; }
 sha() { shasum -a 256 "$1" | cut -d' ' -f1; }
 DG="$RS/good.sql.gz"; DH="$(sha "$DG")"
+t_ok "an archive that carries the private Plugin release store verifies (plugin-releases is an allowed root)" RV --dump "$DG" --sha256 "$DH" --files "$RS/withreleases.tgz" --files-sha256 "$(sha "$RS/withreleases.tgz")"
+t_fail "a look-alike root (plugin-releases-evil) is still refused" RV --dump "$DG" --sha256 "$DH" --files "$RS/badrelease.tgz" --files-sha256 "$(sha "$RS/badrelease.tgz")"
+t_ok "restore only replaces the release store when the archive has one (text gate)" bash -c "grep -q \"plugin-releases/'; then rm -rf\" '$BKP/aicc-restore.sh'"
 t_ok "a clean dump and archive verify" RV --dump "$DG" --sha256 "$DH" --files "$RS/good.tgz" --files-sha256 "$(sha "$RS/good.tgz")"
 t_rc "verify without an out-of-band hash is refused" 1 RV --dump "$DG" --files none
 t_rc "a wrong dump hash is refused" 1 RV --dump "$DG" --sha256 "$(printf '0%.0s' $(seq 64))" --files none

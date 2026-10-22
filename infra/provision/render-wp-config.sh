@@ -19,7 +19,7 @@ set -euo pipefail
 SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$SELF/lib/common.sh"
 TEMPLATE=""; ENVN="stage"; CONFIRM=0; OUT="/srv/aicc/shared/wp-config.php"; SECRETS="/etc/aicc/secrets"; FORCE_SALTS=0
-DB="aicc_cp"; DBUSER="aicc_cp"; OWNER="root:aicc-cp"; MAILDIR="/etc/aicc-mail"
+DB="aicc_cp"; DBUSER="aicc_cp"; OWNER="root:aicc-cp"; MAILDIR="/etc/aicc-mail"; RELDIR="/srv/aicc/shared/plugin-releases"
 while [ $# -gt 0 ]; do
   case "$1" in
     --dry-run) AICC_DRY_RUN=1; shift ;;
@@ -30,6 +30,7 @@ while [ $# -gt 0 ]; do
     --out) OUT="$2"; shift 2 ;;
     --secrets-dir) SECRETS="$2"; shift 2 ;;
     --mail-dir) MAILDIR="$2"; shift 2 ;;
+    --plugin-release-dir) RELDIR="$2"; shift 2 ;;
     --owner) OWNER="$2"; shift 2 ;;
     -h|--help) sed -n 2,10p "${BASH_SOURCE[0]}"; exit 0 ;;
     *) die "unknown argument: $1" ;;
@@ -88,6 +89,11 @@ if [ "$ENVN" = production ]; then
     case "$m" in 600|400) ;; *) die "REFUSED: $SECRETS/$f must be mode 0600 (is $m)" ;; esac
   done
 fi
+# The private Plugin release store the template points at (AICC_LM_PLUGIN_RELEASE_DIR): a missing or wrongly owned directory is a WARNING here (the install/promotion path creates it; the Control
+# Plane launch gate 5g blocks launch until it holds a verified release), never a reason to refuse the render.
+if [ ! -d "$RELDIR" ]; then warn "$RELDIR does not exist yet: the Plugin download will report 'not configured' until it is created (root:aicc-cp 0750; install-stack.sh / promote-to-production.sh create it)"
+elif [ "${AICC_TEST_HARNESS:-0}" != "1" ] && [ "$(stat -c '%U:%G %a' "$RELDIR")" != "root:aicc-cp 750" ]; then warn "$RELDIR is $(stat -c '%U:%G %a' "$RELDIR"), expected root:aicc-cp 750"
+elif [ "${AICC_TEST_HARNESS:-0}" = "1" ] && [ "$(stat -c '%a' "$RELDIR" 2>/dev/null || stat -f '%Lp' "$RELDIR")" != "750" ]; then warn "$RELDIR must be mode 750"; fi
 umask 077
 mkdir -p "$SECRETS"; chmod 700 "$SECRETS"
 [ -s "$SECRETS/db-cp.pass" ] || die "$SECRETS/db-cp.pass missing: run create-staging-db.sh first"
