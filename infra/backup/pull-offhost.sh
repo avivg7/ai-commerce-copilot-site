@@ -6,6 +6,11 @@
 #
 #   infra/backup/pull-offhost.sh --stage-ip <IPV4> [--stage-host stage.copilt.org] [--key ~/.ssh/aicc_cp_stage_offhost] [--user aicc-offhost]
 #                                [--dest ~/aicc-offhost-backups-stage] [--keep N] [--no-files-archive] [--no-ack] [--dry-run]
+#   PRODUCTION (the staging Droplet promoted in place, docs/cutover/production-promotion.md; nothing is defaulted, every name below is different from the staging one on purpose):
+#   infra/backup/pull-offhost.sh --env production --stage-ip <IPV4> --stage-host www.copilt.org --expect-id <32 hex> [--key ~/.ssh/aicc_cp_prod_offhost]
+#                                [--dest ~/aicc-offhost-backups-production] [--known-hosts ~/.ssh/known_hosts_aicc_prod_cp] ...
+#     production tightens only: host name exactly www.copilt.org; key file named aicc_cp_prod_offhost* (never the staging or the API Droplet's key); the host key PINNED beforehand
+#     (StrictHostKeyChecking=yes, no trust on first use); the host identity must say AICC_ENV=production with this host name AND the id given in --expect-id.
 #
 # TRANSPORT: the default key/user is the RESTRICTED pull account (install-offhost-access.sh): sshd forces every login of that account into
 # /usr/local/sbin/aicc-offhost-serve, which only understands `identity`, `status`, `get <backup file>` and `ack ...`. This script therefore sends those four
@@ -16,7 +21,7 @@
 #   * refuses the production API address 139.59.157.231 (and the other public addresses in the deny list), refuses any key whose file name looks like the
 #     production key (aicc_digitalocean_prod*), refuses --stage-host values other than stage*.copilt.org.
 #   * only the dedicated pull key is used (ssh -i KEY -o IdentitiesOnly=yes -o BatchMode=yes); no agent keys, no default identities.
-#   * refuses to continue unless the host presents /etc/aicc-stage-identity with AICC_ENV=staging (and AICC_HOSTNAME equal to --stage-host).
+#   * refuses to continue unless the host presents /etc/aicc-stage-identity with AICC_ENV=staging (production: AICC_ENV=production + the id) and AICC_HOSTNAME equal to --stage-host.
 #   * file names come from the server's status.json but are re-validated against a strict pattern before use (no path traversal from a hostile server).
 #   * a copy is accepted only if: sha256 of the received bytes == the server's .sha256 sidecar == the hash recorded in status.json, and gzip -t passes.
 #   * writes no secrets. Note: the files archive contains the host's wp-config.php (DB password, salts) and uploads: dest dir is 0700, files 0600. Keep this
@@ -27,7 +32,7 @@
 set -euo pipefail
 umask 077
 
-STAGE_IP=""; STAGE_HOST="stage.copilt.org"; KEY="$HOME/.ssh/aicc_cp_stage_offhost"; USER_NAME="aicc-offhost"; DEST="$HOME/aicc-offhost-backups-stage"; KEEP=""
+STAGE_IP=""; STAGE_HOST=""; KEY=""; USER_NAME="aicc-offhost"; DEST=""; KEEP=""; ENVN="stage"; EXPECT_ID=""; KNOWN_HOSTS=""
 WITH_FILES=1; DRY=0; ACK=1
 DENY_IPS="139.59.157.231 185.199.108.153 185.199.109.153 185.199.110.153 185.199.111.153"
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../provision/lib/ip-guard.sh"   # strict address check (security review L5)
@@ -39,6 +44,9 @@ while [ $# -gt 0 ]; do
     --user) USER_NAME="${2:-}"; shift 2 ;;
     --dest) DEST="${2:-}"; shift 2 ;;
     --keep) KEEP="${2:-}"; shift 2 ;;
+    --env) ENVN="${2:-}"; shift 2 ;;
+    --expect-id) EXPECT_ID="${2:-}"; shift 2 ;;
+    --known-hosts) KNOWN_HOSTS="${2:-}"; shift 2 ;;
     --no-files-archive) WITH_FILES=0; shift ;;
     --no-ack) ACK=0; shift ;;
     --dry-run) DRY=1; shift ;;
@@ -47,12 +55,32 @@ while [ $# -gt 0 ]; do
   esac
 done
 refuse() { echo "REFUSED: $*" >&2; exit 3; }
+case "$ENVN" in stage|production) ;; *) echo "--env must be stage or production" >&2; exit 2 ;; esac
+if [ "$ENVN" = production ]; then
+  [ -n "$STAGE_HOST" ] || STAGE_HOST="www.copilt.org"
+  [ -n "$KEY" ] || KEY="$HOME/.ssh/aicc_cp_prod_offhost"
+  [ -n "$DEST" ] || DEST="$HOME/aicc-offhost-backups-production"
+  [ -n "$KNOWN_HOSTS" ] || KNOWN_HOSTS="$HOME/.ssh/known_hosts_aicc_prod_cp"
+else
+  [ -n "$STAGE_HOST" ] || STAGE_HOST="stage.copilt.org"
+  [ -n "$KEY" ] || KEY="$HOME/.ssh/aicc_cp_stage_offhost"
+  [ -n "$DEST" ] || DEST="$HOME/aicc-offhost-backups-stage"
+fi
 [ -n "$STAGE_IP" ] || { echo "usage: $0 --stage-ip <ipv4> [options]  (the host is never guessed)" >&2; exit 2; }
 [[ "$STAGE_IP" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]] || refuse "--stage-ip must be a literal IPv4 address"
 for d in $DENY_IPS; do [ "$STAGE_IP" = "$d" ] && refuse "$STAGE_IP is a production/public address, not the staging Droplet."; done
 aicc_ip_guard "$STAGE_IP" "--stage-ip " || exit 3
-[[ "$STAGE_HOST" =~ ^stage[a-z0-9-]*\.copilt\.org$ ]] || refuse "--stage-host must look like stage.copilt.org (production names are refused)"
-case "$STAGE_HOST" in www.copilt.org|copilt.org|api.copilt.org) refuse "$STAGE_HOST is a production hostname." ;; esac
+if [ "$ENVN" = production ]; then
+  [ "$STAGE_HOST" = "www.copilt.org" ] || refuse "--env production pulls from the host named exactly www.copilt.org (got $STAGE_HOST)"
+  [[ "$EXPECT_ID" =~ ^[0-9a-f]{32}$ ]] || refuse "--env production needs --expect-id <the 32-hex id from the host identity>: it binds the pull to THIS machine"
+  case "$(basename "$KEY")" in aicc_cp_prod_offhost*) ;; *) refuse "the production pull key must be named aicc_cp_prod_offhost* (got $(basename "$KEY"))" ;; esac
+  [ -s "$KNOWN_HOSTS" ] || refuse "--env production needs a PINNED known-hosts file ($KNOWN_HOSTS): no trust on first use for the host that holds customer data"
+  ssh-keygen -F "$STAGE_IP" -f "$KNOWN_HOSTS" >/dev/null 2>&1 || refuse "the pinned known-hosts file has no entry for $STAGE_IP"
+else
+  [[ "$STAGE_HOST" =~ ^stage[a-z0-9-]*\.copilt\.org$ ]] || refuse "--stage-host must look like stage.copilt.org (production names are refused)"
+  case "$STAGE_HOST" in www.copilt.org|copilt.org|api.copilt.org) refuse "$STAGE_HOST is a production hostname." ;; esac
+  case "$(basename "$KEY")" in aicc_cp_prod*) refuse "the production pull key is not used for staging." ;; esac
+fi
 case "$(basename "$KEY")" in aicc_digitalocean_prod*) refuse "never use the production key." ;; esac
 case "$KEY" in *aicc_digitalocean_prod*) refuse "never use the production key." ;; esac
 [ -f "$KEY" ] || { echo "no such key file: $KEY" >&2; exit 2; }
@@ -61,8 +89,8 @@ grep -q "PRIVATE KEY" "$KEY" 2>/dev/null || refuse "$KEY is not a private key fi
 [ -z "$KEEP" ] || { [[ "$KEEP" =~ ^[0-9]+$ ]] && [ "$KEEP" -ge 2 ]; } || { echo "--keep must be a number >= 2" >&2; exit 2; }
 [[ "$DEST" == /* ]] || { echo "--dest must be an absolute path" >&2; exit 2; }
 
-KH="$HOME/.ssh/known_hosts_aicc_stage"
-SSH=(ssh -i "$KEY" -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=15 -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile="$KH" -o ServerAliveInterval=15 "$USER_NAME@$STAGE_IP")
+if [ "$ENVN" = production ]; then KH="$KNOWN_HOSTS"; SHK=yes; else KH="$HOME/.ssh/known_hosts_aicc_stage"; SHK=accept-new; fi
+SSH=(ssh -i "$KEY" -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=15 -o StrictHostKeyChecking="$SHK" -o UserKnownHostsFile="$KH" -o ServerAliveInterval=15 "$USER_NAME@$STAGE_IP")
 rem() { "${SSH[@]}" "$@"; }
 ts() { date -u +%Y-%m-%dT%H:%M:%SZ; }
 LOG="$DEST/pull.log"
@@ -75,7 +103,7 @@ bounded() { if command -v perl >/dev/null 2>&1; then perl -e 'alarm 900; exec @A
 sha_of() { if command -v shasum >/dev/null 2>&1; then shasum -a 256 "$1" | awk '{print $1}'; else sha256sum "$1" | awk '{print $1}'; fi; }
 
 if [ "$DRY" = 1 ]; then
-  echo "DRY-RUN: would ssh $USER_NAME@$STAGE_IP with key $KEY, verify the staging identity ($STAGE_HOST), read the backup status,"
+  echo "DRY-RUN: would ssh $USER_NAME@$STAGE_IP with key $KEY, verify the $ENVN identity ($STAGE_HOST), read the backup status,"
   echo "         pull the newest dump$([ $WITH_FILES = 1 ] && echo ' and files archive') with sha256 verification into $DEST, keep $KEEP copies."
   exit 0
 fi
@@ -91,9 +119,11 @@ if ! mkdir "$LOCK" 2>/dev/null; then
 fi
 echo $$ > "$LOCK/pid"; trap 'rm -rf "$LOCK"' EXIT
 
-ident="$(rem 'identity' 2>/dev/null)" || { say "FAILURE cannot ssh to the staging host"; exit 1; }
-echo "$ident" | grep -q '^AICC_ENV=staging$' || refuse "host does not present AICC_ENV=staging in /etc/aicc-stage-identity"
+ident="$(rem 'identity' 2>/dev/null)" || { say "FAILURE cannot ssh to the $ENVN host"; exit 1; }
+if [ "$ENVN" = production ]; then WANT_ENV=production; else WANT_ENV=staging; fi
+echo "$ident" | grep -q "^AICC_ENV=${WANT_ENV}\$" || refuse "host does not present AICC_ENV=$WANT_ENV in /etc/aicc-stage-identity"
 echo "$ident" | grep -q "^AICC_HOSTNAME=${STAGE_HOST}\$" || refuse "host identity AICC_HOSTNAME does not equal $STAGE_HOST"
+if [ "$ENVN" = production ]; then echo "$ident" | grep -q "^AICC_STAGE_ID=${EXPECT_ID}\$" || refuse "host identity id does not equal --expect-id (a different machine, or a host that was re-provisioned)"; fi
 
 status="$(rem "status" 2>/dev/null)" || { say "FAILURE cannot read status.json"; exit 1; }
 if [ "$(echo "$status" | jq -r '.status | tostring')" != "ok" ]; then

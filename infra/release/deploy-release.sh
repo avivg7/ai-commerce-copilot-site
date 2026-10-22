@@ -8,7 +8,7 @@
 #        --env production --kind site|cp --artifact ... --stage-host www.copilt.org --stage-ip <PRODUCTION IPV4> --stage-id <32 hex> --key ~/.ssh/aicc_cp_prod* \
 #        --known-hosts <pinned known_hosts file with the production host key> --confirm-production <the release id> [--dry-run] [--check-only]
 #      The same flags are reused so one implementation carries both environments; the production branch only ever TIGHTENS: the host name must be exactly www.copilt.org,
-#      the address may be neither a staging address nor one of the deny-listed public addresses (API Droplet, GitHub Pages), the key file must be named aicc_cp_prod*, the host
+#      the address may not be one of the deny-listed public addresses (API Droplet, GitHub Pages), the key file must be named aicc_cp_prod*, the host
 #      identity file must say AICC_ENV=production with this host name and id, a site artifact must be a PRODUCTION build (no identity route) from a clean commit, a cp artifact
 #      must come from a clean commit, and --confirm-production must equal the release id (a per-release, conscious owner step: it cannot be pasted once and forgotten).
 #      The connection always goes to --stage-ip: public DNS is never consulted, so a rehearsal or a deploy before the DNS cutover cannot reach the old site.
@@ -48,7 +48,10 @@ case "$ENVN" in stage|production) ;; *) echo "--env must be stage or production"
 aicc_ip_guard "$SIP" "--stage-ip " || exit 3
 if [ "$ENVN" = production ]; then
   [ "$SHOST" = "www.copilt.org" ] || refuse "--env production deploys to the host named exactly www.copilt.org (got $SHOST)"
-  for d in $DENY_IPS $STAGE_IPS; do [ "$SIP" = "$d" ] && refuse "$SIP is the API Droplet, a GitHub Pages address or the STAGING Droplet: none of them is the production Control Plane host."; done
+  # Owner decision 2026-10-22: the EXISTING staging Droplet (STAGE_IPS) is promoted in place to the initial production host (docs/cutover/production-promotion.md), so its addresses
+  # are no longer refused here. What stops a production release reaching a host that has NOT been promoted is the identity gate below (AICC_ENV=production + this host name + this id,
+  # read from the host before anything is uploaded) together with the pinned host key. Only the API Droplet and the GitHub Pages addresses stay refused outright.
+  for d in $DENY_IPS; do [ "$SIP" = "$d" ] && refuse "$SIP is the API Droplet or a GitHub Pages address: neither is the production Control Plane host."; done
   case "$(basename "$KEY")" in aicc_cp_prod*) ;; *) refuse "the production key file must be named aicc_cp_prod* (got $(basename "$KEY"))" ;; esac
   # the production host key must be PINNED beforehand (verified out of band, e.g. in the DigitalOcean console): no trust-on-first-use for the host that takes customer data
   [ -n "$KNOWN_HOSTS" ] && [ -s "$KNOWN_HOSTS" ] || refuse "--env production needs --known-hosts FILE holding the pinned host key of the production host (no trust on first use)"

@@ -10,6 +10,8 @@
 #                                                                 The live database, files and services are never touched.
 #   sudo aicc-restore live --dump FILE --files FILE|none --sha256 H --files-sha256 H --yes-replace-live
 #                          [--report FILE] [--no-safety-backup] [--no-health-gate] [--trust-sidecar] [--allow-no-identity] [--allow-new-host-id]
+#   PRODUCTION HOST (identity AICC_ENV=production): every action needs --production, `live` also needs --confirm-production-restore. The tool is otherwise identical; the flag exists so that
+#   a restore typed from staging muscle memory (no flag) is refused on the production host, and a --production restore is refused on a staging host.
 #                                                                 REPLACES the live database (and files): see the steps below.
 #
 # TRUST: for `live` the two hashes MUST be given out of band (--sha256, --files-sha256: take them from the copy that lives OFF the host, e.g. the Mac's
@@ -20,7 +22,7 @@
 #   safety_backup   aicc-backup --label manual  (what exists now is never destroyed without a copy; --no-safety-backup only for a drill that already has one)
 #   quiesce         stop aicc-wp-cron.timer/service and php8.3-fpm (no writer while the database is replaced)
 #   db_restore      DROP/CREATE the database, load the dump as root over the socket (definers kept), re-grant the application user
-#   files_restore   extract uploads, wp-config.php, /etc/aicc-edge and /etc/aicc-ops/aicc-ops.toml from the archive (paths are checked first: only those four roots are accepted; pointers.txt is read, never extracted)
+#   files_restore   extract uploads, plugin-releases (only if the archive has them), wp-config.php, /etc/aicc-edge and /etc/aicc-ops/aicc-ops.toml from the archive (paths are checked first: only those four roots are accepted; pointers.txt is read, never extracted)
 #   perms           ownership, modes, setgid, ACLs exactly as install-stack.sh creates them
 #   start           start php8.3-fpm and the cron timer
 #   health_gate     smoke-cp.sh (PHP + wp-config + DB + WordPress + WooCommerce + plugin), loopback /healthz through the edge, WordPress siteurl read back
@@ -32,11 +34,11 @@ umask 077
 
 ACTION="${1:-}"; [ $# -gt 0 ] && shift
 DUMP=""; FILES=""; SHA=""; FSHA=""; REPORT=""; YES=0; SAFETY=1; HEALTH=1; OUT=""; SCRATCH="aicc_dr_scratch"; FPOUT=""
-DB="aicc_cp"; DBUSER="aicc_cp"; MYSQL_BIN="${MYSQL_BIN:-mysql}"; MY_CNF=""; SHARED="/srv/aicc/shared"; TRUST_SIDECAR=0; NO_IDENT=0; NEW_HOST_ID=0; IDENT_FILE="/etc/aicc-stage-identity"
+DB="aicc_cp"; DBUSER="aicc_cp"; MYSQL_BIN="${MYSQL_BIN:-mysql}"; MY_CNF=""; SHARED="/srv/aicc/shared"; TRUST_SIDECAR=0; NO_IDENT=0; NEW_HOST_ID=0; IDENT_FILE="/etc/aicc-stage-identity"; PRODUCTION=0; CONFIRM_PROD_RESTORE=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --dump) DUMP="${2:-}"; shift 2 ;; --files) FILES="${2:-}"; shift 2 ;; --sha256) SHA="${2:-}"; shift 2 ;; --files-sha256) FSHA="${2:-}"; shift 2 ;;
-    --report) REPORT="${2:-}"; shift 2 ;; --yes-replace-live) YES=1; shift ;; --no-safety-backup) SAFETY=0; shift ;; --no-health-gate) HEALTH=0; shift ;; --trust-sidecar) TRUST_SIDECAR=1; shift ;; --allow-no-identity) NO_IDENT=1; shift ;; --allow-new-host-id) NEW_HOST_ID=1; shift ;;
+    --report) REPORT="${2:-}"; shift 2 ;; --yes-replace-live) YES=1; shift ;; --no-safety-backup) SAFETY=0; shift ;; --no-health-gate) HEALTH=0; shift ;; --trust-sidecar) TRUST_SIDECAR=1; shift ;; --allow-no-identity) NO_IDENT=1; shift ;; --allow-new-host-id) NEW_HOST_ID=1; shift ;; --production) PRODUCTION=1; shift ;; --confirm-production-restore) CONFIRM_PROD_RESTORE=1; shift ;;
     --out) OUT="${2:-}"; shift 2 ;; --scratch-db) SCRATCH="${2:-}"; shift 2 ;; --fingerprint-out) FPOUT="${2:-}"; shift 2 ;;
     --db) DB="${2:-}"; shift 2 ;; --mysql-defaults-file) MY_CNF="${2:-}"; shift 2 ;; --shared-dir) SHARED="${2:-}"; shift 2 ;;
     -h|--help) sed -n 2,28p "${BASH_SOURCE[0]}"; exit 0 ;;
@@ -52,7 +54,12 @@ log() { printf '%s  %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*" >&2 || true; }  
 if [ "${AICC_TEST_HARNESS:-0}" = "1" ]; then IDENT_FILE="${AICC_IDENTITY_FILE:-$IDENT_FILE}"; fi
 if [ "${AICC_TEST_HARNESS:-0}" != "1" ]; then
   [ "$(id -u)" = "0" ] || { echo "must run as root (sudo). Refusing." >&2; exit 2; }
-  grep -q '^AICC_ENV=staging$' /etc/aicc-stage-identity 2>/dev/null || refuse "/etc/aicc-stage-identity does not say AICC_ENV=staging (production restores are a separate, owner-gated procedure)"
+  if [ "$PRODUCTION" = 1 ]; then
+    grep -q '^AICC_ENV=production$' /etc/aicc-stage-identity 2>/dev/null || refuse "--production was given but /etc/aicc-stage-identity does not say AICC_ENV=production"
+    [ "$ACTION" != live ] || [ "$CONFIRM_PROD_RESTORE" = 1 ] || refuse "restoring the PRODUCTION database needs --confirm-production-restore (take a fresh backup first; this replaces the live data)"
+  else
+    grep -q '^AICC_ENV=staging$' /etc/aicc-stage-identity 2>/dev/null || refuse "/etc/aicc-stage-identity does not say AICC_ENV=staging; on the production host pass --production"
+  fi
 fi
 # `--binary-mode` turns off the client's interpretation of backslash commands (\! system, \. source) in a piped dump: a dump is data, never a script for a shell
 mysql_load() { local d="$1"; if [ -n "$MY_CNF" ]; then "$MYSQL_BIN" --defaults-extra-file="$MY_CNF" --binary-mode --database="$d"; else "$MYSQL_BIN" --no-defaults --binary-mode --database="$d"; fi; }
@@ -93,7 +100,7 @@ verify_files() {
   # members), no devices, no absolute or .. names. `tar -tvz` prefixes every member with its type character.
   local listing; listing="$(tar -tvzf "$FILES")" || return 1
   if printf '%s\n' "$listing" | cut -c1 | grep -qvE '^[-d]$'; then echo "the archive contains members that are not plain files or directories (links, devices...)" >&2; return 1; fi
-  if tar -tzf "$FILES" | grep -vE '^(srv/aicc/shared/(uploads|wp-config\.php)|etc/aicc-edge|etc/aicc-ops/aicc-ops\.toml|pointers\.txt)(/|$)' | grep -q .; then echo "the archive contains paths outside the allowed roots" >&2; return 1; fi
+  if tar -tzf "$FILES" | grep -vE '^(srv/aicc/shared/(uploads|plugin-releases|wp-config\.php)|etc/aicc-edge|etc/aicc-ops/aicc-ops\.toml|pointers\.txt)(/|$)' | grep -q .; then echo "the archive contains paths outside the allowed roots" >&2; return 1; fi
   if tar -tzf "$FILES" | grep -qE '(^|/)\.\.(/|$)|^/'; then echo "the archive contains unsafe paths" >&2; return 1; fi
   # the archive must have been taken on THIS host: a files archive from another environment would replace wp-config.php with that environment's configuration
   local want_id have_id
@@ -193,6 +200,8 @@ s_db() {
 s_files() {
   [ "$FILES" = "none" ] && return 0
   rm -rf "$SHARED/uploads" || return 1; rm -f "$SHARED/wp-config.php" || return 1
+  # the Plugin release store is replaced only when the archive carries one (an archive taken before it existed must not delete the live store)
+  if tar -tzf "$FILES" | grep -q '^srv/aicc/shared/plugin-releases/'; then rm -rf "$SHARED/plugin-releases" || return 1; fi
   tar -xzpf "$FILES" -C / --no-same-owner --exclude=pointers.txt || return 1
 }
 s_perms() {
@@ -201,6 +210,9 @@ s_perms() {
   find "$SHARED/uploads" -perm /6000 ! -type d -exec chmod ug-s {} + || return 1        # a setuid/setgid file from an archive is never kept
   chown -R aicc-cp:aicc-edge "$SHARED/uploads" || return 1; chmod 2750 "$SHARED/uploads" || return 1
   setfacl -m "u:aicc:rx,g:aicc-edge:rx" "$SHARED/uploads" || return 1; setfacl -d -m "u:aicc:rx,g:aicc-edge:rx,o::---" "$SHARED/uploads" || return 1
+  if [ -d "$SHARED/plugin-releases" ]; then   # root:aicc-cp 0750 dirs / 0640 files: PHP reads, nothing but the installer writes
+    chown -R root:aicc-cp "$SHARED/plugin-releases" || return 1; find "$SHARED/plugin-releases" -type d -exec chmod 750 {} + || return 1; find "$SHARED/plugin-releases" -type f -exec chmod 640 {} + || return 1
+  fi
   if [ -f "$SHARED/wp-config.php" ]; then chown root:aicc-cp "$SHARED/wp-config.php" || return 1; chmod 640 "$SHARED/wp-config.php" || return 1; fi
   chown -R root:aicc-edge /etc/aicc-edge || return 1; chmod 750 /etc/aicc-edge || return 1
   if [ -f /etc/aicc-ops/aicc-ops.toml ]; then chown root:aicc-ops /etc/aicc-ops/aicc-ops.toml && chmod 640 /etc/aicc-ops/aicc-ops.toml || return 1; fi
@@ -215,7 +227,8 @@ s_health() {
     sleep 2
   done
   [ "$ok" = 1 ] || { echo "smoke-cp never became healthy" >&2; return 1; }
-  [ "$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 --resolve "$host:443:127.0.0.1" "https://$host/healthz")" = 200 ] || { echo "/healthz through the edge is not 200" >&2; return 1; }
+  # -k: a loopback self-check of our own edge (--resolve to 127.0.0.1); the dark-production edge presents Caddy's internal certificate, which no client trusts
+  [ "$(curl -sk -o /dev/null -w '%{http_code}' --max-time 10 --resolve "$host:443:127.0.0.1" "https://$host/healthz")" = 200 ] || { echo "/healthz through the edge is not 200" >&2; return 1; }
   [ "$(/usr/local/sbin/aicc-wp option get siteurl 2>/dev/null)" = "https://$host" ] || { echo "WordPress siteurl is not https://$host" >&2; return 1; }
 }
 s_sanity() {

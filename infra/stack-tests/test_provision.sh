@@ -343,7 +343,7 @@ if [ -x "$LOCALMY/mysqld" ]; then
     t_ok "... and nothing was written" test ! -e "$WC/prod.php"
     echo "== production wp-config path (rendered into a scratch dir only; the host is never touched) =="
     PSEC="$TMP/psecrets"; mkdir -p "$PSEC"; chmod 700 "$PSEC"; cp "$SEC/db-cp.pass" "$PSEC/"
-    PW() { env AICC_TEST_HARNESS=1 bash "$PROV/render-wp-config.sh" --env production "$@" --out "$WC/prod.php" --secrets-dir "$PSEC"; }
+    PW() { env AICC_TEST_HARNESS=1 bash "$PROV/render-wp-config.sh" --env production "$@" --out "$WC/prod.php" --secrets-dir "$PSEC" --mail-dir "${MAILD:-$TMP/none-mail}"; }
     t_rc "production render without --confirm-production is refused" 1 PW
     t_ok "...and the refusal says why" bash -c "env AICC_TEST_HARNESS=1 bash '$PROV/render-wp-config.sh' --env production --out '$WC/prod.php' --secrets-dir '$PSEC' 2>&1 | grep -q 'confirm-production'"
     t_rc "production render without the owner-provided secrets is refused" 1 PW --confirm-production
@@ -392,6 +392,60 @@ if [ -x "$LOCALMY/mysqld" ]; then
     sed "s#define( 'DISALLOW_FILE_EDIT', true )#define( 'DISALLOW_FILE_EDIT', false )#" "$WC/prod.php" > "$WC/prod.drift.php"
     DRIFT="$(php -r '$dump=function($f){ $code=file_get_contents($f); preg_match_all("/define\(\s*\x27([A-Z_]+)\x27,\s*(.*?)\s*\);/", $code, $m, PREG_SET_ORDER); $o=[]; foreach($m as $x){ $o[$x[1]]=$x[2]; } return $o; }; $s=$dump($argv[1]); $p=$dump($argv[2]); echo (($s["DISALLOW_FILE_EDIT"]??null)!==($p["DISALLOW_FILE_EDIT"]??null)) ? "detected" : "missed";' "$WC/shared/wp-config.php" "$WC/prod.drift.php")"
     t_eq "...and a drifted production copy (DISALLOW_FILE_EDIT false) is detected by the same comparison" "$DRIFT" "detected"
+    echo "== AICC_LM_PLUGIN_RELEASE_DIR (private Plugin release store) =="
+    t_eq "stage and production define the SAME release dir (so it is not in the pinned diff set)" "$(php -r 'define("ABSPATH",$argv[3]); foreach(array($argv[1],$argv[2]) as $f){ $c=file_get_contents($f); preg_match("/define\(\s*\x27AICC_LM_PLUGIN_RELEASE_DIR\x27,\s*\x27([^\x27]+)\x27/",$c,$m); echo $m[1]," "; }' "$WC/shared/wp-config.php" "$WC/prod.php" "$WC/abs2/")" "/srv/aicc/shared/plugin-releases /srv/aicc/shared/plugin-releases "
+    webroot_class() { case "$1" in /srv/aicc/site/*|/srv/aicc/cp/*|/srv/aicc/shared/uploads*|*/wp-content*) echo inside ;; /*) echo outside ;; *) echo relative ;; esac; }
+    t_eq "the store is absolute and outside both web roots (site static root, CP docroot, uploads)" "$(webroot_class /srv/aicc/shared/plugin-releases)" "outside"
+    RELD="$TMP/relstore"; mkdir -p "$RELD"; chmod 750 "$RELD"
+    t_not_contains "no warning when the store exists with mode 750" "$(env AICC_TEST_HARNESS=1 bash "$PROV/render-wp-config.sh" --env production --confirm-production --out "$WC/prod2.php" --secrets-dir "$PSEC" --mail-dir "$TMP/none-mail" --plugin-release-dir "$RELD" 2>&1)" "plugin-releases"
+    t_contains "a missing store is a WARNING, not a refusal" "$(env AICC_TEST_HARNESS=1 bash "$PROV/render-wp-config.sh" --env production --confirm-production --out "$WC/prod3.php" --secrets-dir "$PSEC" --mail-dir "$TMP/none-mail" --plugin-release-dir "$TMP/missing-store" 2>&1)" "does not exist yet"
+    t_ok "...and the config was still written" test -s "$WC/prod3.php"
+    chmod 755 "$RELD"; t_contains "a store that is not 750 is a WARNING" "$(env AICC_TEST_HARNESS=1 bash "$PROV/render-wp-config.sh" --env production --confirm-production --out "$WC/prod4.php" --secrets-dir "$PSEC" --mail-dir "$TMP/none-mail" --plugin-release-dir "$RELD" 2>&1)" "must be mode 750"
+    t_contains "install-stack creates the store (root:aicc-cp 0750) in its users-dirs step" "$(cat "$PROV/install-stack.sh")" "ensure_dir 0750 root:aicc-cp /srv/aicc/shared/plugin-releases"
+    echo "== production mail region (AICC_MAIL_*): enabled only by a SAFE /etc/aicc/secrets/smtp.env; staging never gets it =="
+    t_eq "no smtp.env: the production render carries NO AICC_MAIL_ constant (mail layer inert, nothing falls back to PHP mail())" "$(grep -c "define( 'AICC_MAIL_" "$WC/prod.php" || true)" "0"
+    t_contains "...and says so in a comment" "$(cat "$WC/prod.php")" "mail layer NOT enabled"
+    t_eq "...no region markers left in the output" "$(grep -c '@@MAIL' "$WC/prod.php" || true)" "0"
+    MAILUSER="brevo-login@example.org"; MAILPASS="xsmtpsib-0123456789abcdefABCDEF0123456789"
+    MAILD="$TMP/aicc-mail"; mkdir -p "$MAILD"; chmod 750 "$MAILD"; SMTPF="$MAILD/smtp.env"
+    printf 'AICC_MAIL_SMTP_USER=%s\nAICC_MAIL_SMTP_PASS=%s\n' "$MAILUSER" "$MAILPASS" > "$SMTPF"
+    chmod 666 "$SMTPF"; t_rc "smtp.env readable/writable by everybody (0666) is REFUSED" 1 PW --confirm-production
+    chmod 644 "$SMTPF"; t_rc "smtp.env world-readable (0644) is REFUSED" 1 PW --confirm-production
+    chmod 660 "$SMTPF"; t_rc "smtp.env group-writable (0660) is REFUSED" 1 PW --confirm-production
+    t_fail "...the refusals wrote nothing new (prod.php is still the no-mail render)" grep -q "define( 'AICC_MAIL_" "$WC/prod.php"
+    chmod 640 "$SMTPF"
+    printf 'AICC_MAIL_SMTP_USER=%s\n' "$MAILUSER" > "$SMTPF"; chmod 640 "$SMTPF"; t_rc "smtp.env with only the user (no password) is REFUSED" 1 PW --confirm-production
+    printf 'AICC_MAIL_SMTP_USER=%s\nAICC_MAIL_SMTP_PASS=%s\nEXTRA_KEY=1\n' "$MAILUSER" "$MAILPASS" > "$SMTPF"; chmod 640 "$SMTPF"; t_rc "smtp.env with an extra key is REFUSED (exactly two keys)" 1 PW --confirm-production
+    printf 'AICC_MAIL_SMTP_USER=%s\nAICC_MAIL_SMTP_PASS=pass with space\n' "$MAILUSER" > "$SMTPF"; chmod 640 "$SMTPF"; t_rc "smtp.env with a space in the password is REFUSED" 1 PW --confirm-production
+    printf 'AICC_MAIL_SMTP_USER=%s\nAICC_MAIL_SMTP_PASS=\n' "$MAILUSER" > "$SMTPF"; chmod 640 "$SMTPF"; t_rc "smtp.env with an empty password is REFUSED" 1 PW --confirm-production
+    printf 'AICC_MAIL_SMTP_USER=%s\nAICC_MAIL_SMTP_PASS=%s\nAICC_MAIL_SMTP_PASS=again\n' "$MAILUSER" "$MAILPASS" > "$SMTPF"; chmod 640 "$SMTPF"; t_rc "smtp.env with a duplicated key is REFUSED" 1 PW --confirm-production
+    ln -s "$TMP/elsewhere.env" "$PSEC/smtp.link" 2>/dev/null; rm -f "$PSEC/smtp.link"
+    printf 'AICC_MAIL_SMTP_USER=%s\nAICC_MAIL_SMTP_PASS=%s\n' "$MAILUSER" "$MAILPASS" > "$SMTPF"; chmod 640 "$SMTPF"
+    OUTM="$(PW --confirm-production 2>&1)"; rcm=$?
+    t_eq "a safe smtp.env (0640, exactly the two keys) renders" "$rcm" "0"
+    t_not_contains "the render output never prints the mail credentials" "$OUTM" "$MAILPASS"
+    t_not_contains "...nor the login" "$OUTM" "$MAILUSER"
+    t_eq "the rendered file carries all eight AICC_MAIL_ constants" "$(grep -c "^define( 'AICC_MAIL_" "$WC/prod.php")" "8"
+    t_not_contains "the rendered wp-config carries NO mail credential (they stay in smtp.env)" "$(cat "$WC/prod.php")" "$MAILPASS"
+    t_not_contains "...nor the login" "$(cat "$WC/prod.php")" "$MAILUSER"
+    t_ok "...php -l clean with the region" php -l "$WC/prod.php"
+    t_eq "...no region markers or placeholders left" "$(grep -c '@@' "$WC/prod.php" || true)" "0"
+    MCONF="$(php -r 'define("ABSPATH", $argv[2]); require $argv[1]; echo json_encode(array(AICC_MAIL_ENABLED, AICC_MAIL_SMTP_HOST, AICC_MAIL_SMTP_PORT, AICC_MAIL_SMTP_SECURE, AICC_MAIL_SECRETS_FILE, AICC_MAIL_FROM_ADDRESS, AICC_MAIL_REPLY_TO, WP_ACCESSIBLE_HOSTS));' "$WC/prod.php" "$WC/abs2/")"
+    t_eq "mail constants: enabled === true, Brevo relay on 2525 with STARTTLS, secrets-file path, the support From/Reply-To" "$(echo "$MCONF" | jq -c '.[0:7]')" '[true,"smtp-relay.brevo.com",2525,"starttls","/etc/aicc-mail/smtp.env","support@copilt.org","support@copilt.org"]'
+    t_eq "the SMTP relay is NOT in WP_ACCESSIBLE_HOSTS (the layer uses PHPMailer sockets, not wp_remote_*)" "$(echo "$MCONF" | jq -r '.[7]')" "api.copilt.org"
+    DIFFM="$(php -r '$dump=function($f){ $code=file_get_contents($f); preg_match_all("/define\(\s*\x27([A-Z_]+)\x27,\s*(.*?)\s*\);/", $code, $m, PREG_SET_ORDER); $o=[]; foreach($m as $x){ if(preg_match("/^(AUTH|SECURE_AUTH|LOGGED_IN|NONCE)_(KEY|SALT)$/",$x[1])) continue; $o[$x[1]]=$x[2]; } return $o; }; $s=$dump($argv[1]); $p=$dump($argv[2]); $d=[]; foreach(array_unique(array_merge(array_keys($s),array_keys($p))) as $k){ if(($s[$k]??null)!==($p[$k]??null)) $d[]=$k; } sort($d); echo json_encode($d);' "$WC/shared/wp-config.php" "$WC/prod.php")"
+    t_eq "PINNED (with mail): the differing constants are the environment ones PLUS exactly the eight AICC_MAIL_ constants" "$DIFFM" '["AICC_ACTIVATION_PROOF_SECRET","AICC_ENTITLEMENT_WEBHOOK_SECRET","AICC_ENTITLEMENT_WEBHOOK_URL","AICC_MAIL_ENABLED","AICC_MAIL_FROM_ADDRESS","AICC_MAIL_FROM_NAME","AICC_MAIL_REPLY_TO","AICC_MAIL_SECRETS_FILE","AICC_MAIL_SMTP_HOST","AICC_MAIL_SMTP_PORT","AICC_MAIL_SMTP_SECURE","WP_ACCESSIBLE_HOSTS","WP_ENVIRONMENT_TYPE","WP_HOME","WP_SITEURL"]'
+    t_ok "dry-run says whether the mail layer would be enabled and prints nothing secret" bash -c "env AICC_TEST_HARNESS=1 bash '$PROV/render-wp-config.sh' --env production --confirm-production --dry-run --secrets-dir '$PSEC' --mail-dir '$MAILD' | grep -q 'mail layer ENABLED'"
+    # the STAGE render must never carry the region, even when a smtp.env happens to exist next to its secrets
+    cp "$SMTPF" "$MAILD/stage-copy.env"; cp "$SMTPF" "$SEC/smtp.env"; chmod 640 "$SEC/smtp.env"
+    t_ok "stage render with a smtp.env present still succeeds" env AICC_TEST_HARNESS=1 bash "$PROV/render-wp-config.sh" --out "$WC/stage-with-smtp.php" --secrets-dir "$SEC" --owner "$(id -un):$(id -gn)"
+    t_eq "...and carries NO AICC_MAIL_ constant (staging keeps the mail sink)" "$(grep -c "define( 'AICC_MAIL_" "$WC/stage-with-smtp.php" || true)" "0"
+    rm -f "$SEC/smtp.env"
+    t_eq "the stage template itself has no AICC_MAIL_ at all" "$(grep -c "AICC_MAIL_" "$PROV/wp-config.stage.template.php" || true)" "0"
+    t_eq "the production template has the region exactly once" "$(grep -c '@@MAIL_BEGIN@@' "$PROV/wp-config.production.template.php")/$(grep -c '@@MAIL_END@@' "$PROV/wp-config.production.template.php")" "1/1"
+    rm -f "$SMTPF"
+    t_ok "removing smtp.env and re-rendering turns the mail layer off again" PW --confirm-production
+    t_eq "...no AICC_MAIL_ constant left" "$(grep -c "define( 'AICC_MAIL_" "$WC/prod.php" || true)" "0"
     t_not_contains "the stale template says nothing about 'NOT usable' any more" "$(cat "$PROV/wp-config.stage.template.php")" "NOT usable"
     t_rc "rendering without the DB password file is refused" 1 env AICC_TEST_HARNESS=1 bash "$PROV/render-wp-config.sh" --out "$WC/x.php" --secrets-dir "$TMP/emptysecrets"
     t_rc "--dry-run prints nothing secret" 0 bash "$PROV/render-wp-config.sh" --dry-run

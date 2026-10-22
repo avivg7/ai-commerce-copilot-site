@@ -1,0 +1,27 @@
+# AICC Sentinel targets for the GitHub Actions variant (a DEDICATED public repository, see infra/sentinel/github/README.md). This file is public if the repository is public: it holds
+# the name and the Reserved IPv4 of the public edge (both are public DNS facts) and NO secret. Telegram credentials come from the repository's Actions secrets through the environment.
+#
+# Deliberately ONE target and one URL: /healthz on the public edge, answered by Caddy itself (no PHP, no database, no cookies, never cached). Nothing behind a login, nothing with side effects,
+# no application page (a public log should not expose which application routes are probed, and /pricing/ costs a PHP request on a 1 vCPU host every run).
+
+[sentinel]
+interval_s = 300
+fail_n = 2                 # a 10-minute cadence: DOWN when 2 of the last 3 runs failed (one blip never pages)
+window_m = 3
+recover_k = 1
+cooldown_s = 3600
+remind_s = 21600
+stale_after_s = 3600       # GitHub may skip runs; an old "up" result starts a fresh window instead of counting as evidence
+control_host = "api.telegram.org"
+host_label = "github-actions"
+
+[[target]]
+name = "www-edge"
+url = "https://www.copilt.org/healthz"
+interval_s = 300
+expect_status = 200
+expect_body = "ok"
+expect_ip = "206.189.248.204"
+latency_ms = 3000
+timeout_s = 15
+tls_warn_days = 14

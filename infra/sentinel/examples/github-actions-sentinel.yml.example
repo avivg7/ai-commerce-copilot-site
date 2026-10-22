@@ -1,3 +1,4 @@
+# SUPERSEDED 2026-10-22 by infra/sentinel/github/ (a dedicated public repository, pinned action SHAs, production target): do NOT merge this into the site repository's default branch (see infra/sentinel/github/README.md for why).
 # EXAMPLE ONLY. Nothing here is installed. To use it the OWNER must (see infra/sentinel/README.md and DESIGN.md section 4):
 #   1. confirm the repository is PUBLIC (scheduled Actions minutes are free only for public repositories; a private repo draws on a quota),
 #   2. copy this file to  .github/workflows/aicc-sentinel.yml  and merge it into the DEFAULT branch (GitHub runs `schedule:` only from the default branch),

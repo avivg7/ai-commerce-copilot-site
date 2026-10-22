@@ -9,7 +9,7 @@
 -->
 <plist version="1.0">
 <dict>
-  <key>Label</key><string>com.aicc.offhost-pull</string>
+  <key>Label</key><string>@LABEL@</string>
   <key>ProgramArguments</key>
   <array>
     <string>/bin/bash</string>
@@ -19,6 +19,7 @@
     <string>--stage-host</string><string>@STAGE_HOST@</string>
     <string>--key</string><string>@KEY@</string>
     <string>--dest</string><string>@DEST@</string>
+    @EXTRA_ARGS@
   </array>
   <key>RunAtLoad</key><true/>
   <key>StartInterval</key><integer>3600</integer>

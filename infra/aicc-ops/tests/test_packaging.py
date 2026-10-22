@@ -27,6 +27,35 @@ def leaf_keys(d, prefix=""):
 
 
 class PackagingTests(TmpCase):
+    def test_production_config_differs_from_the_example_only_in_the_pinned_set(self):
+        """infra/provision/promote-to-production.sh installs config/aicc-ops.production.toml; any other drift from the example is a review finding."""
+        def flat(d, pre=""):
+            o = {}
+            for k, v in d.items():
+                if isinstance(v, dict): o.update(flat(v, pre + k + "."))
+                else: o[pre + k] = v
+            return o
+        with open(os.path.join(ROOT, "config", "aicc-ops.example.toml"), "rb") as fh: ex = flat(tomllib.load(fh))
+        prod_path = os.path.join(ROOT, "config", "aicc-ops.production.toml")
+        with open(prod_path, "rb") as fh: pr = flat(tomllib.load(fh))
+        changed = {k for k in set(ex) | set(pr) if ex.get(k) != pr.get(k)}
+        self.assertEqual(changed, {
+            "general.host_label", "collectors.phpfpm.enabled", "collectors.mysql.database", "collectors.cp.enabled", "collectors.cp.database",
+            "collectors.cert.hostname", "collectors.edge.hostname", "alerts.rules.wc_cron_stale.warn_s", "alerts.rules.cert_expiry.enabled"})
+        self.assertEqual(pr["general.host_label"], "aicc-cp-prod (production)")
+        self.assertEqual((pr["collectors.cert.hostname"], pr["collectors.edge.hostname"]), ("www.copilt.org", "www.copilt.org"))
+        self.assertEqual(pr["alerts.rules.wc_cron_stale.warn_s"], 7200)
+        text = read("config", "aicc-ops.production.toml")
+        self.assertNotIn("stage.copilt.org", text)
+        self.assertNotRegex(text, r"(?im)^\s*(TELEGRAM_BOT_TOKEN|bot_token|token)\s*=")
+        # the dark-production block (cert_expiry off while Caddy serves its 12-hour internal certificate) is one removable, marked region
+        self.assertEqual(text.count("# BEGIN DARK-PRODUCTION OVERRIDES"), 1)
+        self.assertEqual(text.count("# END DARK-PRODUCTION OVERRIDES"), 1)
+        stripped = re.sub(r"# BEGIN DARK-PRODUCTION OVERRIDES.*?# END DARK-PRODUCTION OVERRIDES\n", "", text, flags=re.S)
+        self.assertNotIn("cert_expiry", stripped.replace("cert_expiry' ", ""))     # nothing about cert_expiry survives outside the region
+        cfg = load_config(prod_path)
+        self.assertEqual(cfg["server"]["bind"], "127.0.0.1")
+
     def test_example_config_matches_defaults(self):
         with open(os.path.join(ROOT, "config", "aicc-ops.example.toml"), "rb") as fh:
             ex = tomllib.load(fh)

@@ -2,7 +2,7 @@
 
 An outbound-only availability watcher for `stage.copilt.org` (and, read-only, `api.copilt.org/health`). Python 3.11+ standard library, no installs. Design, failure-domain table and owner decisions: `DESIGN.md`.
 
-**Read this first: on the Mac it is not 24/7.** A sleeping, shut or offline Mac watches nothing and sends nothing. Overnight it is blind until it wakes. For round-the-clock coverage you need the GitHub Actions variant (public repo only) or a free VM elsewhere (see `DESIGN.md` section 4).
+**Read this first: on the Mac it is not 24/7.** (Prepared 24/7 variant for production: `github/README.md`; production targets: `targets.production.toml`, dark phase: `targets.dark.toml`.) A sleeping, shut or offline Mac watches nothing and sends nothing. Overnight it is blind until it wakes. For round-the-clock coverage you need the GitHub Actions variant (public repo only) or a free VM elsewhere (see `DESIGN.md` section 4).
 
 Needs Python 3.11 or newer (`python3.12`; the macOS `/usr/bin/python3` is too old). All commands below run from the repo root.
 

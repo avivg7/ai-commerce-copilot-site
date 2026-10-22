@@ -81,6 +81,12 @@ Do not probe: `/wp-login.php` (403 publicly by design), `/wp-admin/`, `/wp-cron.
 
 Both sentinels can only alert through Telegram, which needs the secrets; without them the Mac one still logs and (opt-in) pops a local notification, and the Actions one only logs (visible in the Actions tab).
 
+### 4.3b Update 2026-10-22: the repository for the Actions variant, and production targets
+
+* **Do not put the workflow in `avivg7/ai-commerce-copilot-site`.** `gh repo view` shows it PUBLIC, last pushed 2026-08-19 (already past GitHub's 60-day inactivity mark for scheduled workflows), and its `main` is the live old www site with a Pages deploy workflow plus the rollback tag; pushing there can redeploy the live site. Private repositories draw on a quota (GitHub Free: 2,000 minutes a month) that a 10-minute cadence exceeds. Use a **dedicated public repository** staged by `infra/sentinel/github/prepare-sentinel-repo.sh` (`infra/sentinel/github/README.md`: owner gate, privacy, limits). The workflow there is pinned to commit SHAs and probes `https://www.copilt.org/healthz` only.
+* Targets: `targets.dark.toml` (api only) while the promoted host is dark, `targets.production.toml` (Mac) and `github/targets.github.toml` (Actions) after the cutover; `targets.production.example.toml` stays as the disabled reference.
+* The Mac LaunchAgent is **not 24/7**; wherever older text in this file or in the docs suggests that the Mac alone gives round-the-clock cover, this paragraph wins.
+
 ### 4.4 Owner decisions and the minimal steps
 
 **Decision (i): accept Mac-only, intermittent coverage for the staging period.**

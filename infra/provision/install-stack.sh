@@ -9,8 +9,12 @@
 #   sudo infra/provision/install-stack.sh --only caddyfile --caddyfile /home/aicc/aicc-infra-bundle/Caddyfile.stage
 #   sudo infra/provision/install-stack.sh --only enable-edge        (explicit only: starts the public edge)
 #   sudo infra/provision/install-stack.sh --only enable-timers      (explicit only)
+#   sudo infra/provision/install-stack.sh --production-host --confirm-production --only scripts,systemd,logrotate,fail2ban,php,mysql,sysctl,services,verify,enable-timers
+#        re-installs/updates the stack on the PROMOTED host (identity AICC_ENV=production, docs/cutover/production-promotion.md). The stage-only steps (identity, edge-env, caddyfile,
+#        enable-edge) are REFUSED there: the production edge is installed by promote-to-production.sh. In production, enable-timers leaves aicc-cert-expiry.timer off while the edge still
+#        serves Caddy's internal certificate (AICC_ALLOW_INTERNAL_TLS=1 in edge.env).
 #
-# Options: --dry-run | --only <steps> | --list-steps | --require-cosign | --acme-email <addr> | --caddyfile <path> | --ops-fpm-access | -h
+# Options: --dry-run | --only <steps> | --list-steps | --require-cosign | --acme-email <addr> | --caddyfile <path> | --ops-fpm-access | --production-host --confirm-production | -h
 #
 # Properties (checked by infra/stack-tests):
 #   * idempotent: a second run reports "unchanged" for everything and restarts nothing.
@@ -29,7 +33,7 @@ load_pins "$SELF/pins.env"
 
 DEFAULT_STEPS="preflight identity packages users-dirs caddy wpcli php mysql sysctl scripts systemd logrotate fail2ban services verify"
 EXTRA_STEPS="edge-env caddyfile enable-edge enable-timers"
-ONLY=""; REQUIRE_COSIGN=0; ACME_EMAIL=""; CADDYFILE_SRC=""; OPS_FPM_ACCESS=0
+ONLY=""; REQUIRE_COSIGN=0; ACME_EMAIL=""; CADDYFILE_SRC=""; OPS_FPM_ACCESS=0; PRODUCTION_HOST=0; CONFIRM_PRODUCTION=0
 
 usage() { sed -n 2,22p "${BASH_SOURCE[0]}"; }
 while [ $# -gt 0 ]; do
@@ -41,6 +45,8 @@ while [ $# -gt 0 ]; do
     --acme-email) ACME_EMAIL="${2:-}"; shift 2 ;;
     --caddyfile) CADDYFILE_SRC="${2:-}"; shift 2 ;;
     --ops-fpm-access) OPS_FPM_ACCESS=1; shift ;;
+    --production-host) PRODUCTION_HOST=1; shift ;;
+    --confirm-production) CONFIRM_PRODUCTION=1; shift ;;
     -h|--help) usage; exit 0 ;;
     *) die "unknown argument: $1 (see --help)" ;;
   esac
@@ -79,8 +85,14 @@ step_preflight() {
   . /etc/os-release
   [ "${ID:-}" = "ubuntu" ] && [ "${VERSION_ID:-}" = "24.04" ] || die "expected Ubuntu 24.04, found ${PRETTY_NAME:-unknown}"
   [ "$(uname -m)" = "x86_64" ] || die "expected x86_64 (the pinned Caddy tarball is linux_amd64), found $(uname -m)"
-  [ -f /etc/aicc-stage-identity ] && grep -q '^AICC_ENV=staging$' /etc/aicc-stage-identity \
-    || die "/etc/aicc-stage-identity missing or not AICC_ENV=staging: refusing (this installer is for the staging host)"
+  if [ "$PRODUCTION_HOST" = 1 ]; then
+    [ "$CONFIRM_PRODUCTION" = 1 ] || die "--production-host needs --confirm-production"
+    [ -f /etc/aicc-stage-identity ] && grep -q '^AICC_ENV=production$' /etc/aicc-stage-identity \
+      || die "/etc/aicc-stage-identity missing or not AICC_ENV=production: refusing (--production-host is for the promoted host)"
+  else
+    [ -f /etc/aicc-stage-identity ] && grep -q '^AICC_ENV=staging$' /etc/aicc-stage-identity \
+      || die "/etc/aicc-stage-identity missing or not AICC_ENV=staging: refusing (this installer is for the staging host; the promoted host needs --production-host --confirm-production)"
+  fi
   [ -f /var/lib/aicc-init-stage1-done ] || die "stage-1 cloud-init marker missing: run cloud-init's stage first (README-droplet-creation.md)"
   local mem swap swp
   mem="$(awk '/MemTotal/{print int($2/1024)}' /proc/meminfo)"; swap="$(awk '/SwapTotal/{print int($2/1024)}' /proc/meminfo)"
@@ -133,6 +145,7 @@ step_users_dirs() {
     ensure_user_in_group aicc-ops aicc-edge
   fi
   # /srv/aicc tree. Release trees are world-readable and owned by the deploy user `aicc` (an operator with sudo): immutable once activated.
+  ensure_dir 0750 root:aicc-cp /etc/aicc-mail          # holds smtp.env on the PRODUCTION host only (the staging host leaves it empty); /etc/aicc is root-only, so the PHP user needs its own directory
   ensure_dir 0755 root:root /srv/aicc
   for k in site cp; do
     ensure_dir 0755 aicc:aicc "/srv/aicc/$k"
@@ -140,6 +153,7 @@ step_users_dirs() {
   done
   ensure_dir 0755 root:root /srv/aicc/shared
   ensure_dir 2750 aicc-cp:aicc-edge /srv/aicc/shared/uploads
+  ensure_dir 0750 root:aicc-cp /srv/aicc/shared/plugin-releases   # private Plugin release store (AICC_LM_PLUGIN_RELEASE_DIR): PHP reads, only the root installer writes; not under any web root, not group aicc-edge (Caddy cannot read it)
   ensure_dir 0751 root:root /srv/aicc/backups        # x for others so AICC Ops can open status.json by name; dumps inside are 0600 root
   ensure_dir 0755 root:root /var/lib/aicc
   ensure_dir 0755 root:root /var/lib/aicc/status
@@ -460,8 +474,13 @@ step_enable_edge() {
 step_enable_timers() {
   step "enable-timers: wp-cron every 2 minutes, daily backup, daily certificate check"
   require_root
-  if is_dry; then would "systemctl enable --now aicc-wp-cron.timer aicc-backup.timer aicc-cert-expiry.timer aicc-fpm-log-status.timer"; return 0; fi
-  systemctl enable --now aicc-wp-cron.timer aicc-backup.timer aicc-cert-expiry.timer aicc-fpm-log-status.timer
+  local timers="aicc-wp-cron.timer aicc-backup.timer aicc-cert-expiry.timer aicc-fpm-log-status.timer"
+  # dark production: the edge serves Caddy's 12-hour INTERNAL certificate, so the certificate-expiry check would fail every day; `promote-to-production.sh final-edge` enables it
+  if [ "$(sed -n 's/^AICC_ENV=//p' "$(P /etc/aicc-stage-identity)" 2>/dev/null | head -1)" = production ] && grep -q '^AICC_ALLOW_INTERNAL_TLS=1$' "$(P /etc/aicc-edge/edge.env)" 2>/dev/null; then
+    timers="aicc-wp-cron.timer aicc-backup.timer aicc-fpm-log-status.timer"; info "dark production: aicc-cert-expiry.timer stays OFF until final-edge"
+  fi
+  if is_dry; then would "systemctl enable --now $timers"; return 0; fi
+  systemctl enable --now $timers
   systemctl list-timers 'aicc-*' --no-pager
 }
 
@@ -479,6 +498,11 @@ run_step() {
 if is_dry; then log "DRY-RUN: nothing will be changed"; fi
 if [ -n "$ONLY" ]; then STEPS="${ONLY//,/ }"; else STEPS="$DEFAULT_STEPS"; fi
 for s in $STEPS; do in_list "$s" $DEFAULT_STEPS $EXTRA_STEPS || die "unknown step: $s (see --list-steps)"; done
+# the stage-only steps must never run on a host whose identity says production (they would write stage identity/edge files, or start the stage-mode edge)
+if [ "$(sed -n 's/^AICC_ENV=//p' "$(P /etc/aicc-stage-identity)" 2>/dev/null | head -1)" = production ]; then
+  for s in $STEPS; do case "$s" in identity|edge-env|caddyfile|enable-edge) die "step '$s' is stage-only and the host identity says production: the production edge and identity are managed by promote-to-production.sh" ;; esac; done
+  [ "$PRODUCTION_HOST" = 1 ] && [ "$CONFIRM_PRODUCTION" = 1 ] || die "this host says AICC_ENV=production: pass --production-host --confirm-production to change it with this installer"
+fi
 [ "$(id -u)" = "0" ] || is_dry || [ -n "$AICC_PREFIX" ] || die "must run as root (sudo). Refusing. (use --dry-run to preview as a normal user)"
 for s in $STEPS; do run_step "$s"; done
 printf '\nDONE: steps run: %s%s\n' "$STEPS" "$(is_dry && echo ' (dry-run: nothing changed)')"

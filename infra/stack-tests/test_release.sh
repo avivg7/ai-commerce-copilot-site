@@ -447,7 +447,7 @@ t_rc "production: a known-hosts file without an entry for the target address is 
 t_rc "production: the staging host name is REFUSED" 3 PDEP --kind site --artifact "$PART" --stage-host stage.copilt.org --stage-ip "$PIP" --stage-id "$SID" --confirm-production "$PID_"
 t_rc "production: copilt.org (apex) as the target is REFUSED" 3 PDEP --kind site --artifact "$PART" --stage-host copilt.org --stage-ip "$PIP" --stage-id "$SID" --confirm-production "$PID_"
 t_rc "production: api.copilt.org is REFUSED" 3 PDEP --kind site --artifact "$PART" --stage-host api.copilt.org --stage-ip "$PIP" --stage-id "$SID" --confirm-production "$PID_"
-for ip in 139.59.157.231 185.199.108.153 157.230.110.211 206.189.248.204; do t_rc "production: the address $ip (API Droplet / GitHub Pages / STAGING Droplet or its Reserved IP) is REFUSED" 3 PDEP --kind site --artifact "$PART" --stage-host www.copilt.org --stage-ip $ip --stage-id "$SID" --confirm-production "$PID_"; done
+for ip in 139.59.157.231 185.199.108.153 185.199.111.153; do t_rc "production: the address $ip (API Droplet / GitHub Pages) is REFUSED" 3 PDEP --kind site --artifact "$PART" --stage-host www.copilt.org --stage-ip $ip --stage-id "$SID" --confirm-production "$PID_"; done
 t_rc "production: a key not named aicc_cp_prod* is REFUSED" 3 env PATH="$STUB:$PATH" bash "$REL/deploy-release.sh" --env production --key "$FAKEKEY" --kind site --artifact "$PART" --stage-host www.copilt.org --stage-ip "$PIP" --stage-id "$SID" --confirm-production "$PID_"
 t_rc "production: the API Droplet's key is REFUSED" 3 env PATH="$STUB:$PATH" bash "$REL/deploy-release.sh" --env production --key "$PRODKEY" --kind site --artifact "$PART" --stage-host www.copilt.org --stage-ip "$PIP" --stage-id "$SID" --confirm-production "$PID_"
 t_rc "production: no --confirm-production is REFUSED" 3 PDEP --kind site --artifact "$PART" --stage-host www.copilt.org --stage-ip "$PIP" --stage-id "$SID"
@@ -477,6 +477,40 @@ t_eq "production cp: backup happens BEFORE the first rsync" "$(grep -nE 'aicc-ba
 STUB_BACKUP_RC=1 t_rc "production cp: a FAILED pre-release backup blocks the deploy (exit 1, nothing uploaded)" 1 PDEP --kind cp --artifact "$PCP" --stage-host www.copilt.org --stage-ip "$PIP" --stage-id "$SID" --confirm-production "$CID_"
 t_eq "...no rsync happened" "$(grep -c '^rsync' "$CALLS" || true)" "0"
 STUB_ENV=production STUB_HOSTNAME=www.copilt.org STUB_ACTIVATE_RC=3 t_rc "production cp: a rolled-back activation exits 3" 3 PDEP --kind cp --artifact "$PCP" --stage-host www.copilt.org --stage-ip "$PIP" --stage-id "$SID" --confirm-production "$CID_"
+
+# Owner decision 2026-10-22: the staging Droplet is promoted in place, so its two addresses are acceptable production targets ONLY when the host identity says production
+KNOWNP="$TMP/known_hosts_promoted"; printf '%s\n' "157.230.110.211 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAItestonlytestonlytestonlytestonlytestonlytest" "206.189.248.204 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAItestonlytestonlytestonlytestonlytestonlytest" > "$KNOWNP"
+PDEP2() { PATH="$STUB:$PATH" bash "$REL/deploy-release.sh" --env production --key "$PK" --known-hosts "$KNOWNP" "$@"; }
+: > "$CALLS"
+for ip in 157.230.110.211 206.189.248.204; do
+  t_ok "promoted host: $ip is accepted as a production target when the identity says production (dry-run)" PDEP2 --kind site --artifact "$PART" --stage-host www.copilt.org --stage-ip $ip --stage-id "$SID" --confirm-production "$PID_" --dry-run
+  STUB_ENV=staging STUB_HOSTNAME=stage.copilt.org t_rc "promoted host: $ip while the host still says STAGING is refused by the identity gate before any upload" 3 PDEP2 --kind site --artifact "$PART" --stage-host www.copilt.org --stage-ip $ip --stage-id "$SID" --confirm-production "$PID_"
+done
+t_eq "promoted host: the refused runs sent no rsync" "$(grep -c '^rsync' "$CALLS" || true)" "0"
+
+echo "== smoke-cp.sh: the Host it presents follows the host identity (www.copilt.org after the promotion) =="
+SC="$TMP/smokecp"; mkdir -p "$SC/rel" "$SC/bin"; echo "<?php" > "$SC/rel/index.php"
+python3 - "$SC/fpm.sock" <<'PY' &
+import socket, sys, time
+s = socket.socket(socket.AF_UNIX); s.bind(sys.argv[1]); s.listen(1); time.sleep(30)
+PY
+SMPID=$!; sleep 1
+cat > "$SC/bin/cgi-fcgi" <<EOS
+#!/usr/bin/env bash
+echo "\$HTTP_HOST" >> "$SC/hosts.log"
+printf 'Status: 200 OK\r\nContent-Type: application/json\r\n\r\n{"namespaces":["wp/v2"]}'
+EOS
+chmod +x "$SC/bin/cgi-fcgi"
+printf 'AICC_ENV=production\nAICC_HOSTNAME=www.copilt.org\nAICC_STAGE_ID=0123456789abcdef0123456789abcdef\n' > "$SC/ident"
+SMK() { env PATH="$SC/bin:$PATH" AICC_TEST_HARNESS=1 AICC_IDENTITY_FILE="$SC/ident" AICC_PHP_SOCKET="$SC/fpm.sock" AICC_RELEASE_DIR="$SC/rel" "$@" bash "$REL/smoke-cp.sh"; }
+t_ok "smoke-cp: healthy against the stub" SMK
+t_eq "smoke-cp: presents the identity's host (www.copilt.org), not the staging name" "$(tail -1 "$SC/hosts.log")" "www.copilt.org"
+t_ok "smoke-cp: AICC_SMOKE_HOST still wins" SMK AICC_SMOKE_HOST=example.test
+t_eq "...and is used" "$(tail -1 "$SC/hosts.log")" "example.test"
+rm -f "$SC/ident"
+t_ok "smoke-cp: without an identity file it falls back to the staging name (unchanged behaviour)" SMK
+t_eq "...fallback host" "$(tail -1 "$SC/hosts.log")" "stage.copilt.org"
+kill $SMPID 2>/dev/null; wait $SMPID 2>/dev/null
 
 unset STUB_ENV STUB_HOSTNAME
 t_summary
