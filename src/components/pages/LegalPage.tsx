@@ -3,7 +3,7 @@ import type { Dictionary } from "@/i18n";
 import { Rich, type RichCtx } from "@/lib/rich";
 import { fbProps } from "@/i18n";
 import { LEGAL_DOCS, TRANSLATION_REVIEW, type LegalDocId } from "@/data/legal";
-import { ACCESSIBILITY_REVIEWED_ON, DRAFT_UPDATED_ON, LEGAL_DRAFT_NOTICE } from "@/lib/site";
+import { ACCESSIBILITY_REVIEWED_ON, DRAFT_UPDATED_ON, LEGAL_DRAFT_NOTICE, LEGAL_TRANSLATIONS_REVIEWED } from "@/lib/site";
 import { formatDate } from "@/lib/format";
 import type { RouteId } from "@/lib/routes";
 import { Container, Section, Banner } from "@/components/ui/Primitives";
@@ -37,6 +37,8 @@ export function LegalPage({ locale, t, doc }: { locale: Locale; t: Dictionary; d
   const route = DOC_ROUTE[doc];
   const pageName = t.common.pageNames[PAGE_NAME[doc]];
   const translated = TRANSLATION_REVIEW[locale] === "native-legal-review-required";
+  // The machine-translation disclosure does not depend on the English legal approval (see LEGAL_TRANSLATIONS_REVIEWED in site.ts).
+  const showTranslationNotice = translated && !LEGAL_TRANSLATIONS_REVIEWED;
   const isStatement = doc === "accessibility";
   const stamp = isStatement ? ACCESSIBILITY_REVIEWED_ON : DRAFT_UPDATED_ON;
   const date = formatDate(stamp, locale);
@@ -44,6 +46,7 @@ export function LegalPage({ locale, t, doc }: { locale: Locale; t: Dictionary; d
   // dataTrust is a summary of the privacy policy; it carries the draft notices on its flagged blocks, not a page banner.
   const showStatus = doc !== "dataTrust" && doc !== "accessibility";
   const showBanner = doc !== "accessibility";
+  const showDraftBanner = LEGAL_DRAFT_NOTICE && showBanner;
   const fb = (path: string) => fbProps(locale, path);
   const short = doc === "dataTrust" ? t.legal.dataTrust.short : null;
 
@@ -58,11 +61,11 @@ export function LegalPage({ locale, t, doc }: { locale: Locale; t: Dictionary; d
       </PageHead>
       <Section tone="surface">
         <Container>
-          {LEGAL_DRAFT_NOTICE && (showBanner || translated) ? (
+          {showDraftBanner || showTranslationNotice ? (
             <div style={{ display: "grid", gap: "0.75rem", marginBlockEnd: "2rem", maxInlineSize: "var(--aicc-measure)" }}>
               {/* One draft notice per page (not one per section): the legalReview flags stay in src/data/legal.ts and in launch:check. */}
-              {showBanner ? <div data-legal-draft="true"><Banner tone="warning" role="note"><strong>{t.common.draft.badge}</strong>{t.common.draft.text}</Banner></div> : null}
-              {translated ? <Banner tone="warning" role="note">{t.common.draft.translation}</Banner> : null}
+              {showDraftBanner ? <div data-legal-draft="true"><Banner tone="warning" role="note"><strong>{t.common.draft.badge}</strong>{t.common.draft.text}</Banner></div> : null}
+              {showTranslationNotice ? <div data-translation-draft="true"><Banner tone="warning" role="note">{t.common.draft.translation}</Banner></div> : null}
             </div>
           ) : null}
           {short ? (
