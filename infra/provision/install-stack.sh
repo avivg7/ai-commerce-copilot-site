@@ -328,6 +328,12 @@ step_scripts() {
   ensure_symlink "$LIB_DIR/backup/aicc-restore-test.sh" "$SBIN/aicc-restore-test"
   install_file "$INFRA/backup/aicc-restore.sh"      "$LIB_DIR/backup/aicc-restore.sh" 0755 root:root
   ensure_symlink "$LIB_DIR/backup/aicc-restore.sh" "$SBIN/aicc-restore"
+  # the wp-config renderer + its two templates + library: the restore tool re-renders a missing wp-config.php with it (F-05: the backup no longer carries the rendered file). The templates are copied by glob, the
+  # production one is only ever USED by `--env production --confirm-production` (the renderer's own gates).
+  install_file "$INFRA/provision/render-wp-config.sh" "$LIB_DIR/provision/render-wp-config.sh" 0755 root:root
+  install_file "$INFRA/provision/lib/common.sh" "$LIB_DIR/provision/lib/common.sh" 0644 root:root
+  for t in "$INFRA"/provision/wp-config.*.template.php; do install_file "$t" "$LIB_DIR/provision/$(basename "$t")" 0644 root:root; done
+  ensure_symlink "$LIB_DIR/provision/render-wp-config.sh" "$SBIN/aicc-render-wp-config"
   # release tooling (host side)
   [ -f "$INFRA/release/activate-release.sh" ] || die "infra/release missing from the bundle"
   for f in activate-release.sh rollback-release.sh smoke-cp.sh smoke-site.sh warm-cp.sh; do install_file "$INFRA/release/$f" "$LIB_DIR/release/$f" 0755 root:root; done

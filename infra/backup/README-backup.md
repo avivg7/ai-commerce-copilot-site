@@ -17,7 +17,7 @@
 Files in `/srv/aicc/backups` (directory `0751 root:root`, so AICC Ops can open `status.json` by name but cannot list it; every dump and archive is `0600 root`):
 
 * `aicc_cp-<UTC>-<label>.sql.gz` + `.sha256` : `mysqldump --single-transaction --quick --routines --triggers --events --no-tablespaces`, through the MySQL unix socket, account `aicc_backup` (SELECT, SHOW VIEW, TRIGGER, EVENT, LOCK TABLES on `aicc_cp`; `SHOW_ROUTINE` global; ALL only on `aicc_restore_check`). Credentials live in `/etc/aicc/backup.cnf` (`0600 root`), never on a command line.
-* `aicc-files-<UTC>-<label>.tar.gz` + `.sha256` : **separate `0600` archive** of `shared/uploads`, `shared/wp-config.php` (secrets: this is why it is separate from the DB dump), `/etc/aicc-edge`, `/etc/aicc-ops/aicc-ops.toml` (thresholds and host label; its `secrets.env` is deliberately NOT included) and `pointers.txt` (which release `current`/`previous` pointed to, every release manifest's tarball hash and source commit, and the host identity line). Caddy's certificate storage is deliberately not included: certificates are re-issuable and their private keys stay on the host (`aicc-caddy-storage-backup` exists for a deliberate encrypted copy).
+* `aicc-files-<UTC>-<label>.tar.gz` + `.sha256` : **separate `0600` archive** of `shared/uploads`, `shared/plugin-releases`, `/etc/aicc-edge`, `/etc/aicc-ops/aicc-ops.toml` (thresholds and host label; its `secrets.env` is deliberately NOT included) and `pointers.txt` (which release `current`/`previous` pointed to, every release manifest's tarball hash and source commit, the host identity line, and `wp_config_sha256`: a HASH of the rendered `wp-config.php`). **The rendered `shared/wp-config.php` is NOT in any archive since 2026-10-23** (security review B, F-05: it carries the DB password, the WordPress salts and both shared licensing secrets, and the archive is copied to the owner's Mac): restore re-renders it from `/etc/aicc/secrets` + the template (`aicc-render-wp-config`), see below. Caddy's certificate storage is deliberately not included: certificates are re-issuable and their private keys stay on the host (`aicc-caddy-storage-backup` exists for a deliberate encrypted copy).
 * `status.json` : schema documented at the top of `aicc-backup.sh`. Top-level `"status": "ok|failed"` (what AICC Ops' backup collector parses), `last_success` (survives a later failure; used by the release gate), per-file sha256 and sizes, `restore_check`, `disk_free_pct`.
 * `restore-test.json` : result of the last restore test. `backup.log` : the job's log (no secrets).
 
@@ -49,7 +49,7 @@ sudo aicc-wp option get siteurl                         # smoke: WordPress reads
 systemctl start aicc-wp-cron.timer
 ```
 
-Files: `tar -xzpf aicc-files-<ts>-<label>.tar.gz -C / --exclude=pointers.txt` (use `aicc-restore live` instead whenever possible) restores uploads, `wp-config.php` and `/etc/aicc-edge` to their paths (check ownership afterwards: `chown -R aicc-cp:aicc-edge /srv/aicc/shared/uploads`, `chown root:aicc-cp /srv/aicc/shared/wp-config.php`). The code is not in the backup: it comes from the release tarballs (`pointers.txt` says which release was live).
+Files: `tar -xzpf aicc-files-<ts>-<label>.tar.gz -C / --exclude=pointers.txt` (use `aicc-restore live` instead whenever possible) restores uploads and `/etc/aicc-edge` to their paths (check ownership afterwards: `chown -R aicc-cp:aicc-edge /srv/aicc/shared/uploads`); then re-create the configuration with `sudo aicc-render-wp-config --env stage` (production: `--env production --confirm-production`; needs `/etc/aicc/secrets` with the database password and, in production, the two owner-held shared secrets). Archives taken BEFORE 2026-10-23 still contain the rendered file: `aicc-restore` never extracts it (do not do it by hand either; treat any such old archive as holding live secrets, and rotate them if one ever leaves your control). The code is not in the backup: it comes from the release tarballs (`pointers.txt` says which release was live).
 
 ## Off-host copy (runs on the Mac)
 
@@ -156,3 +156,23 @@ DigitalOcean Droplet backups and snapshots are **paid and are not enabled**. Fre
 3. **The host pushing out** (to a free object store) would give 24/7 copies but puts a write-capable credential on the host that a compromised host could use to delete the copies; the pull-only model deliberately avoids that. Not recommended unless the credential is append-only/versioned (a provider feature to verify).
 4. **Using a Git hosting service as a blob store** (even a private repository): against the spirit of the service terms for large or frequent binaries and awkward to prune; not recommended.
 Until one of these exists, the honest statement for the owner is: **the off-host copy is as available as your Mac**.
+
+
+## Encrypted off-host copies (F-05, security review B; 2026-10-23)
+
+Two decisions, both about what rests on the owner's Mac:
+
+1. **The rendered `wp-config.php` is no longer archived** (above). It is re-rendered on restore from `/etc/aicc/secrets` + the template (`aicc-render-wp-config`, installed by `install-stack.sh`; `aicc-restore live` has a `wpconfig` step that runs it when the file is missing, the DR drill deletes the file and proves it comes back). Consequence for a whole-Droplet rebuild: the DB password and salts are regenerated by `create-staging-db.sh` / the renderer (nothing to restore), the two owner-held secrets (entitlement webhook, activation proof) are re-entered with `promote-to-production.sh set-owner-secret`. They are in the owner's password manager, never in a backup.
+2. **The Mac keeps only ciphertext.** `pull-offhost.sh --encrypt-to <recipient certificate.pem>` verifies each file as before (checksums, `gzip -t`), encrypts it with CMS (AES-256, RSA >= 3072) to the owner's recipient certificate, stores `<name>.cms` and deletes the plaintext temp file. **`--env production` requires `--encrypt-to`** (so does the production LaunchAgent installer). The certificate is a PUBLIC key; the pull refuses a file that also contains a private key. Whoever copies the Mac's backup folder (theft, Time Machine, iCloud, a mis-set `--dest`) gets ciphertext. Why on the Mac and not on the host: the host's own copies stay plaintext on its disk (same trust as the live database), the transport is SSH, and verification/ack keep working on plaintext hashes; the host never holds a decryption key either way. What it does NOT protect against: malware on the Mac during the minutes a file is being pulled (the plaintext exists in a 0600 temp file in the 0700 destination until it is encrypted).
+
+**Key handling (owner gate; no new paid service).**
+```bash
+# on a machine that is NOT the pulling Mac (or on the Mac, then MOVE the private key away at once and delete this copy):
+openssl req -x509 -newkey rsa:4096 -nodes -keyout aicc-backup-recipient.key -out aicc-backup-recipient.crt -subj "/CN=aicc-backup-recipient" -days 3650
+# 1. store aicc-backup-recipient.key in the password manager AND on an offline medium (USB stick in a drawer); 2. delete the file from the generating machine;
+# 3. copy ONLY the .crt to the Mac:  install -m 644 aicc-backup-recipient.crt ~/.config/aicc/backup-recipient.crt
+infra/backup/macos/install-launchd.sh --env production --stage-ip <IPV4> --expect-id <id> --encrypt-to $HOME/.config/aicc/backup-recipient.crt --apply
+# restore / drill (the private key is fetched for the minutes it takes, then deleted again):
+infra/backup/decrypt-offhost.sh --key /path/to/aicc-backup-recipient.key --in ~/aicc-offhost-backups-production/aicc_cp-<ts>-<label>.sql.gz.cms --out /tmp/dump.sql.gz
+```
+Losing the private key makes the Mac's copies unreadable (the host's own hourly sets are unaffected): keep two copies of it. Rotating: make a new key pair, point the agent at the new certificate; older ciphertext needs the old key, so keep it. The certificate must expire in more than a day (the pull refuses otherwise). `dr-drill.sh` takes `--encrypt-to` and `--decrypt-key` (required together; mandatory in production). An unreadable-at-rest copy that has never been decrypted is a hope, not a backup: run `decrypt-offhost.sh` once after the first pull and compare the hash it checks.

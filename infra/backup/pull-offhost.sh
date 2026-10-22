@@ -16,6 +16,11 @@
 # /usr/local/sbin/aicc-offhost-serve, which only understands `identity`, `status`, `get <backup file>` and `ack ...`. This script therefore sends those four
 # words and never `sudo cat`. (The operator key/user `aicc` does NOT work with this script any more: use a manual `ssh` for operator tasks.)
 #
+# ENCRYPTION AT REST ON THE MAC (security review B, F-05): with --encrypt-to <recipient certificate.pem> every verified file is stored ONLY as CMS ciphertext
+#   (`<name>.cms`, AES-256, RSA >= 3072) and the plaintext temp file is deleted at once. The certificate is a PUBLIC key; its private half must live OFF the pull path
+#   (the owner's password manager / an offline USB stick), never on the Mac that pulls, so a stolen or synced Mac copy is unreadable. `--env production` REQUIRES --encrypt-to.
+#   Sidecars: `<name>.cms.sha256` = the PLAINTEXT sha256 (what the host's ack and status.json know), `<name>.cms.csha256` = the ciphertext's own sha256 (detects local damage).
+#   Restore: `infra/backup/decrypt-offhost.sh --key <private key> --in <name>.cms --out <name>` (checks the plaintext hash).
 # Fail closed:
 #   * the host is NEVER guessed: --stage-ip is required, there is no default. It must be a literal IPv4 address.
 #   * refuses the production API address 139.59.157.231 (and the other public addresses in the deny list), refuses any key whose file name looks like the
@@ -33,7 +38,7 @@ set -euo pipefail
 umask 077
 
 STAGE_IP=""; STAGE_HOST=""; KEY=""; USER_NAME="aicc-offhost"; DEST=""; KEEP=""; ENVN="stage"; EXPECT_ID=""; KNOWN_HOSTS=""
-WITH_FILES=1; DRY=0; ACK=1
+WITH_FILES=1; DRY=0; ACK=1; ENC=""
 DENY_IPS="139.59.157.231 185.199.108.153 185.199.109.153 185.199.110.153 185.199.111.153"
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../provision/lib/ip-guard.sh"   # strict address check (security review L5)
 while [ $# -gt 0 ]; do
@@ -49,6 +54,7 @@ while [ $# -gt 0 ]; do
     --known-hosts) KNOWN_HOSTS="${2:-}"; shift 2 ;;
     --no-files-archive) WITH_FILES=0; shift ;;
     --no-ack) ACK=0; shift ;;
+    --encrypt-to) ENC="${2:-}"; shift 2 ;;
     --dry-run) DRY=1; shift ;;
     -h|--help) sed -n 2,27p "$0"; exit 0 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
@@ -86,6 +92,16 @@ case "$KEY" in *aicc_digitalocean_prod*) refuse "never use the production key." 
 [ -f "$KEY" ] || { echo "no such key file: $KEY" >&2; exit 2; }
 grep -q "PRIVATE KEY" "$KEY" 2>/dev/null || refuse "$KEY is not a private key file"
 [[ "$USER_NAME" =~ ^[a-z][a-z0-9_-]{0,31}$ ]] || refuse "bad --user"
+if [ "$ENVN" = production ] && [ -z "$ENC" ]; then refuse "--env production requires --encrypt-to <recipient certificate>: customer data and licence records must not rest in plaintext on the Mac (generate the key pair OFF the Mac; docs: infra/backup/README-backup.md 'Encrypted off-host copies')"; fi
+if [ -n "$ENC" ]; then
+  [ -f "$ENC" ] && grep -q 'BEGIN CERTIFICATE' "$ENC" || refuse "--encrypt-to must be a PEM certificate file"
+  if grep -q 'PRIVATE KEY' "$ENC"; then refuse "$ENC contains a PRIVATE KEY: the private half must never be on the pull path (give only the certificate)"; fi
+  command -v openssl >/dev/null 2>&1 || refuse "openssl is required for --encrypt-to"
+  openssl x509 -in "$ENC" -noout -checkend 86400 >/dev/null 2>&1 || refuse "the recipient certificate is unreadable or expires within a day"
+  bits="$(openssl x509 -in "$ENC" -noout -text 2>/dev/null | sed -n 's/.*Public-Key: (\([0-9]*\) bit).*/\1/p' | head -1)"
+  { [ -n "$bits" ] && [ "$bits" -ge 3072 ] && openssl x509 -in "$ENC" -noout -text 2>/dev/null | grep -q 'rsaEncryption'; } || refuse "the recipient certificate must hold an RSA key of at least 3072 bits (has '${bits:-unknown}')"
+  case "$ENC" in /*) ;; *) refuse "--encrypt-to must be an absolute path" ;; esac
+fi
 [ -z "$KEEP" ] || { [[ "$KEEP" =~ ^[0-9]+$ ]] && [ "$KEEP" -ge 2 ]; } || { echo "--keep must be a number >= 2" >&2; exit 2; }
 [[ "$DEST" == /* ]] || { echo "--dest must be an absolute path" >&2; exit 2; }
 
@@ -157,9 +173,16 @@ want_farc="$(echo "$status" | jq -r --arg f "$farc" 'if .files_archive.file == $
 [[ -z "$want_dump" || "$want_dump" =~ ^[0-9a-f]{64}$ ]] || { say "FAILURE bad dump hash in status.json"; exit 1; }
 [[ -z "$want_farc" || "$want_farc" =~ ^[0-9a-f]{64}$ ]] || { say "FAILURE bad archive hash in status.json"; exit 1; }
 
-pull_one() { # pull_one <name> <sha-from-status>
-  local name="$1" want="$2" tmp="$DEST/$1.partial" side got sc
-  if [ -f "$DEST/$name" ] && [ -f "$DEST/$name.sha256" ] && [ "$(sha_of "$DEST/$name")" = "$want" ]; then say "already have $name (checksum verified)"; return 0; fi
+PULLED_SHA=""
+pull_one() { # pull_one <name> <sha-from-status>; sets PULLED_SHA = the PLAINTEXT sha256 of what is stored
+  local name="$1" want="$2" tmp="$DEST/$1.partial" side got sc store="$1" csha
+  [ -z "$ENC" ] || store="$1.cms"
+  if [ -z "$ENC" ]; then
+    if [ -f "$DEST/$name" ] && [ -f "$DEST/$name.sha256" ] && [ "$(sha_of "$DEST/$name")" = "$want" ]; then PULLED_SHA="$want"; say "already have $name (checksum verified)"; return 0; fi
+  else
+    if [ -f "$DEST/$store" ] && [ -f "$DEST/$store.sha256" ] && [ -f "$DEST/$store.csha256" ] && [ -n "$want" ] && [ "$(awk '{print $1}' "$DEST/$store.sha256")" = "$want" ] \
+       && [ "$(sha_of "$DEST/$store")" = "$(awk '{print $1}' "$DEST/$store.csha256")" ]; then PULLED_SHA="$want"; say "already have $name (encrypted copy, ciphertext checksum verified)"; return 0; fi
+  fi
   bounded "${SSH[@]}" "get $name" > "$tmp" || { rm -f "$tmp"; say "FAILURE transfer of $name"; return 1; }
   if [ "$(wc -c < "$tmp" | tr -d ' ')" -ge "$MAX_BYTES" ]; then rm -f "$tmp"; say "FAILURE $name reached the size ceiling"; return 1; fi
   side="$(rem "get $name.sha256" 2>/dev/null | head -c 200 | awk '{print $1}' | head -1)"
@@ -168,18 +191,29 @@ pull_one() { # pull_one <name> <sha-from-status>
   if [ "$got" != "$side" ]; then rm -f "$tmp"; say "FAILURE checksum mismatch for $name (received $got, server sidecar '${side:-none}')"; return 1; fi
   if [ -n "$want" ] && [ "$got" != "$want" ]; then rm -f "$tmp"; say "FAILURE $name differs from the hash recorded in status.json"; return 1; fi
   gzip -t "$tmp" || { rm -f "$tmp"; say "FAILURE gzip -t failed for $name"; return 1; }
-  mv -f "$tmp" "$DEST/$name"; chmod 600 "$DEST/$name"
-  printf '%s  %s\n' "$got" "$name" > "$DEST/$name.sha256"; chmod 600 "$DEST/$name.sha256"
-  sc="$(wc -c < "$DEST/$name" | tr -d ' ')"
-  say "SUCCESS pulled $name ($sc bytes), checksum verified"
+  if [ -z "$ENC" ]; then
+    mv -f "$tmp" "$DEST/$name"; chmod 600 "$DEST/$name"
+    printf '%s  %s\n' "$got" "$name" > "$DEST/$name.sha256"; chmod 600 "$DEST/$name.sha256"
+  else
+    # verified plaintext -> ciphertext, then the plaintext temp is destroyed; only the PUBLIC certificate is needed here
+    if ! openssl cms -encrypt -binary -aes-256-cbc -outform DER -in "$tmp" -out "$DEST/$store.partial" "$ENC" 2>/dev/null || [ ! -s "$DEST/$store.partial" ]; then rm -f "$tmp" "$DEST/$store.partial"; say "FAILURE encryption of $name"; return 1; fi
+    rm -f "$tmp"
+    chmod 600 "$DEST/$store.partial"; mv -f "$DEST/$store.partial" "$DEST/$store"
+    csha="$(sha_of "$DEST/$store")"
+    printf '%s  %s\n' "$got" "$name" > "$DEST/$store.sha256"; chmod 600 "$DEST/$store.sha256"
+    printf '%s  %s\n' "$csha" "$store" > "$DEST/$store.csha256"; chmod 600 "$DEST/$store.csha256"
+  fi
+  PULLED_SHA="$got"
+  sc="$(wc -c < "$DEST/$store" | tr -d ' ')"
+  say "SUCCESS pulled $name ($sc bytes$([ -n "$ENC" ] && echo ', stored encrypted')), checksum verified"
 }
-pull_one "$dump" "$want_dump" || exit 1
-if [ "$WITH_FILES" = 1 ]; then pull_one "$farc" "$want_farc" || exit 1; fi
+pull_one "$dump" "$want_dump" || exit 1; DSHA_P="$PULLED_SHA"
+if [ "$WITH_FILES" = 1 ]; then pull_one "$farc" "$want_farc" || exit 1; FSHA_P="$PULLED_SHA"; fi
 
 # Tell the host a verified copy now exists off-host (AICC Ops alerts when this ack goes stale). The host re-checks the hashes against its own sidecars.
 set_ts="$(echo "$dump" | sed -n 's/^aicc_cp-\([0-9]\{8\}T[0-9]\{6\}Z\)-.*/\1/p')"
 if [ "$ACK" = 1 ]; then
-  dsha="$(sha_of "$DEST/$dump")"; if [ "$WITH_FILES" = 1 ]; then fname="$farc"; fsha="$(sha_of "$DEST/$farc")"; else fname="-"; fsha="-"; fi
+  dsha="$DSHA_P"; if [ "$WITH_FILES" = 1 ]; then fname="$farc"; fsha="$FSHA_P"; else fname="-"; fsha="-"; fi
   if rem "ack $set_ts $dump $dsha $fname $fsha" >/dev/null 2>&1; then say "SUCCESS host acknowledged the off-host copy of set $set_ts"
   else say "FAILURE the host did not accept the ack (the copy itself is verified and kept)"; exit 1; fi
 fi
@@ -192,7 +226,7 @@ import datetime, glob, os, re, sys, time
 d, keep = sys.argv[1], sys.argv[2]
 now = datetime.datetime.now(datetime.timezone.utc)
 rx = re.compile(r"-(\d{8}T\d{6}Z)-")
-for pat in ("aicc_cp-*.sql.gz", "aicc-files-*.tar.gz"):
+for pat in ("aicc_cp-*.sql.gz", "aicc_cp-*.sql.gz.cms", "aicc-files-*.tar.gz", "aicc-files-*.tar.gz.cms"):
     files = sorted(glob.glob(os.path.join(d, pat)), reverse=True)
     items = []
     for f in files:
@@ -222,7 +256,7 @@ for pat in ("aicc_cp-*.sql.gz", "aicc-files-*.tar.gz"):
 PY
 while IFS= read -r old; do
   [ -n "$old" ] || continue
-  case "$(basename "$old")" in aicc_cp-*.sql.gz|aicc-files-*.tar.gz) rm -f -- "$old" "$old.sha256"; say "pruned $(basename "$old")" ;; esac
+  case "$(basename "$old")" in aicc_cp-*.sql.gz|aicc-files-*.tar.gz|aicc_cp-*.sql.gz.cms|aicc-files-*.tar.gz.cms) rm -f -- "$old" "$old.sha256" "${old%.cms}.cms.csha256" "$old.csha256"; say "pruned $(basename "$old")" ;; esac
 done < "$DEST/.prune.list"
 rm -f "$DEST/.prune.list"
 say "off-host pull finished ok"

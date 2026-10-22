@@ -34,6 +34,7 @@ Related documents: `production-path.md` (configuration and deploy path), `runboo
 | WordPress admin password | **typed by the owner** at a hidden prompt (`wp-install`) | not stored by us | no `wp-admin.pass` file is created in production; a guessable admin name is refused |
 | Mail credentials | owner (Brevo login + SMTP key) | `/etc/aicc-mail/smtp.env` 0640 `root:aicc-cp` | section 8; outside `/etc/aicc` because `/etc/aicc` is `0750 root:root` and the PHP user could not traverse it (verified on the host) |
 | Telegram bot token + chat id | owner | `/etc/aicc-ops/secrets.env` 0640 `root:aicc-ops` (not touched by the promotion) | `alerting.md` section 1 |
+| Backup recipient PRIVATE key (decrypts the Mac's copies) | owner, generated off the Mac | password manager + offline medium; **never** on the pull path; the Mac holds only the certificate | F-05, `README-backup.md` |
 | Mac off-host pull key, operator key | generated on the Mac | `authorized_keys` (restricted key for `aicc-offhost`, operator key for `aicc`) | new key pairs for production (step 6.1) |
 
 ## 2. What changes on the host (and what does not)
@@ -251,13 +252,17 @@ $PSSH 'sudo aicc-backup --label manual && sudo cat /srv/aicc/backups/status.json
 # restricted pull account: REPLACES the staging pull key with the production one
 scp -i ~/.ssh/aicc_cp_prod_operator -o IdentitiesOnly=yes -o UserKnownHostsFile=$HOME/.ssh/known_hosts_aicc_prod ~/.ssh/aicc_cp_prod_offhost.pub aicc@$HOSTIP:aicc_offhost_prod.pub
 $PSSH 'sudo ~/aicc-infra-bundle/infra/backup/install-offhost-access.sh --env production --confirm-production --pubkey-file ~/aicc_offhost_prod.pub'
-infra/backup/pull-offhost.sh --env production --stage-ip $HOSTIP --expect-id $NEWID --known-hosts ~/.ssh/known_hosts_aicc_prod_cp    # one pull by hand: SUCCESS lines + ack
-infra/backup/macos/install-launchd.sh --env production --stage-ip $HOSTIP --expect-id $NEWID --apply                               # hourly, com.aicc.offhost-pull.production
+# F-05: the Mac keeps ONLY ciphertext. One-time owner gate: make the recipient key pair OFF this Mac, keep the PRIVATE key in the password manager + an offline medium, copy only the certificate here
+#   (commands: infra/backup/README-backup.md "Encrypted off-host copies"). The production pull and the production LaunchAgent refuse to run without --encrypt-to.
+export BKCERT=$HOME/.config/aicc/backup-recipient.crt
+infra/backup/pull-offhost.sh --env production --stage-ip $HOSTIP --expect-id $NEWID --known-hosts ~/.ssh/known_hosts_aicc_prod_cp --encrypt-to $BKCERT   # one pull by hand: SUCCESS ... stored encrypted, + ack
+infra/backup/decrypt-offhost.sh --key <private key from the password manager> --in ~/aicc-offhost-backups-production/<newest>.sql.gz.cms --out /tmp/proof.sql.gz && rm /tmp/proof.sql.gz   # once: proves the key works
+infra/backup/macos/install-launchd.sh --env production --stage-ip $HOSTIP --expect-id $NEWID --encrypt-to $BKCERT --apply                               # hourly, com.aicc.offhost-pull.production
 $PSSH 'sudo cat /srv/aicc/backups/offhost-ack.json | jq .'                                                                          # verified:true, the production set
 infra/backup/rehearse-production-dr.sh --report ~/aicc-promotion/dr-rehearsal-isolated.json                                         # isolated rehearsal, any time
 ```
 Optional destructive proof on the production host (**only while it holds no customer and no order; the tool checks and refuses otherwise**):
-`infra/backup/dr-drill.sh --env production --stage-ip $HOSTIP --stage-host www.copilt.org --stage-id $NEWID --tls dark --known-hosts ~/.ssh/known_hosts_aicc_prod --key ~/.ssh/aicc_cp_prod_operator --offhost-key ~/.ssh/aicc_cp_prod_offhost --i-understand-this-wipes-production-data`.
+`infra/backup/dr-drill.sh --env production --stage-ip $HOSTIP --stage-host www.copilt.org --stage-id $NEWID --tls dark --known-hosts ~/.ssh/known_hosts_aicc_prod --key ~/.ssh/aicc_cp_prod_operator --offhost-key ~/.ssh/aicc_cp_prod_offhost --encrypt-to $BKCERT --decrypt-key <private key> --i-understand-this-wipes-production-data`.
 Then run the Telegram verification checklist (`alerting.md` section 1) so the production label is what you see.
 
 ### 6.9 Soak (24 h dark)

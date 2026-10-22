@@ -22,7 +22,8 @@
 #   safety_backup   aicc-backup --label manual  (what exists now is never destroyed without a copy; --no-safety-backup only for a drill that already has one)
 #   quiesce         stop aicc-wp-cron.timer/service and php8.3-fpm (no writer while the database is replaced)
 #   db_restore      DROP/CREATE the database, load the dump as root over the socket (definers kept), re-grant the application user
-#   files_restore   extract uploads, plugin-releases (only if the archive has them), wp-config.php, /etc/aicc-edge and /etc/aicc-ops/aicc-ops.toml from the archive (paths are checked first: only those four roots are accepted; pointers.txt is read, never extracted)
+#   files_restore   extract uploads, plugin-releases (only if the archive has them), /etc/aicc-edge and /etc/aicc-ops/aicc-ops.toml from the archive (paths are checked first: only those four roots are accepted; pointers.txt is read, never extracted)
+#   wpconfig        wp-config.php is NEVER taken from an archive (F-05); when it is missing it is re-rendered by aicc-render-wp-config from /etc/aicc/secrets + the template of this host's environment (--production: the production template)
 #   perms           ownership, modes, setgid, ACLs exactly as install-stack.sh creates them
 #   start           start php8.3-fpm and the cron timer
 #   health_gate     smoke-cp.sh (PHP + wp-config + DB + WordPress + WooCommerce + plugin), loopback /healthz through the edge, WordPress siteurl read back
@@ -199,10 +200,18 @@ s_db() {
 }
 s_files() {
   [ "$FILES" = "none" ] && return 0
-  rm -rf "$SHARED/uploads" || return 1; rm -f "$SHARED/wp-config.php" || return 1
+  rm -rf "$SHARED/uploads" || return 1      # wp-config.php is NOT touched here and NOT taken from an archive (F-05): the next step re-renders it when it is missing
   # the Plugin release store is replaced only when the archive carries one (an archive taken before it existed must not delete the live store)
   if tar -tzf "$FILES" | grep -q '^srv/aicc/shared/plugin-releases/'; then rm -rf "$SHARED/plugin-releases" || return 1; fi
-  tar -xzpf "$FILES" -C / --no-same-owner --exclude=pointers.txt || return 1
+  # --exclude wp-config.php: archives taken before 2026-10-23 carry the rendered file (with every secret in it); it is never extracted, the renderer below is the only writer
+  tar -xzpf "$FILES" -C / --no-same-owner --exclude=pointers.txt --exclude=srv/aicc/shared/wp-config.php || return 1
+}
+s_wpconfig() { # the rendered wp-config.php is re-created from /etc/aicc/secrets + the template of this host's environment when it is missing (a deleted file, a rebuilt host)
+  [ -f "$SHARED/wp-config.php" ] && return 0
+  local r=/usr/local/sbin/aicc-render-wp-config
+  [ -x "$r" ] || { echo "wp-config.php is missing and $r is not installed (install-stack.sh --only scripts)" >&2; return 1; }
+  if [ "$PRODUCTION" = 1 ]; then "$r" --env production --confirm-production || return 1; else "$r" --env stage || return 1; fi
+  [ -s "$SHARED/wp-config.php" ] || { echo "the renderer did not produce $SHARED/wp-config.php" >&2; return 1; }
 }
 s_perms() {
   [ "$FILES" = "none" ] && return 0
@@ -244,6 +253,7 @@ run_step quiesce s_quiesce || { finish 1; exit 1; }
 rc=0
 run_step db_restore s_db || rc=1
 if [ $rc = 0 ]; then run_step files_restore s_files || rc=1; fi
+run_step wpconfig s_wpconfig || rc=1   # after the files, before the permissions/start: a restore never needs the archive to carry the secrets
 run_step perms s_perms || rc=1      # even after a failed extraction: ownership/setuid cleanup must not be skipped
 run_step start s_start || rc=1     # always try to bring the application back, even after a failed step
 if [ $rc = 0 ]; then run_step health_gate s_health || rc=1; fi

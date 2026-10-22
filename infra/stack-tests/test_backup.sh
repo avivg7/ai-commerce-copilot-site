@@ -13,11 +13,18 @@ FXSOCK="$HOME/aicc-rehearsal/cp/mysql.sock"
 echo "== fixture run (database aicc_rehearsal_cp only) =="
 if [ -S "$FXSOCK" ] && [ -x "$LOCALMY/mysqldump" ]; then
   FXCNF="$TMP/fx.cnf"; printf '[client]\nuser=root\nsocket=%s\n' "$FXSOCK" > "$FXCNF"; chmod 600 "$FXCNF"
-  mkdir -p "$TMP/shared/uploads" "$TMP/edge"; echo up > "$TMP/shared/uploads/a.txt"; echo "<?php" > "$TMP/shared/wp-config.php"; echo cfg > "$TMP/edge/Caddyfile"; mkdir -p "$TMP/shared/plugin-releases/1.2.0"; echo 1.2.0 > "$TMP/shared/plugin-releases/current"; echo PK > "$TMP/shared/plugin-releases/1.2.0/z.zip"
+  mkdir -p "$TMP/shared/uploads" "$TMP/edge"; echo up > "$TMP/shared/uploads/a.txt"; echo "<?php define('AICC_ENTITLEMENT_WEBHOOK_SECRET', 'SECRET-MARKER-9f3a');" > "$TMP/shared/wp-config.php"; echo cfg > "$TMP/edge/Caddyfile"; mkdir -p "$TMP/shared/plugin-releases/1.2.0"; echo 1.2.0 > "$TMP/shared/plugin-releases/current"; echo PK > "$TMP/shared/plugin-releases/1.2.0/z.zip"
   FX() { MYSQL_BIN="$LOCALMY/mysql" MYSQLDUMP_BIN="$LOCALMY/mysqldump" bash "$BKP/$1" --fixture-test --mysql-defaults-file "$FXCNF" --db aicc_rehearsal_cp --restore-db aicc_rehearsal_restore_check "${@:2}"; }
   BEFORE="$("$LOCALMY/mysql" --defaults-extra-file="$FXCNF" -N -e "SELECT COUNT(*) FROM aicc_rehearsal_cp.rhsl_options")"
   t_ok "fixture backup succeeds (dump, gzip -t, trailer, restore smoke, files archive)" FX aicc-backup.sh --backup-dir "$TMP/bk" --shared-dir "$TMP/shared" --edge-conf-dir "$TMP/edge" --release-root "$TMP/rel" --label manual
   t_eq "status.json: ok" "$(jq -r .status "$TMP/bk/status.json")" "ok"
+  # F-05 (security review B): the rendered wp-config.php (DB password, salts, activation-proof and webhook secrets) must NEVER be in an archive that leaves the host
+  FA="$(ls "$TMP"/bk/aicc-files-*.tar.gz | head -1)"
+  t_eq "F-05: the files archive does not contain wp-config.php" "$(tar -tzf "$FA" | grep -c 'wp-config' || true)" "0"
+  t_eq "F-05: ...and no secret marker appears anywhere in the archive content" "$(mkdir -p "$TMP/x5" && tar -xzf "$FA" -C "$TMP/x5" && { grep -rl 'SECRET-MARKER-9f3a' "$TMP/x5" || true; } | wc -l | tr -d ' ')" "0"
+  t_eq "F-05: pointers.txt records only a HASH of the rendered config (re-render from /etc/aicc/secrets on restore)" "$(tar -xOzf "$FA" pointers.txt | grep -c '^wp_config_sha256 [0-9a-f]\{64\}$')" "1"
+  t_eq "F-05: ...and not the content" "$(tar -xOzf "$FA" pointers.txt | grep -c 'SECRET-MARKER')" "0"
+  t_eq "F-05: the dump of the fixture database holds no marker either" "$(gzip -dc "$TMP"/bk/aicc_rehearsal_cp-*.sql.gz | grep -c 'SECRET-MARKER' || true)" "0"
   t_ok "the files archive carries the private Plugin release store (current pointer + immutable release)" bash -c "tar -tzf \"$TMP\"/bk/aicc-files-*.tar.gz | grep -q 'plugin-releases/current' && tar -tzf \"$TMP\"/bk/aicc-files-*.tar.gz | grep -q 'plugin-releases/1.2.0/z.zip'"
   t_eq "status.json: restore_check ok" "$(jq -r .db_dump.restore_check "$TMP/bk/status.json")" "ok"
   t_eq "status.json: 57 tables restored" "$(jq -r .db_dump.tables "$TMP/bk/status.json")" "$("$LOCALMY/mysql" --defaults-extra-file="$FXCNF" -N -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='aicc_rehearsal_cp'")"
@@ -312,6 +319,7 @@ sha() { shasum -a 256 "$1" | cut -d' ' -f1; }
 DG="$RS/good.sql.gz"; DH="$(sha "$DG")"
 t_ok "an archive that carries the private Plugin release store verifies (plugin-releases is an allowed root)" RV --dump "$DG" --sha256 "$DH" --files "$RS/withreleases.tgz" --files-sha256 "$(sha "$RS/withreleases.tgz")"
 t_fail "a look-alike root (plugin-releases-evil) is still refused" RV --dump "$DG" --sha256 "$DH" --files "$RS/badrelease.tgz" --files-sha256 "$(sha "$RS/badrelease.tgz")"
+t_ok "F-05: restore never extracts wp-config.php from an archive and re-renders a missing one (text gate; live restore only runs on the host)" bash -c "grep -q -- '--exclude=srv/aicc/shared/wp-config.php' '$BKP/aicc-restore.sh' && grep -q 'aicc-render-wp-config' '$BKP/aicc-restore.sh' && grep -q 'run_step wpconfig s_wpconfig' '$BKP/aicc-restore.sh'"
 t_ok "restore only replaces the release store when the archive has one (text gate)" bash -c "grep -q \"plugin-releases/'; then rm -rf\" '$BKP/aicc-restore.sh'"
 t_ok "a clean dump and archive verify" RV --dump "$DG" --sha256 "$DH" --files "$RS/good.tgz" --files-sha256 "$(sha "$RS/good.tgz")"
 t_rc "verify without an out-of-band hash is refused" 1 RV --dump "$DG" --files none
@@ -344,10 +352,12 @@ if [ -S "$FXSOCK" ] && [ -x "$LOCALMY/mysql" ]; then
 else t_skip "fingerprint tests against MySQL" "rehearsal MySQL fixture not running"; fi
 
 echo "== PRODUCTION-mode backup identity: pull-offhost.sh --env production, the production LaunchAgent, restore and drill gates (stubs; nothing leaves this machine) =="
+RK="$TMP/recipient-private.pem"; RC="$TMP/recipient-cert.pem"
+openssl req -x509 -newkey rsa:3072 -nodes -keyout "$RK" -out "$RC" -subj "/CN=aicc-backup-recipient-test" -days 30 >/dev/null 2>&1
 PID32=0123456789abcdef0123456789abcdef; PKEY="$TMP/aicc_cp_prod_offhost"; cp "$FAKEKEY" "$PKEY"; PKH="$TMP/known_hosts_aicc_prod_cp"
 echo "203.0.113.9 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAItestonlytestonlytestonlytestonlytestonlytest" > "$PKH"
 : > "$CALLS"
-PPULL() { env HOME="$TMP/home" PATH="$STUB:$PATH" bash "$BKP/pull-offhost.sh" --env production --key "$PKEY" --known-hosts "$PKH" --dest "$TMP/destp" "$@"; }
+PPULL() { env HOME="$TMP/home" PATH="$STUB:$PATH" bash "$BKP/pull-offhost.sh" --env production --key "$PKEY" --known-hosts "$PKH" --dest "$TMP/destp" --encrypt-to "$RC" "$@"; }
 t_rc "production pull: no --expect-id is REFUSED" 3 PPULL --stage-ip 203.0.113.9
 t_rc "production pull: a malformed --expect-id is REFUSED" 3 PPULL --stage-ip 203.0.113.9 --expect-id nothex
 t_rc "production pull: a stage host name is REFUSED" 3 PPULL --stage-ip 203.0.113.9 --expect-id "$PID32" --stage-host stage.copilt.org
@@ -361,7 +371,7 @@ t_rc "production pull: a known-hosts file without an entry for the address is RE
 t_rc "stage mode: the production pull key name is REFUSED" 3 env HOME="$TMP/home" PATH="$STUB:$PATH" bash "$BKP/pull-offhost.sh" --key "$PKEY" --dest "$TMP/dest" --stage-ip 203.0.113.9
 t_rc "an unknown --env is a usage error" 2 PPULL --env qa --stage-ip 203.0.113.9
 t_eq "none of the refusals made an ssh call" "$(wc -l < "$CALLS" | tr -d ' ')" "0"
-t_ok "production --dry-run makes no ssh call and names the production identity" bash -c "PATH='$STUB':\$PATH HOME='$TMP/home' bash '$BKP/pull-offhost.sh' --env production --key '$PKEY' --known-hosts '$PKH' --dest '$TMP/destp' --stage-ip 203.0.113.9 --expect-id $PID32 --dry-run | grep -q 'verify the production identity (www.copilt.org)'"
+t_ok "production --dry-run makes no ssh call and names the production identity" bash -c "PATH='$STUB':\$PATH HOME='$TMP/home' bash '$BKP/pull-offhost.sh' --env production --key '$PKEY' --known-hosts '$PKH' --dest '$TMP/destp' --encrypt-to '$RC' --stage-ip 203.0.113.9 --expect-id $PID32 --dry-run | grep -q 'verify the production identity (www.copilt.org)'"
 t_eq "...(zero calls)" "$(wc -l < "$CALLS" | tr -d ' ')" "0"
 printf 'AICC_ENV=production\nAICC_HOSTNAME=www.copilt.org\nAICC_STAGE_ID=%s\n' "$PID32" > "$TMP/ident"
 mkset 20261022T210000Z
@@ -370,7 +380,7 @@ STUB_ENV=production STUB_HOSTNAME=www.copilt.org STUB_STAGE_ID=fffffffffffffffff
 STUB_ENV=production STUB_HOSTNAME=stage.copilt.org STUB_STAGE_ID="$PID32" t_rc "production pull: a production host with another name is refused" 3 PPULL --stage-ip 203.0.113.9 --expect-id "$PID32"
 t_fail "...nothing reached the production destination" test -e "$TMP/destp/aicc_cp-20261022T210000Z-scheduled.sql.gz"
 STUB_ENV=production STUB_HOSTNAME=www.copilt.org STUB_STAGE_ID="$PID32" t_ok "production pull succeeds against the matching identity" PPULL --stage-ip 203.0.113.9 --expect-id "$PID32"
-t_ok "production pull: the verified dump is in the PRODUCTION directory (0700), not the staging one" bash -c "test -f '$TMP/destp/aicc_cp-20261022T210000Z-scheduled.sql.gz' && [ \"\$(stat -f %Lp '$TMP/destp' 2>/dev/null || stat -c %a '$TMP/destp')\" = 700 ] && ! test -e '$TMP/dest/aicc_cp-20261022T210000Z-scheduled.sql.gz'"
+t_ok "production pull: the verified dump is in the PRODUCTION directory (0700, as ciphertext), not the staging one" bash -c "test -f '$TMP/destp/aicc_cp-20261022T210000Z-scheduled.sql.gz.cms' && [ \"\$(stat -f %Lp '$TMP/destp' 2>/dev/null || stat -c %a '$TMP/destp')\" = 700 ] && ! test -e '$TMP/dest/aicc_cp-20261022T210000Z-scheduled.sql.gz'"
 t_eq "production pull: every ssh call pinned the host key (StrictHostKeyChecking=yes, the pinned file)" "$(grep -c "StrictHostKeyChecking=yes -o UserKnownHostsFile=$PKH" "$CALLS")/$(grep -vc "StrictHostKeyChecking=yes -o UserKnownHostsFile=$PKH" "$CALLS" || true)" "$(grep -c '^ssh ' "$CALLS")/0"
 t_eq "production pull: the ack names the production set" "$(jq -r '[.verified,.set_ts]|join(",")' "$REMOTE/offhost-ack.json")" "true,20261022T210000Z"
 printf 'AICC_ENV=staging\nAICC_HOSTNAME=stage.copilt.org\n' > "$TMP/ident"
@@ -385,7 +395,7 @@ t_rc "launchd production: a missing --expect-id is refused" 1 ILD --env producti
 t_rc "launchd production: the staging key name is refused" 1 ILD --env production --stage-ip 203.0.113.9 --expect-id "$PID32" --key "$FAKEKEY" --known-hosts "$PKH" --dest "$TMP/destp"
 t_rc "launchd production: an unpinned host is refused" 1 ILD --env production --stage-ip 203.0.113.9 --expect-id "$PID32" --key "$PKEY" --known-hosts "$TMP/nope" --dest "$TMP/destp"
 t_rc "launchd stage: the production key name is refused" 1 ILD --stage-ip 203.0.113.9 --key "$PKEY" --dest "$TMP/dest"
-OUTL="$(ILD --env production --stage-ip 203.0.113.9 --expect-id "$PID32" --key "$PKEY" --known-hosts "$PKH" --dest "$TMP/destp" 2>&1)"; rcl=$?
+OUTL="$(ILD --env production --stage-ip 203.0.113.9 --expect-id "$PID32" --key "$PKEY" --known-hosts "$PKH" --dest "$TMP/destp" --encrypt-to "$RC" 2>&1)"; rcl=$?
 t_eq "launchd production dry-run exits 0" "$rcl" "0"
 t_contains "launchd production: its own label (the staging agent is untouched)" "$OUTL" "com.aicc.offhost-pull.production"
 t_contains "launchd production: the plist passes --env production and the id" "$OUTL" "<string>--expect-id</string><string>$PID32</string>"
@@ -409,8 +419,59 @@ t_rc "dr-drill production: a stage host name is refused" 3 DD --env production -
 t_rc "dr-drill production: the staging operator key name is refused" 3 DD --env production --stage-ip 203.0.113.9 --stage-host www.copilt.org --stage-id "$PID32" --tls dark --known-hosts "$PKH" --key "$FAKEKEY" --offhost-key "$PKEY" --i-understand-this-wipes-production-data
 t_rc "dr-drill production: --tls is required (usage error)" 2 DD --env production --stage-ip 203.0.113.9 --stage-host www.copilt.org --stage-id "$PID32" --known-hosts "$PKH" --key "$PKEY" --offhost-key "$PKEY" --i-understand-this-wipes-production-data
 t_rc "dr-drill stage: a production key name is refused" 3 DD --stage-ip 203.0.113.9 --stage-host stage.copilt.org --stage-id "$PID32" --key "$PKEY" --offhost-key "$PKEY" --i-understand-this-wipes-staging-data
-t_ok "dr-drill production --dry-run sends nothing" DD --env production --stage-ip 203.0.113.9 --stage-host www.copilt.org --stage-id "$PID32" --tls dark --known-hosts "$PKH" --key "$PKEY" --offhost-key "$PKEY" --dry-run
+t_ok "dr-drill production --dry-run sends nothing" DD --encrypt-to "$RC" --decrypt-key "$RK" --env production --stage-ip 203.0.113.9 --stage-host www.copilt.org --stage-id "$PID32" --tls dark --known-hosts "$PKH" --key "$PKEY" --offhost-key "$PKEY" --dry-run
 t_ok "dr-drill: the customer/order guard fails closed (text gate: refuses when it cannot read the counts)" bash -c "grep -q 'cannot determine whether the production database holds customers or orders' '$BKP/dr-drill.sh' && grep -q 'only allowed before the first customer' '$BKP/dr-drill.sh'"
+
+echo "== F-05: the Mac keeps ONLY ciphertext (CMS to a recipient certificate whose private half is not on the pull path) =="
+openssl req -x509 -newkey rsa:2048 -nodes -keyout "$TMP/weak.key" -out "$TMP/weak.pem" -subj "/CN=weak" -days 30 >/dev/null 2>&1
+openssl req -x509 -newkey rsa:3072 -nodes -keyout "$TMP/old.key" -out "$TMP/expired.pem" -subj "/CN=old" -days 1 -not_after 20200101000000Z >/dev/null 2>&1 || openssl req -x509 -newkey rsa:3072 -nodes -keyout "$TMP/old.key" -out "$TMP/expired.pem" -subj "/CN=old" -days 0 >/dev/null 2>&1
+cat "$RC" "$RK" > "$TMP/cert-with-key.pem"
+printf 'AICC_ENV=staging\nAICC_HOSTNAME=stage.copilt.org\n' > "$TMP/ident"
+mkset 20261023T010000Z
+EPULL() { env HOME="$TMP/home" PATH="$STUB:$PATH" bash "$BKP/pull-offhost.sh" --key "$FAKEKEY" --dest "$TMP/destenc" --stage-ip 203.0.113.9 "$@"; }
+t_rc "encrypt-to: a missing certificate file is REFUSED" 3 EPULL --encrypt-to "$TMP/none.pem"
+t_rc "encrypt-to: a file that is not a certificate is REFUSED" 3 EPULL --encrypt-to "$FAKEKEY"
+t_rc "encrypt-to: a PRIVATE KEY (even next to the certificate) is REFUSED: the private half must not be on the pull path" 3 EPULL --encrypt-to "$TMP/cert-with-key.pem"
+t_rc "encrypt-to: an RSA key under 3072 bits is REFUSED" 3 EPULL --encrypt-to "$TMP/weak.pem"
+t_rc "encrypt-to: an expired certificate is REFUSED" 3 EPULL --encrypt-to "$TMP/expired.pem"
+t_ok "encrypted pull succeeds" EPULL --encrypt-to "$RC"
+D1="aicc_cp-20261023T010000Z-scheduled.sql.gz"; F1="aicc-files-20261023T010000Z-scheduled.tar.gz"
+t_ok "the Mac holds the dump ONLY as ciphertext (.cms)" test -s "$TMP/destenc/$D1.cms"
+t_fail "...no plaintext dump at rest" test -e "$TMP/destenc/$D1"
+t_ok "...the files archive too" test -s "$TMP/destenc/$F1.cms"
+t_fail "...no plaintext files archive at rest" test -e "$TMP/destenc/$F1"
+t_eq "...no .partial plaintext temp is left behind" "$(ls "$TMP"/destenc/*.partial 2>/dev/null | wc -l | tr -d ' ')" "0"
+t_eq "...ciphertext is not gzip (nothing readable at rest)" "$(gzip -t "$TMP/destenc/$D1.cms" 2>/dev/null && echo gzip || echo opaque)" "opaque"
+t_eq "...the sidecar records the PLAINTEXT sha256 (verification stays possible after decryption)" "$(awk '{print $1}' "$TMP/destenc/$D1.cms.sha256")" "$(shasum -a 256 "$REMOTE/$D1" | cut -d' ' -f1)"
+t_eq "...file modes are 0600" "$(stat -f %Lp "$TMP/destenc/$D1.cms" 2>/dev/null || stat -c %a "$TMP/destenc/$D1.cms")" "600"
+t_eq "...the host got the ack with the plaintext hashes of the set" "$(jq -r '.dump_sha256' "$REMOTE/offhost-ack.json")" "$(shasum -a 256 "$REMOTE/$D1" | cut -d' ' -f1)"
+t_ok "decrypt-offhost.sh with the PRIVATE key restores the exact plaintext (hash checked against the sidecar)" bash "$BKP/decrypt-offhost.sh" --key "$RK" --in "$TMP/destenc/$D1.cms" --out "$TMP/dec-dump.sql.gz"
+t_ok "...byte-identical to the host's file" cmp "$TMP/dec-dump.sql.gz" "$REMOTE/$D1"
+t_ok "...and the files archive" bash "$BKP/decrypt-offhost.sh" --key "$RK" --in "$TMP/destenc/$F1.cms" --out "$TMP/dec-files.tar.gz"
+openssl req -x509 -newkey rsa:3072 -nodes -keyout "$TMP/other.key" -out "$TMP/other.pem" -subj "/CN=other" -days 30 >/dev/null 2>&1
+t_fail "a different private key cannot decrypt it" bash "$BKP/decrypt-offhost.sh" --key "$TMP/other.key" --in "$TMP/destenc/$D1.cms" --out "$TMP/dec-wrong.sql.gz"
+t_fail "...and no output file is left behind" test -e "$TMP/dec-wrong.sql.gz"
+: > "$CALLS"; t_ok "a second pull of the same set is a no-op for an already stored encrypted set" EPULL --encrypt-to "$RC"
+t_contains "...reported as already present" "$(tail -4 "$TMP/destenc/pull.log")" "already have"
+t_eq "...no second transfer of the dump (no 'get <dump>' call)" "$(grep -c "get $D1\$" "$CALLS" || true)" "0"
+printf 'X' | dd of="$TMP/destenc/$D1.cms" bs=1 seek=400 conv=notrunc 2>/dev/null
+t_fail "a damaged ciphertext is refused by the decryptor" bash "$BKP/decrypt-offhost.sh" --key "$RK" --in "$TMP/destenc/$D1.cms" --out "$TMP/dec-bad.sql.gz"
+: > "$CALLS"; t_ok "the next pull notices the damaged ciphertext (ciphertext hash sidecar) and fetches the set again" EPULL --encrypt-to "$RC"
+t_eq "...a 'get <dump>' call was made" "$(grep -c "get $D1\$" "$CALLS" || true)" "1"
+t_ok "...and the healed copy decrypts" bash "$BKP/decrypt-offhost.sh" --key "$RK" --in "$TMP/destenc/$D1.cms" --out "$TMP/dec-dump2.sql.gz"
+for ts in 20261020T010000Z 20261021T010000Z 20261022T010000Z; do mkset "$ts"; EPULL --encrypt-to "$RC" --keep 2 >/dev/null 2>&1; done
+t_eq "retention prunes .cms files and their sidecars like plaintext (--keep 2)" "$(ls "$TMP"/destenc/aicc_cp-*.sql.gz.cms | wc -l | tr -d ' ')/$(ls "$TMP"/destenc/aicc_cp-*.sql.gz.cms.sha256 | wc -l | tr -d ' ')" "2/2"
+t_eq "...the same for the files archives" "$(ls "$TMP"/destenc/aicc-files-*.tar.gz.cms | wc -l | tr -d ' ')" "2"
+mkset 20261022T020000Z; STUB_CORRUPT=1 t_rc "a corrupted transfer is still rejected before anything is encrypted (1)" 1 EPULL --encrypt-to "$RC"
+t_eq "...no ciphertext was stored for it" "$(ls "$TMP"/destenc/*20261022T020000Z* 2>/dev/null | wc -l | tr -d " ")" "0"
+# production: encryption is mandatory
+PID32=0123456789abcdef0123456789abcdef; PKEY2="$TMP/aicc_cp_prod_offhost"; PKH2="$TMP/known_hosts_aicc_prod_cp"
+t_rc "production pull WITHOUT --encrypt-to is REFUSED (plaintext customer data must not rest on the Mac)" 3 env HOME="$TMP/home" PATH="$STUB:$PATH" bash "$BKP/pull-offhost.sh" --env production --key "$PKEY2" --known-hosts "$PKH2" --dest "$TMP/destp2" --stage-ip 203.0.113.9 --expect-id "$PID32"
+t_rc "production launchd installer WITHOUT --encrypt-to is REFUSED" 1 env HOME="$TMP/home" bash "$BKP/macos/install-launchd.sh" --env production --stage-ip 203.0.113.9 --expect-id "$PID32" --key "$PKEY2" --known-hosts "$PKH2" --dest "$TMP/destp2"
+OUTE="$(env HOME="$TMP/home" bash "$BKP/macos/install-launchd.sh" --env production --stage-ip 203.0.113.9 --expect-id "$PID32" --key "$PKEY2" --known-hosts "$PKH2" --dest "$TMP/destp2" --encrypt-to "$RC" 2>&1)"
+t_contains "production launchd dry-run passes --encrypt-to to the runner" "$OUTE" "<string>--encrypt-to</string><string>$RC</string>"
+t_not_contains "...and the plist holds no private key" "$OUTE" "PRIVATE KEY"
+t_ok "the pull script documents where the private key must live (owner gate)" bash -c "grep -q 'private half' '$BKP/pull-offhost.sh' && grep -q 'Encrypted off-host copies' '$BKP/README-backup.md'"
 
 echo "== RPO/RTO documentation exists and does not claim an unproven restore time =="
 t_ok "README-backup.md documents RPO and RTO" bash -c "grep -q 'RPO' '$BKP/README-backup.md' && grep -q 'RTO' '$BKP/README-backup.md'"

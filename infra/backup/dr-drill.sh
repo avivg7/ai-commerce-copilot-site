@@ -7,6 +7,8 @@
 #   PRODUCTION-MODE drill (the promoted host, ONLY while it holds no customer data, i.e. before launch; docs/cutover/production-promotion.md):
 #   infra/backup/dr-drill.sh --env production --stage-ip <IPV4> --stage-host www.copilt.org --stage-id <32 hex> --tls dark|public --known-hosts FILE \
 #       --i-understand-this-wipes-production-data --key ~/.ssh/aicc_cp_prod_operator --offhost-key ~/.ssh/aicc_cp_prod_offhost [--dest ~/aicc-offhost-backups-production]
+#     --encrypt-to <recipient cert> is REQUIRED in production (the Mac keeps only ciphertext, F-05) and --decrypt-key <the PRIVATE key> is needed to use that ciphertext for the recovery: fetch it from the
+#     password manager for the minutes of the drill (it is read by openssl only; the plaintext is a temp file in a 0700 directory that is deleted at the end). Staging may use both too.
 #     refuses unless the host identity says production with this name and id, the pinned host key matches, and the database holds NO customer and NO order (checked on the host through WP-CLI;
 #     if that cannot be determined the drill refuses). --tls dark = the edge still serves Caddy's internal certificate (curl -k for the two HTTP proofs), public = a public CA certificate.
 #
@@ -25,14 +27,14 @@
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$HERE/../provision/lib/ip-guard.sh"
-STAGE_IP=""; STAGE_HOST=""; STAGE_ID=""; KEY=""; OKEY=""; DEST=""; REPORT=""; YES=0; DRY=0; ENVN="stage"; TLS=""; KNOWN_HOSTS=""
+STAGE_IP=""; STAGE_HOST=""; STAGE_ID=""; KEY=""; OKEY=""; DEST=""; REPORT=""; YES=0; DRY=0; ENVN="stage"; TLS=""; KNOWN_HOSTS=""; ENC=""; DKEY=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --stage-ip) STAGE_IP="${2:-}"; shift 2 ;; --stage-host) STAGE_HOST="${2:-}"; shift 2 ;; --stage-id) STAGE_ID="${2:-}"; shift 2 ;;
     --key) KEY="${2:-}"; shift 2 ;; --offhost-key) OKEY="${2:-}"; shift 2 ;; --dest) DEST="${2:-}"; shift 2 ;; --report) REPORT="${2:-}"; shift 2 ;;
     --i-understand-this-wipes-staging-data) [ "$ENVN" = production ] && { echo "REFUSED: use --i-understand-this-wipes-production-data with --env production" >&2; exit 3; }; YES=1; shift ;;
     --i-understand-this-wipes-production-data) YES=2; shift ;; --dry-run) DRY=1; shift ;;
-    --env) ENVN="${2:-}"; shift 2 ;; --tls) TLS="${2:-}"; shift 2 ;; --known-hosts) KNOWN_HOSTS="${2:-}"; shift 2 ;;
+    --env) ENVN="${2:-}"; shift 2 ;; --encrypt-to) ENC="${2:-}"; shift 2 ;; --decrypt-key) DKEY="${2:-}"; shift 2 ;; --tls) TLS="${2:-}"; shift 2 ;; --known-hosts) KNOWN_HOSTS="${2:-}"; shift 2 ;;
     -h|--help) sed -n 2,24p "${BASH_SOURCE[0]}"; exit 0 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
@@ -65,6 +67,9 @@ else
 fi
 [[ "$STAGE_ID" =~ ^[0-9a-f]{32}$ ]] || refuse "--stage-id must be 32 hex characters"
 [ -f "$KEY" ] && [ -f "$OKEY" ] || { echo "key files not found" >&2; exit 2; }
+if [ "$ENVN" = production ] && [ -z "$ENC" ]; then refuse "--env production requires --encrypt-to <recipient certificate> and --decrypt-key <private key>"; fi
+if [ -n "$ENC" ] && [ -z "$DKEY" ]; then refuse "--encrypt-to needs --decrypt-key: the recovery must come from the ciphertext the Mac holds"; fi
+[ -z "$DKEY" ] || { [ -f "$DKEY" ] && grep -q 'PRIVATE KEY' "$DKEY"; } || refuse "--decrypt-key is not a private key file"
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"; [ -n "$REPORT" ] || REPORT="$HOME/Downloads/AICC-cutover-evidence/linux-stage/dr-drill-$STAMP.json"
 if [ "$ENVN" = production ]; then KH="$KNOWN_HOSTS"; SHK=yes; else KH="$HOME/.ssh/known_hosts_aicc_stage"; SHK=accept-new; fi
 SSHO=(-i "$KEY" -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=15 -o StrictHostKeyChecking="$SHK" -o UserKnownHostsFile="$KH" -o NumberOfPasswordPrompts=0)
@@ -118,16 +123,24 @@ PRE_TABLES="$(rem 'sudo sh -c "wc -l < /srv/aicc/restore-in/pre.fp"' | tr -d ' '
 
 echo "== phase 2: off-host pull to the Mac (restricted key) =="
 t=$(now)
-if [ "$ENVN" = production ]; then bash "$HERE/pull-offhost.sh" --env production --expect-id "$STAGE_ID" --known-hosts "$KNOWN_HOSTS" --stage-ip "$STAGE_IP" --stage-host "$STAGE_HOST" --key "$OKEY" --dest "$DEST" >/dev/null
-else bash "$HERE/pull-offhost.sh" --stage-ip "$STAGE_IP" --stage-host "$STAGE_HOST" --key "$OKEY" --dest "$DEST" >/dev/null; fi
+if [ "$ENVN" = production ]; then bash "$HERE/pull-offhost.sh" ${ENC:+--encrypt-to "$ENC"} --env production --expect-id "$STAGE_ID" --known-hosts "$KNOWN_HOSTS" --stage-ip "$STAGE_IP" --stage-host "$STAGE_HOST" --key "$OKEY" --dest "$DEST" >/dev/null
+else bash "$HERE/pull-offhost.sh" ${ENC:+--encrypt-to "$ENC"} --stage-ip "$STAGE_IP" --stage-host "$STAGE_HOST" --key "$OKEY" --dest "$DEST" >/dev/null; fi
 step offhost_pull "$(el "$t" "$(now)")"
 STATUS="$(rem 'sudo cat /srv/aicc/backups/status.json')"
 DUMP="$(jq -r '.last_success.db_dump_file' <<<"$STATUS")"; FARC="$(jq -r '.last_success.files_archive_file' <<<"$STATUS")"
 # names from the host are validated with the same strict patterns the pull uses BEFORE they touch a path or a remote command
 [[ "$DUMP" =~ ^aicc_cp-[0-9]{8}T[0-9]{6}Z-manual\.sql\.gz$ ]] || { echo "the newest backup is not the drill's manual one" >&2; exit 1; }
 [[ "$FARC" =~ ^aicc-files-[0-9]{8}T[0-9]{6}Z-manual\.tar\.gz$ ]] || { echo "the newest files archive name is not the drill's manual one" >&2; exit 1; }
-[ -f "$DEST/$DUMP" ] && [ -f "$DEST/$FARC" ] || { echo "the Mac does not hold the drill's backup set" >&2; exit 1; }
-LOCAL_D="$(shasum -a 256 "$DEST/$DUMP" | cut -d' ' -f1)"; LOCAL_F="$(shasum -a 256 "$DEST/$FARC" | cut -d' ' -f1)"
+DUMP_P="$DEST/$DUMP"; FARC_P="$DEST/$FARC"
+if [ -n "$ENC" ]; then
+  # the Mac holds only ciphertext: decrypt into a private temp directory for the recovery, hash-checked against the sidecars, removed on exit
+  DEC_DIR="$(mktemp -d "${TMPDIR:-/tmp}/aicc-drill-dec.XXXXXX")"; chmod 700 "$DEC_DIR"; trap 'rm -rf "$DEC_DIR"; unfreeze' EXIT
+  bash "$HERE/decrypt-offhost.sh" --key "$DKEY" --in "$DEST/$DUMP.cms" --out "$DEC_DIR/$DUMP" >/dev/null || { echo "cannot decrypt the Mac's copy of the dump" >&2; exit 1; }
+  bash "$HERE/decrypt-offhost.sh" --key "$DKEY" --in "$DEST/$FARC.cms" --out "$DEC_DIR/$FARC" >/dev/null || { echo "cannot decrypt the Mac's copy of the files archive" >&2; exit 1; }
+  DUMP_P="$DEC_DIR/$DUMP"; FARC_P="$DEC_DIR/$FARC"
+fi
+[ -f "$DUMP_P" ] && [ -f "$FARC_P" ] || { echo "the Mac does not hold the drill's backup set" >&2; exit 1; }
+LOCAL_D="$(shasum -a 256 "$DUMP_P" | cut -d' ' -f1)"; LOCAL_F="$(shasum -a 256 "$FARC_P" | cut -d' ' -f1)"
 echo "the Mac holds $DUMP ($LOCAL_D) and $FARC"
 
 echo "== phase 3: DISASTER (RTO clock starts) =="
@@ -144,7 +157,7 @@ step disaster "$(el "$T0" "$(now)")"
 echo "== phase 4: recover from the Mac's copy =="
 t=$(now)
 # stream the Mac's verified copy back through ssh into the root-only restore directory (no world-writable /tmp staging path)
-for f in "$DUMP" "$FARC"; do rem "sudo tee /srv/aicc/restore-in/$f >/dev/null && sudo chmod 600 /srv/aicc/restore-in/$f" < "$DEST/$f"; done
+for pair in "$DUMP:$DUMP_P" "$FARC:$FARC_P"; do f="${pair%%:*}"; src="${pair#*:}"; rem "sudo tee /srv/aicc/restore-in/$f >/dev/null && sudo chmod 600 /srv/aicc/restore-in/$f" < "$src"; done
 step copy_back_to_host "$(el "$t" "$(now)")"
 t=$(now)
 rem "sudo /usr/local/sbin/aicc-restore scratch $RFLAG --dump /srv/aicc/restore-in/$DUMP --sha256 $LOCAL_D --fingerprint-out /srv/aicc/restore-in/scratch.fp" >/dev/null 2>&1 || echo "WARNING: scratch load of the Mac copy failed" >&2

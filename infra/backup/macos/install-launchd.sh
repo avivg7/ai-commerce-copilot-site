@@ -20,7 +20,7 @@ BKP="$(cd "$HERE/.." && pwd)"
 TEMPLATE="$HERE/com.aicc.offhost-pull.plist.template"
 . "$BKP/../provision/lib/ip-guard.sh"
 
-apply=0 uninstall=0 stage_ip="" stage_host="" key="" dest="" envn="stage" expect_id="" known_hosts=""
+apply=0 uninstall=0 stage_ip="" stage_host="" key="" dest="" envn="stage" expect_id="" known_hosts="" encrypt_to=""
 die() { echo "install-launchd: $*" >&2; exit 1; }
 usage() { sed -n '2,11p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
 while [ $# -gt 0 ]; do
@@ -35,6 +35,7 @@ while [ $# -gt 0 ]; do
     --env) [ $# -ge 2 ] || die "--env needs a value"; envn="$2"; shift ;;
     --expect-id) [ $# -ge 2 ] || die "--expect-id needs a value"; expect_id="$2"; shift ;;
     --known-hosts) [ $# -ge 2 ] || die "--known-hosts needs a path"; known_hosts="$2"; shift ;;
+    --encrypt-to) [ $# -ge 2 ] || die "--encrypt-to needs a certificate path"; encrypt_to="$2"; shift ;;
     -h|--help) usage; exit 0 ;;
     *) die "unknown argument: $1 (try --help)" ;;
   esac
@@ -93,7 +94,13 @@ else
   case "$(basename "$key")" in aicc_cp_prod*) die "REFUSED: the production key is not used for staging" ;; esac
 fi
 case "$key" in *aicc_digitalocean_prod*) die "REFUSED: never use the production key" ;; esac
-case "$key$dest$known_hosts" in *[!A-Za-z0-9._/\ -]*) die "key/dest contain characters this installer will not put into a plist" ;; esac
+if [ "$envn" = production ] && [ -z "$encrypt_to" ]; then die "REFUSED: --env production requires --encrypt-to <recipient certificate.pem> (the Mac must hold only ciphertext; the private key stays off this Mac)"; fi
+if [ -n "$encrypt_to" ]; then
+  [[ "$encrypt_to" == /* ]] || die "--encrypt-to must be an absolute path"
+  [ -f "$encrypt_to" ] && grep -q 'BEGIN CERTIFICATE' "$encrypt_to" || die "REFUSED: $encrypt_to is not a PEM certificate"
+  if grep -q 'PRIVATE KEY' "$encrypt_to"; then die "REFUSED: $encrypt_to contains a PRIVATE KEY; give the agent the certificate only"; fi
+fi
+case "$key$dest$known_hosts$encrypt_to" in *[!A-Za-z0-9._/\ -]*) die "key/dest contain characters this installer will not put into a plist" ;; esac
 [[ "$dest" == /* && "$key" == /* ]] || die "--key and --dest must be absolute paths"
 [ -f "$key" ] || die "key file not found: $key (create the restricted pull key first; see README-backup.md)"
 grep -q "PRIVATE KEY" "$key" || die "$key is not a private key file"
@@ -107,6 +114,7 @@ render_plist() {
   t="${t//@KEY@/$key}"; t="${t//@DEST@/$dest}"; t="${t//@LOGDIR@/$LOGDIR}"; t="${t//@LABEL@/$LABEL}"
   if [ "$envn" = production ]; then t="${t//@EXTRA_ARGS@/<string>--env</string><string>production</string><string>--expect-id</string><string>$expect_id</string><string>--known-hosts</string><string>$known_hosts</string>}"
   else t="${t//@EXTRA_ARGS@/}"; fi
+  if [ -n "$encrypt_to" ]; then t="${t//@ENC_ARGS@/<string>--encrypt-to</string><string>$encrypt_to</string>}"; else t="${t//@ENC_ARGS@/}"; fi
   printf '%s\n' "$t"
 }
 say "-- rendered plist (contains no secret) --"; render_plist; say "-- end plist --"

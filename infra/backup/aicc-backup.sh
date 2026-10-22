@@ -7,7 +7,7 @@
 # What one run produces, in /srv/aicc/backups (dir 0751 root, files 0600 root, status.json 0644):
 #   aicc_cp-<UTC>-<label>.sql.gz         mysqldump --single-transaction --routines --triggers --events --no-tablespaces, via the unix socket, account aicc_backup
 #   aicc_cp-<UTC>-<label>.sql.gz.sha256  "<hash>  <file>" (sha256sum -c compatible)
-#   aicc-files-<UTC>-<label>.tar.gz      WordPress persistent files in a SEPARATE 0600 archive: shared/uploads, shared/plugin-releases (the private Plugin release store), shared/wp-config.php (secrets!), /etc/aicc-edge, /etc/aicc-ops/aicc-ops.toml (not its secrets.env),
+#   aicc-files-<UTC>-<label>.tar.gz      WordPress persistent files in a SEPARATE 0600 archive: shared/uploads, shared/plugin-releases (the private Plugin release store); the rendered shared/wp-config.php is deliberately NOT archived (its secrets would travel off-host; only its sha256 is recorded in pointers.txt), /etc/aicc-edge, /etc/aicc-ops/aicc-ops.toml (not its secrets.env),
 #                                        and pointers.txt (what site/cp current+previous pointed to). Caddy's certificate storage is NOT included (re-issuable,
 #                                        private keys stay on the host; use aicc-caddy-storage-backup for a deliberate encrypted copy).
 #   aicc-files-<UTC>-<label>.tar.gz.sha256
@@ -80,7 +80,7 @@ case "$mode" in 600|400) ;; *) echo "option file $MY_CNF must be mode 0600 (is $
 
 if [ "$DRY" = 1 ]; then
   echo "DRY-RUN: would back up database $DB (restore smoke into $RESTORE_DB: $([ $QUICK = 1 ] && echo skipped || echo yes)),"
-  echo "         files archive of $SHARED_DIR/uploads, $SHARED_DIR/wp-config.php, $EDGE_CONF, pointers under $RELEASE_ROOT,"
+  echo "         files archive of $SHARED_DIR/uploads, $SHARED_DIR/plugin-releases, $EDGE_CONF (NOT wp-config.php), pointers under $RELEASE_ROOT,"
   echo "         into $BACKUP_DIR (label $LABEL), retention ${RETENTION_DAYS} days, disk guard ${MIN_FREE_PCT}%, status $BACKUP_DIR/status.json"
   exit 0
 fi
@@ -225,6 +225,9 @@ PTR="$(mktemp -d "$BACKUP_DIR/.ptr.XXXXXX")"
       printf 'release %s %s tarball_sha256=%s cp_commit=%s\n' "$k" "$(basename "$m" .manifest.json)" "$(jq -r '.tarball.sha256 // "?"' "$m" 2>/dev/null)" "$(jq -r '.sources.cp_commit // .sources.site_commit // "-"' "$m" 2>/dev/null)"
     done
   done
+  # the rendered wp-config.php is NOT archived (security review B, F-05: it carries the DB password, the salts and both shared licensing secrets, and the archive is copied to the owner's Mac):
+  # only its hash goes here; restore re-renders it from /etc/aicc/secrets + the template (aicc-render-wp-config), which is also how a rebuilt host gets it
+  if [ -f "$SHARED_DIR/wp-config.php" ]; then printf 'wp_config_sha256 %s\n' "$(sha256_file "$SHARED_DIR/wp-config.php")"; fi
   IDF=/etc/aicc-stage-identity; [ "${AICC_TEST_HARNESS:-0}" = "1" ] && IDF="${AICC_IDENTITY_FILE:-$IDF}"      # the seam exists only for infra/stack-tests and the production-mode rehearsal
   printf 'host_identity %s\n' "$(tr '\n' ' ' < "$IDF" 2>/dev/null | sed 's/ *$//')"
 } > "$PTR/pointers.txt"
@@ -232,12 +235,12 @@ TAR_ITEMS=()
 add_item() { # add_item <absolute path> : archived relative to /
   if [ -e "$1" ]; then TAR_ITEMS+=("${1#/}"); FILE_PATHS+=("$1"); else b_log "note: $1 does not exist (skipped)"; fi
 }
-add_item "$SHARED_DIR/uploads"; add_item "$SHARED_DIR/wp-config.php"; add_item "$EDGE_CONF"
+add_item "$SHARED_DIR/uploads"; add_item "$EDGE_CONF"      # NOT wp-config.php (F-05): see the pointers block above
 # the private Plugin release store (immutable ZIPs customers download + the `current` pointer; ~1 MB per release): included, because "rebuild it" is only as reproducible as the toolchain that day
 add_item "$SHARED_DIR/plugin-releases"
 # AICC Ops configuration (thresholds, host label); its secrets.env (Telegram) is deliberately NOT included
 if [ "$FIXTURE" = 0 ]; then add_item /etc/aicc-ops/aicc-ops.toml; fi
-if [ "$FIXTURE" = 0 ] && [ ! -f "$SHARED_DIR/wp-config.php" ]; then REASON="wp-config.php missing from $SHARED_DIR (a Control Plane without it cannot be restored)"; rm -rf "$PTR"; exit 1; fi
+if [ "$FIXTURE" = 0 ] && [ ! -f "$SHARED_DIR/wp-config.php" ]; then REASON="wp-config.php missing from $SHARED_DIR (a Control Plane without it is not a Control Plane; it is re-rendered on restore, but its absence means this host is not configured)"; rm -rf "$PTR"; exit 1; fi
 FILE_PATHS+=("pointers.txt")
 if [ ${#TAR_ITEMS[@]} -gt 0 ]; then
   tar -czf "$BACKUP_DIR/$FILES.partial" -C / "${TAR_ITEMS[@]}" -C "$PTR" pointers.txt 2> "$BACKUP_DIR/.tar.err" || { REASON="tar failed: $(head -2 "$BACKUP_DIR/.tar.err" | tr '\n' ' ')"; rm -rf "$PTR" "$BACKUP_DIR/.tar.err"; exit 1; }

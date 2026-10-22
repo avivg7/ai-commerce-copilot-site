@@ -20,6 +20,7 @@
     <string>--key</string><string>@KEY@</string>
     <string>--dest</string><string>@DEST@</string>
     @EXTRA_ARGS@
+    @ENC_ARGS@
   </array>
   <key>RunAtLoad</key><true/>
   <key>StartInterval</key><integer>3600</integer>
