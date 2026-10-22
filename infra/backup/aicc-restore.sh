@@ -10,6 +10,8 @@
 #                                                                 The live database, files and services are never touched.
 #   sudo aicc-restore live --dump FILE --files FILE|none --sha256 H --files-sha256 H --yes-replace-live
 #                          [--report FILE] [--no-safety-backup] [--no-health-gate] [--trust-sidecar] [--allow-no-identity] [--allow-new-host-id]
+#   PRODUCTION HOST (identity AICC_ENV=production): every action needs --production, `live` also needs --confirm-production-restore. The tool is otherwise identical; the flag exists so that
+#   a restore typed from staging muscle memory (no flag) is refused on the production host, and a --production restore is refused on a staging host.
 #                                                                 REPLACES the live database (and files): see the steps below.
 #
 # TRUST: for `live` the two hashes MUST be given out of band (--sha256, --files-sha256: take them from the copy that lives OFF the host, e.g. the Mac's
@@ -32,11 +34,11 @@ umask 077
 
 ACTION="${1:-}"; [ $# -gt 0 ] && shift
 DUMP=""; FILES=""; SHA=""; FSHA=""; REPORT=""; YES=0; SAFETY=1; HEALTH=1; OUT=""; SCRATCH="aicc_dr_scratch"; FPOUT=""
-DB="aicc_cp"; DBUSER="aicc_cp"; MYSQL_BIN="${MYSQL_BIN:-mysql}"; MY_CNF=""; SHARED="/srv/aicc/shared"; TRUST_SIDECAR=0; NO_IDENT=0; NEW_HOST_ID=0; IDENT_FILE="/etc/aicc-stage-identity"
+DB="aicc_cp"; DBUSER="aicc_cp"; MYSQL_BIN="${MYSQL_BIN:-mysql}"; MY_CNF=""; SHARED="/srv/aicc/shared"; TRUST_SIDECAR=0; NO_IDENT=0; NEW_HOST_ID=0; IDENT_FILE="/etc/aicc-stage-identity"; PRODUCTION=0; CONFIRM_PROD_RESTORE=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --dump) DUMP="${2:-}"; shift 2 ;; --files) FILES="${2:-}"; shift 2 ;; --sha256) SHA="${2:-}"; shift 2 ;; --files-sha256) FSHA="${2:-}"; shift 2 ;;
-    --report) REPORT="${2:-}"; shift 2 ;; --yes-replace-live) YES=1; shift ;; --no-safety-backup) SAFETY=0; shift ;; --no-health-gate) HEALTH=0; shift ;; --trust-sidecar) TRUST_SIDECAR=1; shift ;; --allow-no-identity) NO_IDENT=1; shift ;; --allow-new-host-id) NEW_HOST_ID=1; shift ;;
+    --report) REPORT="${2:-}"; shift 2 ;; --yes-replace-live) YES=1; shift ;; --no-safety-backup) SAFETY=0; shift ;; --no-health-gate) HEALTH=0; shift ;; --trust-sidecar) TRUST_SIDECAR=1; shift ;; --allow-no-identity) NO_IDENT=1; shift ;; --allow-new-host-id) NEW_HOST_ID=1; shift ;; --production) PRODUCTION=1; shift ;; --confirm-production-restore) CONFIRM_PROD_RESTORE=1; shift ;;
     --out) OUT="${2:-}"; shift 2 ;; --scratch-db) SCRATCH="${2:-}"; shift 2 ;; --fingerprint-out) FPOUT="${2:-}"; shift 2 ;;
     --db) DB="${2:-}"; shift 2 ;; --mysql-defaults-file) MY_CNF="${2:-}"; shift 2 ;; --shared-dir) SHARED="${2:-}"; shift 2 ;;
     -h|--help) sed -n 2,28p "${BASH_SOURCE[0]}"; exit 0 ;;
@@ -52,7 +54,12 @@ log() { printf '%s  %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*" >&2 || true; }  
 if [ "${AICC_TEST_HARNESS:-0}" = "1" ]; then IDENT_FILE="${AICC_IDENTITY_FILE:-$IDENT_FILE}"; fi
 if [ "${AICC_TEST_HARNESS:-0}" != "1" ]; then
   [ "$(id -u)" = "0" ] || { echo "must run as root (sudo). Refusing." >&2; exit 2; }
-  grep -q '^AICC_ENV=staging$' /etc/aicc-stage-identity 2>/dev/null || refuse "/etc/aicc-stage-identity does not say AICC_ENV=staging (production restores are a separate, owner-gated procedure)"
+  if [ "$PRODUCTION" = 1 ]; then
+    grep -q '^AICC_ENV=production$' /etc/aicc-stage-identity 2>/dev/null || refuse "--production was given but /etc/aicc-stage-identity does not say AICC_ENV=production"
+    [ "$ACTION" != live ] || [ "$CONFIRM_PROD_RESTORE" = 1 ] || refuse "restoring the PRODUCTION database needs --confirm-production-restore (take a fresh backup first; this replaces the live data)"
+  else
+    grep -q '^AICC_ENV=staging$' /etc/aicc-stage-identity 2>/dev/null || refuse "/etc/aicc-stage-identity does not say AICC_ENV=staging; on the production host pass --production"
+  fi
 fi
 # `--binary-mode` turns off the client's interpretation of backslash commands (\! system, \. source) in a piped dump: a dump is data, never a script for a shell
 mysql_load() { local d="$1"; if [ -n "$MY_CNF" ]; then "$MYSQL_BIN" --defaults-extra-file="$MY_CNF" --binary-mode --database="$d"; else "$MYSQL_BIN" --no-defaults --binary-mode --database="$d"; fi; }
@@ -215,7 +222,8 @@ s_health() {
     sleep 2
   done
   [ "$ok" = 1 ] || { echo "smoke-cp never became healthy" >&2; return 1; }
-  [ "$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 --resolve "$host:443:127.0.0.1" "https://$host/healthz")" = 200 ] || { echo "/healthz through the edge is not 200" >&2; return 1; }
+  # -k: a loopback self-check of our own edge (--resolve to 127.0.0.1); the dark-production edge presents Caddy's internal certificate, which no client trusts
+  [ "$(curl -sk -o /dev/null -w '%{http_code}' --max-time 10 --resolve "$host:443:127.0.0.1" "https://$host/healthz")" = 200 ] || { echo "/healthz through the edge is not 200" >&2; return 1; }
   [ "$(/usr/local/sbin/aicc-wp option get siteurl 2>/dev/null)" = "https://$host" ] || { echo "WordPress siteurl is not https://$host" >&2; return 1; }
 }
 s_sanity() {

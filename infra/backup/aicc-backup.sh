@@ -225,7 +225,8 @@ PTR="$(mktemp -d "$BACKUP_DIR/.ptr.XXXXXX")"
       printf 'release %s %s tarball_sha256=%s cp_commit=%s\n' "$k" "$(basename "$m" .manifest.json)" "$(jq -r '.tarball.sha256 // "?"' "$m" 2>/dev/null)" "$(jq -r '.sources.cp_commit // .sources.site_commit // "-"' "$m" 2>/dev/null)"
     done
   done
-  printf 'host_identity %s\n' "$(tr '\n' ' ' < /etc/aicc-stage-identity 2>/dev/null | sed 's/ *$//')"
+  IDF=/etc/aicc-stage-identity; [ "${AICC_TEST_HARNESS:-0}" = "1" ] && IDF="${AICC_IDENTITY_FILE:-$IDF}"      # the seam exists only for infra/stack-tests and the production-mode rehearsal
+  printf 'host_identity %s\n' "$(tr '\n' ' ' < "$IDF" 2>/dev/null | sed 's/ *$//')"
 } > "$PTR/pointers.txt"
 TAR_ITEMS=()
 add_item() { # add_item <absolute path> : archived relative to /

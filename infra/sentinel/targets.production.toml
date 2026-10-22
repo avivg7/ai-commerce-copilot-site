@@ -1,0 +1,57 @@
+# AICC Sentinel targets for PRODUCTION www.copilt.org (the Droplet aicc-cp-stage promoted in place). Committed on purpose: no secrets (Telegram credentials live only in the secrets file / CI secrets).
+# ACTIVE FILE for the owner's Mac LaunchAgent AFTER the cutover (docs/cutover/production-promotion.md section 10). Do NOT install it before www.copilt.org points at the host: until then
+# www is the old GitHub Pages site and every target below would be DOWN. Before the cutover (the "dark" phase) run only targets.dark.toml.
+#
+# NEVER add /wp-login.php, /wp-admin/, /wp-cron.php, /my-account/, /cart/, /checkout/ or any URL with side effects.
+# Honesty about coverage: a Mac that sleeps or is offline is blind. This file does not make the Mac a 24/7 observer; the independent 24/7 option is the GitHub Actions variant (infra/sentinel/github/).
+
+[sentinel]
+interval_s = 120
+fail_n = 3                 # DOWN when 3 of the last 5 checks failed: one blip never pages
+window_m = 5
+recover_k = 2
+cooldown_s = 1800
+remind_s = 21600
+stale_after_s = 1800
+control_host = "api.telegram.org"
+secrets_file = "~/.config/aicc-sentinel/secrets.env"
+host_label = "mac-launchd"
+
+# Answered by Caddy itself: proves DNS + firewall + TLS certificate + the edge. expect_ip is the Reserved IPv4 of the Droplet: a DNS change back to GitHub Pages (a rollback) or a hijack is a failure at stage "dns".
+[[target]]
+name = "www-edge"
+url = "https://www.copilt.org/healthz"
+interval_s = 120
+expect_status = 200
+expect_body = "ok"
+expect_ip = "206.189.248.204"
+latency_ms = 2000
+tls_warn_days = 14
+
+# WordPress-rendered public page (Caddy -> PHP-FPM -> WordPress -> MySQL).
+[[target]]
+name = "www-app"
+url = "https://www.copilt.org/pricing/"
+interval_s = 300
+expect_status = 200
+expect_body = "Studio"
+latency_ms = 6000
+timeout_s = 15
+tls_warn_days = 14
+
+# The static home page, served by Caddy from disk (does not touch PHP).
+[[target]]
+name = "www-home"
+url = "https://www.copilt.org/"
+interval_s = 300
+expect_status = 200
+expect_body = "<title"
+latency_ms = 3000
+
+# Production API, WATCH ONLY: read-only GET /health, nothing here is ours to change.
+[[target]]
+name = "api-health"
+url = "https://api.copilt.org/health"
+interval_s = 300
+expect_status = 200
+latency_ms = 3000

@@ -1,0 +1,23 @@
+# AICC Sentinel targets for the DARK-PRODUCTION phase (host promoted, www.copilt.org still points at the old GitHub Pages site). stage.copilt.org no longer answers, so the staging targets must be
+# REMOVED when the host is promoted (otherwise the Mac sentinel reports the retired staging name as DOWN for days). The only thing worth watching from outside in this phase is the existing API
+# (read-only), which keeps the observer itself honest; the host's own health is watched by AICC Ops and the DigitalOcean policies. Installed in place of targets.stage.toml at promotion,
+# replaced by targets.production.toml at the cutover.
+
+[sentinel]
+interval_s = 120
+fail_n = 3
+window_m = 5
+recover_k = 2
+cooldown_s = 1800
+remind_s = 21600
+stale_after_s = 1800
+control_host = "api.telegram.org"
+secrets_file = "~/.config/aicc-sentinel/secrets.env"
+host_label = "mac-launchd"
+
+[[target]]
+name = "api-health"
+url = "https://api.copilt.org/health"
+interval_s = 300
+expect_status = 200
+latency_ms = 3000

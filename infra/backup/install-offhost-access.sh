@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Installs the restricted off-host pull access on the HOST (run as root, over the operator session). OWNER-APPROVED model (Phase 2B, 2026-10-21):
 #     sudo infra/backup/install-offhost-access.sh --pubkey-file /path/to/aicc_offhost.pub [--dry-run]      (undo: sudo infra/backup/install-offhost-access.sh --remove)
+#     PRODUCTION host (identity AICC_ENV=production): add --env production --confirm-production and the pubkey of the NEW production pull key (aicc_cp_prod_offhost.pub); it REPLACES the
+#     staging pull key in authorized_keys (the staging key stops working). The account name aicc-offhost is deliberately unchanged (it carries no environment; the key does).
 #
 # Creates the least-privilege path the owner's Mac uses for UNATTENDED backup pulls:
 #   * account `aicc-offhost` (no password, home /var/lib/aicc-offhost, shell /bin/bash only because sshd runs ForceCommand through it);
@@ -16,13 +18,15 @@
 # Test seam (AICC_TEST_HARNESS=1): --root DIR writes the files under DIR and skips useradd/sshd/systemctl/visudo.
 set -euo pipefail
 SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-DRY=0; REMOVE=0; PUBKEY_FILE=""; ROOT=""
+DRY=0; REMOVE=0; PUBKEY_FILE=""; ROOT=""; ENVN="staging"; CONFIRM_PROD=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --pubkey-file) PUBKEY_FILE="${2:-}"; shift 2 ;;
     --dry-run) DRY=1; shift ;;
     --remove) REMOVE=1; shift ;;
     --root) ROOT="${2:-}"; shift 2 ;;
+    --env) ENVN="${2:-}"; [ "$ENVN" = stage ] && ENVN=staging; shift 2 ;;
+    --confirm-production) CONFIRM_PROD=1; shift ;;
     -h|--help) sed -n 2,18p "${BASH_SOURCE[0]}"; exit 0 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
@@ -32,7 +36,9 @@ say() { printf '%s\n' "$*"; }
 P() { printf '%s%s' "$ROOT" "$1"; }
 if [ -z "$ROOT" ] && [ "$DRY" = 0 ] && [ "$(id -u)" != "0" ]; then echo "must run as root (sudo). Refusing." >&2; exit 2; fi
 if [ -z "$ROOT" ] && [ "$DRY" = 0 ]; then
-  grep -q '^AICC_ENV=staging$' /etc/aicc-stage-identity 2>/dev/null || { echo "REFUSED: /etc/aicc-stage-identity does not say AICC_ENV=staging" >&2; exit 3; }
+  case "$ENVN" in staging|production) ;; *) echo "--env must be stage or production" >&2; exit 2 ;; esac
+  grep -q "^AICC_ENV=$ENVN\$" /etc/aicc-stage-identity 2>/dev/null || { echo "REFUSED: /etc/aicc-stage-identity does not say AICC_ENV=$ENVN" >&2; exit 3; }
+  if [ "$ENVN" = production ] && [ "$CONFIRM_PROD" != 1 ] && [ "$REMOVE" != 1 ]; then echo "REFUSED: --env production needs --confirm-production" >&2; exit 3; fi
 fi
 
 U="aicc-offhost"; HOMEDIR="/var/lib/aicc-offhost"

@@ -1,0 +1,50 @@
+# AICC external sentinel, 24/7 variant on GitHub Actions. This file belongs in a DEDICATED repository (see README.md next to it), at .github/workflows/aicc-sentinel.yml, on the default branch.
+# It probes ONE public URL (https://www.copilt.org/healthz) and sends Telegram messages through the repository's Actions secrets. NOT installed or enabled by anything in the AICC repositories.
+#
+# Honest expectations (verified against docs.github.com on 2026-10-22):
+#   * "The shortest interval you can run scheduled workflows is once every 5 minutes." The schedule "can be delayed during periods of high loads"; runs are best effort and can be dropped.
+#     This uses every 10 minutes at odd minutes (not :00, the busiest moment). Plan for detection in "roughly 20 to 40 minutes", never "within a minute".
+#   * "Scheduled workflows will only run on the default branch."
+#   * "In a public repository, scheduled workflows are automatically disabled when no repository activity has occurred in 60 days." Re-enable in the Actions tab, or keep the repo active
+#     (the owner's calendar: touch the repository every ~45 days). Whether a commit made by the workflow itself counts as activity is UNVERIFIED, so none is made.
+#   * Standard GitHub-hosted runners are free in public repositories; a private repository draws on a monthly quota (GitHub Free: 2,000 minutes), which a 10-minute cadence would exceed.
+#   * The state of the N-of-M window is kept with the Actions cache. If it is evicted the window restarts empty: a DOWN can be delayed by a couple of runs, a false one cannot be created.
+#
+# Supply chain: the two actions are pinned to full commit SHAs (resolved read-only through the GitHub API on 2026-10-22: actions/checkout v7.0.1, actions/cache v6.1.0). Re-pin deliberately
+# (and review the diff) rather than following a moving tag. The workflow never triggers on pull_request, pull_request_target, issues or forks, so no foreign code runs next to the secrets.
+# Secrets reach the process only through env: (never in run: text or arguments). The log prints state changes only (--quiet-ok) and the sentinel never prints a token or chat id.
+name: aicc-sentinel
+on:
+  schedule:
+    - cron: "7,17,27,37,47,57 * * * *"
+  workflow_dispatch: {}
+permissions:
+  contents: read
+concurrency:
+  group: aicc-sentinel
+  cancel-in-progress: false
+jobs:
+  check:
+    runs-on: ubuntu-24.04            # ships Python 3.12; nothing is installed
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9   # v6.1.0
+        with:
+          path: .sentinel-state
+          key: sentinel-state-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: sentinel-state-
+      - name: Probe
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          python3 --version
+          python3 sentinel.py --config targets.toml --once --quiet-ok --state-file .sentinel-state/state.json --host-label github-actions
+      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9   # v6.1.0
+        if: always()                  # keep the state even when a step above failed
+        with:
+          path: .sentinel-state
+          key: sentinel-state-${{ github.run_id }}-${{ github.run_attempt }}

@@ -17,7 +17,7 @@
  *     WP_ACCESSIBLE_HOSTS in a reviewed change.
  *   * The two plugin secrets are NOT generated: AICC_ENTITLEMENT_WEBHOOK_SECRET must equal the Backend's value and AICC_ACTIVATION_PROOF_SECRET is the production
  *     activation-proof key; the owner places both in /etc/aicc/secrets (0600) and the renderer refuses to continue without them.
- *   * No mail sink is implied: transactional mail (lost-password, receipts) needs a real transport configured at the PHP-FPM pool / SMTP level (owner decision, see docs/cutover/dns-and-mail.md).
+ *   * No mail sink: transactional mail goes through the Control Plane's SMTP layer, enabled only when the owner has placed a valid /etc/aicc-mail/smtp.env (see the mail region below).
  */
 
 // ---- database: UNIX SOCKET only (MySQL runs with skip-networking) --------------------------------------------------------------------------
@@ -75,9 +75,24 @@ define( 'WP_MAX_MEMORY_LIMIT', '192M' );
 define( 'WP_POST_REVISIONS', 5 );
 define( 'EMPTY_TRASH_DAYS', 14 );
 
-// ---- mail: configured at the PHP-FPM pool / SMTP relay level, never here --------------------------------------------------------------------------------
-// Production must NOT use infra/php's staging mail sink (aicc-mail-sink). The transactional mail transport is an owner decision that is still open; the production
-// host must not be treated as ready until lost-password mail can be delivered (docs/cutover/runbook.md, blockers).
+// ---- mail: the Control Plane's own SMTP layer (AICC_LM_Mail), configured ONLY by constants + the path of a root-owned secrets file ---------------------------------------
+// The layer is completely inert unless AICC_MAIL_ENABLED is exactly true. render-wp-config.sh keeps the region below ONLY when /etc/aicc-mail/smtp.env exists, is owned by root, is
+// group aicc-cp, mode 0640 (or stricter), holds exactly AICC_MAIL_SMTP_USER and AICC_MAIL_SMTP_PASS (both non-empty) and sits outside the web root; otherwise the region is removed and
+// production sends no mail at all (never through PHP mail(), never through the staging mail sink). The credentials are NEVER in this file.
+// WHY /etc/aicc-mail and not /etc/aicc/secrets: /etc/aicc is 0750 root:root, so the PHP user (aicc-cp) cannot even traverse to /etc/aicc/secrets/smtp.env (verified on the host 2026-10-22). Loosening that
+// directory would expose the other secrets' names; a dedicated directory /etc/aicc-mail (0750 root:aicc-cp, like /etc/aicc-edge for its group) gives PHP exactly one readable file. Staging has no such region and keeps the mail sink.
+// Provider values are the owner-approved relay of docs/cutover/production-promotion.md section 8 (Brevo relays on smtp-relay.brevo.com:2525; DigitalOcean blocks 25/465/587). The layer speaks
+// SMTP through PHPMailer sockets, NOT through wp_remote_*, so the relay host does NOT belong in WP_ACCESSIBLE_HOSTS. Changing provider is a reviewed change of this region.
+// @@MAIL_BEGIN@@
+define( 'AICC_MAIL_ENABLED', true );
+define( 'AICC_MAIL_SMTP_HOST', 'smtp-relay.brevo.com' );
+define( 'AICC_MAIL_SMTP_PORT', 2525 );
+define( 'AICC_MAIL_SMTP_SECURE', 'starttls' );
+define( 'AICC_MAIL_SECRETS_FILE', '/etc/aicc-mail/smtp.env' );
+define( 'AICC_MAIL_FROM_ADDRESS', 'support@copilt.org' );
+define( 'AICC_MAIL_FROM_NAME', 'AI Commerce Copilot' );
+define( 'AICC_MAIL_REPLY_TO', 'support@copilt.org' );
+// @@MAIL_END@@
 
 // ---- AICC Control Plane plugin ---------------------------------------------------------------------------------------------------------------------
 // Client IP: the plugin trusts X-Forwarded-For only from addresses listed here. EMPTY on purpose: PHP-FPM receives the real TCP peer as REMOTE_ADDR

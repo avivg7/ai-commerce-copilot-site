@@ -85,6 +85,14 @@ t_eq "drop-in clears and re-sets ExecReload (preflight, then caddy reload)" "$(g
 t_not_contains "drop-in names no stage mode" "$(grep -v '^#' "$DI")" "--mode stage"
 t_fail "install-stack.sh never installs the production drop-in (a staging host can not get it)" grep -q "systemd/production" "$PROV/install-stack.sh"
 
+echo "== scripts/ops/production-edge-check.sh: refusals (the checks themselves were run against the local rehearsal edge, see the evidence) =="
+PEC="$REPO/scripts/ops/production-edge-check.sh"
+t_rc "edge check: no --ip is a usage error" 2 bash "$PEC" --public
+t_rc "edge check: the API Droplet address is REFUSED" 3 bash "$PEC" --ip 139.59.157.231 --public
+t_rc "edge check: a GitHub Pages address is REFUSED (the old site must never be probed as 'the new edge')" 3 bash "$PEC" --ip 185.199.108.153 --public
+t_rc "edge check: dark production without --cacert is a usage error" 2 bash "$PEC" --ip 203.0.113.9
+t_rc "edge check: a hostname instead of an IP is a usage error" 2 bash "$PEC" --ip www.copilt.org --public
+
 echo "== promote-to-production.sh: argument handling and refusals (no host needed) =="
 t_rc "no action: usage (2)" 2 bash "$PROMOTE"
 t_rc "unknown action (2)" 2 bash "$PROMOTE" frobnicate
@@ -248,6 +256,7 @@ EOF
     t_fail "secrets: the staging wp-admin password is gone from /etc/aicc/secrets" test -e "$SEC/wp-admin.pass"
     t_fail "secrets: the incoming directory is gone (values moved, not copied)" test -e "$INC"
     t_ok "secrets: directory 0700" test "$(mode "$SEC")" = 700
+    t_eq "mail: /etc/aicc-mail prepared (0750, empty: the owner places smtp.env afterwards)" "$(mode "$PFX/etc/aicc-mail")/$(ls -A "$PFX/etc/aicc-mail" | wc -l | tr -d ' ')" "750/0"
     t_ok "secrets: the staging salts are not reused" bash -c "! grep -q OLDSALT '$SEC/wp-secrets.env'"
     echo "-- wp-config"
     WCF="$PFX/srv/aicc/shared/wp-config.php"
@@ -264,6 +273,8 @@ EOF
     t_not_contains "edge: edge.env has no stage id / stage host" "$(cat "$PFX/etc/aicc-edge/edge.env")" "AICC_STAGE"
     t_contains "edge: the ACME contact of the staging file is carried over" "$(cat "$PFX/etc/aicc-edge/edge.env")" "AICC_ACME_EMAIL=ops@copilt.org"
     t_ok "edge: unit drop-in installed byte for byte" cmp "$DI" "$PFX/etc/systemd/system/aicc-edge.service.d/10-production.conf"
+    t_ok "edge: the certificate-expiry drop-in (www + apex) is installed byte for byte" cmp "$INFRA/systemd/production/aicc-cert-expiry.service.d/10-production.conf" "$PFX/etc/systemd/system/aicc-cert-expiry.service.d/10-production.conf"
+    t_contains "edge: the cert-expiry drop-in checks BOTH names" "$(cat "$PFX/etc/systemd/system/aicc-cert-expiry.service.d/10-production.conf")" "--host www.copilt.org --host copilt.org"
     t_contains "edge: the preflight ran in production mode against the installed files" "$(cat "$PREFLIGHT_LOG")" "--mode production"
     t_ok "ops: production config installed byte for byte" cmp "$PRODOPS" "$PFX/etc/aicc-ops/aicc-ops.toml"
     t_eq "ops: mode 0640" "$(mode "$PFX/etc/aicc-ops/aicc-ops.toml")" "640"
@@ -317,12 +328,26 @@ EOF
     t_ok "rollback: the staging wp-config is back" grep -q OLD-STAGE-SALT "$PFX/srv/aicc/shared/wp-config.php"
     t_ok "rollback: the staging edge.env is back" grep -q '^AICC_EDGE_MODE=stage$' "$PFX/etc/aicc-edge/edge.env"
     t_fail "rollback: the production unit drop-in is removed" test -e "$PFX/etc/systemd/system/aicc-edge.service.d/10-production.conf"
+    t_fail "rollback: the production cert-expiry drop-in is removed" test -e "$PFX/etc/systemd/system/aicc-cert-expiry.service.d/10-production.conf"
     t_ok "rollback: the staging backup directory (and its ack) is back" test -f "$PFX/srv/aicc/backups/aicc_cp-20261021T000000Z-scheduled.sql.gz"
     t_fail "rollback: the promotion state is cleared" test -e "$PFX/var/lib/aicc/promotion/bundle"
     t_ok "rollback: the bundle itself is kept" test -s "$B/MANIFEST.sha256"
     t_eq "the staging secrets (wp-admin password) are restored" "$(cat "$SEC/wp-admin.pass")" "OLD-STAGE-ADMIN-PASSWORD"
     t_eq "no production owner secret remains after the rollback" "$(find "$SEC" -name '*secret' | wc -l | tr -d ' ')" "0"
     t_eq "the throwaway server still has only its own aicc databases" "$("${SQL[@]}" -e "SHOW DATABASES" | grep -E '^aicc' | tr '\n' ' ')" "aicc_cp "
+    echo "-- install-stack.sh on the promoted host"
+    PP="$TMP/rootprod"; mkdir -p "$PP/etc"; printf 'AICC_ENV=production\nAICC_HOSTNAME=www.copilt.org\nAICC_STAGE_ID=%s\n' "$OLDID" > "$PP/etc/aicc-stage-identity"
+    IS() { env AICC_TEST_HARNESS=1 AICC_ROOT_PREFIX="$PP" bash "$PROV/install-stack.sh" "$@"; }
+    for st in identity edge-env caddyfile enable-edge; do t_rc "install-stack: the stage-only step '$st' is REFUSED on a production identity" 1 IS --only "$st" --production-host --confirm-production --acme-email ops@example.org; done
+    t_rc "install-stack: any step on a production identity without --production-host is REFUSED" 1 IS --only logrotate
+    t_rc "install-stack: --production-host without --confirm-production is REFUSED" 1 IS --only logrotate --production-host
+    t_ok "install-stack: a config step runs on the promoted host with both flags" IS --only logrotate --production-host --confirm-production
+    t_ok "install-stack: ...and installed the file under the prefix" test -s "$PP/etc/logrotate.d/aicc-php"
+    mkdir -p "$PP/etc/aicc-edge"; printf 'AICC_EDGE_MODE=production\nAICC_ALLOW_INTERNAL_TLS=1\n' > "$PP/etc/aicc-edge/edge.env"
+    t_contains "install-stack: enable-timers keeps the cert-expiry timer OFF while the edge is dark (dry-run text)" "$(IS --dry-run --only enable-timers --production-host --confirm-production 2>&1)" "aicc-cert-expiry.timer stays OFF"
+    printf 'AICC_EDGE_MODE=production\n' > "$PP/etc/aicc-edge/edge.env"
+    t_contains "install-stack: ...and enables it once the internal-TLS flag is gone" "$(IS --dry-run --only enable-timers --production-host --confirm-production 2>&1)" "systemctl enable --now aicc-wp-cron.timer aicc-backup.timer aicc-cert-expiry.timer"
+    t_rc "install-stack: a STAGING identity without the flag still works as before (dry-run list)" 0 env AICC_TEST_HARNESS=1 AICC_ROOT_PREFIX="$PFX" bash "$PROV/install-stack.sh" --list-steps
   else t_bad "throwaway mysqld did not start" "$(tail -3 "$M/run.out" | tr '\n' '|')"; fi
 else t_skip "apply / rollback against a throwaway database" "Local's mysql 8.4 binaries or jq not found"; fi
 

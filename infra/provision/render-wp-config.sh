@@ -5,7 +5,11 @@
 # --env stage (default) uses wp-config.stage.template.php and runs only on a host whose /etc/aicc-stage-identity says AICC_ENV=staging.
 # --env production uses wp-config.production.template.php and is refused unless ALL of: the host identity says AICC_ENV=production; --confirm-production is given;
 #   /etc/aicc/secrets/entitlement-webhook.secret and activation-proof.secret exist (0600, >= 32 characters; placed by the OWNER, they are never generated because
-#   the webhook secret must equal the Backend's); the database password file exists. Nothing in this repository runs it for production.
+#   the webhook secret must equal the Backend's); the database password file exists. promote-to-production.sh runs it; nothing else does.
+# MAIL (production only; the file lives in /etc/aicc-mail because the PHP user cannot traverse /etc/aicc): the template's AICC_MAIL_* region (the Control Plane's SMTP layer) is kept ONLY when /etc/aicc-mail/smtp.env exists AND is safe: a regular file, owned by root,
+#   group aicc-cp, mode 0640 or 0600 or 0440 (nothing for "other", nothing writable by the group), exactly the two keys AICC_MAIL_SMTP_USER and AICC_MAIL_SMTP_PASS with non-empty values and no
+#   quote/newline/space in them. A file that exists but is unsafe makes the renderer REFUSE (nothing written); an absent file removes the region (production sends no mail). The stage render never
+#   contains the region (staging keeps the mail sink). The values are never printed.
 # Inputs : /etc/aicc/secrets/db-cp.pass (written by create-staging-db.sh); /etc/aicc/secrets/wp-secrets.env (created here once: eight WordPress keys/salts and
 #          two staging-only plugin secrets, 256-bit random each; reused on later runs so sessions survive a re-render; --force-salts regenerates them).
 # Output : /srv/aicc/shared/wp-config.php, mode 0640, owner root:aicc-cp (PHP-FPM and WP-CLI run as aicc-cp: read, cannot modify), `php -l` checked (when php is installed; otherwise a warning) before it replaces
@@ -15,7 +19,7 @@ set -euo pipefail
 SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$SELF/lib/common.sh"
 TEMPLATE=""; ENVN="stage"; CONFIRM=0; OUT="/srv/aicc/shared/wp-config.php"; SECRETS="/etc/aicc/secrets"; FORCE_SALTS=0
-DB="aicc_cp"; DBUSER="aicc_cp"; OWNER="root:aicc-cp"
+DB="aicc_cp"; DBUSER="aicc_cp"; OWNER="root:aicc-cp"; MAILDIR="/etc/aicc-mail"
 while [ $# -gt 0 ]; do
   case "$1" in
     --dry-run) AICC_DRY_RUN=1; shift ;;
@@ -25,6 +29,7 @@ while [ $# -gt 0 ]; do
     --template) TEMPLATE="$2"; shift 2 ;;
     --out) OUT="$2"; shift 2 ;;
     --secrets-dir) SECRETS="$2"; shift 2 ;;
+    --mail-dir) MAILDIR="$2"; shift 2 ;;
     --owner) OWNER="$2"; shift 2 ;;
     -h|--help) sed -n 2,10p "${BASH_SOURCE[0]}"; exit 0 ;;
     *) die "unknown argument: $1" ;;
@@ -51,7 +56,31 @@ else
   fi
 fi
 if [ "${AICC_TEST_HARNESS:-0}" != "1" ] && [ "$(id -u)" != "0" ] && ! is_dry; then die "must run as root (sudo). Refusing."; fi
-if is_dry; then would "render $OUT from $TEMPLATE using secrets in $SECRETS (mode 0640 $OWNER); nothing printed"; exit 0; fi
+MAIL=0
+if [ "$ENVN" = production ] && [ -e "$MAILDIR/smtp.env" ]; then
+  SM="$MAILDIR/smtp.env"
+  [[ "$MAILDIR" == /* ]] || die "--mail-dir must be absolute"
+  [ -f "$SM" ] && [ ! -L "$SM" ] || die "REFUSED: $SM is not a regular file"
+  smm="$(stat -c '%a' "$SM" 2>/dev/null || stat -f '%Lp' "$SM")"
+  case "$smm" in 640|600|440) ;; *) die "REFUSED: $SM must be mode 0640 (is $smm): the mail credentials may be read by root and the aicc-cp group only" ;; esac
+  if [ "${AICC_TEST_HARNESS:-0}" != "1" ]; then
+    [ "$(stat -c '%U:%G %a' "$MAILDIR")" = "root:aicc-cp 750" ] || die "REFUSED: $MAILDIR must be root:aicc-cp 0750 (is $(stat -c '%U:%G %a' "$MAILDIR"))"
+    [ "$(stat -c '%U:%G' "$SM")" = "root:aicc-cp" ] || die "REFUSED: $SM must be owned root:aicc-cp (is $(stat -c '%U:%G' "$SM")): PHP-FPM runs as aicc-cp and the file must not be writable by it"
+  fi
+  python3 -I - "$SM" <<'PY' || die "REFUSED: $SM must hold exactly AICC_MAIL_SMTP_USER and AICC_MAIL_SMTP_PASS, both non-empty, without spaces or quotes"
+import re, sys
+keys = {}
+for line in open(sys.argv[1]):
+    line = line.rstrip("\n")
+    if not line.strip() or line.lstrip().startswith("#"): continue
+    m = re.fullmatch(r"(AICC_MAIL_SMTP_USER|AICC_MAIL_SMTP_PASS)=([^\s'\"\\]+)", line)
+    if not m or m.group(1) in keys: sys.exit(1)
+    keys[m.group(1)] = m.group(2)
+sys.exit(0 if set(keys) == {"AICC_MAIL_SMTP_USER", "AICC_MAIL_SMTP_PASS"} else 1)
+PY
+  MAIL=1
+fi
+if is_dry; then would "render $OUT from $TEMPLATE using secrets in $SECRETS (mode 0640 $OWNER); mail layer $([ "$MAIL" = 1 ] && echo ENABLED || echo "not enabled"); nothing printed"; exit 0; fi
 if [ "$ENVN" = production ]; then
   for f in entitlement-webhook.secret activation-proof.secret; do
     [ -s "$SECRETS/$f" ] || die "REFUSED: $SECRETS/$f is missing: the OWNER places it (0600); it is never generated for production"
@@ -70,10 +99,15 @@ if [ ! -s "$ENVF" ] || [ "$FORCE_SALTS" = 1 ]; then
 fi
 tmp="$(mktemp "$(dirname "$OUT")/.wpcfg.XXXXXX" 2>/dev/null || mktemp)"
 trap 'rm -f "$tmp"' EXIT
-python3 -I - "$TEMPLATE" "$ENVF" "$SECRETS/db-cp.pass" "$DB" "$DBUSER" "$ENVN" "$SECRETS" > "$tmp" <<'PY'
+python3 -I - "$TEMPLATE" "$ENVF" "$SECRETS/db-cp.pass" "$DB" "$DBUSER" "$ENVN" "$SECRETS" "$MAIL" > "$tmp" <<'PY'
 import re, sys
-tpl, envf, passf, db, dbuser, envn, secdir = sys.argv[1:8]
+tpl, envf, passf, db, dbuser, envn, secdir, mail = sys.argv[1:9]
 s = open(tpl).read()
+# the mail region exists only in the production template; it is kept only when the renderer verified the secrets file (MAIL=1)
+if "@@MAIL_BEGIN@@" in s:
+    if envn != "production": sys.exit("REFUSED: a stage render may not carry the mail region")
+    a = s.index("// @@MAIL_BEGIN@@"); b = s.index("// @@MAIL_END@@") + len("// @@MAIL_END@@\n")
+    s = s[:a] + ("" if mail == "1" else "// (mail layer NOT enabled: /etc/aicc-mail/smtp.env is absent, production sends no mail until the owner places it and re-renders)\n") + (s[a:b].replace("// @@MAIL_BEGIN@@\n", "").replace("// @@MAIL_END@@\n", "") if mail == "1" else "") + s[b:]
 env = {}
 for line in open(envf):
     line = line.strip()

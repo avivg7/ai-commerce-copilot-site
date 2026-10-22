@@ -488,5 +488,29 @@ for ip in 157.230.110.211 206.189.248.204; do
 done
 t_eq "promoted host: the refused runs sent no rsync" "$(grep -c '^rsync' "$CALLS" || true)" "0"
 
+echo "== smoke-cp.sh: the Host it presents follows the host identity (www.copilt.org after the promotion) =="
+SC="$TMP/smokecp"; mkdir -p "$SC/rel" "$SC/bin"; echo "<?php" > "$SC/rel/index.php"
+python3 - "$SC/fpm.sock" <<'PY' &
+import socket, sys, time
+s = socket.socket(socket.AF_UNIX); s.bind(sys.argv[1]); s.listen(1); time.sleep(30)
+PY
+SMPID=$!; sleep 1
+cat > "$SC/bin/cgi-fcgi" <<EOS
+#!/usr/bin/env bash
+echo "\$HTTP_HOST" >> "$SC/hosts.log"
+printf 'Status: 200 OK\r\nContent-Type: application/json\r\n\r\n{"namespaces":["wp/v2"]}'
+EOS
+chmod +x "$SC/bin/cgi-fcgi"
+printf 'AICC_ENV=production\nAICC_HOSTNAME=www.copilt.org\nAICC_STAGE_ID=0123456789abcdef0123456789abcdef\n' > "$SC/ident"
+SMK() { env PATH="$SC/bin:$PATH" AICC_TEST_HARNESS=1 AICC_IDENTITY_FILE="$SC/ident" AICC_PHP_SOCKET="$SC/fpm.sock" AICC_RELEASE_DIR="$SC/rel" "$@" bash "$REL/smoke-cp.sh"; }
+t_ok "smoke-cp: healthy against the stub" SMK
+t_eq "smoke-cp: presents the identity's host (www.copilt.org), not the staging name" "$(tail -1 "$SC/hosts.log")" "www.copilt.org"
+t_ok "smoke-cp: AICC_SMOKE_HOST still wins" SMK AICC_SMOKE_HOST=example.test
+t_eq "...and is used" "$(tail -1 "$SC/hosts.log")" "example.test"
+rm -f "$SC/ident"
+t_ok "smoke-cp: without an identity file it falls back to the staging name (unchanged behaviour)" SMK
+t_eq "...fallback host" "$(tail -1 "$SC/hosts.log")" "stage.copilt.org"
+kill $SMPID 2>/dev/null; wait $SMPID 2>/dev/null
+
 unset STUB_ENV STUB_HOSTNAME
 t_summary

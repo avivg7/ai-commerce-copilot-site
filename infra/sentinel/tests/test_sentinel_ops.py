@@ -424,6 +424,97 @@ class TargetsFiles(unittest.TestCase):
             self.assertNotRegex(text.lower(), r"(bot_?token|api[_-]?key|password)\s*=")
 
 
+# ------------------------------------------------------------------------------------------------------------ production targets and the GitHub Actions pack (2026-10-22)
+class ProductionAndGithubPack(unittest.TestCase):
+    PRODT = os.path.join(ROOT, "targets.production.toml")
+    DARK = os.path.join(ROOT, "targets.dark.toml")
+    GH = os.path.join(ROOT, "github")
+
+    def test_active_production_targets_are_www_only_and_pin_the_reserved_ip(self):
+        cfg = S.load_config(self.PRODT)
+        by = {t["name"]: t for t in cfg["targets"]}
+        self.assertEqual(set(by), {"www-edge", "www-app", "www-home", "api-health"})
+        for n in ("www-edge", "www-app", "www-home"):
+            self.assertTrue(by[n]["enabled"])
+            self.assertTrue(by[n]["url"].startswith("https://www.copilt.org/"))
+        self.assertEqual(by["www-edge"]["expect_ip"], "206.189.248.204")
+        self.assertEqual(by["www-edge"]["url"], "https://www.copilt.org/healthz")
+        for t in cfg["targets"]:
+            for forbidden in ("wp-login", "wp-admin", "wp-cron", "my-account", "cart", "checkout", "xmlrpc"):
+                self.assertNotIn(forbidden, t["url"])
+        self.assertNotIn("stage.copilt.org", rd(self.PRODT))
+
+    def test_dark_targets_watch_only_the_existing_api(self):
+        cfg = S.load_config(self.DARK)
+        self.assertEqual([t["name"] for t in cfg["targets"]], ["api-health"])
+        self.assertNotIn("stage.copilt.org", rd(self.DARK).replace("stage.copilt.org no longer answers", ""))
+
+    def test_github_targets_probe_exactly_one_public_url(self):
+        cfg = S.load_config(os.path.join(self.GH, "targets.github.toml"))
+        self.assertEqual(len(cfg["targets"]), 1)
+        t = cfg["targets"][0]
+        self.assertEqual(t["url"], "https://www.copilt.org/healthz")
+        self.assertEqual(t["method"], "GET")
+        self.assertEqual(cfg["sentinel"]["host_label"], "github-actions")
+        self.assertEqual(cfg["sentinel"]["secrets_file"], "")          # secrets only through the environment
+        self.assertLessEqual(cfg["sentinel"]["fail_n"], cfg["sentinel"]["window_m"])
+
+    def test_no_targets_file_holds_a_credential(self):
+        for path in (self.PRODT, self.DARK, os.path.join(self.GH, "targets.github.toml"), os.path.join(self.GH, "aicc-sentinel.workflow.yml")):
+            text = rd(path)
+            self.assertIsNone(re.search(r"\b\d{6,}:[A-Za-z0-9_-]{20,}\b", text), path)
+            self.assertNotRegex(text.lower(), r"(bot_?token|api[_-]?key|password)\s*=\s*[\"']?[a-z0-9]")
+
+    def test_workflow_is_safe_to_publish(self):
+        w = rd(os.path.join(self.GH, "aicc-sentinel.workflow.yml"))
+        code = "\n".join(l for l in w.splitlines() if not l.lstrip().startswith("#"))
+        self.assertNotRegex(code, r"(?m)^\s*(pull_request|pull_request_target|issues|issue_comment|push|workflow_run):")
+        self.assertIn("schedule:", code)
+        self.assertIn("workflow_dispatch", code)
+        self.assertRegex(code, r"(?m)^permissions:\s*\n\s+contents: read\s*$")
+        uses = re.findall(r"uses:\s*(\S+)", code)
+        self.assertEqual(len(uses), 3)
+        for u in uses:
+            self.assertRegex(u, r"^actions/[a-z-]+(/[a-z-]+)?@[0-9a-f]{40}$", u)     # full commit SHAs, never a moving tag
+        for line in code.splitlines():
+            if "secrets." in line:
+                self.assertRegex(line, r"^\s+TELEGRAM_(BOT_TOKEN|CHAT_ID): \$\{\{ secrets\.TELEGRAM_(BOT_TOKEN|CHAT_ID) \}\}$")
+        m = re.search(r'cron:\s*"([^"]+)"', code)
+        self.assertIsNotNone(m)
+        minutes = m.group(1).split()[0].split(",")
+        self.assertNotIn("0", minutes)                     # never :00
+        self.assertGreaterEqual(len(minutes), 1)
+        self.assertIn("concurrency:", code)
+        self.assertIn("timeout-minutes:", code)
+
+    def test_prepare_script_stages_a_standalone_repo_and_refuses_unsafe_targets(self):
+        sh = os.path.join(self.GH, "prepare-sentinel-repo.sh")
+        with tempfile.TemporaryDirectory() as d:
+            out = os.path.join(d, "repo")
+            r = subprocess.run([BASH, sh, "--out", out], capture_output=True, text=True)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            for f in ("sentinel.py", "targets.toml", ".github/workflows/aicc-sentinel.yml", "README.md", "SHA256SUMS"):
+                self.assertTrue(os.path.isfile(os.path.join(out, f)), f)
+            self.assertIn("OWNER GATE", r.stdout)
+            self.assertIn("gh secret set TELEGRAM_BOT_TOKEN", r.stdout)
+            self.assertNotRegex(r.stdout, r"--body|--token")
+            self.assertEqual(open(os.path.join(out, "sentinel.py")).read(), open(os.path.join(ROOT, "sentinel.py")).read())
+            self.assertFalse(os.path.isdir(os.path.join(out, ".git")))         # staging never initialises or publishes anything
+            r2 = subprocess.run([BASH, sh, "--out", out], capture_output=True, text=True)
+            self.assertEqual(r2.returncode, 3)                                   # non-empty target refused
+            inside = os.path.join(d, "work")
+            os.makedirs(inside)
+            subprocess.run(["git", "init", "-q", inside], check=True)
+            r3 = subprocess.run([BASH, sh, "--out", os.path.join(inside, "sentinel")], capture_output=True, text=True)
+            self.assertEqual(r3.returncode, 3)                                   # inside another work tree refused
+            r4 = subprocess.run([BASH, sh, "--out", "relative/dir"], capture_output=True, text=True)
+            self.assertEqual(r4.returncode, 2)
+
+    def test_the_github_pack_never_claims_24_7_for_the_mac(self):
+        text = rd(os.path.join(self.GH, "README.md"))
+        self.assertIn("not 24/7", text.lower())
+
+
 # ------------------------------------------------------------------------------------------------------------ macOS plist template
 class PlistTemplate(unittest.TestCase):
     FAKE = {"@PYTHON@": "/opt/fake/bin/python3.12", "@SCRIPT@": "/Users/x/Library/Application Support/aicc-sentinel/sentinel.py",

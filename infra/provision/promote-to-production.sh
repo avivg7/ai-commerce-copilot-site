@@ -74,6 +74,7 @@ STATE_DIR=/var/lib/aicc/promotion
 DROPIN_DIR=/etc/systemd/system/aicc-edge.service.d
 DROPIN=$DROPIN_DIR/10-production.conf
 DROPIN_SRC="$SELF/../systemd/production/aicc-edge.service.d/10-production.conf"
+CERT_DROPIN_SRC="$SELF/../systemd/production/aicc-cert-expiry.service.d/10-production.conf"
 PROD_HOST=www.copilt.org
 STAGE_HOST=stage.copilt.org
 SECRET_NAMES="entitlement-webhook activation-proof"
@@ -244,6 +245,8 @@ step_secrets() {
     rm -f "$(P "$INCOMING")/$n.secret"
   done
   rmdir "$(P "$INCOMING")" 2>/dev/null || true
+  # mail credentials live in /etc/aicc-mail (the PHP user cannot traverse /etc/aicc); the DIRECTORY is prepared here, the owner places smtp.env afterwards (section 8 of the runbook). Never touched if present.
+  mkdir -p "$(P /etc/aicc-mail)"; chmod 750 "$(P /etc/aicc-mail)"; [ -n "$AICC_PREFIX" ] || chown root:aicc-cp /etc/aicc-mail
   rm -f "$(P "$BKCNF")"          # rewritten (new password) by create-staging-db.sh
   mark_done secrets; info "secrets rotated; the staging DB passwords, salts and wp-admin password are only in the bundle now"
 }
@@ -306,12 +309,16 @@ install_edge() { # install_edge dark|final <caddyfile>
   has_code '[Ss][Tt][Aa][Gg][Ee]\.copilt\.org' "$cf" && refuse "$cf names the staging host"
   has_code 'X-Robots-Tag' "$cf" && refuse "$cf carries a noindex header"
   has_code "$PROD_HOST" "$cf" || refuse "$cf does not name $PROD_HOST"
-  if is_dry; then would "install $EDGE_DIR/Caddyfile ($kind), $EDGE_DIR/edge.env ($kind, no stage id), $DROPIN (preflight + reload in --mode production); the edge is NOT started"; return 0; fi
+  if is_dry; then would "install $EDGE_DIR/Caddyfile ($kind), $EDGE_DIR/edge.env ($kind, no stage id), $DROPIN (preflight + reload in --mode production), the cert-expiry drop-in (www + apex; timer $([ "$kind" = dark ] && echo OFF || echo ON)); the edge is NOT started"; return 0; fi
   edge_env_text "$kind" "$mail" | install_text "$EDGE_DIR/edge.env" 0640 root:aicc-edge
   install_file "$cf" "$EDGE_DIR/Caddyfile" 0640 root:aicc-edge
   [ -r "$DROPIN_SRC" ] || fail "missing $DROPIN_SRC"
   install_file "$DROPIN_SRC" "$DROPIN" 0644 root:root
+  [ -r "$CERT_DROPIN_SRC" ] || fail "missing $CERT_DROPIN_SRC"
+  install_file "$CERT_DROPIN_SRC" "/etc/systemd/system/aicc-cert-expiry.service.d/10-production.conf" 0644 root:root
   [ -n "$AICC_PREFIX" ] || systemctl daemon-reload
+  # certificate-expiry timer: OFF while the edge serves the 12-hour internal certificate, ON with the public one
+  if [ "$kind" = dark ]; then svc disable --now aicc-cert-expiry.timer 2>/dev/null || true; else svc enable --now aicc-cert-expiry.timer || true; fi
   if [ -x "$PREFLIGHT_CMD" ] || [ -x "$(P "$PREFLIGHT_CMD")" ]; then
     local flags=(--mode production --caddyfile "$(P "$EDGE_DIR/Caddyfile")" --env-file "$(P "$EDGE_DIR/edge.env")" --quiet)
     [ -z "$AICC_PREFIX" ] && flags+=(--caddy /usr/local/bin/caddy)
@@ -463,7 +470,8 @@ cmd_rollback() {
   cp -p "$b/etc_aicc-stage-identity" "$(P "$IDENT")"; chmod 644 "$(P "$IDENT")"
   [ -f "$b/etc_aicc-edge_edge.env" ] && cp -p "$b/etc_aicc-edge_edge.env" "$(P "$EDGE_DIR/edge.env")"
   [ -f "$b/etc_aicc-edge_Caddyfile" ] && cp -p "$b/etc_aicc-edge_Caddyfile" "$(P "$EDGE_DIR/Caddyfile")"
-  rm -f "$(P "$DROPIN")"; [ -n "$AICC_PREFIX" ] || systemctl daemon-reload
+  rm -f "$(P "$DROPIN")" "$(P "/etc/systemd/system/aicc-cert-expiry.service.d/10-production.conf")"; [ -n "$AICC_PREFIX" ] || systemctl daemon-reload
+  svc enable --now aicc-cert-expiry.timer 2>/dev/null || true
   [ -f "$b/srv_aicc_shared_wp-config.php" ] && cp -p "$b/srv_aicc_shared_wp-config.php" "$(P "$WPCFG")"
   [ -f "$b/etc_aicc-ops_aicc-ops.toml" ] && cp -p "$b/etc_aicc-ops_aicc-ops.toml" "$(P "$OPS_TOML")"
   rm -rf "$(P "$SECRETS")"; tar -C "$(P /)" -xf "$b/secrets-stage.tar"

@@ -87,7 +87,7 @@ cat > "$STUB/ssh" <<EOS
 echo "ssh \$*" >> "$CALLS"
 cmd="\${@: -1}"
 case "\$cmd" in
-  identity) printf 'AICC_ENV=%s\nAICC_HOSTNAME=%s\n' "\${STUB_ENV:-staging}" "\${STUB_HOSTNAME:-stage.copilt.org}" ;;
+  identity) printf 'AICC_ENV=%s\nAICC_HOSTNAME=%s\n' "\${STUB_ENV:-staging}" "\${STUB_HOSTNAME:-stage.copilt.org}"; [ -z "\${STUB_STAGE_ID:-}" ] || echo "AICC_STAGE_ID=\$STUB_STAGE_ID" ;;
   ack\ *) [ "\${STUB_ACK_FAIL:-0}" = 1 ] && exit 1; AICC_TEST_HARNESS=1 AICC_BACKUP_DIR="$REMOTE" bash "$BKP/aicc-offhost-serve.sh" "\$cmd" ;;
   get\ *.sha256) if [ -n "\${STUB_BAD_SIDE:-}" ]; then printf '%s\n' "\$STUB_BAD_SIDE"; else AICC_TEST_HARNESS=1 AICC_BACKUP_DIR="$REMOTE" bash "$BKP/aicc-offhost-serve.sh" "\$cmd"; fi ;;
   get\ *|status)
@@ -336,6 +336,75 @@ if [ -S "$FXSOCK" ] && [ -x "$LOCALMY/mysql" ]; then
   t_eq "...every table has three columns (name, rows, checksum)" "$(awk -F'\t' 'NF==3' "$RS/f.fp" | wc -l | tr -d ' ')" "$(M -N -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='aicc_rehearsal_cp' AND table_type='BASE TABLE'")"
   t_eq "...and the throwaway database is gone" "$(M -N -e "SHOW DATABASES LIKE 'aicc_rehearsal_dr_hostile'")" ""
 else t_skip "fingerprint tests against MySQL" "rehearsal MySQL fixture not running"; fi
+
+echo "== PRODUCTION-mode backup identity: pull-offhost.sh --env production, the production LaunchAgent, restore and drill gates (stubs; nothing leaves this machine) =="
+PID32=0123456789abcdef0123456789abcdef; PKEY="$TMP/aicc_cp_prod_offhost"; cp "$FAKEKEY" "$PKEY"; PKH="$TMP/known_hosts_aicc_prod_cp"
+echo "203.0.113.9 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAItestonlytestonlytestonlytestonlytestonlytest" > "$PKH"
+: > "$CALLS"
+PPULL() { env HOME="$TMP/home" PATH="$STUB:$PATH" bash "$BKP/pull-offhost.sh" --env production --key "$PKEY" --known-hosts "$PKH" --dest "$TMP/destp" "$@"; }
+t_rc "production pull: no --expect-id is REFUSED" 3 PPULL --stage-ip 203.0.113.9
+t_rc "production pull: a malformed --expect-id is REFUSED" 3 PPULL --stage-ip 203.0.113.9 --expect-id nothex
+t_rc "production pull: a stage host name is REFUSED" 3 PPULL --stage-ip 203.0.113.9 --expect-id "$PID32" --stage-host stage.copilt.org
+t_rc "production pull: api.copilt.org is REFUSED" 3 PPULL --stage-ip 203.0.113.9 --expect-id "$PID32" --stage-host api.copilt.org
+t_rc "production pull: the STAGING pull key name is REFUSED" 3 env HOME="$TMP/home" PATH="$STUB:$PATH" bash "$BKP/pull-offhost.sh" --env production --key "$FAKEKEY" --known-hosts "$PKH" --dest "$TMP/destp" --stage-ip 203.0.113.9 --expect-id "$PID32"
+t_rc "production pull: the API Droplet's key is REFUSED" 3 env HOME="$TMP/home" PATH="$STUB:$PATH" bash "$BKP/pull-offhost.sh" --env production --key "$PRODKEY" --known-hosts "$PKH" --dest "$TMP/destp" --stage-ip 203.0.113.9 --expect-id "$PID32"
+t_rc "production pull: the API Droplet address is REFUSED" 3 PPULL --stage-ip 139.59.157.231 --expect-id "$PID32"
+t_rc "production pull: a missing pinned known-hosts file is REFUSED (no trust on first use)" 3 env HOME="$TMP/home" PATH="$STUB:$PATH" bash "$BKP/pull-offhost.sh" --env production --key "$PKEY" --known-hosts "$TMP/nope" --dest "$TMP/destp" --stage-ip 203.0.113.9 --expect-id "$PID32"
+echo "other.example ssh-ed25519 AAAAxx" > "$TMP/known_other_p"
+t_rc "production pull: a known-hosts file without an entry for the address is REFUSED" 3 env HOME="$TMP/home" PATH="$STUB:$PATH" bash "$BKP/pull-offhost.sh" --env production --key "$PKEY" --known-hosts "$TMP/known_other_p" --dest "$TMP/destp" --stage-ip 203.0.113.9 --expect-id "$PID32"
+t_rc "stage mode: the production pull key name is REFUSED" 3 env HOME="$TMP/home" PATH="$STUB:$PATH" bash "$BKP/pull-offhost.sh" --key "$PKEY" --dest "$TMP/dest" --stage-ip 203.0.113.9
+t_rc "an unknown --env is a usage error" 2 PPULL --env qa --stage-ip 203.0.113.9
+t_eq "none of the refusals made an ssh call" "$(wc -l < "$CALLS" | tr -d ' ')" "0"
+t_ok "production --dry-run makes no ssh call and names the production identity" bash -c "PATH='$STUB':\$PATH HOME='$TMP/home' bash '$BKP/pull-offhost.sh' --env production --key '$PKEY' --known-hosts '$PKH' --dest '$TMP/destp' --stage-ip 203.0.113.9 --expect-id $PID32 --dry-run | grep -q 'verify the production identity (www.copilt.org)'"
+t_eq "...(zero calls)" "$(wc -l < "$CALLS" | tr -d ' ')" "0"
+printf 'AICC_ENV=production\nAICC_HOSTNAME=www.copilt.org\nAICC_STAGE_ID=%s\n' "$PID32" > "$TMP/ident"
+mkset 20261022T210000Z
+STUB_ENV=staging STUB_HOSTNAME=stage.copilt.org STUB_STAGE_ID="$PID32" t_rc "production pull: a host that still says STAGING is refused (no data pulled)" 3 PPULL --stage-ip 203.0.113.9 --expect-id "$PID32"
+STUB_ENV=production STUB_HOSTNAME=www.copilt.org STUB_STAGE_ID=ffffffffffffffffffffffffffffffff t_rc "production pull: a host with ANOTHER id is refused" 3 PPULL --stage-ip 203.0.113.9 --expect-id "$PID32"
+STUB_ENV=production STUB_HOSTNAME=stage.copilt.org STUB_STAGE_ID="$PID32" t_rc "production pull: a production host with another name is refused" 3 PPULL --stage-ip 203.0.113.9 --expect-id "$PID32"
+t_fail "...nothing reached the production destination" test -e "$TMP/destp/aicc_cp-20261022T210000Z-scheduled.sql.gz"
+STUB_ENV=production STUB_HOSTNAME=www.copilt.org STUB_STAGE_ID="$PID32" t_ok "production pull succeeds against the matching identity" PPULL --stage-ip 203.0.113.9 --expect-id "$PID32"
+t_ok "production pull: the verified dump is in the PRODUCTION directory (0700), not the staging one" bash -c "test -f '$TMP/destp/aicc_cp-20261022T210000Z-scheduled.sql.gz' && [ \"\$(stat -f %Lp '$TMP/destp' 2>/dev/null || stat -c %a '$TMP/destp')\" = 700 ] && ! test -e '$TMP/dest/aicc_cp-20261022T210000Z-scheduled.sql.gz'"
+t_eq "production pull: every ssh call pinned the host key (StrictHostKeyChecking=yes, the pinned file)" "$(grep -c "StrictHostKeyChecking=yes -o UserKnownHostsFile=$PKH" "$CALLS")/$(grep -vc "StrictHostKeyChecking=yes -o UserKnownHostsFile=$PKH" "$CALLS" || true)" "$(grep -c '^ssh ' "$CALLS")/0"
+t_eq "production pull: the ack names the production set" "$(jq -r '[.verified,.set_ts]|join(",")' "$REMOTE/offhost-ack.json")" "true,20261022T210000Z"
+printf 'AICC_ENV=staging\nAICC_HOSTNAME=stage.copilt.org\n' > "$TMP/ident"
+: > "$CALLS"; mkset 20261022T220000Z
+t_ok "staging pull: still works exactly as before (default key, default directory names)" PULL --stage-ip 203.0.113.9
+t_eq "staging pull: still accept-new against the STAGING known_hosts file (unchanged behaviour)" "$(grep -c 'StrictHostKeyChecking=accept-new -o UserKnownHostsFile=.*known_hosts_aicc_stage' "$CALLS")/$(grep -c '^ssh ' "$CALLS")" "$(grep -c '^ssh ' "$CALLS")/$(grep -c '^ssh ' "$CALLS")"
+
+# the production LaunchAgent (DRY-RUN only: the installer is never applied by a test)
+IL="$BKP/macos/install-launchd.sh"
+ILD() { env HOME="$TMP/home" bash "$IL" "$@"; }
+t_rc "launchd production: a missing --expect-id is refused" 1 ILD --env production --stage-ip 203.0.113.9 --key "$PKEY" --known-hosts "$PKH" --dest "$TMP/destp"
+t_rc "launchd production: the staging key name is refused" 1 ILD --env production --stage-ip 203.0.113.9 --expect-id "$PID32" --key "$FAKEKEY" --known-hosts "$PKH" --dest "$TMP/destp"
+t_rc "launchd production: an unpinned host is refused" 1 ILD --env production --stage-ip 203.0.113.9 --expect-id "$PID32" --key "$PKEY" --known-hosts "$TMP/nope" --dest "$TMP/destp"
+t_rc "launchd stage: the production key name is refused" 1 ILD --stage-ip 203.0.113.9 --key "$PKEY" --dest "$TMP/dest"
+OUTL="$(ILD --env production --stage-ip 203.0.113.9 --expect-id "$PID32" --key "$PKEY" --known-hosts "$PKH" --dest "$TMP/destp" 2>&1)"; rcl=$?
+t_eq "launchd production dry-run exits 0" "$rcl" "0"
+t_contains "launchd production: its own label (the staging agent is untouched)" "$OUTL" "com.aicc.offhost-pull.production"
+t_contains "launchd production: the plist passes --env production and the id" "$OUTL" "<string>--expect-id</string><string>$PID32</string>"
+t_contains "launchd production: its own support and log directories" "$OUTL" "aicc-offhost-pull-production"
+t_contains "launchd production: says plainly it is not 24/7" "$OUTL" "NOT 24/7"
+t_not_contains "launchd production: dry-run changed nothing" "$OUTL" "DO    "
+t_not_contains "launchd production: no secret in the plist" "$OUTL" "PRIVATE KEY"
+OUTS="$(ILD --stage-ip 203.0.113.9 --key "$FAKEKEY" --dest "$TMP/dest" 2>&1)"
+t_contains "launchd stage dry-run keeps the staging label" "$OUTS" "<key>Label</key><string>com.aicc.offhost-pull</string>"
+t_not_contains "launchd stage dry-run has no production arguments" "$OUTS" "--expect-id"
+
+# host-side tools
+t_ok "aicc-restore.sh: --production is understood (verify on a prefix identity under the harness)" bash -c "grep -q -- '--production' '$BKP/aicc-restore.sh' && grep -q 'confirm-production-restore' '$BKP/aicc-restore.sh'"
+t_ok "aicc-restore.sh: the staging path still refuses a production identity without --production (text gate)" bash -c "grep -q 'on the production host pass --production' '$BKP/aicc-restore.sh'"
+t_ok "aicc-restore.sh: the loopback health self-check no longer verifies Caddy's internal certificate" bash -c "grep -q 'curl -sk' '$BKP/aicc-restore.sh'"
+t_ok "install-offhost-access.sh: production needs --env production AND --confirm-production, and still checks the identity file (text gate: the real path needs root on the host)" bash -c "grep -q 'AICC_ENV=\$ENVN' '$BKP/install-offhost-access.sh' && grep -q 'needs --confirm-production' '$BKP/install-offhost-access.sh'"
+DD() { bash "$BKP/dr-drill.sh" "$@"; }
+t_rc "dr-drill production: the staging confirmation flag is refused" 3 DD --env production --stage-ip 203.0.113.9 --stage-host www.copilt.org --stage-id "$PID32" --tls dark --known-hosts "$PKH" --key "$PKEY" --offhost-key "$PKEY" --i-understand-this-wipes-staging-data
+t_rc "dr-drill production: no destructive confirmation is refused" 3 DD --env production --stage-ip 203.0.113.9 --stage-host www.copilt.org --stage-id "$PID32" --tls dark --known-hosts "$PKH" --key "$PKEY" --offhost-key "$PKEY"
+t_rc "dr-drill production: a stage host name is refused" 3 DD --env production --stage-ip 203.0.113.9 --stage-host stage.copilt.org --stage-id "$PID32" --tls dark --known-hosts "$PKH" --key "$PKEY" --offhost-key "$PKEY" --i-understand-this-wipes-production-data
+t_rc "dr-drill production: the staging operator key name is refused" 3 DD --env production --stage-ip 203.0.113.9 --stage-host www.copilt.org --stage-id "$PID32" --tls dark --known-hosts "$PKH" --key "$FAKEKEY" --offhost-key "$PKEY" --i-understand-this-wipes-production-data
+t_rc "dr-drill production: --tls is required (usage error)" 2 DD --env production --stage-ip 203.0.113.9 --stage-host www.copilt.org --stage-id "$PID32" --known-hosts "$PKH" --key "$PKEY" --offhost-key "$PKEY" --i-understand-this-wipes-production-data
+t_rc "dr-drill stage: a production key name is refused" 3 DD --stage-ip 203.0.113.9 --stage-host stage.copilt.org --stage-id "$PID32" --key "$PKEY" --offhost-key "$PKEY" --i-understand-this-wipes-staging-data
+t_ok "dr-drill production --dry-run sends nothing" DD --env production --stage-ip 203.0.113.9 --stage-host www.copilt.org --stage-id "$PID32" --tls dark --known-hosts "$PKH" --key "$PKEY" --offhost-key "$PKEY" --dry-run
+t_ok "dr-drill: the customer/order guard fails closed (text gate: refuses when it cannot read the counts)" bash -c "grep -q 'cannot determine whether the production database holds customers or orders' '$BKP/dr-drill.sh' && grep -q 'only allowed before the first customer' '$BKP/dr-drill.sh'"
 
 echo "== RPO/RTO documentation exists and does not claim an unproven restore time =="
 t_ok "README-backup.md documents RPO and RTO" bash -c "grep -q 'RPO' '$BKP/README-backup.md' && grep -q 'RTO' '$BKP/README-backup.md'"
