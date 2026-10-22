@@ -88,6 +88,12 @@ patterns = ["aicc_cp-*.sql.gz", "aicc-files-*.tar.gz"]   # only used if the dire
 status_file = "/srv/aicc/backups/status.json"   # schema 1 from infra/backup/aicc-backup.sh
 offhost_ack_file = "/srv/aicc/backups/offhost-ack.json"   # schema 1, written by the owner's Mac after a VERIFIED pull; must be readable by the aicc-ops user; "" disables
 
+[collectors.secupdates]          # hourly security-update job (infra/systemd/aicc-security-updates.sh); numbers only, no package versions
+enabled = true
+interval_s = 300
+timeout_s = 5
+status_file = "/var/lib/aicc/status/security-updates.json"
+
 [collectors.unitstatus]          # unit-<name>.json files from infra/systemd/aicc-unit-status.sh (OnFailure= hook)
 enabled = true
 interval_s = 60

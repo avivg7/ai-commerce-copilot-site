@@ -57,6 +57,7 @@ EXEMPT_SET_E = {
     "test_provision.sh": "test runner (must continue after a failing assertion)", "test_release.sh": "test runner (must continue after a failing assertion)",
     "test_backup.sh": "test runner (must continue after a failing assertion)", "test_lint.sh": "test runner (must continue after a failing assertion)", "run-all.sh": "runs every suite even when one fails", "test_ubuntu.sh": "test runner (cleans up through a trap, must report every failure)", "ubuntu-inner.sh": "test runner inside the container (must continue after a failing assertion)",
     "verify-droplet.sh": "pre-existing stage-1 script (read-only verifier that reports every failure), not changed here",
+    "aicc-security-updates.sh": "records the exit code of each step (list refresh, upgrade) and ALWAYS writes the status file for AICC Ops, then fails the unit itself; -e would skip the status write",
     "render-cloud-init.sh": "pre-existing",
 }
 print("== syntax ==")

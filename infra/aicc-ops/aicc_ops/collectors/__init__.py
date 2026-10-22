@@ -76,10 +76,10 @@ def run_collector(c: Collector, full_cfg: dict, now: float) -> dict:
 
 
 def build_collectors(cfg: dict) -> list:
-    from . import host, caddy, phpfpm, fpmlog, mysql, cp, backups, cert, edge, postgres, backend_metrics, unitstatus
+    from . import host, caddy, phpfpm, fpmlog, mysql, cp, backups, cert, edge, postgres, backend_metrics, unitstatus, secupdates
     table = {
         "host": host.collect, "caddy": caddy.collect, "phpfpm": phpfpm.collect, "fpmlog": fpmlog.collect, "mysql": mysql.collect,
         "cp": cp.collect, "backups": backups.collect, "cert": cert.collect, "edge": edge.collect,
-        "postgres": postgres.collect, "backend_metrics": backend_metrics.collect, "unitstatus": unitstatus.collect,
+        "postgres": postgres.collect, "backend_metrics": backend_metrics.collect, "unitstatus": unitstatus.collect, "secupdates": secupdates.collect,
     }
     return [Collector(n, table[n], c) for n, c in cfg["collectors"].items() if c.get("enabled") and n in table]

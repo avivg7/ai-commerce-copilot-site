@@ -1,0 +1,14 @@
+# Every hour (plus up to 10 minutes of jitter so mirrors are not hit at :00). The worst-case lag from "the fix is in the archive" to "installed and active" is about 70 minutes
+# (was up to ~24 h with the once-a-day apt-daily-upgrade). Persistent=true runs a missed job after a reboot or downtime.
+[Unit]
+Description=Hourly AICC security updates
+
+[Timer]
+OnCalendar=*-*-* *:23:00
+RandomizedDelaySec=10min
+Persistent=true
+AccuracySec=30s
+Unit=aicc-security-updates.service
+
+[Install]
+WantedBy=timers.target

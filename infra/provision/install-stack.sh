@@ -299,6 +299,7 @@ step_scripts() {
   local ops="$BUNDLE/scripts/ops"
   install_file "$INFRA/systemd/aicc-unit-status.sh"          "$SBIN/aicc-unit-status" 0755 root:root
   install_file "$INFRA/systemd/aicc-fpm-log-status.sh"       "$SBIN/aicc-fpm-log-status" 0755 root:root
+  install_file "$INFRA/systemd/aicc-security-updates.sh"      "$SBIN/aicc-security-updates" 0755 root:root
   if [ -f "$ops/edge-preflight.sh" ]; then install_file "$ops/edge-preflight.sh" "$SBIN/aicc-edge-preflight" 0755 root:root
   else die "scripts/ops/edge-preflight.sh missing from the bundle ($ops)"; fi
   [ -f "$ops/cert-expiry-check.sh" ] && install_file "$ops/cert-expiry-check.sh" "$SBIN/aicc-cert-expiry-check" 0755 root:root || warn "cert-expiry-check.sh not in bundle"
@@ -344,7 +345,7 @@ step_systemd() {
     systemctl daemon-reload
     if command -v systemd-analyze >/dev/null 2>&1; then
       systemd-analyze verify /etc/systemd/system/aicc-edge.service /etc/systemd/system/aicc-wp-cron.service /etc/systemd/system/aicc-backup.service \
-        /etc/systemd/system/aicc-cert-expiry.service /etc/systemd/system/aicc-wp-cron.timer /etc/systemd/system/aicc-backup.timer /etc/systemd/system/aicc-cert-expiry.timer \
+        /etc/systemd/system/aicc-cert-expiry.service /etc/systemd/system/aicc-security-updates.service /etc/systemd/system/aicc-wp-cron.timer /etc/systemd/system/aicc-backup.timer /etc/systemd/system/aicc-cert-expiry.timer /etc/systemd/system/aicc-security-updates.timer \
         || die "systemd-analyze verify reported problems (read above); units are installed but NOT enabled"
       info "systemd-analyze verify: no problems"
     fi
@@ -460,8 +461,8 @@ step_enable_edge() {
 step_enable_timers() {
   step "enable-timers: wp-cron every 2 minutes, daily backup, daily certificate check"
   require_root
-  if is_dry; then would "systemctl enable --now aicc-wp-cron.timer aicc-backup.timer aicc-cert-expiry.timer aicc-fpm-log-status.timer"; return 0; fi
-  systemctl enable --now aicc-wp-cron.timer aicc-backup.timer aicc-cert-expiry.timer aicc-fpm-log-status.timer
+  if is_dry; then would "systemctl enable --now aicc-wp-cron.timer aicc-backup.timer aicc-cert-expiry.timer aicc-fpm-log-status.timer aicc-security-updates.timer"; return 0; fi
+  systemctl enable --now aicc-wp-cron.timer aicc-backup.timer aicc-cert-expiry.timer aicc-fpm-log-status.timer aicc-security-updates.timer
   systemctl list-timers 'aicc-*' --no-pager
 }
 
