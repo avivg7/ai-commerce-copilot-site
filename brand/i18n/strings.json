@@ -110,8 +110,8 @@
       "view": {
         "legend": "View",
         "shopper": "What shoppers see",
-        "merchant": "What you see",
-        "cue": "Switch to “What you see” for the same bundle from your side."
+        "merchant": "What you see and control",
+        "cue": "Switch to “What you see and control” for the same bundle from your side."
       },
       "products": {
         "kit": "Pour-over coffee set",
@@ -403,7 +403,7 @@
       "empty": "No question matches “{q}”. Try fewer words, or browse by topic."
     },
     "fbtHeading": "See what each recommendation is based on.",
-    "fbtLead": "A shopper sees a short, relevant bundle. Switch to your side to see what is recommended and how often it is bought together, what you can change and what your dashboard records.",
+    "fbtLead": "Shoppers see a short, relevant bundle. You see the evidence behind it and the controls that shape it. Try both sides below.",
     "needsTranslation": []
   },
   "he": {
@@ -510,8 +510,8 @@
       "view": {
         "legend": "תצוגה",
         "shopper": "מה הקונים רואים",
-        "merchant": "מה אתם רואים",
-        "cue": "עברו אל ״מה אתם רואים״ כדי לראות את אותה חבילה מהצד שלכם."
+        "merchant": "מה אתם רואים ושולטים בו",
+        "cue": "עברו אל ״מה אתם רואים ושולטים בו״ כדי לראות את אותה חבילה מהצד שלכם."
       },
       "products": {
         "kit": "ערכת קפה פור־אובר",
@@ -803,7 +803,7 @@
       "empty": "אין שאלה שתואמת את ״{q}״. נסו פחות מילים, או עיינו לפי נושא."
     },
     "fbtHeading": "ראו על מה מבוססת כל המלצה.",
-    "fbtLead": "הקונה רואה חבילה קצרה ורלוונטית. עברו לצד שלכם כדי לראות מה מומלץ וכמה פעמים הוא נרכש יחד, מה אפשר לשנות ומה הדשבורד שלכם מתעד.",
+    "fbtLead": "הקונים רואים חבילה קצרה ורלוונטית. אתם רואים את הראיות שמאחוריה ואת הבקרות שמעצבות אותה. נסו את שני הצדדים כאן למטה.",
     "needsTranslation": []
   },
   "es": {
@@ -910,8 +910,8 @@
       "view": {
         "legend": "Vista",
         "shopper": "Lo que ven los compradores",
-        "merchant": "Lo que ve usted",
-        "cue": "Cambie a «Lo que ve usted» para ver el mismo paquete desde su lado."
+        "merchant": "Lo que ve y controla usted",
+        "cue": "Cambie a «Lo que ve y controla usted» para ver el mismo paquete desde su lado."
       },
       "products": {
         "kit": "Juego de café de filtro",
@@ -1203,7 +1203,7 @@
       "empty": "Ninguna pregunta coincide con «{q}». Pruebe con menos palabras o explore por tema."
     },
     "fbtHeading": "Vea en qué se basa cada recomendación.",
-    "fbtLead": "Un comprador ve un paquete breve y relevante. Pase a su lado para ver qué se recomienda y cuántas veces se compra junto, qué puede cambiar y qué registra su panel.",
+    "fbtLead": "Los compradores ven un paquete breve y relevante. Usted ve la evidencia que hay detrás y los controles que le dan forma. Pruebe los dos lados a continuación.",
     "needsTranslation": []
   },
   "ru": {
@@ -1310,8 +1310,8 @@
       "view": {
         "legend": "Вид",
         "shopper": "Что видят покупатели",
-        "merchant": "Что видите вы",
-        "cue": "Переключитесь на «Что видите вы», чтобы увидеть тот же набор со своей стороны."
+        "merchant": "Что видите и контролируете вы",
+        "cue": "Переключитесь на «Что видите и контролируете вы», чтобы увидеть тот же набор со своей стороны."
       },
       "products": {
         "kit": "Набор для кофе пуровер",
@@ -1603,7 +1603,7 @@
       "empty": "По запросу «{q}» вопросов не найдено. Попробуйте меньше слов или выберите тему."
     },
     "fbtHeading": "Посмотрите, на чём основана каждая рекомендация.",
-    "fbtLead": "Покупатель видит короткий подходящий набор. Переключитесь на свою сторону, чтобы увидеть, что рекомендуется и как часто это покупают вместе, что вы можете изменить и что записывает ваша панель.",
+    "fbtLead": "Покупатели видят короткий подходящий набор. Вы видите данные, на которых он основан, и управление, которое его формирует. Попробуйте обе стороны ниже.",
     "needsTranslation": []
   },
   "replicaLabels": [
