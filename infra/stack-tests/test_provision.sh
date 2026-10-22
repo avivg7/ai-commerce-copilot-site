@@ -412,7 +412,7 @@ if [ -x "$LOCALMY/mysqld" ]; then
         echo "== aicc-security-updates.sh (hourly security updates; numbers and package names only) =="
     SU="$TMP/secupd"; mkdir -p "$SU/bin" "$SU/proc/4242"
     printf '#!/bin/bash\nif [[ "$*" == *" -s "* || "$*" == *"-s -o"* ]]; then cat "$FAKE_INST"; fi\nexit 0\n' > "$SU/bin/apt-get"
-    printf '#!/bin/bash\n: > "$FAKE_INST"\nexit "${FAKE_UU_RC:-0}"\n' > "$SU/bin/uu"
+    printf '#!/bin/bash\n[ "$#" -eq 0 ] || { echo "unattended-upgrade: error: unrecognized arguments: $*" >&2; exit 2; }\nif [ -n "${FAKE_UU_LOCK:-}" ] && [ ! -e "$FAKE_UU_LOCK" ]; then : > "$FAKE_UU_LOCK"; echo "Could not get lock /var/lib/dpkg/lock-frontend" >&2; exit 1; fi\n: > "$FAKE_INST"\nexit "${FAKE_UU_RC:-0}"\n' > "$SU/bin/uu"
     printf '#!/bin/bash\nif [[ "$1" == show ]]; then for a in "$@"; do [[ "$a" == php8.3-fpm.service ]] && { echo 4242; exit 0; }; done; echo 0; exit 0; fi\nif [[ "$1" == reload ]]; then : > "$FAKE_PROC/4242/maps"; fi\nexit 0\n' > "$SU/bin/systemctl"
     chmod +x "$SU/bin/"*
     printf 'Inst libnss3 [2:3.98-1ubuntu0.2] (2:3.98-1ubuntu0.3 Ubuntu:24.04/noble-updates, Ubuntu:24.04/noble-security [amd64])\nInst vim [1] (2 Ubuntu:24.04/noble-updates [amd64])\n' > "$SU/inst"
@@ -424,6 +424,9 @@ if [ -x "$LOCALMY/mysqld" ]; then
     t_eq "...its keys are exactly the documented ones" "$(jq -r 'keys|join(",")' "$SU/st/security-updates.json")" "finished_epoch,ok,pending_count,pending_oldest_epoch,reboot_required,reloaded,schema,stale_services,ts,update_rc,upgrade_rc,upgraded"
     perm() { stat -c %a "$1" 2>/dev/null || stat -f %Lp "$1"; }
     t_eq "...the status file is world-readable (AICC Ops reads it) and the state file is root-only" "$(perm "$SU/st/security-updates.json") $(perm "$SU/state/security-updates.pending.json")" "644 600"
+    printf 'Inst libnss3 [2:3.98-1ubuntu0.2] (2:3.98-1ubuntu0.3 Ubuntu:24.04/noble-updates, Ubuntu:24.04/noble-security [amd64])\n' > "$SU/inst"; rm -f "$SU/lock"
+    t_ok "a held dpkg lock is retried (bounded) and the upgrade then succeeds; the fake rejects ANY argument like the real argparse tool (rc 2)" "${SUENV[@]}" FAKE_UU_LOCK="$SU/lock" AICC_LOCK_RETRY_SLEEP=0 AICC_NOW=1800001800 bash "$INFRA/systemd/aicc-security-updates.sh"
+    t_eq "...and the retry installed the update" "$(jq -r '[.ok,.upgrade_rc,.pending_count]|join(",")' "$SU/st/security-updates.json")" "true,0,0"
     printf 'Inst openssl [1] (2 Ubuntu:24.04/noble-security [amd64])\n' > "$SU/inst"; : > "$SU/proc/4242/maps"
     t_rc "a failing unattended-upgrade makes the unit FAIL (rc 1) ..." 1 "${SUENV[@]}" FAKE_UU_RC=1 AICC_NOW=1800003600 bash "$INFRA/systemd/aicc-security-updates.sh"
     t_eq "...but the status file is still written, ok=false, with the failure code" "$(jq -r '[.ok,.upgrade_rc]|join(",")' "$SU/st/security-updates.json")" "false,1"

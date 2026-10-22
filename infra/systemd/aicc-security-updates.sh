@@ -38,8 +38,15 @@ simulate() { "$APT_GET" -s -o Debug::NoLocking=1 upgrade 2>/dev/null | awk '/^In
 simulate >"$work/before.txt" || true
 
 # 3. install (unattended-upgrade applies the Allowed-Origins policy; its own exit code is recorded, not hidden)
+# (unattended-upgrade is an argparse tool: it takes no apt `-o` options, so a held dpkg lock is handled here with a bounded retry instead)
 upgrade_rc=0
-"$UU" "${lock_opts[@]}" >"$work/uu.log" 2>&1 || upgrade_rc=$?
+for attempt in 1 2 3; do
+  upgrade_rc=0
+  "$UU" >"$work/uu.log" 2>&1 || upgrade_rc=$?
+  [ "$upgrade_rc" -eq 0 ] && break
+  grep -qiE 'lock' "$work/uu.log" || break          # only a lock problem is worth waiting for; any other failure is recorded as it is
+  sleep "${AICC_LOCK_RETRY_SLEEP:-120}"
+done
 simulate >"$work/after.txt" || true
 
 # 4. are the RUNNING services patched? A deleted main binary or a deleted mapped library means the process still runs replaced code.
