@@ -355,7 +355,8 @@ step_systemd() {
 step_logrotate() {
   step "logrotate"
   install_file "$INFRA/logrotate/aicc-php"    /etc/logrotate.d/aicc-php 0644 root:root
-  install_file "$INFRA/logrotate/aicc-mysql"  /etc/logrotate.d/aicc-mysql 0644 root:root
+  # (no aicc-mysql file: Ubuntu's own /etc/logrotate.d/mysql-server already rotates /var/log/mysql/*log, slow.log included; a second stanza for the same file makes logrotate exit 1 every night)
+  if is_linux && [ -z "$AICC_PREFIX" ] && ! is_dry && [ -f /etc/logrotate.d/aicc-mysql ]; then rm -f /etc/logrotate.d/aicc-mysql; info "removed the superseded /etc/logrotate.d/aicc-mysql"; fi
   install_file "$INFRA/logrotate/aicc-backup" /etc/logrotate.d/aicc-backup 0644 root:root
   if ! is_dry && is_linux && [ -z "$AICC_PREFIX" ]; then logrotate --debug /etc/logrotate.conf >/dev/null 2>&1 || die "logrotate --debug reports an error in the new config"; info "logrotate --debug: OK (Caddy rotates its own logs: roll_size/roll_keep in the Caddyfile)"; fi
 }

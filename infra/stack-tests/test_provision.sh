@@ -438,6 +438,9 @@ if [ -x "$LOCALMY/mysqld" ]; then
     t_contains "...Persistent" "$(cat "$INFRA/systemd/aicc-security-updates.timer")" "Persistent=true"
     t_contains "the unit reports failures to AICC Ops through the failure hook" "$(cat "$INFRA/systemd/aicc-security-updates.service")" "OnFailure=aicc-notify-failure@%n.service"
 
+        echo "== logrotate: no second stanza for a file Ubuntu's mysql-server rule already rotates =="
+    t_eq "no AICC logrotate file claims a path under /var/log/mysql/ (Ubuntu's /var/log/mysql/*log glob covers it; a duplicate makes logrotate exit 1 nightly: seen on the host 2026-10-21/22)" "$(grep -l '^[[:space:]]*/var/log/mysql/' "$INFRA"/logrotate/* 2>/dev/null | wc -l | tr -d ' ')" "0"
+
 echo "== backup / restore as the REAL backup account against the throwaway server =="
     BKDIR="$TMP/bk"; SH="$TMP/shared"; EC="$TMP/edgeconf"; mkdir -p "$SH/uploads/2026" "$EC" "$TMP/rel/site" "$TMP/rel/cp"; echo img > "$SH/uploads/2026/a.jpg"; echo "<?php // x" > "$SH/wp-config.php"; echo cfg > "$EC/Caddyfile"
     ln -s "$TMP/rel/site/releases/R1" "$TMP/rel/site/current"
