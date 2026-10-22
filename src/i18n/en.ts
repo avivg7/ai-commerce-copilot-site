@@ -20,9 +20,9 @@ export const en = {
     ogImageAlt: "AICC: product recommendations, merchant insight and merchandising control for WooCommerce. A simple sketch of a product page with a recommended bundle.",
     pages: {
       home: {
-        title: "AICC: product recommendations and merchandising copilot",
+        title: "AI Commerce Copilot: recommendations for WooCommerce",
         description:
-          "AICC turns your store data into better product recommendations, useful merchant insight and practical merchandising control. Available for WooCommerce.",
+          "AI Commerce Copilot turns your store data into relevant product and cart recommendations, with the insight and control to steer them. For WooCommerce.",
       },
       product: {
         title: "How AICC works: recommendations you can explain and control",
@@ -240,8 +240,8 @@ export const en = {
     view: {
       legend: "View",
       shopper: "What shoppers see",
-      merchant: "What you see",
-      cue: "Switch to “What you see” for the same bundle from your side.",
+      merchant: "What you see and control",
+      cue: "Switch to “What you see and control” for the same bundle from your side.",
     },
     products: {
       kit: "Pour-over coffee set",
@@ -474,25 +474,59 @@ export const en = {
     hero: {
       eyebrow: "Available for WooCommerce",
       category: "Commerce recommendation and merchandising copilot",
-      titleLead: "Make every product page",
+      titleLead: "Turn every shopper journey into",
       titleAccent: "a smarter selling opportunity.",
-      lead: "AICC turns your store data into better product recommendations on your product and cart pages, with the merchant insight and practical control to steer them.",
-      confidence: {
-        price: "Plans from {priceSolo} a year",
-        guarantee: "14-day money-back guarantee on your first purchase",
-        renewal: "No automatic renewal",
-      },
+      lead: "AI Commerce Copilot turns your store data into relevant recommendations and smarter merchandising \u2014 helping shoppers discover more while you manage less and stay in control.",
+      ctaDemo: "See it in action",
+      ctaPlans: "View plans",
     },
+    // The three outcomes, right after the hero (merchant outcome first, mechanics later).
     pillars: {
-      label: "What AICC gives you",
-      a: { title: "Better recommendations", body: "Suggestions drawn from your own store data: what customers buy together, your catalog and your stock.", link: "See an example" },
-      b: { title: "Less manual merchandising", body: "AICC finds the pairs in your orders. You keep the last word with a few rules, instead of curating every product.", link: "See the controls" },
-      c: { title: "Visibility and control", body: "A dashboard, plain-English insights and a guide show what is recommended and how often it is bought together.", link: "See the workspace" },
+      label: "What AI Commerce Copilot gives you",
+      a: { title: "Help shoppers discover more", body: "Put relevant products in front of shoppers while they are already deciding what to buy.", link: "See where they appear" },
+      b: { title: "Merchandise less by hand", body: "Let your store data handle the repetitive recommendation work, while you step in where it matters.", link: "See the controls" },
+      c: { title: "Stay in control", body: "See why products are recommended, understand what shoppers do with them, and change what appears when you want.", link: "See the evidence" },
+    },
+    // Visual proof: where the recommendations appear (product page and cart), shown as a two-state view of the same sample bundle.
+    surfaces: {
+      label: "Where recommendations appear",
+      title: "On every product page and in the cart.",
+      lead: "Shoppers meet your recommendations at two moments when they are already choosing: while they look at a product, and again in the cart.",
+      tabsLabel: "Choose where to look",
+      page: {
+        tab: "Product page",
+        title: "On a product page",
+        headline: "Help shoppers discover what belongs with the product they’re already viewing.",
+        body: "They can choose the recommendations they want and add them together in one step.",
+        mock: "A sample product page: the product above and, below it, the recommendation cards with the viewed product ticked, a bundle total and an add-to-cart button.",
+      },
+      cart: {
+        tab: "Cart",
+        title: "In the cart",
+        headline: "Keep product discovery going in the cart.",
+        body: "Recommendations adapt to what’s already there, without suggesting products the shopper has already added.",
+        mock: "A sample cart page: two items already in the cart with quantities and prices, an order summary and, below them, the recommendation cards for other products with a bundle total and an add-to-cart button.",
+      },
+      scope: "Product pages and the cart page only. Checkout and payment stay entirely with WooCommerce.",
+      caption: "Illustration with invented sample products, not a real store.",
+      mockPoweredBy: "Powered by",
+      mockAdd: "Add to cart",
+      mockCartTitle: "Your cart",
+      mockTotals: "Cart totals",
+      cartCols: { product: "Product", price: "Price", quantity: "Quantity", subtotal: "Subtotal" },
+      mockSubtotal: "Subtotal",
+      mockShipping: "Shipping",
+      mockShippingNote: "Calculated at checkout",
+      mockTotal: "Total",
+      mockCheckout: "Proceed to checkout",
     },
     demo: {
       title: "See what each recommendation is based on.",
       lead:
-        "A shopper sees a short, relevant bundle. Switch to your side to see what is recommended and how often it is bought together, what you can change and what your dashboard records.",
+        "Shoppers see a short, relevant bundle. You see the evidence behind it and the controls that shape it. Try both sides below.",
+      versusLabel: "The two sides of every recommendation",
+      shopper: { title: "What shoppers see", body: "Useful recommendations in a short bundle they can add to the cart in one step." },
+      merchant: { title: "What you see and control", body: "Why each product is there, what shoppers do with it, and the rules that change what appears." },
     },
     why: {
       title: "Related products match by category. AICC starts from the basket.",
@@ -518,10 +552,10 @@ export const en = {
     connectorNote: "A sample dashboard styled after the AICC admin",
     // One premium workspace replaces the standalone dashboard, Control and Meet Reco sections of the first deck (owner addendum F).
     workspace: {
-      title: "More than a widget. A\u00a0merchandising workspace.",
-      lead: "The storefront bundle is what shoppers see. Around it, AICC gives you a place in your WordPress admin to understand what is happening, steer it and decide what to do next.",
+      title: "Recommendations are only the storefront.",
+      lead: "Behind them, AI Commerce Copilot gives merchants the insight, controls and guidance to understand what is being recommended, shape what shoppers see, and improve merchandising decisions.",
       connectorLink: "Back to the demo",
-      tabsLabel: "What the AICC workspace gives you",
+      tabsLabel: "What the AI Commerce Copilot workspace gives you",
       understand: {
         tab: "Understand",
         title: "See what your recommendations are doing.",
@@ -543,8 +577,9 @@ export const en = {
       },
       ask: {
         tab: "Ask Reco",
-        title: "Ask Reco, your guide inside AICC.",
-        lead: "Reco lives in your WordPress admin and answers common questions about your setup, performance and next steps from your own dashboard data, with links to the right screen.",
+        title: "Know what to work on next.",
+        lead: "Ask Reco turns your own store data into clear answers about opportunities, performance and next steps.",
+        detail: "Reco lives in your WordPress admin and answers common questions about your setup, performance and next steps from your own dashboard data, with links to the right screen.",
         note: "Reco follows fixed rules rather than generative AI, so it won't improvise. It answers in English and Hebrew, gives information and links, never changes your settings, and shoppers never see it.",
         link: "What Ask Reco can and can't do",
       },
@@ -582,6 +617,11 @@ export const en = {
       more: "What happens if AICC is unavailable",
     },
     pricing: {
+      confidence: {
+        price: "Plans from {priceSolo} a year",
+        guarantee: "14-day money-back guarantee on your first purchase",
+        renewal: "No automatic renewal",
+      },
       title: "One full product. Priced by how many stores.",
       lead:
         "Every plan includes the storefront recommendations, the dashboard and insights, your rules, Ask Reco and an optional import of past orders. You only choose how many stores to connect. You stay in control: AICC never renews your plan automatically.",

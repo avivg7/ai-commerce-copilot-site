@@ -3,12 +3,17 @@ import type { Locale } from "@/i18n/config";
 import { txProps, type Dictionary } from "@/i18n";
 import { DEMO, kitAsset } from "@/lib/brand";
 
-/** Secondary (glass) "Watch demo" button. The modal is built by brand/js/video-modal.js on first click; no footage unless configured. */
-export function WatchDemo({ locale, t, size = "lg" }: { locale: Locale; t: Dictionary; size?: "md" | "lg" }) {
+/**
+ * "Watch demo" button (secondary glass by default). The modal is built by brand/js/video-modal.js on first click and plays the owner-approved demo.
+ * The home hero uses it as the PRIMARY call to action under the label "See it in action" (`variant="primary"`, `label`, `labelKey`): same trigger, same dialog.
+ */
+export function WatchDemo({
+  locale, t, size = "lg", variant = "secondary", label, labelKey = "brand.watchDemo",
+}: { locale: Locale; t: Dictionary; size?: "md" | "lg"; variant?: "primary" | "secondary"; label?: string; labelKey?: string }) {
   return (
     <button
       type="button"
-      className={`aicc-btn aicc-btn--secondary${size === "lg" ? " aicc-btn--lg" : ""}`}
+      className={`aicc-btn aicc-btn--${variant}${size === "lg" ? " aicc-btn--lg" : ""}`}
       data-aicc-demo-trigger
       data-locale={locale}
       data-strings={JSON.stringify(t.brand.modal)}
@@ -16,9 +21,9 @@ export function WatchDemo({ locale, t, size = "lg" }: { locale: Locale; t: Dicti
       data-demo-poster={DEMO.poster || kitAsset("reco-hero-poster.jpg")}
       data-demo-captions={DEMO.captions}
       data-demo-captions-lang={DEMO.captionsLang}
-      {...(({ lang, dir }) => ({ lang, dir }))(txProps(locale, "brand.watchDemo"))}
+      {...(({ lang, dir }) => ({ lang, dir }))(txProps(locale, labelKey))}
     >
-      {t.brand.watchDemo}
+      {label ?? t.brand.watchDemo}
       <span className="aicc-btn__icon"><Play size={16} aria-hidden="true" /></span>
     </button>
   );

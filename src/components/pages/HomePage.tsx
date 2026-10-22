@@ -13,6 +13,7 @@ import { LocaleLink } from "@/components/ui/LocaleLink";
 import { RecoImage } from "@/components/ui/RecoImage";
 import { RecoHero } from "@/components/brand/RecoHero";
 import { FbtSection } from "@/components/brand/FbtSection";
+import { Surfaces } from "@/components/home/Surfaces";
 import { WatchDemo } from "@/components/brand/WatchDemo";
 import { Fb, Strip, Tabs, Track } from "@/components/blocks/Blocks";
 import { DashPreview, Flow, InsightsPreview, Loop, RecoAskPanel, RulesDemo } from "@/components/blocks/KitMounts";
@@ -47,16 +48,9 @@ export function HomePage({ locale, t }: { locale: Locale; t: Dictionary }) {
             </h1>
             <p className="aicc-hero-lead aicc-fade-up" style={{ ["--i" as string]: 2 }}>{h.hero.lead}</p>
             <div className="aicc-hero-actions aicc-fade-up" style={{ ["--i" as string]: 3 }}>
-              <Button href={getStartedUrl(locale)} variant="primary" size="lg" {...tx("common.getStarted")} icon={<ArrowRight size={16} className="aicc-flip" aria-hidden="true" />}>
-                {t.common.getStarted}
-              </Button>
-              <WatchDemo locale={locale} t={t} />
+              <WatchDemo locale={locale} t={t} variant="primary" label={h.hero.ctaDemo} labelKey="home.hero.ctaDemo" />
+              <Button href={localePath(locale, "pricing")} variant="secondary" size="lg" {...tx("home.hero.ctaPlans")}>{h.hero.ctaPlans}</Button>
             </div>
-            <ul className="aicc-hero__confidence aicc-fade-up" style={{ ["--i" as string]: 4 }}>
-              <li>{R(h.hero.confidence.price)}</li>
-              <li>{h.hero.confidence.guarantee}</li>
-              <li>{h.hero.confidence.renewal}</li>
-            </ul>
           </div>
           <div className="aicc-hero__visual">
             <div {...tx("brand.chips")}><RecoHero labels={[t.brand.chips.orders, t.brand.chips.clicks, t.brand.chips.recs, t.brand.chips.insights, t.brand.chips.bundles]} motion={t.brand.motion} /></div>
@@ -68,13 +62,13 @@ export function HomePage({ locale, t }: { locale: Locale; t: Dictionary }) {
       <section className="aicc-pillars" aria-label={h.pillars.label} {...fb("home.pillars")}>
         <Container>
           <ul className="aicc-pillars__list">
-            {([["a", "#demo"], ["b", "#workspace"], ["c", "#workspace"]] as const).map(([k, href], i) => (
+            {([["a", "#surfaces"], ["b", "#workspace"], ["c", "#demo"]] as const).map(([k, href], i) => (
               <li key={k}>
                 <span className="aicc-pillars__n" aria-hidden="true">{i + 1}</span>
                 <div>
                   <h2 className="aicc-pillars__title">{h.pillars[k].title}</h2>
                   <p>{h.pillars[k].body}</p>
-                  <a className="aicc-link aicc-pillars__link" href={href} {...(k === "b" ? { "data-aicc-tab": "ws-t-control" } : k === "c" ? { "data-aicc-tab": "ws-t-understand" } : {})}>
+                  <a className="aicc-link aicc-pillars__link" href={href} {...(k === "b" ? { "data-aicc-tab": "ws-t-control" } : {})}>
                     {h.pillars[k].link}
                   </a>
                 </div>
@@ -84,21 +78,22 @@ export function HomePage({ locale, t }: { locale: Locale; t: Dictionary }) {
         </Container>
       </section>
 
-      {/* 2. The difference, shown: the signature demo, with the one argument for it (category versus basket) directly beneath it */}
-      <FbtSection
-        locale={locale}
-        t={t}
-        after={
-          <div id="why" {...fb("home.why")} style={{ marginBlockStart: "3rem" }}>
-            <h3 className="aicc-h3">{h.why.title}</h3>
-            <p className="aicc-lead" style={{ marginBlock: "0.5rem 1.5rem", maxInlineSize: "52rem" }}>{h.why.lead}</p>
-            <Strip ctx={ctx} items={[h.why.points.intent, h.why.points.evidence, h.why.points.fallback]} />
-            <p style={{ marginBlockStart: "1.5rem" }}>
-              <LocaleLink locale={locale} route="product" hash="how-decided" className="aicc-link">{h.why.link}</LocaleLink>
-            </p>
+      {/* 1c. Visual proof, part 1: where shoppers see the recommendations (product page and cart) */}
+      <Surfaces locale={locale} t={t} />
+
+      {/* 2. Visual proof, part 2 and the core differentiator: what each recommendation is based on, from the shopper's side and from yours */}
+      <FbtSection locale={locale} t={t}>
+        <div className="aicc-versus" role="group" aria-label={h.demo.versusLabel} {...fb("home.demo")}>
+          <div className="aicc-versus__side" data-side="shopper">
+            <h3>{h.demo.shopper.title}</h3>
+            <p>{h.demo.shopper.body}</p>
           </div>
-        }
-      />
+          <div className="aicc-versus__side" data-side="merchant">
+            <h3>{h.demo.merchant.title}</h3>
+            <p>{h.demo.merchant.body}</p>
+          </div>
+        </div>
+      </FbtSection>
 
       {/* 3. One premium workspace: understand, control, find opportunities, ask Reco (replaces the standalone dashboard, Control and Meet Reco sections) */}
       <Section id="workspace" tone="sunken" labelledBy="workspace-title" fb={fb("home.workspace")} className="aicc-workspace">
@@ -149,6 +144,7 @@ export function HomePage({ locale, t }: { locale: Locale; t: Dictionary }) {
                 children: (
                   <>
                     <p className="aicc-lead aicc-tabs__lead">{w.ask.lead}</p>
+                    <p className="aicc-tabs__detail">{w.ask.detail}</p>
                     <div className="aicc-askrow">
                       <div className="aicc-reco-figure aicc-reco-figure--small">
                         <RecoImage pose="thinking" sizes="(min-width: 62rem) 200px, 40vw" displayWidth={170} />
@@ -165,8 +161,19 @@ export function HomePage({ locale, t }: { locale: Locale; t: Dictionary }) {
         </Container>
       </Section>
 
+      {/* 3b. Depth, later: why recommendations start from the basket (order history, evidence, safe fallbacks) */}
+      <Section id="why" tone="surface" labelledBy="why-title" fb={fb("home.why")}>
+        <Container>
+          <SectionHeading id="why-title" title={h.why.title} lead={h.why.lead} />
+          <Strip ctx={ctx} items={[h.why.points.intent, h.why.points.evidence, h.why.points.fallback]} />
+          <p style={{ marginBlockStart: "1.5rem" }}>
+            <LocaleLink locale={locale} route="product" hash="how-decided" className="aicc-link">{h.why.link}</LocaleLink>
+          </p>
+        </Container>
+      </Section>
+
       {/* 4. How it works */}
-      <Section id="how-it-works" tone="surface" labelledBy="how-title" fb={fb("home.how")}>
+      <Section id="how-it-works" tone="sunken" labelledBy="how-title" fb={fb("home.how")}>
         <Container>
           <SectionHeading id="how-title" title={h.how.title} lead={h.how.lead} />
           <Track items={[h.how.steps.connect, h.how.steps.learn, h.how.steps.recommend]} />
@@ -189,7 +196,7 @@ export function HomePage({ locale, t }: { locale: Locale; t: Dictionary }) {
       </Section>
 
       {/* 5. Store safety */}
-      <Section tone="sunken" labelledBy="safety-title" fb={fb("home.safety")}>
+      <Section tone="surface" labelledBy="safety-title" fb={fb("home.safety")}>
         <Container>
           <SectionHeading id="safety-title" title={h.safety.title} lead={h.safety.lead} />
           <div className="aicc-twocol aicc-twocol--even">
@@ -213,7 +220,7 @@ export function HomePage({ locale, t }: { locale: Locale; t: Dictionary }) {
       </Section>
 
       {/* 6. Pricing, value first */}
-      <Section tone="surface" labelledBy="pricing-title" fb={fb("home.pricing")}>
+      <Section tone="sunken" labelledBy="pricing-title" fb={fb("home.pricing")}>
         <Container>
           <SectionHeading id="pricing-title" title={h.pricing.title} lead={h.pricing.lead} />
           <div className="aicc-plans">
@@ -234,14 +241,19 @@ export function HomePage({ locale, t }: { locale: Locale; t: Dictionary }) {
               />
             ))}
           </div>
-          <p style={{ marginBlockStart: "1.5rem" }}>
+          <ul className="aicc-pricing-confidence" {...fb("home.pricing")}>
+            <li>{R(h.pricing.confidence.price)}</li>
+            <li>{h.pricing.confidence.guarantee}</li>
+            <li>{h.pricing.confidence.renewal}</li>
+          </ul>
+          <p style={{ marginBlockStart: "1rem" }}>
             <LocaleLink locale={locale} route="pricing" className="aicc-link">{h.pricing.link}</LocaleLink>
           </p>
         </Container>
       </Section>
 
       {/* 7. FAQ */}
-      <Section tone="sunken" labelledBy="questions-title" fb={fb("home.questions")}>
+      <Section tone="surface" labelledBy="questions-title" fb={fb("home.questions")}>
         <Container narrow>
           <SectionHeading id="questions-title" title={h.questions.title} lead={h.questions.lead} />
           <Faq locale={locale} t={t} page="home" />

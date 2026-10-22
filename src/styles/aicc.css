@@ -1196,3 +1196,149 @@ p > .aicc-link:only-child { display: inline-block; min-block-size: 1.5rem; paddi
 }
 /* The merchandising loop now lives under "How it works" */
 .aicc-loopband--inline { background: transparent; border-block: 0; padding-block: var(--aicc-space-6) 0; }
+
+/* ═══ Conversion pass: outcome first, proof early, mobile as a first-class target ═══════════════════════════════════════════════════════════════════
+   Site-only (nothing here touches the shared brand kit in brand/). Hero: lighter first viewport (the purchase-confidence line moved to the pricing section).
+   Outcomes: cards on a phone. Surfaces: a Product page / Cart switch over one sample bundle. Versus: what shoppers see and what you see and control. */
+.aicc-hero__category { flex-basis: 100%; }
+@media (min-width: 40rem) { .aicc-hero__category { flex-basis: auto; } }
+@media (max-width: 39.99rem) {
+  .aicc-hero { padding-block: 5.75rem 2.25rem; }
+  .aicc-hero__grid { gap: 1.5rem; }
+  .aicc-hero-title { margin-block-start: 1rem; font-size: 2rem; line-height: 1.1; }
+  .aicc-hero-lead { margin-block-start: 0.9rem; font-size: 1.0625rem; line-height: 1.5; text-wrap: pretty; }
+  .aicc-hero-actions { margin-block-start: 1.25rem; gap: 0.625rem; }
+  .aicc-hero__kicker { gap: 0.35rem 0.75rem; }
+}
+.aicc-hero-actions .aicc-btn { white-space: nowrap; }
+
+/* The three outcomes: a strip on a wide screen, three compact cards on a phone */
+.aicc-pillars__title { text-wrap: balance; }
+@media (max-width: 47.99rem) {
+  .aicc-pillars { background: var(--aicc-surface-sunken); }
+  .aicc-pillars__list { gap: 0.75rem; padding-block: 1.25rem; }
+  .aicc-pillars__list > li, .aicc-pillars__list > li + li {
+    padding: 1rem 1.1rem; border: 1px solid var(--aicc-border); border-radius: var(--aicc-radius-lg); background: var(--aicc-surface);
+  }
+  .aicc-pillars__list p { max-inline-size: none; }
+}
+
+/* Surfaces: one sample bundle in two states */
+.aicc-surfaces .aicc-tabs__lead { margin-block-end: var(--aicc-space-5); }
+.aicc-surfaces__note { margin-block-start: var(--aicc-space-5); max-inline-size: 52rem; }
+.aicc-mock { margin: 0; max-inline-size: 56rem; border: 1px solid var(--aicc-border-strong); border-radius: var(--aicc-radius-lg); background: var(--aicc-surface-sunken); overflow: hidden; box-shadow: 0 1px 0 rgb(15 23 42 / 0.04), 0 18px 40px -28px rgb(15 23 42 / 0.35); }
+.aicc-mock__chrome { display: flex; gap: 0.35rem; padding: 0.55rem 0.8rem; border-block-end: 1px solid var(--aicc-border); background: var(--aicc-surface); }
+.aicc-mock__chrome i { inline-size: 0.55rem; block-size: 0.55rem; border-radius: 9999px; background: var(--aicc-border-strong); }
+.aicc-mock__page { display: grid; gap: 1rem; padding: 1rem; background: var(--aicc-surface); }
+.aicc-mock__product { display: grid; gap: 1rem; }
+@media (min-width: 36rem) { .aicc-mock__product { grid-template-columns: minmax(0, 11rem) minmax(0, 1fr); align-items: start; } }
+.aicc-mock__photo { aspect-ratio: 4 / 3; border-radius: 6px; background: #f7f7f7; display: grid; place-items: center; }
+.aicc-mock__photo .aicc-wmock__art { padding: 12px; }
+@media (max-width: 35.99rem) { .aicc-mock__photo { aspect-ratio: 16 / 7; } }
+.aicc-mock__details { display: grid; gap: 0.5rem; align-content: start; min-inline-size: 0; }
+.aicc-mock__title { font-size: var(--aicc-text-lg); line-height: 1.2; }
+.aicc-mock__price { font-weight: 700; font-variant-numeric: tabular-nums; }
+.aicc-mock__bar { display: block; block-size: 0.5rem; border-radius: 9999px; background: var(--aicc-border); }
+.aicc-mock__bar--short { inline-size: 55%; }
+.aicc-mock__btn { display: inline-flex; align-items: center; justify-content: center; min-block-size: 2.25rem; padding-inline: 1rem; border-radius: 6px; border: 1px solid var(--aicc-border-strong); font-size: var(--aicc-text-sm); font-weight: 650; white-space: nowrap; }
+.aicc-mock__btn--solid { justify-self: start; background: var(--aicc-text); border-color: var(--aicc-text); color: var(--aicc-surface); }
+.aicc-mock__carttitle { font-size: var(--aicc-text-lg); }
+.aicc-mock__product + .aicc-wmock, .aicc-cartmock + .aicc-wmock { margin-block-start: 0.75rem; }
+/* The widget inside the mock follows the real shopper widget (Plugin assets/css/widget.css): title + subtitle, a horizontal rail of image-first cards that never
+   wraps (132px cards, 155px from a 480px-wide container, 175px from 800px), a checkbox over the card's top corner, a two-line name, a price, then the bundle total
+   and the add button, then the quiet "Powered by" signature. Colours come from the AICC site (the real widget inherits the store's own theme). */
+.aicc-wmock { --wm-accent: color-mix(in srgb, var(--aicc-primary) 62%, #05865f); container-type: inline-size; container-name: aicc-wmock; display: grid; }
+.aicc-wmock * { box-sizing: border-box; }
+.aicc-wmock__title { font-size: 1.25rem; font-weight: 600; line-height: 1.25; margin-block-end: 0.2em; }
+.aicc-wmock__subtitle { font-size: 0.875rem; color: var(--aicc-text-muted); margin-block-end: 0.8em; }
+.aicc-wmock__rail { display: flex; flex-wrap: nowrap; gap: 12px; align-items: stretch; overflow-x: auto; overflow-y: hidden; scroll-snap-type: x proximity; padding: 2px 2px 6px; margin-block-end: 0.75rem; scrollbar-width: thin; }
+.aicc-wmock__card { position: relative; flex: 0 0 132px; display: flex; flex-direction: column; overflow: hidden; scroll-snap-align: start; border: 1px solid #e5e5e5; border-radius: 6px; background: #fff; }
+.aicc-wmock__card[data-selected] { border-color: color-mix(in srgb, var(--wm-accent) 70%, white); box-shadow: 0 0 0 1px color-mix(in srgb, var(--wm-accent) 24%, transparent), 0 8px 20px -6px color-mix(in srgb, var(--wm-accent) 22%, transparent); }
+.aicc-wmock__check { position: absolute; z-index: 1; inset-block-start: 8px; inset-inline-start: 8px; inline-size: 20px; block-size: 20px; border-radius: 3px; background: rgb(255 255 255 / 0.85); box-shadow: 0 0 0 3px rgb(255 255 255 / 0.85), inset 0 0 0 1.5px #8c8f94; }
+.aicc-wmock__check[data-on] { background: var(--aicc-gradient-action); box-shadow: 0 0 0 3px rgb(255 255 255 / 0.85); }
+.aicc-wmock__check[data-on]::after { content: ""; position: absolute; inset: 3px 6px 6px 6px; border: solid #fff; border-width: 0 2.5px 2.5px 0; transform: rotate(40deg); }
+.aicc-wmock__check[data-locked] { opacity: 0.6; }
+.aicc-wmock__thumb { block-size: 128px; background: #f7f7f7; display: grid; place-items: center; }
+.aicc-wmock__card[data-source] .aicc-wmock__thumb { opacity: 0.88; }
+.aicc-wmock__art { inline-size: 100%; block-size: 100%; padding: 8px; }
+.aicc-wmock__info { display: flex; flex-direction: column; gap: 0.15em; padding: 8px 10px 10px; min-inline-size: 0; flex: 1 1 auto; }
+.aicc-wmock__name { font-size: 0.85rem; line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.aicc-wmock__price { font-size: 0.9rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+.aicc-wmock__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; }
+.aicc-wmock__total { display: flex; flex-direction: column; gap: 0.1em; }
+.aicc-wmock__total-label { font-size: 0.78rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--aicc-text-muted); }
+.aicc-wmock__total-amount { font-size: 1.2rem; font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.aicc-wmock__add { display: inline-flex; align-items: center; justify-content: center; min-block-size: 2.75rem; padding: 0.55em 1.5em; border-radius: var(--aicc-radius-pill); background: var(--aicc-gradient-action); color: #fff; font-size: 0.95rem; font-weight: 600; white-space: nowrap; box-shadow: 0 10px 20px -12px rgb(37 99 235 / 0.65); }
+.aicc-wmock__brand { display: flex; align-items: center; gap: 6px; margin-block-start: 1em; direction: ltr; color: var(--aicc-text-muted); font-size: 11px; line-height: 1.2; }
+.aicc-wmock__brand svg { flex: none; }
+.aicc-wmock__brand b { font-weight: 500; }
+@container aicc-wmock (min-width: 480px) { .aicc-wmock__card { flex-basis: 155px; } .aicc-wmock__thumb { block-size: 144px; } }
+@container aicc-wmock (min-width: 800px) { .aicc-wmock__rail { justify-content: center; } .aicc-wmock__card { flex-basis: 175px; } .aicc-wmock__thumb { block-size: 160px; } }
+@container aicc-wmock (max-width: 479px) { .aicc-wmock__actions { flex-direction: column; align-items: stretch; } .aicc-wmock__add { min-block-size: 3rem; inline-size: 100%; } }
+
+/* What shoppers see versus what you see and control */
+.aicc-versus { display: grid; gap: 0.75rem; margin-block-end: var(--aicc-space-6); }
+@media (min-width: 40rem) { .aicc-versus { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--aicc-space-5); } }
+.aicc-versus__side { padding: 1rem 1.1rem; border: 1px solid var(--aicc-border); border-radius: var(--aicc-radius-lg); background: var(--aicc-surface); }
+.aicc-versus__side[data-side="merchant"] { border-color: color-mix(in srgb, var(--aicc-primary) 45%, var(--aicc-border)); }
+.aicc-versus__side h3 { margin: 0; font-size: var(--aicc-text-lg); font-weight: 700; letter-spacing: -0.01em; text-wrap: balance; }
+.aicc-versus__side p { margin: 0.3rem 0 0; color: var(--aicc-text-muted); font-size: var(--aicc-text-sm); }
+
+/* Reco's tab: the merchant value first, then what it can and cannot do */
+.aicc-tabs__detail { margin: 0; max-inline-size: 52rem; color: var(--aicc-text-muted); }
+
+/* Purchase confidence, now where the decision is made (under the plans) */
+.aicc-pricing-confidence { list-style: none; padding: 0; margin: 1.5rem 0 0; display: flex; flex-wrap: wrap; gap: 0.25rem 1.5rem; color: var(--aicc-text-muted); font-size: var(--aicc-text-sm); }
+
+/* Conversion pass: the second demo view is now "What you see and control" (longer in es/ru/he). Let the kit's view switch wrap
+   instead of widening the widget on narrow screens and at Larger text. Site-only: the brand kit is unchanged. */
+.aicc-fbt__views { flex-wrap: wrap; max-inline-size: 100%; }
+.aicc-fbt__view { max-inline-size: 100%; overflow-wrap: anywhere; }
+
+/* Hero wrapping polish (conversion pass revision): no stranded word in the headline on the narrowest phones, and a calmer last line in the shorter subheadline. */
+.aicc-hero-lead { text-wrap: pretty; }
+@media (max-width: 21.5rem) { .aicc-hero-title { font-size: 1.75rem; } }
+
+/* Product page / Cart copy: an outcome headline, then one calm sentence (the mechanics live in the mock itself). */
+.aicc-surfaces__headline { margin: 0; max-inline-size: 44rem; font-size: var(--aicc-text-xl); line-height: 1.25; font-weight: 650; text-wrap: balance; }
+.aicc-surfaces__body { margin: var(--aicc-space-2) 0 var(--aicc-space-5); max-inline-size: 44rem; font-size: 1.0625rem; line-height: 1.55; color: var(--aicc-text-muted); }
+@media (max-width: 39.99rem) { .aicc-surfaces__headline { font-size: 1.25rem; } .aicc-surfaces__body { font-size: 1rem; } }
+
+/* The cart page around the widget: cart lines + a separate order summary, then the AICC widget below them (as the plugin places it). */
+.aicc-cartmock { container-type: inline-size; container-name: aicc-cartmock; }
+.aicc-cartmock__grid { display: grid; gap: 1rem; align-items: start; }
+.aicc-cartmock__items { min-inline-size: 0; border: 1px solid var(--aicc-border); border-radius: 8px; background: var(--aicc-surface); }
+.aicc-cartmock__head { display: none; }
+.aicc-cartmock__line { display: grid; grid-template-columns: 3.25rem minmax(0, 1fr) auto; grid-template-areas: "thumb name sub" "thumb meta meta"; gap: 0.2rem 0.75rem; align-items: center; padding: 0.8rem 0.9rem; }
+.aicc-cartmock__line + .aicc-cartmock__line { border-block-start: 1px solid var(--aicc-border); }
+.aicc-cartmock__thumb { grid-area: thumb; inline-size: 3.25rem; block-size: 3.25rem; border-radius: 6px; background: #f7f7f7; display: grid; place-items: center; }
+.aicc-cartmock__thumb .aicc-wmock__art { padding: 3px; }
+.aicc-cartmock__name { grid-area: name; font-size: var(--aicc-text-sm); font-weight: 600; min-inline-size: 0; }
+.aicc-cartmock__meta { grid-area: meta; display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.9rem; }
+.aicc-cartmock__unit, .aicc-cartmock__sub { font-size: var(--aicc-text-sm); font-variant-numeric: tabular-nums; }
+.aicc-cartmock__sub { grid-area: sub; font-weight: 650; }
+.aicc-cartmock__qty { display: inline-flex; align-items: stretch; border: 1px solid var(--aicc-border-strong); border-radius: 6px; overflow: hidden; font-size: var(--aicc-text-sm); }
+.aicc-cartmock__qty i, .aicc-cartmock__qty b { display: grid; place-items: center; min-inline-size: 1.7rem; min-block-size: 1.8rem; font-style: normal; font-weight: 600; }
+.aicc-cartmock__qty i { color: var(--aicc-text-muted); background: var(--aicc-surface-sunken); }
+.aicc-cartmock__qty b { border-inline: 1px solid var(--aicc-border-strong); }
+.aicc-cartmock__summary { display: grid; gap: 0.6rem; padding: 0.9rem; border: 1px solid var(--aicc-border); border-radius: 8px; background: var(--aicc-surface-sunken); font-size: var(--aicc-text-sm); }
+.aicc-cartmock__summary-title { font-size: 1rem; font-weight: 650; }
+.aicc-cartmock__row { display: flex; justify-content: space-between; align-items: baseline; gap: 0.75rem; padding-block: 0.35rem; border-block-end: 1px solid var(--aicc-border); font-variant-numeric: tabular-nums; }
+.aicc-cartmock__note { color: var(--aicc-text-muted); font-size: var(--aicc-text-xs); text-align: end; }
+.aicc-cartmock__row--total { font-weight: 700; border-block-end: 0; }
+.aicc-cartmock__checkout { display: inline-flex; align-items: center; justify-content: center; min-block-size: 2.4rem; border-radius: 6px; border: 1px solid var(--aicc-border-strong); background: var(--aicc-surface); color: var(--aicc-text); font-weight: 600; text-align: center; padding-inline: 0.75rem; }
+@container aicc-cartmock (min-width: 36rem) {
+  .aicc-cartmock__head { display: grid; grid-template-columns: 3.25rem minmax(0, 1fr) 5.2rem 6.2rem 5.2rem; gap: 0.75rem; padding: 0.55rem 0.9rem; border-block-end: 1px solid var(--aicc-border); font-size: var(--aicc-text-xs); font-weight: 650; color: var(--aicc-text-muted); }
+  .aicc-cartmock__head span:last-child { text-align: end; }
+  .aicc-cartmock__line { grid-template-columns: 3.25rem minmax(0, 1fr) 5.2rem 6.2rem 5.2rem; grid-template-areas: none; gap: 0.75rem; }
+  .aicc-cartmock__line > * { grid-area: auto; }
+  .aicc-cartmock__meta { display: contents; }
+  .aicc-cartmock__sub { text-align: end; }
+}
+@container aicc-cartmock (min-width: 52rem) {
+  .aicc-cartmock__grid { grid-template-columns: minmax(0, 1fr) 16rem; }
+}
+
+/* The Product page and Cart states differ a lot in height now (the cart is a fuller page). Do not reserve the taller state's height under the shorter one:
+   on wide screens the kit stacks every panel in one grid cell; here the inactive panel is simply not displayed. (Site-only; the kit is unchanged.) */
+.aicc-surfaces .aicc-tabs[data-enhanced] .aicc-tabs__panel[data-inactive="true"] { display: none; }

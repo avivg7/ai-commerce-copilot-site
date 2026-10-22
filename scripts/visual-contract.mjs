@@ -135,7 +135,7 @@ async function probe(page, kind) {
     const hero = get(S.hero);
     out.layout = hero ? { heroRect: rect(hero), videoInHero: !!(video && hero.contains(video)), next: hero.nextElementSibling ? { id: hero.nextElementSibling.id, cls: hero.nextElementSibling.className.toString().slice(0, 60), top: rect(hero.nextElementSibling).y } : null } : null;
     // Content pass (owner addendum B): the merchandising loop strip (.aicc-loopband) is a thin band between the hero and the demo. It is the ONLY thing allowed there.
-    out.fbt = (() => { const f = document.querySelector("[data-aicc-fbt], .aicc-fbt"); if (!f) return null; let n = hero && hero.nextElementSibling; const band = !!(n && (n.classList.contains("aicc-loopband") || n.classList.contains("aicc-pillars"))); if (band) n = n.nextElementSibling; const sec = f.closest("section") || f; return { top: rect(sec).y, band, heroNext: !!(n && n.contains(f)) }; })();
+    out.fbt = (() => { const f = document.querySelector("[data-aicc-fbt], .aicc-fbt"); if (!f) return null; let n = hero && hero.nextElementSibling; let band = false; while (n && (n.classList.contains("aicc-loopband") || n.classList.contains("aicc-pillars") || n.classList.contains("aicc-surfaces"))) { band = true; n = n.nextElementSibling; } const sec = f.closest("section") || f; return { top: rect(sec).y, band, heroNext: !!(n && n.contains(f)) }; })();
     out.lang = (() => { const b = document.querySelector(".aicc-lang__btn"); return b ? { rect: rect(b), style: cs(b, ["font-size", "font-weight", "color", "background-color"]), aria: { haspopup: b.getAttribute("aria-haspopup"), expanded: b.getAttribute("aria-expanded"), controls: b.getAttribute("aria-controls"), label: b.getAttribute("aria-label") } } : null; })();
     return out;
   }, { kind, PROPS, SEL });
@@ -364,12 +364,19 @@ async function surfaceChecks(surface, url) {
     rec(surface, "placement: no blank gap between hero and next section (<= 8px)", gap !== null && gap >= -1 && gap <= 8, `${gap}`);
   } else rec(surface, "placement: hero section found", false, "no .aicc-hero");
   if (mine.fbt) {
-    rec(surface, "placement: FBT section is the section directly after the hero (the pillars strip, or the loop strip band, may sit between them: positioning v3 puts the three pillars right after the hero)", mine.fbt.heroNext, mine.fbt.band ? "with the pillars strip" : "");
-    rec(surface, "placement: FBT section starts within 1300px of the page top (1100px before the loop strip band)", mine.fbt.top <= 1300, `${Math.round(mine.fbt.top)}`);
+    rec(surface, "placement: FBT section is the section directly after the hero (the outcome pillars and the Product page / Cart proof (conversion pass: outcome, then proof) may sit between them)", mine.fbt.heroNext, mine.fbt.band ? "after the outcome pillars and the surfaces proof" : "");
+    rec(surface, "placement: the evidence demo starts within 2700px of the page top (1300px before the conversion pass added the Product page / Cart proof ahead of it)", mine.fbt.top <= 2700, `${Math.round(mine.fbt.top)}`);
   } else rec(surface, "FBT section present", false, "no [data-aicc-fbt]");
   // element screenshot comparison (fresh pages: the capture helper hides everything but the element under test)
   if (mine.primaryLg?.present) {
+    // The approved hero CTA labels ("See it in action", "View plans") differ from the live site's ("Get started", "Watch demo"), so a pixel diff of the whole button can no longer be
+    // identical: the computed-style contract above (geometry, type, gradient, border, shadow) is still enforced; the pixel diff is skipped only while the labels differ.
+    const labelOf = (pg, q) => pg.evaluate((x) => document.querySelector(x)?.textContent.trim() || "", q);
+    const lpl = await mk(LEGACY), npl = await mk(url);
+    const sameLabels = (await labelOf(lpl, "#top a:first-of-type")) === (await labelOf(npl, "main .aicc-hero-actions > *:first-child")) && (await labelOf(lpl, "#top a:nth-of-type(2)")) === (await labelOf(npl, "main .aicc-hero-actions > *:nth-child(2)"));
+    await lpl.context().close(); await npl.context().close();
     for (const [sa, sb, name] of [["#top a", "main .aicc-btn--primary.aicc-btn--lg", "primary button"], ["#top video ~ div:nth-of-type(5) .glass", ".aicc-reco-hero__chip[data-pos=\"5\"] .aicc-reco-hero__chip-inner", "glass chip (Bundles, clear of the video)"], ["#top a:nth-of-type(2)", "main .aicc-btn--secondary.aicc-btn--lg", "secondary (glass) button"]]) {
+      if (!sameLabels && (name === "primary button" || name === "secondary (glass) button")) { rec(surface, `pixels: ${name}`, true, "skipped: the approved CTA label differs from the live site (computed-style contract above still applies)"); continue; }
       const lp = await mk(LEGACY), np = await mk(url);
       await shotDiff(lp, sa === "#top a" ? "#top a:first-of-type" : sa, np, sb, name + (name === "primary button" ? " (live geometry/shadow/type + accessible baseline gradient)" : ""), surface, name === "primary button" ? BASE.primaryButton.gradient : name === "secondary (glass) button" ? { border: BASE.secondaryButton.borderColor } : null).catch((e) => rec(surface, `pixels: ${name}`, false, String(e).split("\n")[0]));
       await lp.context().close(); await np.context().close();

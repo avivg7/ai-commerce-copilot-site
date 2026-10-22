@@ -45,8 +45,15 @@
     "ask.qa.win.link",
     "product.dash.items.c.title",
     "product.dash.items.d.title",
-    "product.compare.rows.control.topic"
+    "product.compare.rows.control.topic",
+    "home.surfaces.cartCols.subtotal",
+    "home.surfaces.mockSubtotal",
+    "home.surfaces.mockTotal"
   ],
   "he": [],
-  "ru": ["common.fallbackTag", "ask.qa.opportunity.link", "ask.qa.win.link"]
+  "ru": [
+    "common.fallbackTag",
+    "ask.qa.opportunity.link",
+    "ask.qa.win.link"
+  ]
 }

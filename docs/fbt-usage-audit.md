@@ -74,9 +74,6 @@ Counts: before this pass 33 positioning slots across the four locales carried th
 | dictionary `dash.previewLearned` | Bought together {n} times | A | the real evidence label / count of a learned partner |
 | dictionary `ask.qa.focus.a` | Optional next step: import up to 24 months of your WooCommerce order history so AICC can learn which | A | describes the co-purchase signal or a relationship in context (the first step of a fixed ranking chain) |
 | dictionary `ask.qa.opportunity.a` | Pour-over coffee set and Paper filters, 100 pack are bought together 9 times, your strongest bundle  | A | describes the co-purchase signal or a relationship in context (the first step of a fixed ranking chain) |
-| dictionary `home.pillars.a.body` | Suggestions drawn from your own store data: what customers buy together, your catalog and your stock | A | describes the co-purchase signal or a relationship in context (the first step of a fixed ranking chain) |
-| dictionary `home.pillars.c.body` | A dashboard, plain-English insights and a guide show what is recommended and how often it is bought  | A | describes the co-purchase signal or a relationship in context (the first step of a fixed ranking chain) |
-| dictionary `home.demo.lead` | A shopper sees a short, relevant bundle. Switch to your side to see what is recommended and how ofte | A | describes the co-purchase signal or a relationship in context (the first step of a fixed ranking chain) |
 | dictionary `home.why.lead` | WooCommerce's related products are a sensible default: they match products by category and tags. The | A | describes the co-purchase signal or a relationship in context (the first step of a fixed ranking chain) |
 | dictionary `home.why.points.fallback.body` | When a product has few co-purchases, the remaining spots are filled with fallbacks: in-stock product | A | describes the co-purchase signal or a relationship in context (the first step of a fixed ranking chain) |
 | dictionary `home.workspace.understand.lead` | See what shoppers do with your recommendations: views, clicks and bundle add-to-carts from the last  | A | describes the co-purchase signal or a relationship in context (the first step of a fixed ranking chain) |
@@ -113,11 +110,11 @@ Counts: before this pass 33 positioning slots across the four locales carried th
 | file `docs/AUTHORITY.md` | up to 2 mention(s) | A | documentation that explains the widget and the guard |
 | file `docs/claims-inventory-content-pass.md` | up to 14 mention(s) | A | documentation that explains the widget and the guard |
 | file `docs/content-architecture.md` | up to 5 mention(s) | A | documentation that explains the widget and the guard |
-| file `scripts/interaction-test.mjs` | up to 9 mention(s) | A | test or tooling text about the widget heading and the demo |
+| file `scripts/interaction-test.mjs` | up to 11 mention(s) | A | test or tooling text about the widget heading and the demo |
 | file `scripts/lang-scope-check.mjs` | up to 1 mention(s) | A | test or tooling text about the widget heading and the demo |
-| file `scripts/rehearsal/browser-flows.mjs` | up to 2 mention(s) | A | test or tooling text about the widget heading and the demo (the edge rehearsal's browser suite asserts the home FAQ list and a CSS class of the widget) |
 | file `scripts/rules-core-test.mjs` | up to 3 mention(s) | A | test or tooling text about the widget heading and the demo |
 | file `scripts/shots-brand.mjs` | up to 2 mention(s) | A | test or tooling text about the widget heading and the demo |
 | file `scripts/visual-contract.mjs` | up to 14 mention(s) | A | test or tooling text about the widget heading and the demo |
 | file `README.md` | up to 2 mention(s) | A | documentation that explains the widget and the guard |
+| file `scripts/rehearsal/browser-flows.mjs` | up to 2 mention(s) | A | test or tooling text about the widget heading and the demo (the browser suite asserts the home FAQ list and the CSS class of the storefront widget's intro) |
 <!-- table:end -->

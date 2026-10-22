@@ -115,7 +115,7 @@ export const TRANSLATION_REVIEW: Record<Locale, "source-draft-pending-legal-revi
  */
 export const LEGAL_REVIEW_KEYS = [
   "home.final.guarantee",
-  "home.hero.confidence.guarantee",
+  "home.pricing.confidence.guarantee",
   "pricing.terms.try.body",
   "pricing.terms.renewal.body",
   "pricing.terms.back.body",

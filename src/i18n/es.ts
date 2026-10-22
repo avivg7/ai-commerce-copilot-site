@@ -20,8 +20,8 @@ export const es: DeepPartial<Dictionary> = {
     ogImageAlt: "AICC: recomendaciones de producto, información para el comerciante y control del merchandising para WooCommerce. Un boceto sencillo de una página de producto con un paquete recomendado.",
     pages: {
       home: {
-        title: "AICC: copiloto de recomendaciones de producto y merchandising",
-        description: "AICC convierte los datos de su tienda en mejores recomendaciones de producto, información útil para el comerciante y control práctico del merchandising. Disponible para WooCommerce.",
+        title: "AI Commerce Copilot: recomendaciones y merchandising para WooCommerce",
+        description: "AI Commerce Copilot convierte los datos de su tienda en recomendaciones relevantes en sus páginas de producto y de carrito, con la información y el control para orientarlas. Disponible para WooCommerce.",
       },
       product: {
         title: "Cómo funciona AICC: recomendaciones que puede explicar y controlar",
@@ -226,8 +226,8 @@ export const es: DeepPartial<Dictionary> = {
     view: {
       legend: "Vista",
       shopper: "Lo que ven los compradores",
-      merchant: "Lo que ve usted",
-      cue: "Cambie a «Lo que ve usted» para ver el mismo paquete desde su lado.",
+      merchant: "Lo que ve y controla usted",
+      cue: "Cambie a «Lo que ve y controla usted» para ver el mismo paquete desde su lado.",
     },
     products: {
       kit: "Juego de café de filtro",
@@ -458,25 +458,60 @@ export const es: DeepPartial<Dictionary> = {
     hero: {
       eyebrow: "Disponible para WooCommerce",
       category: "Copiloto de recomendaciones y merchandising",
-      titleLead: "Haga de cada página de producto",
+      titleLead: "Convierta cada recorrido del comprador en",
       titleAccent: "una oportunidad de venta más inteligente.",
-      lead: "AICC convierte los datos de su tienda en mejores recomendaciones en sus páginas de producto y de carrito, con información y control prácticos para orientarlas.",
-      confidence: {
-        price: "Planes desde {priceSolo} al año",
-        guarantee: "Garantía de devolución del dinero de 14 días en su primera compra",
-        renewal: "Renovación manual, sin cobros automáticos",
-      },
+      lead: "AI Commerce Copilot convierte los datos de su tienda en recomendaciones relevantes y en un merchandising más inteligente: los compradores descubren más mientras usted gestiona menos y mantiene el control.",
+      ctaDemo: "Véalo en acción",
+      ctaPlans: "Ver planes",
     },
+
     pillars: {
-      label: "Lo que le ofrece AICC",
-      a: { title: "Mejores recomendaciones", body: "Sugerencias basadas en los datos de su propia tienda: lo que compran juntos los clientes, su catálogo y su stock.", link: "Ver un ejemplo" },
-      b: { title: "Menos merchandising manual", body: "AICC encuentra los pares en sus pedidos. Usted conserva la última palabra con unas pocas reglas, en lugar de seleccionar cada producto.", link: "Ver los controles" },
-      c: { title: "Visibilidad y control", body: "Un panel, observaciones en lenguaje sencillo y una guía muestran qué se recomienda y cuántas veces se compró junto.", link: "Ver el espacio de trabajo" },
+      label: "Lo que le ofrece AI Commerce Copilot",
+      a: { title: "Ayude a los compradores a descubrir más", body: "Ponga productos relevantes delante de los compradores mientras todavía están decidiendo qué comprar.", link: "Ver dónde aparecen" },
+      b: { title: "Menos merchandising manual", body: "Deje que los datos de su tienda se ocupen del trabajo repetitivo de recomendar, e intervenga usted donde importa.", link: "Ver los controles" },
+      c: { title: "Mantenga el control", body: "Vea por qué se recomiendan los productos, entienda qué hacen los compradores con ellos y cambie lo que aparece cuando quiera.", link: "Ver la evidencia" },
     },
+    surfaces: {
+      label: "Dónde aparecen las recomendaciones",
+      title: "En cada página de producto y en el carrito.",
+      lead: "Los compradores encuentran sus recomendaciones en dos momentos en los que ya están eligiendo: mientras miran un producto y, de nuevo, en el carrito.",
+      tabsLabel: "Elija dónde mirar",
+      page: {
+        tab: "Página de producto",
+        title: "En una página de producto",
+        headline: "Ayude a los compradores a descubrir lo que combina con el producto que ya están viendo.",
+        body: "Pueden elegir las recomendaciones que quieran y añadirlas juntas en un solo paso.",
+        mock: "Una página de producto de ejemplo: el producto arriba y, debajo, las tarjetas de recomendación con el producto visto marcado, el total del paquete y un botón de añadir al carrito.",
+      },
+      cart: {
+        tab: "Carrito",
+        title: "En el carrito",
+        headline: "Mantenga vivo el descubrimiento de productos en el carrito.",
+        body: "Las recomendaciones se adaptan a lo que ya hay, sin sugerir productos que el comprador ya ha añadido.",
+        mock: "Una página de carrito de ejemplo: dos artículos que ya están en el carrito con cantidades y precios, un resumen del pedido y, debajo, las tarjetas de recomendación de otros productos con el total del paquete y un botón de añadir al carrito.",
+      },
+      scope: "Solo páginas de producto y la página del carrito. El pago y la finalización de la compra siguen siendo de WooCommerce.",
+      caption: "Ilustración con productos de ejemplo inventados, no una tienda real.",
+      mockPoweredBy: "Con tecnología de",
+      mockAdd: "Añadir al carrito",
+      mockCartTitle: "Su carrito",
+      mockTotals: "Totales del carrito",
+      cartCols: { product: "Producto", price: "Precio", quantity: "Cantidad", subtotal: "Subtotal" },
+      mockSubtotal: "Subtotal",
+      mockShipping: "Envío",
+      mockShippingNote: "Se calcula al pagar",
+      mockTotal: "Total",
+      mockCheckout: "Finalizar compra",
+    },
+
     demo: {
       title: "Vea en qué se basa cada recomendación.",
-      lead: "Un comprador ve un paquete breve y relevante. Pase a su lado para ver qué se recomienda y cuántas veces se compra junto, qué puede cambiar y qué registra su panel.",
+      lead: "Los compradores ven un paquete breve y relevante. Usted ve la evidencia que hay detrás y los controles que le dan forma. Pruebe los dos lados a continuación.",
+      versusLabel: "Los dos lados de cada recomendación",
+      shopper: { title: "Lo que ven los compradores", body: "Recomendaciones útiles en un paquete breve que pueden añadir al carrito en un solo paso." },
+      merchant: { title: "Lo que ve y controla usted", body: "Por qué está cada producto, qué hacen los compradores con él y las reglas que cambian lo que aparece." },
     },
+
     how: {
       title: "Conectar, aprender, recomendar.",
       lead: "Usted da el primer paso. AICC hace el resto en segundo plano.",
@@ -515,10 +550,10 @@ export const es: DeepPartial<Dictionary> = {
       link: "Vea cómo se decide una recomendación",
     },
     workspace: {
-      title: "Más que un widget. Un espacio de trabajo de merchandising.",
-      lead: "El paquete de la tienda online es lo que ven los compradores. A su alrededor, AICC le da un lugar en su administración de WordPress para entender qué ocurre, orientarlo y decidir qué hacer a continuación.",
+      title: "Las recomendaciones son solo el escaparate.",
+      lead: "Detrás de ellas, AI Commerce Copilot da a los comerciantes la información, los controles y la orientación para entender qué se recomienda, dar forma a lo que ven los compradores y mejorar las decisiones de merchandising.",
       connectorLink: "Volver a la demostración",
-      tabsLabel: "Lo que le ofrece el espacio de trabajo de AICC",
+      tabsLabel: "Lo que le ofrece el espacio de trabajo de AI Commerce Copilot",
       understand: {
         tab: "Entender",
         title: "Vea qué hacen sus recomendaciones.",
@@ -540,8 +575,9 @@ export const es: DeepPartial<Dictionary> = {
       },
       ask: {
         tab: "Ask Reco",
-        title: "Ask Reco, su guía dentro de AICC.",
-        lead: "Reco vive en su administración de WordPress y responde preguntas habituales sobre su configuración, su rendimiento y los siguientes pasos a partir de los datos de su propio panel, con enlaces a la pantalla adecuada.",
+        title: "Sepa en qué trabajar a continuación.",
+        lead: "Ask Reco convierte los datos de su propia tienda en respuestas claras sobre oportunidades, rendimiento y próximos pasos.",
+        detail: "Reco vive en su administración de WordPress y responde preguntas habituales sobre su configuración, su rendimiento y los siguientes pasos a partir de los datos de su propio panel, con enlaces a la pantalla adecuada.",
         note: "Reco sigue reglas fijas y no IA generativa, así que no improvisa. Responde en inglés y en hebreo, ofrece información y enlaces, nunca cambia sus ajustes, y los compradores nunca lo ven.",
         link: "Qué puede y qué no puede hacer Ask Reco",
       },
@@ -560,6 +596,11 @@ export const es: DeepPartial<Dictionary> = {
       more: "Qué ocurre si AICC no está disponible",
     },
     pricing: {
+      confidence: {
+        price: "Planes desde {priceSolo} al año",
+        guarantee: "Garantía de devolución del dinero de 14 días en su primera compra",
+        renewal: "Renovación manual, sin cobros automáticos",
+      },
       title: "Un producto completo. El precio depende de cuántas tiendas.",
       lead: "Todos los planes incluyen las recomendaciones en la tienda online, el panel y las observaciones, sus reglas, Ask Reco y una importación opcional de pedidos anteriores. Usted solo elige cuántas tiendas conectar. Usted mantiene el control: AICC nunca renueva su plan automáticamente.",
       link: "Vea qué incluye cada plan",

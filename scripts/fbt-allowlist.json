@@ -107,7 +107,7 @@
       "reason": "documentation that explains the widget and the guard"
     },
     "scripts/interaction-test.mjs": {
-      "max": 9,
+      "max": 11,
       "reason": "test or tooling text about the widget heading and the demo"
     },
     "scripts/lang-scope-check.mjs": {
