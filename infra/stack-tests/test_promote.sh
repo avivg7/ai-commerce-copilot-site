@@ -186,6 +186,13 @@ printf 'AICC_ENV=production\nAICC_HOSTNAME=www.copilt.org\nAICC_STAGE_ID=%s\n' "
 t_rc "a host that already says production (no promotion state) is refused (3)" 3 APPLY --dry-run
 mv -f "$PFX/etc/aicc-stage-identity.bak" "$PFX/etc/aicc-stage-identity"
 t_eq "none of the refusals changed the identity" "$(grep -c '^AICC_ENV=staging$' "$PFX/etc/aicc-stage-identity")" "1"
+# archR2: the owner-facts file survives the promotion (it is outside the wiped secrets directory and outside the rollback bundle). A staging-only key in it made the wpconfig step refuse AFTER the
+# staging database had been dropped; the read-only gate must catch that BEFORE anything changes.
+printf 'AICC_ACTIVATION_PROOF_KID=stage-kid\nAICC_LM_PAYMENT_GATE_STRICT=true\n' > "$PFX/etc/aicc/owner-facts.env"; chmod 600 "$PFX/etc/aicc/owner-facts.env"
+t_rc "a staging-style owner-facts file (a stage-only key) is refused by the gate (3), before anything changes" 3 APPLY --dry-run
+t_contains "...and the gate says why" "$(APPLY --dry-run 2>&1)" "owner facts file is NOT valid for production"
+t_eq "...and nothing was changed (identity still staging)" "$(grep -c '^AICC_ENV=staging$' "$PFX/etc/aicc-stage-identity")" "1"
+rm -f "$PFX/etc/aicc/owner-facts.env"
 
 echo "== --dry-run =="
 DRY="$(APPLY --dry-run 2>&1)"; rc=$?
