@@ -125,7 +125,12 @@ def prune_excluded(root):
 # ---------------------------------------------------------------------------------------------------------------------------------------------------
 def cmd_assemble_cp(a):
     wp_tar, wc_zip, repo, out = a.wp_tar, a.wc_zip, a.cp_repo, a.out_tree
-    for label, path, want in (("WordPress tarball", wp_tar, a.wp_sha256), ("WooCommerce zip", wc_zip, a.wc_sha256), ("Storefront zip", a.sf_zip, a.sf_sha256)):
+    pins = [("WordPress tarball", wp_tar, a.wp_sha256), ("WooCommerce zip", wc_zip, a.wc_sha256), ("Storefront zip", a.sf_zip, a.sf_sha256)]
+    if bool(a.pp_zip) != bool(a.pp_sha256) or bool(a.pp_zip) != bool(a.pp_version):
+        die("--pp-zip, --pp-sha256 and --pp-version go together (the opt-in PayPlus plugin)")
+    if a.pp_zip:
+        pins.append(("PayPlus plugin zip", a.pp_zip, a.pp_sha256))
+    for label, path, want in pins:
         if not os.path.isfile(path):
             die("%s not found: %s" % (label, path))
         got = sha256_file(path)
@@ -177,6 +182,15 @@ def cmd_assemble_cp(a):
         for n in fns:
             if n.endswith(".phpt"):
                 os.remove(os.path.join(dp, n)); pruned += 1
+    # 2a. OPT-IN pinned third-party payment plugin (only with --pp-zip; the default build never reaches this): as published, hash-checked above. The caller (the owner)
+    #     still decides whether this plugin is the gateway; the pin is a build input, not an endorsement.
+    if a.pp_zip:
+        with zipfile.ZipFile(a.pp_zip) as z:
+            for n in z.namelist():
+                safe_member_path(n)
+            if {n.split("/")[0] for n in z.namelist()} != {"payplus-payment-gateway"}:
+                die("unexpected top-level entries in the PayPlus plugin zip")
+            z.extractall(os.path.join(out, "wp-content", "plugins"))
     # 2b. Storefront (parent theme of the AICC theme), as published
     with zipfile.ZipFile(a.sf_zip) as z:
         for n in z.namelist():
@@ -205,6 +219,8 @@ def cmd_assemble_cp(a):
     os.symlink("/srv/aicc/shared/uploads", up)
     os.symlink("/srv/aicc/shared/wp-config.php", os.path.join(out, "wp-config.php"))
     info = {"wp_version": a.wp_version, "wc_version": a.wc_version, "storefront_version": a.sf_version, "cp_commit": head, "dirty": bool(dirty), "vendor_test_files_pruned": pruned}
+    if a.pp_zip:
+        info["payplus_version"] = a.pp_version
     print(json.dumps(info))
 
 
@@ -418,6 +434,8 @@ def main():
     p = sp.add_parser("assemble-cp")
     for k in ("wp-tar", "wc-zip", "sf-zip", "cp-repo", "out-tree", "wp-sha256", "wc-sha256", "sf-sha256", "wp-version", "wc-version", "sf-version"):
         p.add_argument("--" + k, required=True)
+    for k in ("pp-zip", "pp-sha256", "pp-version"):
+        p.add_argument("--" + k, default="")
     p.add_argument("--allow-dirty", action="store_true"); p.set_defaults(fn=cmd_assemble_cp)
     p = sp.add_parser("pack")
     p.add_argument("--tree", required=True); p.add_argument("--kind", required=True, choices=["cp", "site"]); p.add_argument("--out-dir", required=True)

@@ -270,11 +270,38 @@ t_fail "unpack rejects a path-traversal tarball" "${TOOL[@]}" unpack --tarball "
 
 echo "== real Control Plane tarball (built from the CP worktree) =="
 CPOUT1="$TMP/cp-out1"; CPOUT2="$TMP/cp-out2"
-if [ -f "$HOME/.cache/aicc-release/wordpress-7.1.3.tar.gz" ] && [ -f "$HOME/.cache/aicc-release/woocommerce-10.9.4.zip" ] && [ -d "/Users/avivgerman/Local Sites/woo-recommendation-qa/aicc-control-plane-worktrees/cp2a-14-readiness-independence/admin" ]; then
+# --cp-worktree is REQUIRED by the builder (M8: the old default pointed at a stale worktree). The tests take the Control Plane worktree from AICC_TEST_CP_WORKTREE, else the launch/integration worktree on this Mac.
+CPWT="${AICC_TEST_CP_WORKTREE:-/Users/avivgerman/Local Sites/woo-recommendation-qa/aicc-control-plane-worktrees/launch-integration}"
+t_rc "build-cp-release.sh without --cp-worktree is a usage error (no stale default)" 2 bash "$REL/build-cp-release.sh" --out-dir "$TMP/cp-nowt" --dry-run
+t_contains "...and the message says the flag is REQUIRED" "$(bash "$REL/build-cp-release.sh" --out-dir "$TMP/cp-nowt" --dry-run 2>&1)" "--cp-worktree is REQUIRED"
+t_rc "--payplus-zip without --with-payplus is a usage error" 2 bash "$REL/build-cp-release.sh" --cp-worktree "$TMP" --payplus-zip "$TMP/x.zip" --out-dir "$TMP/cp-nowt"
+echo "-- assemble-cp, tool level: the opt-in PayPlus plugin (synthetic zip; the real pinned zip is never downloaded by the tests) --"
+PPT="$TMP/pp-tool"; mkdir -p "$PPT/wp/wordpress/wp-includes" "$PPT/wc/woocommerce" "$PPT/sf/storefront" "$PPT/pp/payplus-payment-gateway" "$PPT/cp/admin/wp-content/themes/aicc-admin" "$PPT/cp/admin/wp-content/plugins/aicc-license-manager"
+echo '<?php' > "$PPT/wp/wordpress/wp-load.php"; echo '<?php' > "$PPT/wc/woocommerce/woocommerce.php"; echo '/* Theme Name: Storefront */' > "$PPT/sf/storefront/style.css"; echo '<?php // synthetic' > "$PPT/pp/payplus-payment-gateway/payplus-payment-gateway.php"
+echo a > "$PPT/cp/admin/wp-content/themes/aicc-admin/a.php"; echo b > "$PPT/cp/admin/wp-content/plugins/aicc-license-manager/b.php"
+( cd "$PPT/wp" && tar czf ../wp.tar.gz wordpress ); ( cd "$PPT/wc" && zip -qr ../wc.zip woocommerce ); ( cd "$PPT/sf" && zip -qr ../sf.zip storefront ); ( cd "$PPT/pp" && zip -qr ../pp.zip payplus-payment-gateway )
+( cd "$PPT/cp" && git init -q . && git add . && git -c user.email=t@t -c user.name=t commit -qm i )
+mkdir -p "$PPT/bad/evil"; echo x > "$PPT/bad/evil/x.php"; ( cd "$PPT/bad" && zip -qr ../bad.zip evil )
+ASM() { local out="$1"; shift; python3 -I "$REL/lib/release_tool.py" assemble-cp --wp-tar "$PPT/wp.tar.gz" --wc-zip "$PPT/wc.zip" --sf-zip "$PPT/sf.zip" --cp-repo "$PPT/cp" --out-tree "$out" \
+  --wp-sha256 "$(sha256_of_file "$PPT/wp.tar.gz")" --wc-sha256 "$(sha256_of_file "$PPT/wc.zip")" --sf-sha256 "$(sha256_of_file "$PPT/sf.zip")" --wp-version 1 --wc-version 1 --sf-version 1 "$@"; }
+ASMI() { local info="$1"; shift; ASM "$@" > "$info"; }   # ASMI <info.json> <tree> [opt-in args]
+t_ok "assemble-cp WITHOUT the opt-in builds" ASMI "$PPT/info-default.json" "$PPT/tree-default"
+t_eq "...its info has no PayPlus key" "$(jq -r 'has("payplus_version")' "$PPT/info-default.json")" "false"
+t_fail "...and its tree has no payplus-payment-gateway" test -e "$PPT/tree-default/wp-content/plugins/payplus-payment-gateway"
+t_ok "assemble-cp WITH the opt-in builds" ASMI "$PPT/info-pp.json" "$PPT/tree-pp" --pp-zip "$PPT/pp.zip" --pp-sha256 "$(sha256_of_file "$PPT/pp.zip")" --pp-version 8.3.1
+t_eq "...the info records the plugin version" "$(jq -r '.payplus_version' "$PPT/info-pp.json")" "8.3.1"
+t_ok "...the plugin is in wp-content/plugins as published" test -f "$PPT/tree-pp/wp-content/plugins/payplus-payment-gateway/payplus-payment-gateway.php"
+t_eq "...and the ONLY difference to the default tree is that directory" "$(diff -rq "$PPT/tree-default" "$PPT/tree-pp" | grep -vc 'Only in .*plugins: payplus-payment-gateway$' || true)" "0"
+t_fail "a wrong pinned SHA-256 for the plugin zip is refused" ASM "$PPT/tree-badhash" --pp-zip "$PPT/pp.zip" --pp-sha256 "$(printf '0%.0s' $(seq 64))" --pp-version 8.3.1
+t_fail "a plugin zip with another top-level directory is refused" ASM "$PPT/tree-badtop" --pp-zip "$PPT/bad.zip" --pp-sha256 "$(sha256_of_file "$PPT/bad.zip")" --pp-version 8.3.1
+t_fail "--pp-zip without --pp-sha256/--pp-version is refused (all or none)" ASM "$PPT/tree-partial" --pp-zip "$PPT/pp.zip"
+t_eq "pins.env pins PayPlus 8.3.1 with the SHA-256 recorded in the kit (re-verified by download on 2026-10-23)" "$(. "$REL/pins.env"; echo "$PAYPLUS_VERSION $PAYPLUS_ZIP_SHA256")" "8.3.1 74e8e96440b0a0e508b325f605dbadc4a00deb86a34c2249beeba7d23737f43f"
+t_contains "...from the wordpress.org downloads host over https" "$(. "$REL/pins.env"; echo "$PAYPLUS_ZIP_URL")" "https://downloads.wordpress.org/plugin/payplus-payment-gateway.8.3.1.zip"
+if [ -f "$HOME/.cache/aicc-release/wordpress-7.1.3.tar.gz" ] && [ -f "$HOME/.cache/aicc-release/woocommerce-10.9.4.zip" ] && [ -d "$CPWT/admin" ]; then
   # AICC_TEST_CP_ALLOW_DIRTY=1: build from the working tree while the Control Plane change set is still uncommitted (the build refuses a dirty tree otherwise; the "clean commit" check is then skipped, honestly)
   CPDIRTY=(); [ "${AICC_TEST_CP_ALLOW_DIRTY:-0}" = "1" ] && CPDIRTY=(--allow-dirty)
-  t_ok "build-cp-release.sh builds (pinned WP 7.1.3 + WC 10.9.4 + theme + plugin)" bash "$REL/build-cp-release.sh" ${CPDIRTY[@]+"${CPDIRTY[@]}"} --out-dir "$CPOUT1"
-  t_ok "second build succeeds" bash "$REL/build-cp-release.sh" ${CPDIRTY[@]+"${CPDIRTY[@]}"} --out-dir "$CPOUT2"
+  t_ok "build-cp-release.sh builds (pinned WP 7.1.3 + WC 10.9.4 + theme + plugin)" bash "$REL/build-cp-release.sh" --cp-worktree "$CPWT" ${CPDIRTY[@]+"${CPDIRTY[@]}"} --out-dir "$CPOUT1"
+  t_ok "second build succeeds" bash "$REL/build-cp-release.sh" --cp-worktree "$CPWT" ${CPDIRTY[@]+"${CPDIRTY[@]}"} --out-dir "$CPOUT2"
   TB1="$(ls "$CPOUT1"/cp-*.tar.gz 2>/dev/null | head -1)"; TB2="$(ls "$CPOUT2"/cp-*.tar.gz 2>/dev/null | head -1)"
   t_eq "REPRODUCIBLE: two builds give byte-identical tarballs" "$(sha256_of_file "$TB1")" "$(sha256_of_file "$TB2")"
   [ -f "$TB1" ] || { t_bad "a tarball exists to inspect" "the build produced none (a dirty Control Plane worktree is refused: commit first or set AICC_TEST_CP_ALLOW_DIRTY=1)"; TB1=/dev/null; }
@@ -300,7 +327,31 @@ if [ -f "$HOME/.cache/aicc-release/wordpress-7.1.3.tar.gz" ] && [ -f "$HOME/.cac
   t_ok "unpacked tree passes the secret/fixture scan again" "${TOOL[@]}" scan --tree "$TMP/cp-unpack/tree" --kind cp
   t_ok "unpacked tree verifies against SHA256SUMS" verify_tree "$TMP/cp-unpack/tree" "${TB1%.tar.gz}.SHA256SUMS"
   t_fail "a dirty worktree is refused unless --allow-dirty (tool-level check)" bash -c "cd '$TMP' && git init -q fakecp && mkdir -p fakecp/admin/wp-content/themes/aicc-admin fakecp/admin/wp-content/plugins/aicc-license-manager && cd fakecp && echo a > admin/wp-content/themes/aicc-admin/a.php && echo b > admin/wp-content/plugins/aicc-license-manager/b.php && git add . && git -c user.email=t@t -c user.name=t commit -qm i && echo c >> admin/wp-content/themes/aicc-admin/a.php && bash '$REL/build-cp-release.sh' --cp-worktree '$TMP/fakecp' --out-dir '$TMP/cp-dirty'"
-  t_fail "a wrong pinned hash is refused" bash -c "echo junk > '$TMP/wp-wrong.tar.gz'; bash '$REL/build-cp-release.sh' --wp-tar '$TMP/wp-wrong.tar.gz' --out-dir '$TMP/cp-wrong'"
+  t_fail "a wrong pinned hash is refused" bash -c "echo junk > '$TMP/wp-wrong.tar.gz'; bash '$REL/build-cp-release.sh' --cp-worktree '$CPWT' --wp-tar '$TMP/wp-wrong.tar.gz' --out-dir '$TMP/cp-wrong'"
+  t_eq "DEFAULT build: the manifest has no PayPlus entry (the opt-in is off)" "$(jq -r '.sources | has("payplus_payment_gateway")' "$MAN1")" "false"
+  t_eq "DEFAULT build: the tarball has no payplus-payment-gateway plugin" "$(printf '%s\n' "$LIST" | grep -c 'payplus' || true)" "0"
+  CPLOG="$(bash "$REL/build-cp-release.sh" --cp-worktree "$CPWT" ${CPDIRTY[@]+"${CPDIRTY[@]}"} --out-dir "$TMP/cp-out3" 2>&1)"
+  t_contains "the build verified the brand kit of the packaged theme (log line)" "$CPLOG" "brand kit: PASS"
+  echo "junk" > "$TMP/pp-junk.zip"
+  t_fail "--with-payplus with a zip that is not the pinned bytes is refused" bash "$REL/build-cp-release.sh" --cp-worktree "$CPWT" ${CPDIRTY[@]+"${CPDIRTY[@]}"} --with-payplus --payplus-zip "$TMP/pp-junk.zip" --out-dir "$TMP/cp-ppbad"
+  t_contains "...with a SHA-256 mismatch message, nothing built" "$(bash "$REL/build-cp-release.sh" --cp-worktree "$CPWT" ${CPDIRTY[@]+"${CPDIRTY[@]}"} --with-payplus --payplus-zip "$TMP/pp-junk.zip" --out-dir "$TMP/cp-ppbad" 2>&1)" "PayPlus plugin zip SHA-256 mismatch"
+  t_fail "...and no tarball exists for it" bash -c "ls '$TMP'/cp-ppbad/cp-*.tar.gz"
+  echo "-- brand-kit drift is refused by BOTH builders (M5) --"
+  mkdir -p "$TMP/mini-export0/_next/static" "$TMP/mini-export0/404"; for pg in index.html 404.html 404/index.html; do printf '<!doctype html><html><head><title>x</title></head><body>p</body></html>' > "$TMP/mini-export0/$pg"; done
+  DRIFT="$TMP/driftcp"; mkdir -p "$DRIFT/admin/wp-content/themes" "$DRIFT/admin/wp-content/plugins"
+  cp -R "$CPWT/admin/wp-content/themes/aicc-admin" "$DRIFT/admin/wp-content/themes/aicc-admin"; cp -R "$CPWT/admin/wp-content/plugins/aicc-license-manager" "$DRIFT/admin/wp-content/plugins/aicc-license-manager"
+  KITF="$(ls "$DRIFT/admin/wp-content/themes/aicc-admin/assets/brand/"*.css 2>/dev/null | head -1)"
+  ( cd "$DRIFT" && git init -q . && git add . && git -c user.email=t@t -c user.name=t commit -qm base )
+  t_ok "control: the site builder accepts the unmodified copy of the CP theme (--cp-worktree)" bash "$REL/build-site-release.sh" --target production --cp-worktree "$DRIFT" --export-dir "$TMP/mini-export0" --out-dir "$TMP/site-drift-ok"
+  echo "/* drift */" >> "$KITF"; ( cd "$DRIFT" && git -c user.email=t@t -c user.name=t commit -qam drift )
+  t_fail "CP builder: a packaged theme whose brand kit differs from the Site repo is refused" bash "$REL/build-cp-release.sh" --cp-worktree "$DRIFT" --out-dir "$TMP/cp-drift"
+  t_contains "...with the BRAND KIT DRIFT message" "$(bash "$REL/build-cp-release.sh" --cp-worktree "$DRIFT" --out-dir "$TMP/cp-drift" 2>&1)" "BRAND KIT DRIFT"
+  t_fail "...and no tarball was written" bash -c "ls '$TMP'/cp-drift/cp-*.tar.gz"
+  t_fail "site builder: the same drift is refused with --cp-worktree" bash "$REL/build-site-release.sh" --target production --cp-worktree "$DRIFT" --export-dir "$TMP/mini-export0" --out-dir "$TMP/site-drift"
+  t_contains "...with the BRAND KIT DRIFT message" "$(bash "$REL/build-site-release.sh" --target production --cp-worktree "$DRIFT" --export-dir "$TMP/mini-export0" --out-dir "$TMP/site-drift" 2>&1)" "BRAND KIT DRIFT"
+  ( cd "$DRIFT" && git -c user.email=t@t -c user.name=t reset -q --hard HEAD~1 && echo stale > admin/wp-content/themes/aicc-admin/assets/brand/removed-upstream.css && git add . && git -c user.email=t@t -c user.name=t commit -qm stale )
+  t_fail "CP builder: a STALE kit file (no longer in the manifest) in the packaged theme is refused too" bash "$REL/build-cp-release.sh" --cp-worktree "$DRIFT" --out-dir "$TMP/cp-stale"
+  t_contains "...naming the file" "$(bash "$REL/build-cp-release.sh" --cp-worktree "$DRIFT" --out-dir "$TMP/cp-stale" 2>&1)" "stale removed-upstream.css"
 else t_skip "real CP tarball tests" "pinned sources not cached in ~/.cache/aicc-release or CP worktree missing"; fi
 
 echo "== site builds: stage vs production =="
