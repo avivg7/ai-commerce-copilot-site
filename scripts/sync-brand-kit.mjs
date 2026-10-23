@@ -4,10 +4,11 @@
 //   node scripts/sync-brand-kit.mjs --to <theme dir> --dry-run   list what would be copied and what would be removed; changes nothing
 //   node scripts/sync-brand-kit.mjs --verify <theme dir>  verify every file of the kit in <theme> against brand/MANIFEST.json (stale extra files are listed as a WARNING)
 //   node scripts/sync-brand-kit.mjs --verify <theme dir> --strict   the same, but stale extra files under assets/brand/ also FAIL (the release builders use this)
-// The theme is never edited by hand: re-run this after any change in brand/.
+// The theme is never edited by hand: re-run this after any change in brand/. DIRECTION: Site -> theme only (REFUSED when the destination overlaps the Site, looks like a Site checkout, or the Site manifest is stale).
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
+import { spawnSync } from "node:child_process";
 import { ROOT } from "./lib/load.mjs";
 
 const args = process.argv.slice(2);
@@ -21,6 +22,18 @@ const sha = (b) => crypto.createHash("sha256").update(b).digest("hex");
 const destKit = path.join(path.resolve(dir), "assets", "brand");
 const destTokens = path.join(path.resolve(dir), "assets", "css", "aicc-tokens.css");
 const dry = args.includes("--dry-run");
+
+// SOURCE-OF-TRUTH GUARDS. The Site's brand/ is canonical; this tool only ever copies Site -> consumer. (The approved shopper demo was once judged on a stale consumer; a reverse or stale sync must be impossible, not merely unlikely.)
+if (mode === "to") {
+  const real = (p) => { try { return fs.realpathSync(p); } catch { return path.resolve(p); } };
+  const target = real(dir), rootReal = real(ROOT);
+  const inside = (a, b) => a === b || a.startsWith(b + path.sep);
+  if (inside(target, rootReal) || inside(rootReal, target)) { console.error(`REFUSED: ${target} overlaps the Site repository (${rootReal}). The brand kit flows Site -> theme only; it can never be written into (or over) the Site.`); process.exit(1); }
+  if (fs.existsSync(path.join(target, "src", "i18n", "en.ts")) || fs.existsSync(path.join(target, "brand", "MANIFEST.json"))) { console.error(`REFUSED: ${target} looks like a Site checkout (src/i18n/en.ts or brand/MANIFEST.json exists). The destination must be a consumer theme.`); process.exit(1); }
+  // the source must be internally consistent (manifest == files on disk) before it is copied: a stale manifest would copy stale bytes with a "valid" hash
+  const chk = spawnSync(process.execPath, [path.join(ROOT, "scripts", "build-brand-manifest.mjs"), "--check"], { encoding: "utf8" });
+  if (chk.status !== 0) { console.error(`REFUSED: brand/MANIFEST.json does not match the files in brand/ (the source is stale or half-edited). Run \`npm run brand:build\` in the Site first.\n${(chk.stdout || "") + (chk.stderr || "")}`.trimEnd()); process.exit(1); }
+}
 const strict = args.includes("--strict");
 
 // Files under <theme>/assets/brand/ that the manifest does not list (MANIFEST.json itself is the kit's own copy and is kept). Only regular files and symlinks directly

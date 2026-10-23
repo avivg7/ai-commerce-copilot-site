@@ -1,0 +1,9 @@
+{
+  "_comment": "Pins of the OWNER-APPROVED shopper demo (approved commit 972202e). Changing a pinned file or the English demo copy requires the owner's review: scripts/launch-invariants.mjs --update-pins with AICC_APPROVE_SHOPPER_DEMO=owner-reviewed (and the approved snapshots: scripts/shopper-demo-guard.mjs --update-baseline).",
+  "approvedCommit": "972202e",
+  "files": {
+    "brand/js/fbt-demo.js": "94e243fc07c3c25c981486436778bbb7471ce9ee77d743346685e6b34d84fac3",
+    "brand/js/product-art.js": "090fd0afa9f8b1387ba345a839cef5e2408fb9466e206e563963e53a7cb91a54"
+  },
+  "demoDictionaryEn": "3b33477405434c5b3ad722cbd117def584e8a1785176fa1e60dbc51fb737ec50"
+}

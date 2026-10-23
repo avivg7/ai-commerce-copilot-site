@@ -88,8 +88,8 @@ export function mountFbt(el, opts) {
     `<p class="aicc-fbt__result" aria-live="polite" aria-atomic="true" data-result></p>` +
     `<p class="aicc-fbt__nudge">${T(s.nudge)}</p>` +
     `<div data-panel="shopper" class="aicc-fbt__panel">` +
-    `<div class="aicc-store"><div class="aicc-store__chrome" aria-hidden="true"><i></i><i></i><i></i></div>` +
-    `<div class="aicc-store__page"><div data-store aria-hidden="true"></div>` +
+    `<div class="aicc-fbt-store"><div class="aicc-fbt-store__chrome" aria-hidden="true"><i></i><i></i><i></i></div>` +
+    `<div class="aicc-fbt-store__page"><div data-store aria-hidden="true"></div>` +
     `<div class="aicc-fbt__widgetbox">` +
     `<div class="aicc-fbt__head"><h3 data-title></h3><p data-sub></p><p class="aicc-sr-only" data-subsr hidden>${T(s.mode.withCaption)}</p></div>` +
     `<div data-bundle>` +
@@ -135,23 +135,23 @@ export function mountFbt(el, opts) {
     const cart = state.surface === "cart";
     if (!cart) {
       $("[data-store]").innerHTML =
-        `<div class="aicc-store__product"><div class="aicc-store__photo">${productArt(ANCHOR.id)}</div><div class="aicc-store__details">` +
-        `<strong class="aicc-store__name">${T(nameOf(ANCHOR.id))}</strong><span class="aicc-store__price"><bdi>${money(ANCHOR.price)}</bdi></span>` +
-        `<span class="aicc-store__bar"></span><span class="aicc-store__bar aicc-store__bar--short"></span><span class="aicc-store__btn">${T(s.store.addToCart)}</span></div></div>`;
+        `<div class="aicc-fbt-store__product"><div class="aicc-fbt-store__photo">${productArt(ANCHOR.id)}</div><div class="aicc-fbt-store__details">` +
+        `<strong class="aicc-fbt-store__name">${T(nameOf(ANCHOR.id))}</strong><span class="aicc-fbt-store__price"><bdi>${money(ANCHOR.price)}</bdi></span>` +
+        `<span class="aicc-fbt-store__bar"></span><span class="aicc-fbt-store__bar aicc-fbt-store__bar--short"></span><span class="aicc-fbt-store__btn">${T(s.store.addToCart)}</span></div></div>`;
       return;
     }
     const sub = CART.reduce((n, l) => n + l.price * l.qty, 0), c = s.store.cols;
     $("[data-store]").innerHTML =
-      `<strong class="aicc-store__title">${T(s.store.cartTitle)}</strong>` +
-      `<div class="aicc-cartbox"><div class="aicc-cart"><div class="aicc-cart__items"><div class="aicc-cart__head"><span></span><span>${T(c.product)}</span><span>${T(c.price)}</span><span>${T(c.quantity)}</span><span>${T(c.subtotal)}</span></div>` +
-      CART.map((l) => `<div class="aicc-cart__line"><span class="aicc-cart__thumb">${productArt(l.id)}</span><span class="aicc-cart__name">${T(nameOf(l.id))}</span>` +
-        `<span class="aicc-cart__meta"><span class="aicc-cart__unit"><bdi>${money(l.price)}</bdi></span><span class="aicc-cart__qty"><i>&minus;</i><b>${l.qty}</b><i>+</i></span></span>` +
-        `<span class="aicc-cart__sub"><bdi>${money(l.price * l.qty)}</bdi></span></div>`).join("") + `</div>` +
-      `<div class="aicc-cart__summary"><div class="aicc-cart__stitle">${T(s.store.totals)}</div>` +
-      `<div class="aicc-cart__row"><span>${T(s.store.subtotal)}</span><span><bdi>${money(sub)}</bdi></span></div>` +
-      `<div class="aicc-cart__row"><span>${T(s.store.shipping)}</span><span class="aicc-cart__note">${T(s.store.shippingNote)}</span></div>` +
-      `<div class="aicc-cart__row aicc-cart__row--total"><span>${T(s.store.total)}</span><span><bdi>${money(sub)}</bdi></span></div>` +
-      `<span class="aicc-cart__checkout">${T(s.store.checkout)}</span></div></div></div>`;
+      `<strong class="aicc-fbt-store__title">${T(s.store.cartTitle)}</strong>` +
+      `<div class="aicc-fbt-cartbox"><div class="aicc-fbt-cart"><div class="aicc-fbt-cart__items"><div class="aicc-fbt-cart__head"><span></span><span>${T(c.product)}</span><span>${T(c.price)}</span><span>${T(c.quantity)}</span><span>${T(c.subtotal)}</span></div>` +
+      CART.map((l) => `<div class="aicc-fbt-cart__line"><span class="aicc-fbt-cart__thumb">${productArt(l.id)}</span><span class="aicc-fbt-cart__name">${T(nameOf(l.id))}</span>` +
+        `<span class="aicc-fbt-cart__meta"><span class="aicc-fbt-cart__unit"><bdi>${money(l.price)}</bdi></span><span class="aicc-fbt-cart__qty"><i>&minus;</i><b>${l.qty}</b><i>+</i></span></span>` +
+        `<span class="aicc-fbt-cart__sub"><bdi>${money(l.price * l.qty)}</bdi></span></div>`).join("") + `</div>` +
+      `<div class="aicc-fbt-cart__summary"><div class="aicc-fbt-cart__stitle">${T(s.store.totals)}</div>` +
+      `<div class="aicc-fbt-cart__row"><span>${T(s.store.subtotal)}</span><span><bdi>${money(sub)}</bdi></span></div>` +
+      `<div class="aicc-fbt-cart__row"><span>${T(s.store.shipping)}</span><span class="aicc-fbt-cart__note">${T(s.store.shippingNote)}</span></div>` +
+      `<div class="aicc-fbt-cart__row aicc-fbt-cart__row--total"><span>${T(s.store.total)}</span><span><bdi>${money(sub)}</bdi></span></div>` +
+      `<span class="aicc-fbt-cart__checkout">${T(s.store.checkout)}</span></div></div></div>`;
   }
 
   function renderList() {

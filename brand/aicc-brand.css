@@ -501,60 +501,60 @@ html.aicc-scroll-lock { overflow: hidden; scrollbar-gutter: stable; }
    a horizontal rail of image-first cards that never wraps (it scrolls on a narrow container), the checkbox over the card's corner, a two-line name, a price. The accent
    colours are the AICC site's (the real widget inherits the store's own theme). */
 .aicc-fbt { --aicc-card-accent: color-mix(in srgb, var(--aicc-primary) 62%, #05865f); }
-.aicc-store { border: 1px solid var(--aicc-border-strong); border-radius: var(--aicc-radius-lg); background: var(--aicc-surface); overflow: hidden; box-shadow: 0 1px 0 rgb(15 23 42 / 0.04), 0 18px 40px -28px rgb(15 23 42 / 0.35); }
-.aicc-store__chrome { display: flex; gap: 0.35rem; padding: 0.55rem 0.8rem; border-block-end: 1px solid var(--aicc-border); background: var(--aicc-surface-sunken); }
-.aicc-store__chrome i { inline-size: 0.55rem; block-size: 0.55rem; border-radius: 9999px; background: var(--aicc-border-strong); }
-.aicc-store__page { display: grid; gap: var(--aicc-space-5); padding: var(--aicc-space-4); background: var(--aicc-surface); min-inline-size: 0; }
-.aicc-store__product { display: grid; gap: var(--aicc-space-4); }
-@media (min-width: 36rem) { .aicc-store__product { grid-template-columns: minmax(0, 9rem) minmax(0, 1fr); align-items: start; } }
-.aicc-store__photo { aspect-ratio: 4 / 3; border-radius: 6px; background: #f7f7f7; display: grid; place-items: center; }
-@media (max-width: 35.99rem) { .aicc-store__photo { aspect-ratio: 16 / 7; } }
-.aicc-store__details { display: grid; gap: 0.5rem; align-content: start; min-inline-size: 0; }
-.aicc-store__name, .aicc-store__title { font-size: var(--aicc-text-lg); line-height: 1.2; font-weight: 700; }
-.aicc-store__price { font-weight: 700; font-variant-numeric: tabular-nums; }
-.aicc-store__bar { display: block; block-size: 0.5rem; border-radius: 9999px; background: var(--aicc-border); }
-.aicc-store__bar--short { inline-size: 55%; }
-.aicc-store__btn { justify-self: start; display: inline-flex; align-items: center; min-block-size: 2.25rem; padding-inline: 1rem; border-radius: 6px; background: var(--aicc-text); color: var(--aicc-surface); font-size: var(--aicc-text-sm); font-weight: 650; }
-.aicc-art { display: block; inline-size: 100%; block-size: 100%; padding: 8px; }
-.aicc-store__photo .aicc-art { padding: 12px; }
+.aicc-fbt-store { border: 1px solid var(--aicc-border-strong); border-radius: var(--aicc-radius-lg); background: var(--aicc-surface); overflow: hidden; box-shadow: 0 1px 0 rgb(15 23 42 / 0.04), 0 18px 40px -28px rgb(15 23 42 / 0.35); }
+.aicc-fbt-store__chrome { display: flex; gap: 0.35rem; padding: 0.55rem 0.8rem; border-block-end: 1px solid var(--aicc-border); background: var(--aicc-surface-sunken); }
+.aicc-fbt-store__chrome i { inline-size: 0.55rem; block-size: 0.55rem; border-radius: 9999px; background: var(--aicc-border-strong); }
+.aicc-fbt-store__page { display: grid; gap: var(--aicc-space-5); padding: var(--aicc-space-4); background: var(--aicc-surface); min-inline-size: 0; }
+.aicc-fbt-store__product { display: grid; gap: var(--aicc-space-4); }
+@media (min-width: 36rem) { .aicc-fbt-store__product { grid-template-columns: minmax(0, 9rem) minmax(0, 1fr); align-items: start; } }
+.aicc-fbt-store__photo { aspect-ratio: 4 / 3; border-radius: 6px; background: #f7f7f7; display: grid; place-items: center; }
+@media (max-width: 35.99rem) { .aicc-fbt-store__photo { aspect-ratio: 16 / 7; } }
+.aicc-fbt-store__details { display: grid; gap: 0.5rem; align-content: start; min-inline-size: 0; }
+.aicc-fbt-store__name, .aicc-fbt-store__title { font-size: var(--aicc-text-lg); line-height: 1.2; font-weight: 700; }
+.aicc-fbt-store__price { font-weight: 700; font-variant-numeric: tabular-nums; }
+.aicc-fbt-store__bar { display: block; block-size: 0.5rem; border-radius: 9999px; background: var(--aicc-border); }
+.aicc-fbt-store__bar--short { inline-size: 55%; }
+.aicc-fbt-store__btn { justify-self: start; display: inline-flex; align-items: center; min-block-size: 2.25rem; padding-inline: 1rem; border-radius: 6px; background: var(--aicc-text); color: var(--aicc-surface); font-size: var(--aicc-text-sm); font-weight: 650; }
+.aicc-fbt-art { display: block; inline-size: 100%; block-size: 100%; padding: 8px; }
+.aicc-fbt-store__photo .aicc-fbt-art { padding: 12px; }
 
 /* The cart a shopper already has: lines (thumbnail, price, quantity, line subtotal) and the store's own order summary. The widget sits BELOW it, as the plugin places it. */
-.aicc-cartbox { container-type: inline-size; container-name: aicc-cart; min-inline-size: 0; }
-.aicc-cart { display: grid; gap: 1rem; align-items: start; }
-.aicc-cart__items { min-inline-size: 0; border: 1px solid var(--aicc-border); border-radius: 8px; background: var(--aicc-surface); }
-.aicc-cart__head { display: none; }
-.aicc-cart__line { display: grid; grid-template-columns: 3.25rem minmax(0, 1fr) auto; grid-template-areas: "thumb name sub" "thumb meta meta"; gap: 0.2rem 0.75rem; align-items: center; padding: 0.8rem 0.9rem; }
-.aicc-cart__line + .aicc-cart__line { border-block-start: 1px solid var(--aicc-border); }
-.aicc-cart__thumb { grid-area: thumb; inline-size: 3.25rem; block-size: 3.25rem; border-radius: 6px; background: #f7f7f7; display: grid; place-items: center; }
-.aicc-cart__thumb .aicc-art { padding: 3px; }
-.aicc-cart__name { grid-area: name; font-size: var(--aicc-text-sm); font-weight: 600; min-inline-size: 0; }
-.aicc-cart__meta { grid-area: meta; display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.9rem; }
-.aicc-cart__unit, .aicc-cart__sub { font-size: var(--aicc-text-sm); font-variant-numeric: tabular-nums; }
-.aicc-cart__sub { grid-area: sub; font-weight: 650; }
-.aicc-cart__qty { display: inline-flex; align-items: stretch; border: 1px solid var(--aicc-border-strong); border-radius: 6px; overflow: hidden; font-size: var(--aicc-text-sm); }
-.aicc-cart__qty i, .aicc-cart__qty b { display: grid; place-items: center; min-inline-size: 1.7rem; min-block-size: 1.8rem; font-style: normal; font-weight: 600; }
-.aicc-cart__qty i { color: var(--aicc-text-muted); background: var(--aicc-surface-sunken); }
-.aicc-cart__qty b { border-inline: 1px solid var(--aicc-border-strong); }
-.aicc-cart__summary { display: grid; gap: 0.6rem; padding: 0.9rem; border: 1px solid var(--aicc-border); border-radius: 8px; background: var(--aicc-surface-sunken); font-size: var(--aicc-text-sm); }
-.aicc-cart__stitle { font-size: 1rem; font-weight: 650; }
-.aicc-cart__row { display: flex; justify-content: space-between; align-items: baseline; gap: 0.75rem; padding-block: 0.35rem; border-block-end: 1px solid var(--aicc-border); font-variant-numeric: tabular-nums; }
-.aicc-cart__note { color: var(--aicc-text-muted); font-size: var(--aicc-text-xs); text-align: end; }
-.aicc-cart__row--total { font-weight: 700; border-block-end: 0; }
-.aicc-cart__checkout { display: inline-flex; align-items: center; justify-content: center; min-block-size: 2.4rem; border-radius: 6px; border: 1px solid var(--aicc-border-strong); background: var(--aicc-surface); color: var(--aicc-text); font-weight: 600; text-align: center; padding-inline: 0.75rem; }
-@container aicc-cart (max-width: 19rem) {
-  .aicc-cart__line { grid-template-columns: 2.5rem minmax(0, 1fr); grid-template-areas: "thumb name" "thumb sub" "meta meta"; }
-  .aicc-cart__thumb { inline-size: 2.5rem; block-size: 2.5rem; }
-  .aicc-cart__sub { justify-self: start; }
+.aicc-fbt-cartbox { container-type: inline-size; container-name: aicc-fbt-cart; min-inline-size: 0; }
+.aicc-fbt-cart { display: grid; gap: 1rem; align-items: start; }
+.aicc-fbt-cart__items { min-inline-size: 0; border: 1px solid var(--aicc-border); border-radius: 8px; background: var(--aicc-surface); }
+.aicc-fbt-cart__head { display: none; }
+.aicc-fbt-cart__line { display: grid; grid-template-columns: 3.25rem minmax(0, 1fr) auto; grid-template-areas: "thumb name sub" "thumb meta meta"; gap: 0.2rem 0.75rem; align-items: center; padding: 0.8rem 0.9rem; }
+.aicc-fbt-cart__line + .aicc-fbt-cart__line { border-block-start: 1px solid var(--aicc-border); }
+.aicc-fbt-cart__thumb { grid-area: thumb; inline-size: 3.25rem; block-size: 3.25rem; border-radius: 6px; background: #f7f7f7; display: grid; place-items: center; }
+.aicc-fbt-cart__thumb .aicc-fbt-art { padding: 3px; }
+.aicc-fbt-cart__name { grid-area: name; font-size: var(--aicc-text-sm); font-weight: 600; min-inline-size: 0; }
+.aicc-fbt-cart__meta { grid-area: meta; display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.9rem; }
+.aicc-fbt-cart__unit, .aicc-fbt-cart__sub { font-size: var(--aicc-text-sm); font-variant-numeric: tabular-nums; }
+.aicc-fbt-cart__sub { grid-area: sub; font-weight: 650; }
+.aicc-fbt-cart__qty { display: inline-flex; align-items: stretch; border: 1px solid var(--aicc-border-strong); border-radius: 6px; overflow: hidden; font-size: var(--aicc-text-sm); }
+.aicc-fbt-cart__qty i, .aicc-fbt-cart__qty b { display: grid; place-items: center; min-inline-size: 1.7rem; min-block-size: 1.8rem; font-style: normal; font-weight: 600; }
+.aicc-fbt-cart__qty i { color: var(--aicc-text-muted); background: var(--aicc-surface-sunken); }
+.aicc-fbt-cart__qty b { border-inline: 1px solid var(--aicc-border-strong); }
+.aicc-fbt-cart__summary { display: grid; gap: 0.6rem; padding: 0.9rem; border: 1px solid var(--aicc-border); border-radius: 8px; background: var(--aicc-surface-sunken); font-size: var(--aicc-text-sm); }
+.aicc-fbt-cart__stitle { font-size: 1rem; font-weight: 650; }
+.aicc-fbt-cart__row { display: flex; justify-content: space-between; align-items: baseline; gap: 0.75rem; padding-block: 0.35rem; border-block-end: 1px solid var(--aicc-border); font-variant-numeric: tabular-nums; }
+.aicc-fbt-cart__note { color: var(--aicc-text-muted); font-size: var(--aicc-text-xs); text-align: end; }
+.aicc-fbt-cart__row--total { font-weight: 700; border-block-end: 0; }
+.aicc-fbt-cart__checkout { display: inline-flex; align-items: center; justify-content: center; min-block-size: 2.4rem; border-radius: 6px; border: 1px solid var(--aicc-border-strong); background: var(--aicc-surface); color: var(--aicc-text); font-weight: 600; text-align: center; padding-inline: 0.75rem; }
+@container aicc-fbt-cart (max-width: 19rem) {
+  .aicc-fbt-cart__line { grid-template-columns: 2.5rem minmax(0, 1fr); grid-template-areas: "thumb name" "thumb sub" "meta meta"; }
+  .aicc-fbt-cart__thumb { inline-size: 2.5rem; block-size: 2.5rem; }
+  .aicc-fbt-cart__sub { justify-self: start; }
 }
-@container aicc-cart (min-width: 34rem) {
-  .aicc-cart__head { display: grid; grid-template-columns: 3.25rem minmax(0, 1fr) 4.4rem 5.8rem 4.8rem; gap: 0.6rem; padding: 0.55rem 0.9rem; border-block-end: 1px solid var(--aicc-border); font-size: var(--aicc-text-xs); font-weight: 650; color: var(--aicc-text-muted); }
-  .aicc-cart__head span:last-child { text-align: end; }
-  .aicc-cart__line { grid-template-columns: 3.25rem minmax(0, 1fr) 4.4rem 5.8rem 4.8rem; grid-template-areas: none; gap: 0.6rem; }
-  .aicc-cart__line > * { grid-area: auto; }
-  .aicc-cart__meta { display: contents; }
-  .aicc-cart__sub { text-align: end; }
+@container aicc-fbt-cart (min-width: 34rem) {
+  .aicc-fbt-cart__head { display: grid; grid-template-columns: 3.25rem minmax(0, 1fr) 4.4rem 5.8rem 4.8rem; gap: 0.6rem; padding: 0.55rem 0.9rem; border-block-end: 1px solid var(--aicc-border); font-size: var(--aicc-text-xs); font-weight: 650; color: var(--aicc-text-muted); }
+  .aicc-fbt-cart__head span:last-child { text-align: end; }
+  .aicc-fbt-cart__line { grid-template-columns: 3.25rem minmax(0, 1fr) 4.4rem 5.8rem 4.8rem; grid-template-areas: none; gap: 0.6rem; }
+  .aicc-fbt-cart__line > * { grid-area: auto; }
+  .aicc-fbt-cart__meta { display: contents; }
+  .aicc-fbt-cart__sub { text-align: end; }
 }
-@container aicc-cart (min-width: 44rem) { .aicc-cart { grid-template-columns: minmax(0, 1fr) 13rem; } }
+@container aicc-fbt-cart (min-width: 44rem) { .aicc-fbt-cart { grid-template-columns: minmax(0, 1fr) 13rem; } }
 
 /* The AICC widget itself. */
 .aicc-fbt__widgetbox { container-type: inline-size; container-name: aicc-fbtw; display: grid; gap: var(--aicc-space-3); min-inline-size: 0; }
@@ -979,7 +979,7 @@ html.aicc-scroll-lock { overflow: hidden; scrollbar-gutter: stable; }
 @media (max-width: 30rem) { .aicc-fbt__plain { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .aicc-fbt-plain { display: flex; flex-direction: column; overflow: hidden; border: 1px solid var(--aicc-border); border-radius: 6px; background: var(--aicc-surface-sunken); }
 .aicc-fbt-plain .aicc-fbt-card__thumb { background: #eceef1; block-size: 6.5rem; }
-.aicc-fbt-plain .aicc-art { filter: grayscale(1); opacity: 0.8; }
+.aicc-fbt-plain .aicc-fbt-art { filter: grayscale(1); opacity: 0.8; }
 .aicc-fbt-plain .aicc-fbt-card__name { color: var(--aicc-text); }
 .aicc-fbt-plain .aicc-fbt-card__price { font-weight: 500; color: var(--aicc-text-muted); }
 /* Cart cross-sells are hand-linked by the merchant: two small neutral tiles, each tagged, so they never read as an equivalent recommendation engine. */

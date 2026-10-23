@@ -1,0 +1,28 @@
+{
+  "_comment": "Kit class names that the Control Plane theme's OWN css also styles on purpose (named extensions of kit components, reviewed in the CP brand parity test). GRANDFATHERED at the shopper-demo repair: every other class the kit defines or emits must be unique to the kit. A NEW collision fails scripts/check-brand-collisions.mjs and the CP parity test; resolve it by giving the kit class a kit-owned prefix (aicc-fbt-*), never by editing this list to make a failure disappear (owner-review action).",
+  "sharedWithTheme": [
+    "aicc-a11y-trigger",
+    "aicc-accordion__item",
+    "aicc-btn",
+    "aicc-btn--quiet",
+    "aicc-btn--secondary",
+    "aicc-faqsearch--placeholder",
+    "aicc-fbt-section",
+    "aicc-header",
+    "aicc-hero-actions",
+    "aicc-lang",
+    "aicc-lang__item",
+    "aicc-navlink",
+    "aicc-on-dark",
+    "aicc-section--inverse",
+    "aicc-site-header__actions",
+    "aicc-site-header__bar",
+    "aicc-site-header__links",
+    "aicc-site-header__logo",
+    "aicc-site-header__logo-full",
+    "aicc-site-header__logo-short",
+    "aicc-site-header__menu-btn",
+    "aicc-sr-only",
+    "aicc-tabs"
+  ]
+}
