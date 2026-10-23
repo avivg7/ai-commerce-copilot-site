@@ -265,7 +265,7 @@
       },
       "evidence": {
         "learned": "Bought together {n} times",
-        "fallback": "From the same category",
+        "fallback": "Relevant in-stock product from your catalog",
         "outOfStock": "Out of stock"
       },
       "tags": {
@@ -698,7 +698,7 @@
       },
       "evidence": {
         "learned": "נרכשו יחד {n} פעמים",
-        "fallback": "מאותה קטגוריה",
+        "fallback": "מוצר רלוונטי במלאי מהקטלוג שלכם",
         "outOfStock": "אזל מהמלאי"
       },
       "tags": {
@@ -1131,7 +1131,7 @@
       },
       "evidence": {
         "learned": "Comprados juntos {n} veces",
-        "fallback": "De la misma categoría",
+        "fallback": "Producto relevante con stock de su catálogo",
         "outOfStock": "Agotado"
       },
       "tags": {
@@ -1564,7 +1564,7 @@
       },
       "evidence": {
         "learned": "Покупали вместе {n} раз",
-        "fallback": "Из той же категории",
+        "fallback": "Подходящий товар в наличии из вашего каталога",
         "outOfStock": "Нет в наличии"
       },
       "tags": {

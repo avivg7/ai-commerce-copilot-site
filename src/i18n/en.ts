@@ -368,7 +368,7 @@ export const en = {
       towel: "Linen tea towel",
       travel: "Travel mug",
     },
-    evidence: { learned: "Bought together {n} times", fallback: "From the same category", outOfStock: "Out of stock" },
+    evidence: { learned: "Bought together {n} times", fallback: "Relevant in-stock product from your catalog", outOfStock: "Out of stock" },
     tags: { pin: "Pinned", prefer: "Preferred", deprioritize: "Deprioritized", exclude: "Excluded" },
     place: "Place {n}",
     hiddenHeading: "Not shown to shoppers",
