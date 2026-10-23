@@ -92,8 +92,8 @@ Rollback: delete the file.
 ## Step 6. Control Plane: build, first deploy, install WordPress
 
 ```bash
-MAC$ infra/release/build-cp-release.sh --out-dir ~/aicc-releases --dry-run        # shows the pinned inputs and the CP commit
-MAC$ infra/release/build-cp-release.sh --out-dir ~/aicc-releases                  # WordPress 7.1.3 + WooCommerce 10.9.4 + Storefront 4.6.2 + AICC theme/plugin; reproducible; manifest with hashes
+MAC$ infra/release/build-cp-release.sh --cp-worktree "$CPW" --out-dir ~/aicc-releases --dry-run        # $CPW = the Control Plane worktree of the approved commit (REQUIRED, no default); shows the pinned inputs and the CP commit
+MAC$ infra/release/build-cp-release.sh --cp-worktree "$CPW" --out-dir ~/aicc-releases                  # (also verifies the packaged theme's brand kit against this Site repo and fails on drift) WordPress 7.1.3 + WooCommerce 10.9.4 + Storefront 4.6.2 + AICC theme/plugin; reproducible; manifest with hashes
 MAC$ infra/release/deploy-release.sh --kind cp --artifact ~/aicc-releases/cp-<id>.tar.gz \
         --stage-host stage.copilt.org --stage-ip <IP> --stage-id <STAGE_ID> --key <KEY> --dry-run
 MAC$ infra/release/deploy-release.sh ... --first-install     # same command without --dry-run; --first-install only for the very first Control Plane release

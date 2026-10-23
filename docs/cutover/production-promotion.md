@@ -150,8 +150,8 @@ S=$(mktemp -d); mkdir -p $S/sr $S/logs $S/wp; for f in index.html 404.html 50x.h
 for f in Caddyfile.pre Caddyfile.final; do env AICC_ACME_EMAIL=ops@copilt.org AICC_STATIC_ROOT=$S/sr AICC_WP_ROOT=$S/wp AICC_PHP_FPM_SOCKET=unix//run/php/aicc-cp.sock \
   AICC_PUBLIC_HOST=www.copilt.org AICC_LOG_DIR=$S/logs AICC_ADMIN_ADDR=127.0.0.1:12019 AICC_OPERATOR_PORT=8443 ~/aicc-rehearsal/bin/caddy validate --config ~/aicc-promotion/$f --adapter caddyfile 2>&1 | tail -1; done   # both: Valid configuration
 # production releases (clean commits only; the manifest records dirty=false)
-infra/release/build-site-release.sh --target production --out-dir ~/aicc-releases                  # owner NEXT_PUBLIC_* values per docs/AUTHORITY.md
-infra/release/build-cp-release.sh --out-dir ~/aicc-releases                                        # only if the CP commit changed (the mail layer needs a new CP release)
+infra/release/build-site-release.sh --target production --cp-worktree "$CPW" --out-dir ~/aicc-releases   # owner NEXT_PUBLIC_* values per docs/AUTHORITY.md
+infra/release/build-cp-release.sh --cp-worktree "$CPW" --out-dir ~/aicc-releases                    # ($CPW = CP worktree of the approved commit; REQUIRED) only if the CP commit changed (the mail layer needs a new CP release)
 ```
 Record the two release ids printed (`SITE_REL`, `CP_REL`).
 

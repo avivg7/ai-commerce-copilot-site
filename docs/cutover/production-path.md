@@ -19,7 +19,7 @@ Two environments share one code path and differ only through reviewed, enumerate
 | Activation / rollback / status (host) | `activate-release.sh`, `rollback-release.sh`, `deploy-status.sh` → `aicc-activate-release`, `aicc-rollback-release`, `aicc-deploy-status` | env-agnostic |
 | Edge | `docs/cutover/Caddyfile.edge.template`, `scripts/ops/render-edge.mjs --mode production` | the host; validated with Caddy 2.11.7 (`caddy validate`) on the Mac |
 | Site build | `infra/release/build-site-release.sh --target production` | the Mac |
-| CP build | `infra/release/build-cp-release.sh` (env-agnostic artifact) | the Mac |
+| CP build | `infra/release/build-cp-release.sh --cp-worktree <CP worktree>` (env-agnostic artifact; opt-in `--with-payplus` packages the pinned PayPlus plugin, see the PayPlus payment kit, Control Plane `docs/launch/payplus-owner-kit.md`) | the Mac |
 
 ## 3. What differs between the stage and the production configuration (pinned by a test)
 
@@ -107,8 +107,8 @@ The import file is validated exactly like `set` (one validator). After a promoti
 ## 6. Deploy sequence (production; every step stops on the first refusal)
 
 ```
-1. build:    infra/release/build-cp-release.sh                    (clean commit required)
-             infra/release/build-site-release.sh --target production
+1. build:    infra/release/build-cp-release.sh --cp-worktree "$CPW"   (clean commit required; --cp-worktree is REQUIRED; fails on brand-kit drift)
+             infra/release/build-site-release.sh --target production --cp-worktree "$CPW"   (--cp-worktree: brand-kit drift check against the paired CP commit)
 2. preflight (local, no network):  infra/release/deploy-release.sh --env production --dry-run ...
 3. deploy:   infra/release/deploy-release.sh --env production --kind cp|site --artifact <file> \
                --stage-host www.copilt.org --stage-ip <PRODUCTION IPv4> --stage-id <id from the host identity> \
