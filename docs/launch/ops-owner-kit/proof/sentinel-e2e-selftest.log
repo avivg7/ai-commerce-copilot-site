@@ -1,0 +1,70 @@
+== 1. stage the repository with the real script (no network, no git remote)
+PASS  prepare-sentinel-repo.sh staged /Users/avivgerman/Downloads/AICC-launch-evidence/owner-kit/A-ops/sentinel-repo-staged
+PASS  staged: sentinel.py
+PASS  staged: targets.toml
+PASS  staged: .github/workflows/aicc-sentinel.yml
+PASS  staged: README.md
+PASS  staged: SHA256SUMS
+PASS  SHA256SUMS verifies
+PASS  sentinel.py is byte-identical to the tested one
+PASS  no .git directory (the owner runs git init: it is its OWN repository)
+PASS  exactly 5 files are public (sentinel.py, targets.toml, workflow, public README.md, SHA256SUMS)
+PASS  no secret-shaped string in any staged file
+PASS  no local path or personal name in the public tree
+== 2. the workflow, statically
+PASS  actionlint: clean
+PASS  uses --fail-on-down (GitHub's own failure e-mail = alert path independent of Telegram)
+          - cron: "7,17,27,37,47,57 * * * *"
+PASS  triggers = schedule + workflow_dispatch only; permissions contents:read; actions pinned to 40-hex SHAs; secrets only via env:
+== 2b. phase switching (stage -> dark -> www) rewrites only the target and every phase is a valid config
+PASS  phase stage: valid config, SHA256SUMS refreshed and verifying, plan: https://stage.copilt.org/healthz
+PASS  phase dark: valid config, SHA256SUMS refreshed and verifying, plan: https://api.copilt.org/health
+PASS  phase www: valid config, SHA256SUMS refreshed and verifying, plan: https://www.copilt.org/healthz
+PASS  phase www is byte-identical to what prepare-sentinel-repo.sh staged
+PASS  SHA256SUMS still matches after the round trip
+== 3. end to end against local stand-ins (python3.12)
+staged target was https://www.copilt.org/healthz (expect_ip 206.189.248.204); stand-in is http://127.0.0.1:51309/healthz; fake Telegram is http://127.0.0.1:51310
+PASS  the staged sentinel talks to https://api.telegram.org by default
+PASS  --plan prints the plan and opens no socket
+PASS  send_test: exactly one [TEST] message reaches the chat, no probe is made, exit 0
+      TEST message:
+        [TEST] sentinel
+        Test message: Telegram delivery from this observer works.
+        observer: github-actions
+PASS  healthy run 1: exit 0, no Telegram message
+PASS  healthy run 2: exit 0, no Telegram message
+PASS  healthy run 3: exit 0, no Telegram message
+PASS  the state file exists, mode 0600 (it is kept by actions/cache between runs)
+PASS  one failed run (blip): no message
+PASS  ...followed by a good run: no message, exit 0
+PASS  blip, ok, fail (2 failures inside 3 runs, not consecutive) pages: that is the 2-of-3 rule, by design
+PASS  recovery after that: one [RECOVERED] on the first good run (recover_k=1)
+PASS  a second outage within the 60-min cooldown: NO second Telegram [DOWN] (flap protection), but the run exits 1 (GitHub e-mail still fires)
+PASS  outage run 1 of 2: no page yet (fail_n=2 of the last 3)
+PASS  outage run 2 of 2: exactly ONE [DOWN] message, run exits 1 (--fail-on-down: GitHub's own failure e-mail)
+PASS  the DOWN text names the failing stage (http), the observer (github-actions) and no secret
+PASS  the message went to the configured chat through /bot<token>/sendMessage
+      DOWN message as the owner would read it:
+        [DOWN] www-edge
+        HTTP 500 (expected 200) (failed at: http) (2 of last 2 checks failed)
+        observer: github-actions
+PASS  still down, next run: NO second message (cooldown), but the run still exits 1 (GitHub keeps e-mailing)
+PASS  recovered: exactly ONE [RECOVERED] message, exit 0
+      RECOVERED message:
+        [RECOVERED] www-edge
+        back up after 0 min (1 consecutive good checks)
+        observer: github-actions
+PASS  healthy again: silence
+PASS  '404' for 2 runs is a DOWN at stage 'http'
+PASS  'badbody' for 2 runs is a DOWN at stage 'body'
+PASS  Telegram refusing (HTTP 500): no crash; the DOWN is still surfaced by the exit code (the GitHub e-mail path)
+PASS  ...(fresh outage, Telegram failing) exit code 1 = the independent alert path still works
+PASS  no Telegram secrets: nothing sent, DOWN still reported through the exit code
+PASS  the run output (what the public Actions log would show) never contains the bot token
+PASS  ...nor the chat id
+PASS  ...state file holds no token or chat id
+PASS  ...and no file of the staged repository contains the fake token (nothing was written into the tree)
+PASS  --quiet-ok: healthy runs are not logged line by line
+== E2E RESULT: 29 passed, 0 failed
+PASS  end-to-end scenario run: 0 failures
+== RESULT (wrapper checks): 21 passed, 0 failed

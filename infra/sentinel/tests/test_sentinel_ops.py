@@ -510,6 +510,24 @@ class ProductionAndGithubPack(unittest.TestCase):
             r4 = subprocess.run([BASH, sh, "--out", "relative/dir"], capture_output=True, text=True)
             self.assertEqual(r4.returncode, 2)
 
+    def test_public_readme_is_what_gets_published_and_names_nothing_private(self):
+        sh = os.path.join(self.GH, "prepare-sentinel-repo.sh")
+        pub = rd(os.path.join(self.GH, "PUBLIC-README.md"))
+        with tempfile.TemporaryDirectory() as d:
+            out = os.path.join(d, "repo")
+            self.assertEqual(subprocess.run([BASH, sh, "--out", out], capture_output=True, text=True).returncode, 0)
+            self.assertEqual(rd(os.path.join(out, "README.md")), pub)             # the staged README is the short public one
+        for needle in ("aicc-backend", "aicc-control-plane", "ai-commerce-copilot", "rollback", "avivg", "/Users/", "Neon", "Render", "DigitalOcean", "Droplet"):
+            self.assertNotIn(needle, pub, needle)
+        self.assertIn("rollback", rd(os.path.join(self.GH, "README.md")))            # the owner guide is the one that names them: it must never be the published one
+
+    def test_workflow_second_alert_path_and_manual_test_input(self):
+        w = rd(os.path.join(self.GH, "aicc-sentinel.workflow.yml"))
+        self.assertIn("--fail-on-down", w)                                          # a DOWN fails the run -> GitHub's own failure notification (not Telegram)
+        self.assertIn("send_test:", w)
+        self.assertIn("--test-notify", w)
+        self.assertNotIn("pull_request", w.split("jobs:")[0].split("\non:")[1])    # still no foreign-code trigger
+
     def test_the_github_pack_never_claims_24_7_for_the_mac(self):
         text = rd(os.path.join(self.GH, "README.md"))
         self.assertIn("not 24/7", text.lower())

@@ -1,0 +1,63 @@
+== sandbox /var/folders/l2/tsp2g97x4x1b58gmkd973q5m0000gn/T//aicc-backup-selftest.WwfPQT; openssl in PATH: OpenSSL 3.6.3 9 Jun 2026 (Library: OpenSSL 3.6.3 9 Jun 2026); LaunchAgent default PATH would use: LibreSSL 3.3.6
+== 1. generate the key pair ON the encrypted image (the real procedure: on a stick/medium that is not the pulling Mac's disk)
+PASS  encrypted image created
+PASS  image mounted
+PASS  openssl req -x509 -newkey rsa:4096 -nodes ... -days 3650 (the README command)
+PASS  the .crt is a certificate and holds NO private key
+PASS  RSA 4096 bits (>= 3072)
+      certificate fingerprint (record this; it identifies the key you must be able to find later): sha256 Fingerprint=87:55:EF:38:7E:D4:0A:E5:B6:EC:0A:F4:24:D7:BA:A8:C0:91:3F:75:1A:07:0D:7E:88:4E:77:F7:16:CF:23:04
+      expires: notAfter=Oct 20 17:24:45 2036 GMT
+== 2. the REAL pull-offhost.sh (stub ssh) encrypts to the certificate; the Mac holds ciphertext only
+PASS  encrypted pull, PATH with Homebrew OpenSSL 3 (interactive Mac)
+PASS  encrypted pull, LaunchAgent-like PATH (/usr/bin = LibreSSL 3.3)
+PASS  dest-homebrew: dump and files archive stored as .cms
+PASS  dest-homebrew: NO plaintext of the new set at rest
+PASS  dest-homebrew: no .partial plaintext temp left
+PASS  dest-homebrew: ciphertext is opaque (not gzip)
+PASS  dest-homebrew: the customer-data marker is not visible in the ciphertext
+PASS  dest-homebrew: modes 0600 file / 0700 directory
+PASS  dest-homebrew: sidecar = PLAINTEXT sha256 (what the host acked)
+PASS  dest-launchagent: dump and files archive stored as .cms
+PASS  dest-launchagent: NO plaintext of the new set at rest
+PASS  dest-launchagent: no .partial plaintext temp left
+PASS  dest-launchagent: ciphertext is opaque (not gzip)
+PASS  dest-launchagent: the customer-data marker is not visible in the ciphertext
+PASS  dest-launchagent: modes 0600 file / 0700 directory
+PASS  dest-launchagent: sidecar = PLAINTEXT sha256 (what the host acked)
+      pull.log: 2026-10-23T17:24:47Z  SUCCESS pulled aicc-files-20261023T010000Z-scheduled.tar.gz (834 bytes, stored encrypted), checksum verified
+      pull.log: 2026-10-23T17:24:47Z  SUCCESS host acknowledged the off-host copy of set 20261023T010000Z
+      pull.log: 2026-10-23T17:24:47Z  off-host pull finished ok
+PASS  the host received the ack for the set
+== 3. DECRYPT with the private key (the restore path): both OpenSSL builds, hash checked, byte-identical
+PASS  decrypt-offhost.sh (Homebrew OpenSSL 3 build) of the Homebrew-encrypted copy
+PASS  ...byte-identical to the host's dump
+PASS  decrypt-offhost.sh with PATH=/usr/bin (LibreSSL) of the LaunchAgent-encrypted copy
+PASS  ...byte-identical
+PASS  cross: OpenSSL 3 decrypts the LibreSSL-encrypted copy
+PASS  cross: LibreSSL decrypts the OpenSSL-3-encrypted copy
+PASS  the decrypted dump gunzips and holds the data (restore-ready)
+PASS  the decrypted files archive lists with tar
+== 4. FAILURES: wrong key, damaged ciphertext, bad certificates
+PASS  a DIFFERENT private key cannot decrypt (exit 1)
+PASS  ...and leaves no output file
+PASS  a DAMAGED ciphertext is refused (exit 1)
+PASS  pull REFUSES a 2048-bit certificate (exit 3)
+PASS  pull REFUSES a file that also contains the PRIVATE key (exit 3)
+PASS  pull REFUSES a missing certificate path (exit 3)
+PASS  pull REFUSES a relative certificate path (cwd-independent agents) (exit 3)
+PASS  production pull WITHOUT --encrypt-to is REFUSED before any ssh (exit 3)
+== 5. what happens to OLD UNENCRYPTED copies (measured, not assumed)
+PASS  FACT: the pull never encrypts or deletes older PLAINTEXT sets by itself (tiered retention keeps them up to 8 weeks)
+      cleanup would remove: aicc_cp-20261020T010000Z-scheduled.sql.gz aicc_cp-20261020T010000Z-scheduled.sql.gz.sha256 
+PASS  the owner's cleanup command removed the plaintext sets
+PASS  ...and did NOT touch .cms / .cms.sha256 / .cms.csha256
+PASS  after cleanup the next pull still works and the set is still decryptable
+== 6. the LaunchAgent installer takes the certificate (DRY-RUN, HOME in the sandbox: nothing is installed)
+PASS  dry-run plist passes --encrypt-to <certificate>
+PASS  plist contains no private key
+PASS  installer REFUSES a certificate file that holds a private key (exit 1)
+PASS  nothing was written to a LaunchAgents folder
+== 7. the image is closed again; the private key is unreachable without the passphrase
+PASS  wrong passphrase cannot open the image
+== RESULT: 47 passed, 0 failed
+sandbox deleted: /var/folders/l2/tsp2g97x4x1b58gmkd973q5m0000gn/T//aicc-backup-selftest.WwfPQT

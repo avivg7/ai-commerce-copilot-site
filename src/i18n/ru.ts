@@ -349,7 +349,7 @@ export const ru: DeepPartial<Dictionary> = {
       towel: "Льняное чайное полотенце",
       travel: "Дорожная кружка",
     },
-    evidence: { learned: "Покупали вместе {n} раз", fallback: "Из\u00a0той же\u00a0категории", outOfStock: "Нет в\u00a0наличии" },
+    evidence: { learned: "Покупали вместе {n} раз", fallback: "Подходящий товар в\u00a0наличии из\u00a0вашего каталога", outOfStock: "Нет в\u00a0наличии" },
     tags: { pin: "Закреплён", prefer: "Приоритет выше", deprioritize: "Приоритет ниже", exclude: "Исключён" },
     place: "Место {n}",
     hiddenHeading: "Покупателям не\u00a0показывается",

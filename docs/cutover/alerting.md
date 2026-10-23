@@ -139,6 +139,8 @@ Facts checked 2026-10-22: `gh auth status` (account `avivg7`, repo-admin token);
 | Healthchecks.io free | a dead-man switch, not a prober (20 jobs); would need a ping FROM the host or Mac | - | $0 | third party sees only ping times | integrations on the no-cost tier not confirmed | would close "AICC Ops itself is dead"; **not done** |
 | The existing API Droplet | yes | **no** (same provider/region) | free | - | - | **not done and not to be done** without a separate owner approval |
 
+Owner kit (2026-10-23, proven locally with a stand-in target and a fake Telegram): `docs/launch/ops-owner-kit/` (`03-sentinel-decision-package.md` compares Mac-only, public-repo Actions and the alternatives and recommends the public repo; the workflow now also fails the run while DOWN so GitHub's own email is a second, Telegram-independent path, has a manual `send_test` input, and the staged repo ships a short public README instead of the owner guide).
+
 Recommendation: create the dedicated public repository and enable the Actions sentinel at the cutover (`production-promotion.md` step 10.2), keep the Mac sentinel as an extra, and keep the DigitalOcean email policies as the independent notification path. Until the Actions sentinel exists, **a whole-host, DNS or TLS outage while the Mac is asleep is detected by nothing external**; AICC Ops and the DO policies die or stay silent with the host. All three observers speak Telegram: a revoked token or a muted chat blinds them together (section 5). Targets: `targets.dark.toml` (api only) while dark, `targets.production.toml` (Mac) and `github/targets.github.toml` (Actions) after the cutover.
 
 ## 5. Honest limits of this alerting design (from the independent review)
