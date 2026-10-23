@@ -174,6 +174,46 @@ else:
         fail(os.path.join(INFRA, "release/deploy-release.sh"), "must refuse an artifact that carries a wp-config template")
     else:
         ok()
+print("== owner-facts region: the owner's non-secret launch facts reach wp-config.php only through one validated, root-only path ==")
+def oexpect(cond, f, msg):
+    if cond:
+        ok()
+    else:
+        fail(f, msg)
+
+
+of_py = os.path.join(INFRA, "provision/lib/owner_facts.py")
+of_sh = os.path.join(INFRA, "provision/owner-facts.sh")
+if not (os.path.exists(of_py) and os.path.exists(of_sh)):
+    fail(of_py, "provision/lib/owner_facts.py and provision/owner-facts.sh must exist")
+else:
+    ofs = read(of_py)
+    m_keys = re.search(r"(?s)ORDER = \[(.*?)\n\]", ofs)
+    of_keys = re.findall(r'"([A-Z][A-Z0-9_]+)"', m_keys.group(1)) if m_keys else []
+    oexpect(len(of_keys) >= 14, "provision/lib/owner_facts.py", "ORDER must list the owner-fact keys")
+    if re.search(r"(?m)^\s*(import|from)\s+(subprocess|pickle|ctypes|socket|urllib|http)\b|\bos\.system\b|\beval\(|\bexec\(|__import__", ofs):
+        fail(of_py, "the validator must be pure string handling: no subprocess, network, eval or exec")
+    else:
+        ok()
+    oexpect('.replace("\\\\", "\\\\\\\\").replace("\'", "\\\\\'")' in ofs, "provision/lib/owner_facts.py", "php_str must escape the backslash first and then the apostrophe")
+    for env_ in ("production", "stage"):
+        tp = os.path.join(INFRA, "provision/wp-config.%s.template.php" % env_)
+        tt = read(tp)
+        oexpect(tt.count("// @@OWNER_FACTS_BEGIN@@\n") == 1 and tt.count("// @@OWNER_FACTS_END@@\n") == 1 and tt.count("\n@@OWNER_FACTS@@\n") == 1, "provision/wp-config.%s.template.php" % env_, "exactly one owner-facts region (begin marker, @@OWNER_FACTS@@, end marker)")
+        tcode = re.sub(r"(?m)^\s*//.*$", "", re.sub(r"(?s)/\*.*?\*/", "", tt))
+        for k in of_keys:
+            if k != "AICC_EXTRA_ACCESSIBLE_HOSTS" and ("'%s'" % k) in tcode:
+                fail(tp, "%s must not be defined in the template: it comes only from the owner-facts file (a second define would warn and the template could hide an unset value)" % k)
+    rwt = read(os.path.join(INFRA, "provision/render-wp-config.sh"))
+    for needle, why in (("owner_facts.py", "the shared validator"), ("--owner-facts-file", "the test seam"), ("must be mode 0600", "the facts file mode check"), ("is not a regular file", "the symlink/special-file refusal"),
+                        ("root:root", "the ownership check")):
+        oexpect(needle in rwt, "provision/render-wp-config.sh", "owner-facts gate lost: %s (%s)" % (needle, why))
+    oexpect(not re.search(r'>\s*"?\$OWNERF|tee\s+"?\$OWNERF|mv\s+[^\n]*"?\$OWNERF"?\s*$', rwt, re.M), "provision/render-wp-config.sh", "the renderer must never write the owner-facts file (a re-render must not be able to lose a value)")
+    isr = read(os.path.join(INFRA, "provision/install-stack.sh"))
+    for needle in ("provision/owner-facts.sh", "provision/lib/owner_facts.py", "aicc-owner-facts"):
+        oexpect(needle in isr, "provision/install-stack.sh", "must install the owner-facts tool (%s)" % needle)
+    ofh = read(of_sh)
+    oexpect("set -euo pipefail" in ofh and "Refusing" in ofh and "AICC_ENV" in ofh, "provision/owner-facts.sh", "root refusal, the host identity and set -euo pipefail are required")
 print("== secrets and addresses ==")
 SECRET_RES = [
     ("private key block", re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----")), ("AWS key", re.compile(r"AKIA[0-9A-Z]{16}")), ("token", re.compile(r"(gh[pousr]_[A-Za-z0-9]{30,}|xox[baprs]-[0-9A-Za-z-]{10,}|sk_live_[0-9A-Za-z]{16,})")),

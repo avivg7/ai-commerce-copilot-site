@@ -33,4 +33,14 @@ fresh; echo '# server 203.0.113.9 and 8.8.4.4' >> "$TMP/w/infra/provision/instal
 fresh; sed -i.bak 's/^pm.max_children = 3/pm.max_children = 12/' "$TMP/w/infra/php/aicc-pool.conf"; neg "a pool that breaks the memory budget is caught" 'budget: PHP-FPM worst case exceeds'
 fresh; sed -i.bak 's/dry-run/dryrun/g' "$TMP/w/infra/backup/pull-offhost.sh"; neg "a script without --dry-run is caught" 'pull-offhost.sh: no --dry-run option'
 fresh; sed -i.bak 's/must run as root/must be someone/; s/id -u/id -g/g' "$TMP/w/infra/provision/harden-stage2.sh"; neg "a root-only script without the non-root refusal is caught" 'harden-stage2.sh: no non-root refusal'
+fresh; python3 - "$TMP/w/infra/provision/wp-config.production.template.php" <<'PYEOF'
+import sys
+p = sys.argv[1]; t = open(p).read(); t = t.replace("// @@OWNER_FACTS_BEGIN@@\n", "").replace("// @@OWNER_FACTS_END@@\n", ""); open(p, "w").write(t)
+PYEOF
+neg "a production template that loses its owner-facts region markers is caught" 'exactly one owner-facts region'
+fresh; sed -i.bak "s#^define( 'AICC_ENTITLEMENT_WEBHOOK_SECRET'#define( 'AICC_LEGAL_ENTITY_NAME', 'Hard Coded Ltd' );\ndefine( 'AICC_ENTITLEMENT_WEBHOOK_SECRET'#" "$TMP/w/infra/provision/wp-config.production.template.php"; neg "an owner fact defined in the template (it would hide an unset value) is caught" 'must not be defined in the template'
+fresh; sed -i.bak 's/--owner-facts-file/--owner-facts/g' "$TMP/w/infra/provision/render-wp-config.sh"; neg "the renderer losing its owner-facts test seam / gate is caught" 'owner-facts gate lost'
+fresh; echo 'echo x > "$OWNERF"' >> "$TMP/w/infra/provision/render-wp-config.sh"; neg "a renderer that writes the owner-facts file is caught" 'must never write the owner-facts file'
+fresh; echo 'import subprocess' >> "$TMP/w/infra/provision/lib/owner_facts.py"; neg "an owner-facts validator that imports subprocess is caught" 'pure string handling'
+fresh; sed -i.bak 's/aicc-owner-facts/aicc-owner-x/' "$TMP/w/infra/provision/install-stack.sh"; neg "an installer that no longer installs the owner-facts tool is caught" 'must install the owner-facts tool'
 t_summary

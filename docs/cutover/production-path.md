@@ -29,11 +29,55 @@ Two environments share one code path and differ only through reviewed, enumerate
 |---|---|---|
 | `WP_HOME`, `WP_SITEURL` | `https://stage.copilt.org` | `https://www.copilt.org` |
 | `WP_ENVIRONMENT_TYPE` | `staging` | `production` |
-| `WP_ACCESSIBLE_HOSTS` (outbound allow-list; `WP_HTTP_BLOCK_EXTERNAL` is `true` in both) | `stage.copilt.org` | `api.copilt.org` (exactly; add a payment host only in a reviewed change when a gateway is configured) |
+| `WP_ACCESSIBLE_HOSTS` (outbound allow-list; `WP_HTTP_BLOCK_EXTERNAL` is `true` in both) | `stage.copilt.org` | `api.copilt.org` by default (exactly). A payment gateway's API host is added ONLY through the owner-set list of section 3a (`AICC_EXTRA_ACCESSIBLE_HOSTS`: plain host names, validated, empty by default) |
 | `AICC_ENTITLEMENT_WEBHOOK_URL` | not defined (staging can never reach the real Backend) | `https://api.copilt.org/v1/internal/entitlement/webhook` |
 | `AICC_ENTITLEMENT_WEBHOOK_SECRET`, `AICC_ACTIVATION_PROOF_SECRET` | random, generated on the host, staging only | **owner-provided, never generated**: the webhook secret must equal the Backend's |
 
 Identical in both: socket-only database, `DISALLOW_FILE_MODS`/`DISALLOW_FILE_EDIT`, `AUTOMATIC_UPDATER_DISABLED`, `DISABLE_WP_CRON` (system timer), `WP_DEBUG` and its log/display off, `FORCE_SSL_ADMIN`, empty trusted proxies, loopback-only operator CIDRs, no `COOKIE_DOMAIN` (host-only cookies), no dev bootstrap/test fixture constants.
+
+## 3a. Owner facts: the non-secret launch values the owner sets on the host (added 2026-10-23, "plumb")
+
+The production wp-config template carries ONE region for values only the owner knows. They live in a root-only host file, **`/etc/aicc/owner-facts.env`** (mode 0600, `root:root`, a regular file; the PHP user cannot even traverse `/etc/aicc`). `render-wp-config.sh` reads it on every render and never writes it, so no re-render (new release, `--force-salts`, restore of a missing wp-config, promotion) can lose a value. Nothing in it is a secret (the two shared secrets stay in `/etc/aicc/secrets`, the SMTP login in `/etc/aicc-mail`) and nothing from it is ever in the repository. Absent or empty file: the rendered configuration is **byte-for-byte what it was before this region existed** (pinned by golden files in `infra/stack-tests/golden/`), no owner-fact constant is defined, and the launch gate keeps blocking (an undefined `AICC_LAUNCH_REAL_GATEWAYS` is the gate's own empty array; an undefined `AICC_LM_PAID_GATEWAYS` is the payment gate's empty allowlist).
+
+| Key (file) | Rendered as | Rule |
+|---|---|---|
+| `AICC_ACTIVATION_PROOF_KID` | `define( 'AICC_ACTIVATION_PROOF_KID', '...' )` | `[A-Za-z0-9._-]`, 1-64. **Must equal the Backend's `ACTIVATION_PROOF_KID_CURRENT`**; the Control Plane refuses to issue activation proofs without it (`AICC_LM_Proof::get_current_kid`), the secret half is `/etc/aicc/secrets/activation-proof.secret` (must equal the Backend's `ACTIVATION_PROOF_SECRET_CURRENT`) |
+| `AICC_LEGAL_ENTITY_NAME`, `_ENTITY_ADDRESS`, `_SUPPORT_EMAIL`, `_GOVERNING_LAW`, `_JURISDICTION`, `_PAYMENT_PROCESSOR`, `_VAT_DETAILS` (optional) | one escaped PHP string each | the seven facts of `docs/launch/owner-facts-batch.md` section A (Control Plane column). Free text: no control or invisible characters, no `<` `>`, no `@@`, at most 200-300 characters; apostrophes and backslashes are kept and escaped. `_SUPPORT_EMAIL` must look like an address (the launch gate additionally rejects example/test/invalid/local) |
+| `AICC_LEGAL_REVIEW_APPROVED`, `AICC_STRUCTURED_DATA_OFFERS` | `true` | exactly `true`; to turn off, **unset**. Counsel approval / checkout live are decisions (batch B-8, B-11) |
+| `AICC_LEGAL_SUBPROCESSORS_VERIFIED` | string `YYYY-MM-DD` | a real calendar date; the gate demands "not in the future, at most 90 days old" |
+| `AICC_LM_PAID_GATEWAYS` | `array( 'id' => array( 'require_transaction_id' => true, 'proof_meta' => array(...) ), ... )` | the RUNTIME payment gate (`AICC_LM_Payment_Gate`). Comma-separated list of EXACT WooCommerce gateway ids, each optionally followed by `:meta_key[:meta_key2]` (the order-meta key that carries the provider reference, e.g. `payplus_transaction_uid`). Lower case `[a-z0-9_-]`; no patterns or prefixes; `bacs` `cheque` `cod` refused; at most 12; a transaction id is ALWAYS required (this tool cannot switch that off) |
+| `AICC_LAUNCH_REAL_GATEWAYS` | `array( 'id', ... )` | the LAUNCH gate's list of gateways that may be ENABLED in WooCommerce (`scripts/check-launch-blockers.php` reads a wp-config definition before its empty default). Same id syntax. **Every id must also be in `AICC_LM_PAID_GATEWAYS`** (the renderer and the tool refuse otherwise: customers would pay and get no license), so set the paid list first |
+| `AICC_EXTRA_ACCESSIBLE_HOSTS` | appended to `WP_ACCESSIBLE_HOSTS` (`api.copilt.org,host1,host2`) | at most 5 plain DNS host names (e.g. `restapi.payplus.co.il`), lower-cased. Refused: wildcards, IP addresses, `localhost` and local/reserved names (`.local`, `.internal`, `.test`, ...), ports, schemes, paths, underscores, anything under `copilt.org`. `WP_HTTP_BLOCK_EXTERNAL` stays `true`. The Control Plane launch gate prints a WARN note ("allows more than the API host") for each extra host: expected, not a blocker |
+
+**The three gateway lists are NOT the same list** (the earlier "identical" wording was wrong): `AICC_LM_PAID_GATEWAYS` (wp-config) and `AICC_LAUNCH_REAL_GATEWAYS` hold exact WooCommerce gateway ids and the launch list must be a SUBSET of the runtime list (the runtime list may also hold ids that arrive on orders but are not separately enabled, such as the wallet ids PayPlus writes into `payment_method`); the Site `REAL_GATEWAY_ALLOWLIST` (`scripts/lib/payment-gate.mjs`) holds the payment-processor DISPLAY NAME ("PayPlus") that is compared, case-insensitively, with `NEXT_PUBLIC_AICC_PAYMENT_PROCESSOR` and is changed in the repository at build time, not on the host.
+
+**Staging** accepts only `AICC_ACTIVATION_PROOF_KID`, `AICC_LM_PAID_GATEWAYS`, `AICC_LM_PAYMENT_GATE_STRICT` (`true`: a payment SANDBOX rehearsal runs the production rules) and `AICC_EXTRA_ACCESSIBLE_HOSTS` (appended to `stage.copilt.org`, e.g. `restapidev.payplus.co.il`). Production does not accept `AICC_LM_PAYMENT_GATE_STRICT` (strict is derived from the production host name).
+
+### Operator commands (on the host, as root; `aicc-owner-facts` is installed by `install-stack.sh --only scripts`)
+
+```
+sudo aicc-owner-facts keys                      # what this host's environment accepts
+sudo aicc-owner-facts list                      # the facts file (values are not secrets)
+sudo aicc-owner-facts check                     # validate the whole file, change nothing
+
+# SET (validated first; the file is replaced atomically, mode 0600; nothing is rendered yet)
+sudo aicc-owner-facts set AICC_ACTIVATION_PROOF_KID prod-2026-10
+sudo aicc-owner-facts set AICC_LEGAL_ENTITY_NAME 'Example Studio Ltd'
+sudo aicc-owner-facts set AICC_LM_PAID_GATEWAYS 'payplus-payment-gateway:payplus_transaction_uid'
+sudo aicc-owner-facts set AICC_LAUNCH_REAL_GATEWAYS payplus-payment-gateway
+sudo aicc-owner-facts set AICC_EXTRA_ACCESSIBLE_HOSTS restapi.payplus.co.il
+
+# UNSET (the next render behaves as if the key had never been set)
+sudo aicc-owner-facts unset AICC_EXTRA_ACCESSIBLE_HOSTS
+
+# APPLY (re-render, then reload PHP-FPM: OPcache has validate_timestamps=0, so FPM keeps the old wp-config until it is reloaded)
+sudo aicc-render-wp-config --env production --confirm-production --dry-run     # validates the facts, prints only the NUMBER of values
+sudo aicc-render-wp-config --env production --confirm-production
+sudo systemctl reload php8.3-fpm
+sudo aicc-wp eval 'echo json_encode( array( array_keys( AICC_LM_Payment_Gate::allowlist() ), AICC_LAUNCH_REAL_GATEWAYS, WP_ACCESSIBLE_HOSTS ) );'    # read back (WP-CLI sees the file at once)
+```
+
+On staging use `--env stage` (no `--confirm-production`); `aicc-owner-facts` picks the environment from the host identity. A refusal prints `REFUSED: ...` and leaves both the facts file and the rendered wp-config untouched. The facts file is not part of the backup (it is reproducible from the owner's filled facts form); after a host rebuild, set the values again before the first render.
 
 ## 4. Renderer gates (all refuse with a message, nothing is written)
 
@@ -46,6 +90,7 @@ Identical in both: socket-only database, `DISALLOW_FILE_MODS`/`DISALLOW_FILE_EDI
 3. **Provisioning**: the promoted host is NOT re-provisioned. The promotion reuses `create-staging-db.sh` (database + accounts), `render-wp-config.sh --env production`, a production edge env/render/unit drop-in, `aicc-ops.production.toml` and the production sentinel targets. `install-stack.sh --production-host --confirm-production` re-installs/updates the stack on the promoted host; its stage-only steps are refused there.
 4. **Mail**: the staging pool routes `mail()` to a sink; production uses the Control Plane SMTP layer enabled by the `AICC_MAIL_*` region of the production wp-config, which the renderer keeps only when `/etc/aicc-mail/smtp.env` is valid (`production-promotion.md` section 8). Without it production sends no mail at all; lost-password and order mail are then not delivered.
 5. **Secrets inventory** (who holds what): DB passwords and salts are regenerable on the host; the entitlement webhook secret and the activation-proof key are owner-held (password manager) and are NOT in any backup; the Telegram token is owner-held.
+6. **Owner facts** (section 3a): the proof key id, the seven legal facts, the gateway allowlists and an optional payment-gateway host are set on the host with `aicc-owner-facts` BEFORE the first production render (or at any time afterwards, followed by a re-render and an FPM reload); the Backend's `ACTIVATION_PROOF_KID_CURRENT` must be the same id.
 6. **Host key**: pinned beforehand for the deploy client (`--known-hosts`, section 6); `production-promotion.md` step 6.1 builds the pinned file for this Droplet.
 
 ## 6. Deploy sequence (production; every step stops on the first refusal)
