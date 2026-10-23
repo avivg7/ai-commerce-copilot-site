@@ -352,7 +352,7 @@ export const es: DeepPartial<Dictionary> = {
       towel: "Paño de cocina de lino",
       travel: "Taza de viaje",
     },
-    evidence: { learned: "Comprados juntos {n} veces", fallback: "De la misma categoría", outOfStock: "Agotado" },
+    evidence: { learned: "Comprados juntos {n} veces", fallback: "Producto relevante con stock de su catálogo", outOfStock: "Agotado" },
     tags: { pin: "Fijado", prefer: "Preferido", deprioritize: "Con menos prioridad", exclude: "Excluido" },
     place: "Puesto {n}",
     hiddenHeading: "No se muestra a los compradores",

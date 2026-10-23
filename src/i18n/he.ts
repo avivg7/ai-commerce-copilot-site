@@ -351,7 +351,7 @@ export const he: DeepPartial<Dictionary> = {
       towel: "מגבת מטבח מפשתן",
       travel: "כוס נסיעות",
     },
-    evidence: { learned: "נרכשו יחד {n} פעמים", fallback: "מאותה קטגוריה", outOfStock: "אזל מהמלאי" },
+    evidence: { learned: "נרכשו יחד {n} פעמים", fallback: "מוצר רלוונטי במלאי מהקטלוג שלכם", outOfStock: "אזל מהמלאי" },
     tags: { pin: "נעוץ", prefer: "מועדף", deprioritize: "בעדיפות נמוכה", exclude: "מוחרג" },
     place: "מקום {n}",
     hiddenHeading: "לא מוצגים לקונים",
