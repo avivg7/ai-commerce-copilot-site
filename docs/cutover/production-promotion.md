@@ -349,7 +349,7 @@ All of: sections 5 and 6.9 satisfied; the owner has re-read `runbook.md` section
 ```
 9.1  Mac: switch the observers to production names (they are idle until DNS moves, so first confirm they will not page: Telegram works; targets.production.toml is the after-Backend-cutover phase and also requires "entitlement_mode":"enforced" in api.copilt.org/health):
        infra/sentinel/macos/install-launchd.sh --targets infra/sentinel/targets.production.toml --apply
-     (the Mac sentinel is NOT 24/7; the 24/7 GitHub Actions variant is created in step 10.2)
+     (the Mac sentinel is NOT 24/7; the 24/7 GitHub Actions variant follows the phase rule of step 10.2: `dark` since 6.4, `www` after 9.9)
 9.2  Registrar: edit the www CNAME TARGET IN PLACE: avivg7.github.io.  ->  edge.copilt.org.      (CNAME to CNAME; never delete and re-add)
 9.3  Wait until the AUTHORITATIVE server shows it:   dig @dns1.registrar-servers.com +noall +answer www.copilt.org CNAME
 9.4  Host:  $PSSH "sudo ~/aicc-infra-bundle/infra/provision/promote-to-production.sh final-edge --confirm-cutover --caddyfile ~/aicc-infra-bundle/Caddyfile.final --expect-ip $RIP"
