@@ -501,7 +501,7 @@ if [ -x "$LOCALMY/mysqld" ]; then
 echo "== backup / restore as the REAL backup account against the throwaway server =="
     BKDIR="$TMP/bk"; SH="$TMP/shared"; EC="$TMP/edgeconf"; mkdir -p "$SH/uploads/2026" "$EC" "$TMP/rel/site" "$TMP/rel/cp"; echo img > "$SH/uploads/2026/a.jpg"; echo "<?php // x" > "$SH/wp-config.php"; echo cfg > "$EC/Caddyfile"
     ln -s "$TMP/rel/site/releases/R1" "$TMP/rel/site/current"
-    BKP() { env AICC_TEST_HARNESS=1 MYSQL_BIN="$LOCALMY/mysql" MYSQLDUMP_BIN="$LOCALMY/mysqldump" bash "$INFRA/backup/aicc-backup.sh" --backup-dir "$BKDIR" --shared-dir "$SH" --edge-conf-dir "$EC" --release-root "$TMP/rel" --mysql-defaults-file "$BKCNF" "$@"; }
+    BKP() { env AICC_TEST_HARNESS=1 MYSQL_BIN="$LOCALMY/mysql" MYSQLDUMP_BIN="$LOCALMY/mysqldump" bash "$INFRA/backup/aicc-backup.sh" --backup-dir "$BKDIR" --shared-dir "$SH" --edge-conf-dir "$EC" --release-root "$TMP/rel" --mysql-defaults-file "$BKCNF" --min-free-pct 1 "$@"; }  # independent of the free space of the machine running the tests; the guard case passes --min-free-pct 100 explicitly
     OUTB="$(BKP --label scheduled 2>&1)"; rc=$?
     [ "$rc" = 0 ] || echo "$OUTB" | tail -8
     t_eq "aicc-backup (real backup account, production names) succeeds" "$rc" "0"

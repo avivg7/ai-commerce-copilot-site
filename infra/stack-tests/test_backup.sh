@@ -14,7 +14,7 @@ echo "== fixture run (database aicc_rehearsal_cp only) =="
 if [ -S "$FXSOCK" ] && [ -x "$LOCALMY/mysqldump" ]; then
   FXCNF="$TMP/fx.cnf"; printf '[client]\nuser=root\nsocket=%s\n' "$FXSOCK" > "$FXCNF"; chmod 600 "$FXCNF"
   mkdir -p "$TMP/shared/uploads" "$TMP/edge"; echo up > "$TMP/shared/uploads/a.txt"; echo "<?php define('AICC_ENTITLEMENT_WEBHOOK_SECRET', 'SECRET-MARKER-9f3a');" > "$TMP/shared/wp-config.php"; echo cfg > "$TMP/edge/Caddyfile"; mkdir -p "$TMP/shared/plugin-releases/1.2.0"; echo 1.2.0 > "$TMP/shared/plugin-releases/current"; echo PK > "$TMP/shared/plugin-releases/1.2.0/z.zip"
-  FX() { MYSQL_BIN="$LOCALMY/mysql" MYSQLDUMP_BIN="$LOCALMY/mysqldump" bash "$BKP/$1" --fixture-test --mysql-defaults-file "$FXCNF" --db aicc_rehearsal_cp --restore-db aicc_rehearsal_restore_check "${@:2}"; }
+  FX() { MYSQL_BIN="$LOCALMY/mysql" MYSQLDUMP_BIN="$LOCALMY/mysqldump" bash "$BKP/$1" --fixture-test --mysql-defaults-file "$FXCNF" --db aicc_rehearsal_cp --restore-db aicc_rehearsal_restore_check $([ "$1" = aicc-backup.sh ] && echo --min-free-pct 1) "${@:2}"; }  # the tests must not depend on how full the developer disk is: the guard itself is tested with an explicit --min-free-pct 100
   BEFORE="$("$LOCALMY/mysql" --defaults-extra-file="$FXCNF" -N -e "SELECT COUNT(*) FROM aicc_rehearsal_cp.rhsl_options")"
   t_ok "fixture backup succeeds (dump, gzip -t, trailer, restore smoke, files archive)" FX aicc-backup.sh --backup-dir "$TMP/bk" --shared-dir "$TMP/shared" --edge-conf-dir "$TMP/edge" --release-root "$TMP/rel" --label manual
   t_eq "status.json: ok" "$(jq -r .status "$TMP/bk/status.json")" "ok"
