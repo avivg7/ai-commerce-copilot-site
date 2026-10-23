@@ -32,12 +32,12 @@
     "q01": {
       "layer": "sales", "topic": "why",
       "q": "What is AICC?",
-      "a": "AICC is a commerce recommendation and merchandising copilot, built for WooCommerce. “Copilot” here means a guide that helps you act on your own data, not an autonomous agent: AICC counts and ranks with fixed rules, not a generative model, and “merchandising” means which products appear next to which, on product and cart pages. It turns your store data into three things.\n\n**Better recommendations.** Products suggested from what your own customers actually buy together, with same-category and newest in-stock products where history is thin.\n\n**Less manual merchandising.** AICC counts the pairs in your orders, so you don't curate every product by hand, and a few rules (pin, exclude, prefer, deprioritize) cover the exceptions.\n\n**Visibility and control.** A dashboard in WordPress with views, clicks, bundle add-to-carts and associated orders, plain-English insights from your own data, a Recommendation Preview, and Reco, the guide in your admin.\n\nShoppers meet it today as a Frequently Bought Together bundle on product and cart pages; the dashboard, rules, insights and Reco around it are what make it more than a widget. Placing an order never waits on AICC. [See how it works](route:product)."
+      "a": "AICC is a commerce recommendation and merchandising copilot, built for WooCommerce. “Copilot” here means a guide that helps you act on your own data, not an autonomous agent: AICC counts and ranks with fixed rules, not a generative model, and “merchandising” means which products appear next to which, on product and cart pages. It turns your store data into three things.\n\n**Better recommendations.** Products suggested from what your own customers actually buy together, with relevant in-stock products from your catalog filling in where history is thin.\n\n**Less manual merchandising.** AICC counts the pairs in your orders, so you don't curate every product by hand, and a few rules (pin, exclude, prefer, deprioritize) cover the exceptions.\n\n**Visibility and control.** A dashboard in WordPress with views, clicks, bundle add-to-carts and associated orders, plain-English insights from your own data, a Recommendation Preview, and Reco, the guide in your admin.\n\nShoppers meet it today as a Frequently Bought Together bundle on product and cart pages; the dashboard, rules, insights and Reco around it are what make it more than a widget. Placing an order never waits on AICC. [See how it works](route:product)."
     },
     "q41": {
       "layer": "sales", "topic": "why",
       "q": "What makes AICC different from WooCommerce Related Products?",
-      "a": "WooCommerce's related products tell you which products belong together by category or tag. AICC adds the signal you would otherwise have to guess: which products your customers actually buy together.\n\nIt counts the products that appear in the same completed and processing orders and lists the most frequent partners first. Around that it adds a dashboard, rules you control, plain-English observations and Ask Reco. When a product has little history, AICC falls back to its category and your newest in-stock products, so the widget has something to show."
+      "a": "WooCommerce's related products tell you which products belong together by category or tag. AICC adds the signal you would otherwise have to guess: which products your customers actually buy together.\n\nIt counts the products that appear in the same completed and processing orders and lists the most frequent partners first. Around that it adds a dashboard, rules you control, plain-English observations and Ask Reco. When a product has little history, AICC fills the widget with relevant in-stock products from your catalog and your newest in-stock products, so it isn't left empty."
     },
     "q57": {
       "layer": "sales", "topic": "why",
@@ -52,7 +52,7 @@
     "q42": {
       "layer": "sales", "topic": "why",
       "q": "Is AICC an AI recommendation engine?",
-      "a": "AICC's recommendations start from what customers in your store buy together, counted and ranked by fixed rules rather than a generative model. Where purchase history is thin, the remaining spots are filled from your catalog (same category, then your newest in-stock products), and a product you pin comes from your rule. You can see, influence and override the result, and the same store data gives the same result.\n\nThat is what makes each recommendation explainable: it comes from your orders, your catalog or a rule you set. Ask Reco, the guide in your admin, also follows fixed rules and your own dashboard data; it is not a chatbot."
+      "a": "AICC's recommendations start from what customers in your store buy together, counted and ranked by fixed rules rather than a generative model. Where purchase history is thin, the remaining spots are filled from your catalog (relevant in-stock products, then your newest in-stock products), and a product you pin comes from your rule. You can see, influence and override the result, and the same store data gives the same result.\n\nThat is what makes each recommendation explainable: it comes from your orders, your catalog or a rule you set. Ask Reco, the guide in your admin, also follows fixed rules and your own dashboard data; it is not a chatbot."
     },
     "q03": {
       "layer": "product", "topic": "why",
@@ -67,7 +67,7 @@
     "q02": {
       "layer": "product", "topic": "recs",
       "q": "How does AICC decide what to recommend?",
-      "a": "It starts from your orders. AICC lists the products that appear in the same completed or processing orders as the product being viewed, most frequent first. If spots are left, it adds in-stock products from the same category, then your newest in-stock products. Your rules (pin, exclude, prefer, deprioritize) are applied last.\n\nThere is no generative AI and no per-shopper profile in this decision, so each recommendation can be explained."
+      "a": "It starts from your orders. AICC lists the products that appear in the same completed or processing orders as the product being viewed, most frequent first. If spots are left, it adds relevant in-stock products from your catalog, then your newest in-stock products. Your rules (pin, exclude, prefer, deprioritize) are applied last.\n\nThere is no generative AI and no per-shopper profile in this decision, so each recommendation can be explained."
     },
     "q43": {
       "layer": "sales", "topic": "recs",
@@ -77,7 +77,7 @@
     "q44": {
       "layer": "sales", "topic": "recs",
       "q": "What happens when a product has little or no order history?",
-      "a": "AICC fills the spots that purchase history can't: first with in-stock products from the same category, then with your newest in-stock products. Real co-purchases take over as orders come in.\n\nToday the widget heading is the same for every item, so a fallback product can appear under “Frequently Bought Together”. In the Recommendation Preview in your dashboard, learned partners show how many times they were bought together; fallback products don't."
+      "a": "AICC fills the spots that purchase history can't, so a new or quiet store still has products to show: first relevant in-stock products from your catalog, then your newest in-stock products. These come from your catalog, not from purchases. Real co-purchases take over as orders come in.\n\nToday the widget heading is the same for every item, so a fallback product can appear under “Frequently Bought Together”. In the Recommendation Preview in your dashboard, learned partners show how many times they were bought together; fallback products don't."
     },
     "q48": {
       "layer": "sales", "topic": "recs",
@@ -112,12 +112,12 @@
     "q51": {
       "layer": "sales", "topic": "setup",
       "q": "How soon can I start seeing recommendations?",
-      "a": "AICC prepares your store in the background after you connect: it syncs your catalog and checks that the widget is ready. Timing varies with catalog size and your site's scheduled tasks.\n\nOnce your store is ready, the widget starts with same-category and newest products, then moves to real bought-together pairs as orders are counted. Import your past orders (optional) to start with pairs already learned."
+      "a": "AICC prepares your store in the background after you connect: it syncs your catalog and checks that the widget is ready. Timing varies with catalog size and your site's scheduled tasks.\n\nOnce your store is ready, the widget starts with relevant in-stock products from your catalog, then moves to real bought-together pairs as orders are counted. Import your past orders (optional) to start with pairs already learned."
     },
     "q59": {
       "layer": "sales", "topic": "recs",
       "q": "How many orders does AICC need?",
-      "a": "There is no minimum order volume, so a small store can use AICC too. Any two products that appear in the same completed or processing order become a pair, and partners are ranked by how many orders contained both. A product with few or no partners uses same-category and newest products for the remaining spots, and real partners take over as orders come in. Importing your past orders (optional, up to 24 months) gives AICC your history from the start. Dashboard observations need at least 10 orders in the period."
+      "a": "There is no minimum order volume, so a small store can use AICC too. Any two products that appear in the same completed or processing order become a pair, and partners are ranked by how many orders contained both. A product with few or no partners gets relevant in-stock products from your catalog, then your newest, for the remaining spots, and real partners take over as orders come in. Importing your past orders (optional, up to 24 months) gives AICC your history from the start. Dashboard observations need at least 10 orders in the period."
     },
     "q60": {
       "layer": "sales", "topic": "why",
@@ -132,7 +132,7 @@
     "q62": {
       "layer": "sales", "topic": "setup",
       "q": "What happens after I buy?",
-      "a": "First you create your AICC account and choose a plan; the 14-day money-back guarantee starts when payment is received and your plan is issued, and renewal is manual. Then you install and activate the AICC plugin on your WooCommerce site and connect it from the AICC screen. Normally there is no license key to paste and no code to write.\n\nAICC then prepares your catalog in the background. Once your store is ready, recommendations start with same-category and newest products and move to real bought-together pairs as orders are counted. Importing your past orders (up to 24 months) is optional and only happens if you choose it. Your dashboard, rules and Reco are then available in WordPress. [Plans and pricing](route:pricing)."
+      "a": "First you create your AICC account and choose a plan; the 14-day money-back guarantee starts when payment is received and your plan is issued, and renewal is manual. Then you install and activate the AICC plugin on your WooCommerce site and connect it from the AICC screen. Normally there is no license key to paste and no code to write.\n\nAICC then prepares your catalog in the background. Once your store is ready, recommendations start with relevant in-stock products from your catalog and move to real bought-together pairs as orders are counted. Importing your past orders (up to 24 months) is optional and only happens if you choose it. Your dashboard, rules and Reco are then available in WordPress. [Plans and pricing](route:pricing)."
     },
     "q63": {
       "layer": "account", "topic": "billing", "legalReview": true,
@@ -147,7 +147,7 @@
     "q31": {
       "layer": "product", "topic": "setup",
       "q": "Do I have to import my order history?",
-      "a": "No, it's optional. After your store is connected, AICC offers to import up to 24 months of past orders so it can learn your existing product relationships from the start. If you skip it, AICC begins with same-category and newest-product recommendations and learns from new orders.\n\nAICC doesn't import your past orders until you choose. Orders placed before you connected are not sent unless you import them; orders placed after connecting are sent as they are created or updated."
+      "a": "No, it's optional. After your store is connected, AICC offers to import up to 24 months of past orders so it can learn your existing product relationships from the start. If you skip it, AICC still recommends from your catalog (relevant in-stock products, then your newest) and learns from new orders.\n\nAICC doesn't import your past orders until you choose. Orders placed before you connected are not sent unless you import them; orders placed after connecting are sent as they are created or updated."
     },
     "q32": {
       "layer": "product", "topic": "setup",

@@ -43,7 +43,13 @@
     "product.compare.rows.chosen.aicc": "describes the co-purchase signal or a relationship in context (the first step of a fixed ranking chain)",
     "pricing.included.items.b": "names the storefront widget (its real heading)",
     "legal.terms.s.service.a": "names the storefront widget (its real heading)",
-    "legal.dataTrust.s.reads.a": "describes the co-purchase signal or a relationship in context (the first step of a fixed ranking chain)"
+    "legal.dataTrust.s.reads.a": "describes the co-purchase signal or a relationship in context (the first step of a fixed ranking chain)",
+    "demo.result.cartWithout": "describes the co-purchase signal or a relationship in context (the first step of a fixed ranking chain)",
+    "demo.result.cartWithTwo": "the real evidence label / count of a learned partner",
+    "demo.result.cartWithOne": "the real evidence label / count of a learned partner",
+    "demo.mode.withCaption": "describes the co-purchase signal or a relationship in context (the first step of a fixed ranking chain)",
+    "demo.why.withoutCart": "describes the co-purchase signal or a relationship in context (the first step of a fixed ranking chain)",
+    "demo.plainHintCart": "describes the co-purchase signal or a relationship in context (the first step of a fixed ranking chain)"
   },
   "faq": {
     "q01.a": "names the storefront widget (its real heading)",

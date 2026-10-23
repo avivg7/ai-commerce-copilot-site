@@ -425,8 +425,8 @@ async function surfaceChecks(surface, url) {
       await page.keyboard.press("Space"); await page.waitForTimeout(500);
       rec(surface, "FBT: unticking restores the total", (await page.textContent(".aicc-fbt [data-total]")) === total0, "");
       const dirRtl = await page.evaluate(() => document.documentElement.dir === "rtl");
-      await boxes[0].focus(); await page.keyboard.press(dirRtl ? "ArrowLeft" : "ArrowRight");
-      rec(surface, "FBT: arrow keys follow reading direction", await page.evaluate(() => document.activeElement === document.querySelectorAll(".aicc-fbt input[type=checkbox]")[1]), "");
+      await (await page.$(".aicc-fbt input[type=checkbox]:not(:disabled)")).focus(); await page.keyboard.press(dirRtl ? "ArrowLeft" : "ArrowRight");
+      rec(surface, "FBT: arrow keys follow reading direction", await page.evaluate(() => document.activeElement === document.querySelectorAll(".aicc-fbt input[type=checkbox]:not(:disabled)")[1]), "");
       rec(surface, "FBT: strength is not drawn inside the storefront card", !(await page.$(".aicc-fbt__fieldset .aicc-fbt__bar, .aicc-fbt__fieldset .aicc-fbt__strength")), "");
     }
   } else rec(surface, "FBT section present", false, "no [data-aicc-fbt]");

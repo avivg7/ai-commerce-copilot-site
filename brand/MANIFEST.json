@@ -7,8 +7,8 @@
       "bytes": 22909
     },
     "aicc-brand.css": {
-      "sha256": "0e9c661bd7709ac0ac9d1be2d43b0487915d0c2f1629454101c429a234b2850e",
-      "bytes": 70674
+      "sha256": "87b21c079aadddef929872c51a7eb1074446483416b9c572d42847d25d1d1849",
+      "bytes": 80514
     },
     "aicc-tokens.css": {
       "sha256": "bcf951af272e0adb914b154a811047c3d5224ff6d33179b7e9f9fcc792592955",
@@ -83,20 +83,20 @@
       "bytes": 4393
     },
     "content/faq.en.json": {
-      "sha256": "fed1de1705c1ef4e512bbeb9975087182c9199a6676eaf36083829d36e3f0f51",
-      "bytes": 30097
+      "sha256": "19a1a8a266e616b5f348301cce3ac9f809243b25f2723b649dc5aa01d8fd5379",
+      "bytes": 30323
     },
     "content/faq.es.json": {
-      "sha256": "6475a81fde4b84bc9663d027e186d35192eba1a1f39ebd81f3f445de7bd57f4f",
-      "bytes": 30038
+      "sha256": "6265b39d222736faf373884ac8b463e6712e124d357ab0be241a9d8ff529aa48",
+      "bytes": 30194
     },
     "content/faq.he.json": {
-      "sha256": "c93bfb7d775b810b23a5733790c8685e021d8defd56e527e09284ca45154403a",
-      "bytes": 36740
+      "sha256": "cb367c7d4a08743987f798e82d878fd4dabfe513914fef6a13fb8c00a00aa7b3",
+      "bytes": 37041
     },
     "content/faq.ru.json": {
-      "sha256": "6c45b38e85bbc9071054a15497893861dc71ceb1e51b73417cf3866353d62fb7",
-      "bytes": 48499
+      "sha256": "7e00cac26f43849ef34dd54cb9a1b3429035085baf691c3d36db3287ebd07045",
+      "bytes": 48955
     },
     "content/header-nav.json": {
       "sha256": "a31b9c29336087771731384c61ed17ac5950e3f4922ad9056a7b34c58ca1a0bb",
@@ -111,8 +111,8 @@
       "bytes": 1339
     },
     "i18n/strings.json": {
-      "sha256": "cfbe3f882ad9420a835b67d7a23594e832c04f5001d9dddd4cca82e1e87093c7",
-      "bytes": 91473
+      "sha256": "cda228ab49565f2c9567b2f58792d582f32099fa9eb54188337f93b50ee78864",
+      "bytes": 102791
     },
     "js/a11y-trigger.js": {
       "sha256": "b9c13ac552fa0bed063742b3830bc58ea9404184cac37d6f62ce215c3b7c496c",
@@ -127,8 +127,8 @@
       "bytes": 8284
     },
     "js/fbt-demo.js": {
-      "sha256": "9d5001add01c6b65c0e12a150b6849c3fc3b8f9bf22377616e331f4655cfbe9e",
-      "bytes": 20494
+      "sha256": "f5347e9d6b60d4fe2c2d8a91f7910569e979f4bebb5a0e609ed38e76400e6650",
+      "bytes": 27021
     },
     "js/flow.js": {
       "sha256": "7f992c41b22d2d1592e9afc4da0c4ac0e4055c0c9a471d84523026a8ada8de05",
@@ -161,6 +161,10 @@
     "js/motion.js": {
       "sha256": "462190cb2e38542d14ddd4e2bb5257b6b5c7b2d025b29181e06119e4fa30e62f",
       "bytes": 4286
+    },
+    "js/product-art.js": {
+      "sha256": "2844e8ffe590cd750f492e6ec724068606016b253c3a8d50a57f81107a488ecf",
+      "bytes": 2988
     },
     "js/reco-ask.js": {
       "sha256": "b96479d9ed2a2061f6f101f4f037926c189a40c6a845efcb1ecec9cccaee92cd",
