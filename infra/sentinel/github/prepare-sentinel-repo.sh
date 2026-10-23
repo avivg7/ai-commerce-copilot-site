@@ -17,12 +17,12 @@ mkdir -p "$OUT/.github/workflows"
 install -m 644 "$SENT/sentinel.py" "$OUT/sentinel.py"
 install -m 644 "$HERE/targets.github.toml" "$OUT/targets.toml"
 install -m 644 "$HERE/aicc-sentinel.workflow.yml" "$OUT/.github/workflows/aicc-sentinel.yml"
-install -m 644 "$HERE/README.md" "$OUT/README.md"
+install -m 644 "$HERE/PUBLIC-README.md" "$OUT/README.md"   # the PUBLIC README (README.md next to this script is the owner's guide and names private repositories: it is never published)
 ( cd "$OUT" && for f in sentinel.py targets.toml .github/workflows/aicc-sentinel.yml README.md; do printf '%s  %s\n' "$(shasum -a 256 "$f" | cut -d' ' -f1)" "$f"; done > SHA256SUMS )
 cat <<MSG
 Staged $OUT (sentinel.py, targets.toml, the workflow, README.md, SHA256SUMS). Nothing was published.
 
-OWNER GATE (creates a PUBLIC repository and stores two secrets; see README.md before you run it):
+OWNER GATE (creates a PUBLIC repository and stores two secrets; read infra/sentinel/github/README.md in the site repository first; the staged README.md is the short PUBLIC one):
   cd "$OUT" && git init -b main && git add -A && git commit -m "AICC external sentinel"
   gh repo create <your-github-user>/aicc-sentinel --public --source . --push
   gh secret set TELEGRAM_BOT_TOKEN --repo <your-github-user>/aicc-sentinel     # hidden prompt; paste the token, press Enter
