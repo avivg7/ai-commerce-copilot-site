@@ -48,6 +48,7 @@ The production wp-config template carries ONE region for values only the owner k
 | `AICC_LM_PAID_GATEWAYS` | `array( 'id' => array( 'require_transaction_id' => true, 'proof_meta' => array(...) ), ... )` | the RUNTIME payment gate (`AICC_LM_Payment_Gate`). Comma-separated list of EXACT WooCommerce gateway ids, each optionally followed by `:meta_key[:meta_key2]` (the order-meta key that carries the provider reference, e.g. `payplus_transaction_uid`). Lower case `[a-z0-9_-]`; no patterns or prefixes; `bacs` `cheque` `cod` refused; at most 12; a transaction id is ALWAYS required (this tool cannot switch that off) |
 | `AICC_LAUNCH_REAL_GATEWAYS` | `array( 'id', ... )` | the LAUNCH gate's list of gateways that may be ENABLED in WooCommerce (`scripts/check-launch-blockers.php` reads a wp-config definition before its empty default). Same id syntax. **Every id must also be in `AICC_LM_PAID_GATEWAYS`** (the renderer and the tool refuse otherwise: customers would pay and get no license), so set the paid list first |
 | `AICC_EXTRA_ACCESSIBLE_HOSTS` | appended to `WP_ACCESSIBLE_HOSTS` (`api.copilt.org,host1,host2`) | at most 5 plain DNS host names (e.g. `restapi.payplus.co.il`), lower-cased. Refused: wildcards, IP addresses, `localhost` and local/reserved names (`.local`, `.internal`, `.test`, ...), ports, schemes, paths, underscores, anything under `copilt.org`. `WP_HTTP_BLOCK_EXTERNAL` stays `true`. The Control Plane launch gate prints a WARN note ("allows more than the API host") for each extra host: expected, not a blocker |
+| `AICC_LM_PLUGIN_SIGNING_PUBKEYS` (production only) | `define( 'AICC_LM_PLUGIN_SIGNING_PUBKEYS', 'k1,k2' )` | the PUBLIC half of the Plugin update-signing key: standard base64 (44 characters) of a 32-byte Ed25519 public key, at most TWO comma-separated (primary + standby), no duplicates; anything that does not decode to 32 bytes (for example a 64-byte secret key) is refused. This is exactly what the Control Plane reads (`AICC_LM_Release_Signature::parse_keys`, at most 2). With it set the Control Plane re-verifies each release when serving it; if set it must contain a key the shipped Plugin build carries (the launch gate's Plugin-download check). Not set: the gate prints a NOTE, not a blocker. A 32-byte private SEED would also pass the shape check: only ever paste the PUBLIC key printed by the key kit. Staging does not accept it |
 
 **The three gateway lists are NOT the same list** (the earlier "identical" wording was wrong): `AICC_LM_PAID_GATEWAYS` (wp-config) and `AICC_LAUNCH_REAL_GATEWAYS` hold exact WooCommerce gateway ids and the launch list must be a SUBSET of the runtime list (the runtime list may also hold ids that arrive on orders but are not separately enabled, such as the wallet ids PayPlus writes into `payment_method`); the Site `REAL_GATEWAY_ALLOWLIST` (`scripts/lib/payment-gate.mjs`) holds the payment-processor DISPLAY NAME ("PayPlus") that is compared, case-insensitively, with `NEXT_PUBLIC_AICC_PAYMENT_PROCESSOR` and is changed in the repository at build time, not on the host.
 
@@ -59,6 +60,7 @@ The production wp-config template carries ONE region for values only the owner k
 sudo aicc-owner-facts keys                      # what this host's environment accepts
 sudo aicc-owner-facts list                      # the facts file (values are not secrets)
 sudo aicc-owner-facts check                     # validate the whole file, change nothing
+sudo aicc-owner-facts export > owner-facts.env  # DR copy (non-secret); `import /abs/path` re-enters it on a rebuilt host
 
 # SET (validated first; the file is replaced atomically, mode 0600; nothing is rendered yet)
 sudo aicc-owner-facts set AICC_ACTIVATION_PROOF_KID prod-2026-10
@@ -66,6 +68,7 @@ sudo aicc-owner-facts set AICC_LEGAL_ENTITY_NAME 'Example Studio Ltd'
 sudo aicc-owner-facts set AICC_LM_PAID_GATEWAYS 'payplus-payment-gateway:payplus_transaction_uid'
 sudo aicc-owner-facts set AICC_LAUNCH_REAL_GATEWAYS payplus-payment-gateway
 sudo aicc-owner-facts set AICC_EXTRA_ACCESSIBLE_HOSTS restapi.payplus.co.il
+sudo aicc-owner-facts set AICC_LM_PLUGIN_SIGNING_PUBKEYS '<primary public key>,<standby public key>'   # public keys only, from the key kit; never hand-edit the rendered wp-config (the next render erases it)
 
 # UNSET (the next render behaves as if the key had never been set)
 sudo aicc-owner-facts unset AICC_EXTRA_ACCESSIBLE_HOSTS
@@ -77,7 +80,15 @@ sudo systemctl reload php8.3-fpm
 sudo aicc-wp eval 'echo json_encode( array( array_keys( AICC_LM_Payment_Gate::allowlist() ), AICC_LAUNCH_REAL_GATEWAYS, WP_ACCESSIBLE_HOSTS ) );'    # read back (WP-CLI sees the file at once)
 ```
 
-On staging use `--env stage` (no `--confirm-production`); `aicc-owner-facts` picks the environment from the host identity. A refusal prints `REFUSED: ...` and leaves both the facts file and the rendered wp-config untouched. The facts file is not part of the backup (it is reproducible from the owner's filled facts form); after a host rebuild, set the values again before the first render.
+On staging use `--env stage` (no `--confirm-production`); `aicc-owner-facts` picks the environment from the host identity. A refusal prints `REFUSED: ...` and leaves both the facts file and the rendered wp-config untouched. **Disaster recovery of the facts file (M6).** `/etc/aicc/owner-facts.env` is deliberately NOT in the host backup or in the encrypted off-host copy (it is root-only configuration, and keeping the backup set free of configuration keeps restore simple). Instead it is NON-secret and exportable, and the DR steps re-enter it:
+```
+sudo aicc-owner-facts export > owner-facts-$(date +%F).env   # run after EVERY change of a fact; file text is validated, holds no secret
+#   keep that file with the owner's records (password manager attachment / encrypted notes), next to the filled facts form (docs/launch/owner-facts-batch.md)
+# on a rebuilt host, BEFORE the first production render (scp the file to the host first, absolute path, then):
+sudo aicc-owner-facts import /root/owner-facts-2026-xx-xx.env  # validated for THIS host's environment; refuses a symlink, an invalid value, a stage-only key on production, and never merges into a different existing file
+sudo aicc-render-wp-config --env production --confirm-production
+```
+The import file is validated exactly like `set` (one validator). After a promotion the file survives and is validated by the promotion gate (`production-promotion.md`).
 
 ## 4. Renderer gates (all refuse with a message, nothing is written)
 
@@ -90,7 +101,7 @@ On staging use `--env stage` (no `--confirm-production`); `aicc-owner-facts` pic
 3. **Provisioning**: the promoted host is NOT re-provisioned. The promotion reuses `create-staging-db.sh` (database + accounts), `render-wp-config.sh --env production`, a production edge env/render/unit drop-in, `aicc-ops.production.toml` and the production sentinel targets. `install-stack.sh --production-host --confirm-production` re-installs/updates the stack on the promoted host; its stage-only steps are refused there.
 4. **Mail**: the staging pool routes `mail()` to a sink; production uses the Control Plane SMTP layer enabled by the `AICC_MAIL_*` region of the production wp-config, which the renderer keeps only when `/etc/aicc-mail/smtp.env` is valid (`production-promotion.md` section 8). Without it production sends no mail at all; lost-password and order mail are then not delivered.
 5. **Secrets inventory** (who holds what): DB passwords and salts are regenerable on the host; the entitlement webhook secret and the activation-proof key are owner-held (password manager) and are NOT in any backup; the Telegram token is owner-held.
-6. **Owner facts** (section 3a): the proof key id, the seven legal facts, the gateway allowlists and an optional payment-gateway host are set on the host with `aicc-owner-facts` BEFORE the first production render (or at any time afterwards, followed by a re-render and an FPM reload); the Backend's `ACTIVATION_PROOF_KID_CURRENT` must be the same id.
+6. **Owner facts** (section 3a): the proof key id, the seven legal facts, the gateway allowlists, an optional payment-gateway host and the public update-signing keys are set on the host with `aicc-owner-facts` BEFORE the first production render (or at any time afterwards, followed by a re-render and an FPM reload); the Backend's `ACTIVATION_PROOF_KID_CURRENT` must be the same id.
 6. **Host key**: pinned beforehand for the deploy client (`--known-hosts`, section 6); `production-promotion.md` step 6.1 builds the pinned file for this Droplet.
 
 ## 6. Deploy sequence (production; every step stops on the first refusal)

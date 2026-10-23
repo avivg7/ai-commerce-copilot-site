@@ -621,6 +621,69 @@ if [ -x "$LOCALMY/mysqld" ]; then
     cp "$OFF" "$OFD/stage-facts.env"; printf 'AICC_LEGAL_ENTITY_NAME=x\n' > "$OFF"; chmod 600 "$OFF"
     t_rc "a production-only key planted in the stage facts file makes the STAGE renderer refuse" 1 OFS
     rm -f "$OFF"; OFS >/dev/null 2>&1; t_ok "stage with no facts file is the golden again" bash -c "diff <(sed -E 's/[0-9a-f]{64}/HEX64/g' '$OFD/stage.php') '$HERE/golden/wp-config.stage.no-owner-facts.php'"
+    echo "== owner facts, fixB: signing public keys (M6), ASCII dates + literal values after KEY (secR2-9), export/import for disaster recovery =="
+    rm -f "$OFF"
+    SK1="$(python3 -c 'import base64;print(base64.b64encode(bytes(range(32))).decode())')"; SK2="$(python3 -c 'import base64;print(base64.b64encode(bytes(range(1,33))).decode())')"; SK3="$(python3 -c 'import base64;print(base64.b64encode(bytes(range(2,34))).decode())')"
+    t_ok "production accepts AICC_LM_PLUGIN_SIGNING_PUBKEYS (primary + standby)" OFT set AICC_LM_PLUGIN_SIGNING_PUBKEYS "$SK1, $SK2"
+    t_contains "...stored canonically (blanks removed)" "$(OFT list)" "AICC_LM_PLUGIN_SIGNING_PUBKEYS=$SK1,$SK2"
+    t_rc "three keys are refused (the Control Plane reads at most two)" 1 OFT set AICC_LM_PLUGIN_SIGNING_PUBKEYS "$SK1,$SK2,$SK3"
+    t_rc "the same key twice is refused" 1 OFT set AICC_LM_PLUGIN_SIGNING_PUBKEYS "$SK1,$SK1"
+    t_rc "a 64-byte value (an Ed25519 SECRET key shape) is refused" 1 OFT set AICC_LM_PLUGIN_SIGNING_PUBKEYS "$(python3 -c 'import base64;print(base64.b64encode(bytes(64)).decode())')"
+    t_rc "a 31-byte value is refused" 1 OFT set AICC_LM_PLUGIN_SIGNING_PUBKEYS "$(python3 -c 'import base64;print(base64.b64encode(bytes(31)).decode())')"
+    t_rc "non-base64 text is refused" 1 OFT set AICC_LM_PLUGIN_SIGNING_PUBKEYS "not-a-key-not-a-key-not-a-key-not-a-key-12="
+    t_rc "a stray comma is refused" 1 OFT set AICC_LM_PLUGIN_SIGNING_PUBKEYS "$SK1,"
+    t_rc "a value with a quote or PHP is refused" 1 OFT set AICC_LM_PLUGIN_SIGNING_PUBKEYS "$SK1');phpinfo();//"
+    t_rc "stage does NOT accept the signing keys (production serves the signed releases)" 1 OFTS set AICC_LM_PLUGIN_SIGNING_PUBKEYS "$SK1"
+    t_fail "...and \`keys\` for stage does not list it" bash -c "env AICC_TEST_HARNESS=1 bash '$PROV/owner-facts.sh' --file '$OFF' --env stage keys | grep -q SIGNING_PUBKEYS"
+    t_ok "...while \`keys\` for production lists it" bash -c "env AICC_TEST_HARNESS=1 bash '$PROV/owner-facts.sh' --file '$OFF' --env production keys | grep -q '^AICC_LM_PLUGIN_SIGNING_PUBKEYS$'"
+    OFR >/dev/null 2>&1; t_eq "production render defines AICC_LM_PLUGIN_SIGNING_PUBKEYS exactly as set" "$(cst "$OFD/prod.php" AICC_LM_PLUGIN_SIGNING_PUBKEYS | jq -r .AICC_LM_PLUGIN_SIGNING_PUBKEYS)" "$SK1,$SK2"
+    t_eq "...as ONE define line" "$(grep -c "^define( 'AICC_LM_PLUGIN_SIGNING_PUBKEYS'" "$OFD/prod.php")" "1"
+    t_ok "...php -l clean" php -l "$OFD/prod.php"
+    OFR >/dev/null 2>&1; OFR --force-salts >/dev/null 2>&1; OFR >/dev/null 2>&1
+    seedsalts; OFR >/dev/null 2>&1
+    t_eq "a re-render (including --force-salts) keeps it: the owner never hand-edits the rendered wp-config again" "$(cst "$OFD/prod.php" AICC_LM_PLUGIN_SIGNING_PUBKEYS | jq -r .AICC_LM_PLUGIN_SIGNING_PUBKEYS)" "$SK1,$SK2"
+    OFT unset AICC_LM_PLUGIN_SIGNING_PUBKEYS >/dev/null; OFR >/dev/null 2>&1
+    t_ok "unset + re-render: back to the golden file byte for byte" bash -c "diff <(sed -E 's/[0-9a-f]{64}/HEX64/g' '$OFD/prod.php') '$HERE/golden/wp-config.production.no-owner-facts.php'"
+    # --- ASCII digits only in dates (the PHP launch gate is ASCII)
+    t_rc "a date written with full-width digits is refused" 1 OFT set AICC_LEGAL_SUBPROCESSORS_VERIFIED "２０２６-１０-２３"
+    t_rc "a date written with Arabic-Indic digits is refused" 1 OFT set AICC_LEGAL_SUBPROCESSORS_VERIFIED "٢٠٢٦-١٠-٢٣"
+    t_ok "an ASCII date is accepted" OFT set AICC_LEGAL_SUBPROCESSORS_VERIFIED 2026-10-23
+    # --- option parsing stops after KEY (secR2-9)
+    rm -f "$OFF"
+    t_rc "set KEY --help is a value, not the help flag (here an invalid key id: refused with exit 1, not 0)" 1 OFT set AICC_ACTIVATION_PROOF_KID --help
+    t_fail "...and printed no usage" bash -c "env AICC_TEST_HARNESS=1 bash '$PROV/owner-facts.sh' --file '$OFF' --env production set AICC_ACTIVATION_PROOF_KID --help 2>&1 | grep -q 'Sets, unsets and lists'"
+    t_ok "a free-text value equal to --file is stored literally" OFT set AICC_LEGAL_ENTITY_NAME --file
+    t_eq "...the facts file did not move: the value is --file" "$(OFT list | grep '^AICC_LEGAL_ENTITY_NAME=')" "AICC_LEGAL_ENTITY_NAME=--file"
+    t_ok "a free-text value equal to --env is stored literally" OFT set AICC_LEGAL_PAYMENT_PROCESSOR --env
+    t_eq "...and the environment stayed production" "$(OFT list | grep '^AICC_LEGAL_PAYMENT_PROCESSOR=')" "AICC_LEGAL_PAYMENT_PROCESSOR=--env"
+    t_ok "options placed before the command and between the command and KEY still work" bash -c "env AICC_TEST_HARNESS=1 bash '$PROV/owner-facts.sh' set --file '$OFF' --env production AICC_ACTIVATION_PROOF_KID k9 >/dev/null && grep -q '^AICC_ACTIVATION_PROOF_KID=k9$' '$OFF'"
+    t_ok "--help before the command prints the usage and exits 0" bash -c "env AICC_TEST_HARNESS=1 bash '$PROV/owner-facts.sh' --help | grep -q 'Sets, unsets and lists'"
+    t_rc "--file as the very last argument (no value) is a usage error, not a crash" 2 bash "$PROV/owner-facts.sh" list --file
+    # --- disaster recovery: export / import
+    OFT set AICC_LM_PLUGIN_SIGNING_PUBKEYS "$SK1" >/dev/null
+    OFT export > "$OFD/export.env"; EXSUM="$(sha "$OFD/export.env")"
+    t_eq "export prints exactly the facts file text (header + KEY=value lines, no secret exists in the file)" "$(cat "$OFF" | shasum -a 256 | cut -d' ' -f1)" "$EXSUM"
+    t_eq "...the export holds the signing key and the legal name" "$(grep -c '^AICC_LM_PLUGIN_SIGNING_PUBKEYS=\|^AICC_LEGAL_ENTITY_NAME=' "$OFD/export.env")" "2"
+    chmod 600 "$OFD/export.env"
+    rm -f "$OFF"
+    t_ok "import re-enters the export on a host that has NO facts file (rebuilt host)" OFT import "$OFD/export.env"
+    t_eq "...mode 0600" "$(mode "$OFF")" "600"
+    t_eq "...identical content" "$(sha "$OFF")" "$EXSUM"
+    t_ok "...importing the same file again is idempotent" OFT import "$OFD/export.env"
+    OFT set AICC_ACTIVATION_PROOF_KID other1 >/dev/null
+    t_rc "import refuses to merge into / overwrite a DIFFERENT existing facts file" 1 OFT import "$OFD/export.env"
+    t_contains "...the existing value is untouched" "$(OFT list)" "AICC_ACTIVATION_PROOF_KID=other1"
+    rm -f "$OFF"
+    t_rc "import of a relative path is refused" 1 OFT import export.env
+    t_rc "import of a missing file is refused" 1 OFT import "$OFD/nonexistent.env"
+    printf 'AICC_LM_PLUGIN_SIGNING_PUBKEYS=%s\n' "bad" > "$OFD/bad-export.env"; chmod 600 "$OFD/bad-export.env"
+    t_rc "import validates every value: an invalid export is refused" 1 OFT import "$OFD/bad-export.env"
+    t_fail "...and no facts file was created" test -e "$OFF"
+    t_rc "import for stage refuses a production-only key (the file is validated for the host's environment)" 1 OFTS import "$OFD/export.env"
+    ln -sfn "$OFD/export.env" "$OFD/export-link.env"
+    t_rc "import through a symbolic link is refused" 1 OFT import "$OFD/export-link.env"
+    printf 'AICC_ACTIVATION_PROOF_KID=k1\n' > "$OFF"; chmod 600 "$OFF"
+    t_rc "unknown command still refused (exit 2)" 2 OFT frobnicate
     t_ok "the owner-facts command and its validator are installed with the renderer (install-stack scripts step)" bash -c "test -x '$PFX/usr/local/lib/aicc/provision/owner-facts.sh' && test -f '$PFX/usr/local/lib/aicc/provision/lib/owner_facts.py' && test -L '$PFX/usr/local/sbin/aicc-owner-facts'"
     t_not_contains "the stale template says nothing about 'NOT usable' any more" "$(cat "$PROV/wp-config.stage.template.php")" "NOT usable"
     t_rc "rendering without the DB password file is refused" 1 env AICC_TEST_HARNESS=1 bash "$PROV/render-wp-config.sh" --out "$WC/x.php" --secrets-dir "$TMP/emptysecrets"
