@@ -24,6 +24,14 @@ KNOWN_REASONS = {
 MAX_REASONS_PER_METRIC = 8
 MAX_CATCHUP_MIN = 15
 NO_TABLE = 1146
+# Entitlement outbox gauges (Control Plane -> Backend webhook delivery; architecture review M1). Names are frozen with the Control Plane's
+# AICC_LM_Ops_Counters::gauges(): the three below are the ones read here, computed from the live outbox table with the same definitions
+# (pending = still retrying; oldest pending age includes an exhausted event that is still the newest of its activation; abandoned = exhausted
+# and still the newest of its activation). Counts and ages only: no identifier leaves the query.
+OUTBOX_GAUGES = ("entitlement_outbox_pending", "entitlement_outbox_oldest_pending_age_s", "entitlement_outbox_abandoned")
+OUTBOX_MAX_ATTEMPTS_DEFAULT = 8   # AICC_LM_Entitlement_Dispatcher::MAX_ATTEMPTS
+# MySQL errors that mean "this account / this Control Plane version does not offer the outbox table (yet)": the gauges are simply absent, never an alert or a failing collector
+OUTBOX_ABSENT_CODES = (1146, 1142, 1143, 1044, 1045)
 
 
 def counters_sql(prefix: str, from_minute: int, to_minute: int) -> str:
@@ -48,6 +56,26 @@ def heartbeat_sql(prefix: str) -> str:
 def fallback_cron_sql(prefix: str) -> str:
     return ("SELECT 'wc_cron_last_run_age_seconds', TIMESTAMPDIFF(SECOND, MAX(last_attempt_gmt), UTC_TIMESTAMP()) "
             f"FROM `{prefix}actionscheduler_actions` WHERE status='complete' AND last_attempt_gmt > '1970-01-02'")
+
+
+def outbox_sql(prefix: str, max_attempts: int) -> str:
+    """One round trip, three rows 'name<TAB>value'. prefix is validated by config.validate and max_attempts is an int => no injection surface."""
+    t, m = f"`{prefix}aicc_lm_entitlement_outbox`", int(max_attempts)
+    newest = f"NOT EXISTS (SELECT 1 FROM {t} n WHERE n.activation_ref = o.activation_ref AND n.id > o.id)"
+    return (f"SELECT 'entitlement_outbox_pending', COUNT(*) FROM {t} WHERE delivered_at IS NULL AND attempts < {m} "
+            f"UNION ALL SELECT 'entitlement_outbox_oldest_pending_age_s', IFNULL(GREATEST(0, TIMESTAMPDIFF(SECOND, MIN(o.created_at), UTC_TIMESTAMP())), 0) FROM {t} o "
+            f"WHERE o.delivered_at IS NULL AND (o.attempts < {m} OR {newest}) "
+            f"UNION ALL SELECT 'entitlement_outbox_abandoned', COUNT(*) FROM {t} o WHERE o.delivered_at IS NULL AND o.attempts >= {m} AND {newest}")
+
+
+def parse_outbox(text: str) -> dict:
+    """-> {'cp.<gauge>': value} for exactly the known names with a plain non-negative integer; anything else is dropped."""
+    out = {}
+    for line in text.splitlines():
+        p = line.split("\t")
+        if len(p) == 2 and p[0] in OUTBOX_GAUGES and re.fullmatch(r"\d{1,12}", p[1].strip()):
+            out[f"cp.{p[0]}"] = float(p[1])
+    return out
 
 
 def parse_counters(text: str, minutes: int) -> dict:
@@ -110,6 +138,16 @@ def collect(full_cfg, cfg, state, now) -> Result:
     except MysqlError as e:
         if e.code != NO_TABLE:  # WooCommerce / Action Scheduler not installed yet is fine
             res.errors.append(f"action scheduler query failed: mysql error {e.code}")
+    # Entitlement outbox gauges: tolerant of absence (table not created yet, no SELECT grant, an older Control Plane). cp.outbox_reporting says which; no error, no alert.
+    try:
+        g = parse_outbox(run_sql(cfg, outbox_sql(prefix, cfg.get("outbox_max_attempts", OUTBOX_MAX_ATTEMPTS_DEFAULT)), cfg.get("timeout_s", 10), database=db))
+        if len(g) == len(OUTBOX_GAUGES):
+            res.metrics.update(g)
+            res.metrics["cp.outbox_reporting"] = 1.0
+        else:
+            res.metrics["cp.outbox_reporting"] = 0.0
+    except MysqlError:
+        res.metrics["cp.outbox_reporting"] = 0.0
     age = None
     for sql in (heartbeat_sql(prefix), fallback_cron_sql(prefix)):
         try:

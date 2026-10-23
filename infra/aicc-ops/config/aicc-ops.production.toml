@@ -82,6 +82,7 @@ user = "aicc_monitor"
 database = "aicc_cp"
 prefix = "wp_"
 window_minutes = 5
+outbox_max_attempts = 8       # AICC_LM_Entitlement_Dispatcher::MAX_ATTEMPTS: entitlement outbox gauges (pending / oldest age / abandoned) alert as entitlement_outbox_stale (WARNING, > 15 min) and entitlement_outbox_abandoned (CRITICAL, > 0). Needs SELECT on <prefix>aicc_lm_entitlement_outbox (sql/monitoring-user.sql); absent = "not reporting", never an alert
 
 [collectors.backups]
 enabled = true

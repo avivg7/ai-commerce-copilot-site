@@ -19,6 +19,9 @@ GRANT PROCESS ON *.* TO 'aicc_monitor'@'localhost';
 -- Only these two tables are readable; both hold aggregate/operational data, no customer rows:
 --   GRANT SELECT ON `<db>`.`<prefix>aicc_ops_counters`       TO 'aicc_monitor'@'localhost';
 --   GRANT SELECT ON `<db>`.`<prefix>actionscheduler_actions` TO 'aicc_monitor'@'localhost';
+-- Entitlement delivery gauges (Control Plane -> Backend webhook outbox; alerts entitlement_outbox_stale / entitlement_outbox_abandoned). OPTIONAL: without this grant the collector
+-- reports "not reporting" and raises no alert. COLUMN-level grant: only the five columns the gauge query reads; no event id, license reference, plan or expiry is readable.
+--   GRANT SELECT (id, activation_ref, attempts, delivered_at, created_at) ON `<db>`.`<prefix>aicc_lm_entitlement_outbox` TO 'aicc_monitor'@'localhost';
 -- Cron heartbeat (option `aicc_ops_cron_last_run`): reading it needs SELECT on `<prefix>options`, which ALSO holds site secrets.
 -- That is an OWNER DECISION and is NOT granted by default; without it the collector falls back to the newest completed
 -- Action Scheduler action for `wc_cron_last_run_age_seconds`. If you accept the trade-off:

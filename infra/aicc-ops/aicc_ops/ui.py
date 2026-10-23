@@ -105,6 +105,8 @@ GROUPS = {
         ("Orders per checkout start (approximate ratio)", [("cp.order_per_checkout_ratio", "ratio", "s3")], "num", None),
         ("Licensing (per minute)", [("cp.license_issued_per_min", "issued", "s3"), ("cp.license_lifecycle_failure_per_min", "lifecycle failure", "s5"), ("cp.store_connection_per_min", "store connection", "s1")], "num", None),
         ("Scheduled actions", [("cp.action_scheduler_pending", "pending", "s1"), ("cp.action_scheduler_failed", "failed (24h)", "s5")], "num", None),
+        ("Entitlement delivery to the Backend (gauges)", [("cp.entitlement_outbox_pending", "retrying", "s1"), ("cp.entitlement_outbox_abandoned", "abandoned", "s5")], "num", None),
+        ("Oldest undelivered entitlement event (s)", [("cp.entitlement_outbox_oldest_pending_age_s", "age", "s3")], "num", None),
     ]),
     "backend": ("API backend (optional)", [
         ("API requests per second by class", [("backend.rate_2xx", "2xx", "s3"), ("backend.rate_4xx", "4xx", "s2"), ("backend.rate_5xx", "5xx", "s5")], "num", None),
@@ -268,6 +270,13 @@ class Pages:
             rtxt = f"orders per checkout start ≈ {ratio:.2f} (checkout_start is approximate, not an exact funnel); " if ratio is not None else ""
             c.append(self.card("Control Plane counters (per min)", esc(lines or "all zero in the last interval"),
                                f"{rtxt}scheduled actions pending {L('cp.action_scheduler_pending') or 0:.0f}, failed(24h) {L('cp.action_scheduler_failed') or 0:.0f}"))
+        if L("cp.outbox_reporting") is not None:
+            if L("cp.outbox_reporting") == 1:
+                ab, ag = L("cp.entitlement_outbox_abandoned") or 0, L("cp.entitlement_outbox_oldest_pending_age_s") or 0
+                c.append(self.card("Entitlement delivery (CP to Backend)", f"{L('cp.entitlement_outbox_pending') or 0:.0f} retrying, {ab:.0f} abandoned",
+                                   f"oldest undelivered event {ag / 60:.0f} min old (warn above 15 min; abandoned above 0 is critical)", "st-crit" if ab > 0 else "st-warn" if ag > 900 else "st-ok"))
+            else:
+                c.append(self.card("Entitlement delivery (CP to Backend)", "not reporting", "the outbox gauges are unavailable (table missing, no SELECT grant, or an older Control Plane): no alert is raised for this"))
         if L("backend.up") is not None:
             c.append(self.card("API backend (loopback metrics)", "answering" if L("backend.up") == 1 else "NOT ANSWERING",
                                f"{L('backend.req_rate') or 0:.2f} req/s, 5xx {L('backend.rate_5xx') or 0:.2f}/s, postgres {'up' if L('backend.postgres_up') == 1 else 'DOWN' if L('backend.postgres_up') == 0 else 'n/a'}",

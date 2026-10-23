@@ -631,3 +631,55 @@ class FpmMaxChildren(unittest.TestCase):
         series = [{"fpm.log_events_15m": 12.0, "fpm.log_events_5m": 6.0}] * 3 + [{"fpm.log_events_15m": 0.0, "fpm.log_events_5m": 0.0}] * 12
         notes, _ = run_rule("fpm_max_children", series)
         self.assertEqual([n.kind for _, n in notes], [FIRING, RECOVERED])
+
+
+class EntitlementOutbox(unittest.TestCase):
+    """Architecture review M1: the Control Plane's entitlement outbox gauges alert on the Site side (WARNING: oldest undelivered > 15 min; CRITICAL: any abandoned)."""
+
+    def test_rules_exist_with_frozen_gauge_names_and_thresholds(self):
+        self.assertEqual(RULES["entitlement_outbox_stale"].params["warn_s"], 900)
+        self.assertTrue(RULES["entitlement_outbox_stale"].enabled and RULES["entitlement_outbox_abandoned"].enabled)
+        from aicc_ops.collectors.cp import OUTBOX_GAUGES
+        self.assertEqual(OUTBOX_GAUGES, ("entitlement_outbox_pending", "entitlement_outbox_oldest_pending_age_s", "entitlement_outbox_abandoned"))
+
+    def test_absent_gauges_never_alert(self):
+        for rid in ("entitlement_outbox_stale", "entitlement_outbox_abandoned"):
+            self.assertEqual(obs(rid, win(**{"cp.action_scheduler_pending": [3]})), [], rid)
+
+    def test_stale_threshold_is_fifteen_minutes(self):
+        for age, want in ((0, False), (300, False), (900, False), (901, True), (7200, True)):
+            o = obs("entitlement_outbox_stale", win(**{"cp.entitlement_outbox_oldest_pending_age_s": [age], "cp.entitlement_outbox_pending": [2]}))[0]
+            self.assertEqual(o.breach, want, age)
+            self.assertEqual(o.severity, WARNING)
+        self.assertTrue(obs("entitlement_outbox_stale", win(**{"cp.entitlement_outbox_oldest_pending_age_s": [100]}))[0].clear)
+        self.assertIn("not reaching" if False else "min old", obs("entitlement_outbox_stale", win(**{"cp.entitlement_outbox_oldest_pending_age_s": [1800]}))[0].text)
+
+    def test_abandoned_is_critical_from_one(self):
+        o = obs("entitlement_outbox_abandoned", win(**{"cp.entitlement_outbox_abandoned": [1]}))[0]
+        self.assertTrue(o.breach)
+        self.assertEqual(o.severity, CRITICAL)
+        o0 = obs("entitlement_outbox_abandoned", win(**{"cp.entitlement_outbox_abandoned": [0]}))[0]
+        self.assertFalse(o0.breach)
+        self.assertTrue(o0.clear)
+
+    def test_state_machine_same_dedupe_and_cooldown_pattern(self):
+        # the stale rule needs 2 consecutive samples, notifies once, then stays quiet through the cooldown and recovers after 2 clear samples
+        eng = AlertEngine([RULES["entitlement_outbox_stale"]])
+        notes = []
+        for i in range(6):
+            notes += eng.evaluate(win(**{"cp.entitlement_outbox_oldest_pending_age_s": [2000], "cp.entitlement_outbox_pending": [3]}), T + i * 30)
+        self.assertEqual([n.kind for n in notes], [FIRING])
+        self.assertEqual(notes[0].severity, WARNING)
+        for i in range(6, 9):
+            notes += eng.evaluate(win(**{"cp.entitlement_outbox_oldest_pending_age_s": [0], "cp.entitlement_outbox_pending": [0]}), T + i * 30)
+        self.assertEqual([n.kind for n in notes], [FIRING, RECOVERED])
+        # abandoned: fires on the FIRST sample, as CRITICAL, once
+        eng = AlertEngine([RULES["entitlement_outbox_abandoned"]])
+        notes = []
+        for i in range(5):
+            notes += eng.evaluate(win(**{"cp.entitlement_outbox_abandoned": [2]}), T + i * 30)
+        self.assertEqual([(n.kind, n.severity) for n in notes], [(FIRING, CRITICAL)])
+        # not reporting after it fired: the state is unchanged (no false RECOVERED)
+        for i in range(5, 12):
+            notes += eng.evaluate(win(**{"cp.action_scheduler_pending": [1]}), T + i * 30)
+        self.assertEqual([n.kind for n in notes], [FIRING])
