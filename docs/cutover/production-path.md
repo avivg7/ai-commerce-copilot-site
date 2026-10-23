@@ -20,7 +20,7 @@ Two environments share one code path and differ only through reviewed, enumerate
 | Deploy client (Mac) | `infra/release/deploy-release.sh` (`--env stage` default, `--env production`) | the operator |
 | Activation / rollback / status (host) | `activate-release.sh`, `rollback-release.sh`, `deploy-status.sh` → `aicc-activate-release`, `aicc-rollback-release`, `aicc-deploy-status` | env-agnostic |
 | Edge | `docs/cutover/Caddyfile.edge.template`, `scripts/ops/render-edge.mjs --mode production` | the host; validated with Caddy 2.11.7 (`caddy validate`) on the Mac |
-| Site build | `infra/release/build-site-release.sh --target production` | the Mac |
+| Site build | `infra/release/build-site-release.sh --target production --cp-worktree <CP worktree>` | the Mac |
 | CP build | `infra/release/build-cp-release.sh --cp-worktree <CP worktree>` (env-agnostic artifact; opt-in `--with-payplus` packages the pinned PayPlus plugin, see the PayPlus payment kit, Control Plane `docs/launch/payplus-owner-kit.md`) | the Mac |
 
 ## 3. What differs between the stage and the production configuration (pinned by a test)

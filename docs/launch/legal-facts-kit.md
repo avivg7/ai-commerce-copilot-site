@@ -1,8 +1,8 @@
 # 03. LEGAL FACTS KIT: one form, one mapping, the commands
 
 Prepared 2026-10-23 by agent kitB. Not legal advice; no legal answer is invented here, and no value was applied anywhere.
-Verified against: Site `launch/integration` ad30a00 (`src/lib/site.ts`, `scripts/launch-check.mjs`, `docs/launch/owner-facts-batch.md`, `src/i18n/en.ts`), Control Plane `launch/integration` 8114ee2 (`class-aicc-lm-legal-config.php`, `class-aicc-lm-legal-documents.php`, `scripts/check-launch-blockers.php`, `scripts/seed-legal-documents.php`, `scripts/legal-source/*.md`).
-Files: the form is `03a-LEGAL-FACTS-FORM.md` (this folder). Repo copies (local branch `launch/kitB`, committed, not pushed): Site `docs/launch/legal-facts-kit.md` (this file) and CP `docs/launch/legal-facts-form.md` (the form).
+Verified against heads: Site 914fade CP 7d61559 Plugin c879b4a Backend 1f99cc0 (2026-10-23). Files read: Site `src/lib/site.ts`, `scripts/launch-check.mjs`, `docs/launch/owner-facts-batch.md`, `src/i18n/en.ts`; Control Plane `class-aicc-lm-legal-config.php`, `class-aicc-lm-legal-documents.php`, `scripts/check-launch-blockers.php`, `scripts/seed-legal-documents.php`, `scripts/legal-source/*.md`.
+Files: the form is `03a-LEGAL-FACTS-FORM.md` (this folder). Repo copies (branch `launch/integration`, local, not pushed; the kit files in the hand-off folder are byte copies): Site `docs/launch/legal-facts-kit.md` (this file) and CP `docs/launch/legal-facts-form.md` (the form).
 
 ---------------------------------------------------------------------------------------------------
 
@@ -33,7 +33,7 @@ Site variables are BUILD-TIME environment variables of the static export (public
 |---|---|---|---|---|---|
 | F1 legal entity name | `NEXT_PUBLIC_AICC_LEGAL_NAME` | `AICC_LEGAL_ENTITY_NAME` | `[AICC LEGAL ENTITY NAME]`: Terms (2 places), Privacy (2), Refund (2), DPA (1) | `{companyDetails}` in Terms "agreement" and Privacy "who we are"; footer (name; "AICC" is the fallback) | none beyond the documents |
 | F2 registered address | `NEXT_PUBLIC_AICC_ADDRESS` | `AICC_LEGAL_ENTITY_ADDRESS` | `[REGISTERED BUSINESS ADDRESS]`: Terms (2) | `{companyDetails}` (printed only together with the name) | none |
-| F3 support email | `NEXT_PUBLIC_AICC_SUPPORT_EMAIL` | `AICC_LEGAL_SUPPORT_EMAIL` | `[LEGAL/SUPPORT EMAIL]`: Terms (3, incl. 15.4), Privacy (2), Refund (2) | footer, 404 page, pricing FAQ ("which plan"), questions page hero, Accessibility "report", Data and trust "requests", Privacy (requests, rights, changes), Refund "how", Terms "contact" | theme footer, My Account panels (licenses, plugin download, recovery), default `Reply-To` of every outgoing mail (`AICC_MAIL_REPLY_TO` defaults to it), launch rule 5e |
+| F3 support email | `NEXT_PUBLIC_AICC_SUPPORT_EMAIL` | `AICC_LEGAL_SUPPORT_EMAIL` | `[LEGAL/SUPPORT EMAIL]`: Terms (3, incl. 15.4), Privacy (2), Refund (2) | footer, 404 page, pricing FAQ ("which plan"), questions page hero, Accessibility "report", Data and trust "requests", Privacy (requests, rights, changes), Refund "how", Terms "contact" | theme footer, My Account panels (licenses, plugin download, recovery), launch rule 5e. NOT the mail headers: the production wp-config template hard-defines `AICC_MAIL_FROM_ADDRESS` and `AICC_MAIL_REPLY_TO` as `support@copilt.org`, so a different F3 does NOT change From/Reply-To. If F3 differs from `support@copilt.org`, either choose F3 = `support@copilt.org`, or change the two template constants and re-test DMARC alignment (kit 02) before any customer mail |
 | F4 governing law | `NEXT_PUBLIC_AICC_GOVERNING_LAW` (law AND courts, one line) | `AICC_LEGAL_GOVERNING_LAW` | `[GOVERNING LAW]`: Terms (2) | Terms "law" section: "Governing law and courts: {value}" | none |
 | F5 courts / jurisdiction | (inside the line above) | `AICC_LEGAL_JURISDICTION` | `[EXCLUSIVE/NON-EXCLUSIVE JURISDICTION]`: Terms 28 (2); the word `[EXCLUSIVE/NON-EXCLUSIVE]` (1) has NO configuration key: counsel item C-1 | Terms "law" | none |
 | F6 payment processor | `NEXT_PUBLIC_AICC_PAYMENT_PROCESSOR` | `AICC_LEGAL_PAYMENT_PROCESSOR` | `[PAYMENT PROCESSOR]`: Terms (2), Privacy (2), Refund (2), DPA (2) | "Payment processor: {value}" in Terms "fees", Privacy "account", Refund "rights", pricing FAQ | the Site value must also be on `REAL_GATEWAY_ALLOWLIST`; the CP gateway ids are separate (kit 01 section 3) |
@@ -79,7 +79,7 @@ npm run launch:check -- --strict          # fails on: any unset fact; a fake sup
                                           # machine-translation disclosure; checkout page live while the allowlist is empty
 AICC_CHECKOUT_URL=https://www.copilt.org/checkout/ npm run launch:check -- --strict     # later, against the live checkout
 ```
-The production RELEASE is built by `infra/release/build-site-release.sh --target production --out-dir ~/aicc-releases` from the same shell (it runs `npm run build` and inherits the environment): export the facts BEFORE running it, or the release publishes pending lines.
+The production RELEASE is built by `infra/release/build-site-release.sh --target production --cp-worktree "$CPW" --out-dir ~/aicc-releases` from the same shell (it runs `npm run build` and inherits the environment): export the facts BEFORE running it, or the release publishes pending lines.
 
 ### 4.2 Control Plane (local/QA, and production through `aicc-owner-facts`: section 2.1)
 ```bash

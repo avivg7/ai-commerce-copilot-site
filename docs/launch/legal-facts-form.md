@@ -1,5 +1,7 @@
 # 03a. LEGAL AND BUSINESS FACTS: the ONE form (fill it once)
 
+Verified against heads: Site 914fade CP 7d61559 Plugin c879b4a Backend 1f99cc0 (2026-10-23).
+
 Copy this file to a private place outside every repository (for example `~/aicc-owner/legal-facts.md`, `chmod 600`) and fill the right-hand column. Do NOT paste the filled form into chat, git or a ticket. When it is complete, tell Claude "facts form complete" and where it is; Claude reads that file locally and applies it (kit 03, section 4).
 Not legal advice. A blank answer stays blank: nothing is invented, the sites then show a visible "pending" line and the launch checks fail on purpose.
 
@@ -21,7 +23,7 @@ Not legal advice. A blank answer stays blank: nothing is invented, the sites the
 
 ## Part 2. DECISIONS ONLY COUNSEL CAN MAKE (no value can fill them; give this table to your lawyer)
 
-Source: Site `docs/launch/owner-facts-batch.md` section C and `docs/launch/legal-readiness.md`, re-read at ad30a00 on 2026-10-23. Proposed wording for each is in `legal-readiness.md`. Mark each when done.
+Source: Site `docs/launch/owner-facts-batch.md` section C and `docs/launch/legal-readiness.md`, re-read at Site 914fade on 2026-10-23. Proposed wording for each is in `legal-readiness.md`. Mark each when done.
 
 | # | Counsel item | Where | Status |
 |---|---|---|---|
