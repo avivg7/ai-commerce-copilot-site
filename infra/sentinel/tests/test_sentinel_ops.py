@@ -444,6 +444,17 @@ class ProductionAndGithubPack(unittest.TestCase):
                 self.assertNotIn(forbidden, t["url"])
         self.assertNotIn("stage.copilt.org", rd(self.PRODT))
 
+    def test_production_api_health_requires_enforced_entitlement_mode_only_after_the_backend_cutover(self):
+        by = {t["name"]: t for t in S.load_config(self.PRODT)["targets"]}
+        self.assertEqual(by["api-health"]["expect_body"], '"entitlement_mode":"enforced"')
+        self.assertEqual(by["api-health"]["url"], "https://api.copilt.org/health")
+        self.assertEqual(by["api-health"]["method"], "GET")
+        # the dark and stage phases must NOT page on "shadow": no such expectation there
+        for path in (self.DARK, os.path.join(ROOT, "targets.stage.toml"), os.path.join(self.GH, "targets.github.toml")):
+            for t in S.load_config(path)["targets"]:
+                self.assertNotIn("entitlement_mode", " ".join(S.as_list(t["expect_body"])), path)
+        self.assertNotIn("entitlement_mode", rd(os.path.join(ROOT, "..", "..", "docs", "launch", "ops-owner-kit", "scripts", "sentinel-phase.sh")))
+
     def test_dark_targets_watch_only_the_existing_api(self):
         cfg = S.load_config(self.DARK)
         self.assertEqual([t["name"] for t in cfg["targets"]], ["api-health"])

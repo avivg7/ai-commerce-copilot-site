@@ -49,9 +49,13 @@ expect_body = "<title"
 latency_ms = 3000
 
 # Production API, WATCH ONLY: read-only GET /health, nothing here is ours to change.
+# expect_body: the Backend's /health reports "entitlement_mode" (shadow | enforced). This file is the AFTER-CUTOVER phase (installed at DNS cutover step I.1, when the new Backend release is live and
+# kit 04 steps 13 to 15 are green): from then on a Backend that still answers "shadow" means customers could be served without entitlement enforcement, so the sentinel pages. The stage and DARK
+# phases (targets.dark.toml and the stage targets) deliberately do NOT carry this check: before the Backend cutover "shadow" is the expected, correct state and must never page.
 [[target]]
 name = "api-health"
 url = "https://api.copilt.org/health"
 interval_s = 300
 expect_status = 200
+expect_body = '"entitlement_mode":"enforced"'
 latency_ms = 3000

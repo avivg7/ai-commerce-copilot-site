@@ -124,6 +124,22 @@ class HttpsBehaviour(Base):
         self.assertEqual(r["status"], 200)
         self.assertAlmostEqual(r["tls_days"], 90, delta=0.2)
 
+    def test_production_entitlement_mode_expectation_matches_enforced_and_pages_on_shadow(self):
+        """The real expect_body of targets.production.toml (api-health) against Backend-shaped /health bodies (FastAPI compact JSON)."""
+        prod = {t["name"]: t for t in S.load_config(os.path.join(os.path.dirname(os.path.dirname(__file__)), "targets.production.toml"))["targets"]}
+        want = prod["api-health"]["expect_body"]
+        bodies = {"enforced": b'{"status":"ok","database":"ok","version":"1.2.3","build":"abc1234","entitlement_mode":"enforced"}',
+                  "shadow": b'{"status":"ok","database":"ok","version":"1.2.3","build":"abc1234","entitlement_mode":"shadow"}',
+                  "old": b'{"status":"ok","database":"ok"}'}
+        res = {}
+        for name, body in bodies.items():
+            self.srv.script = lambda n, path, b=body: (200, b, {})
+            res[name] = S.probe(self.t(expect_body=want))
+        self.assertTrue(res["enforced"]["ok"], res["enforced"])
+        self.assertFalse(res["shadow"]["ok"])
+        self.assertEqual(res["shadow"]["stage"], "body")
+        self.assertFalse(res["old"]["ok"])      # a Backend that does not report the mode yet is also not "enforced"
+
     def test_request_is_get_only_with_identifying_ua_and_no_credentials(self):
         S.probe(self.t())
         S.probe(self.t(method="HEAD"))
