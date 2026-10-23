@@ -4,10 +4,19 @@
 # this script verifies, transfers and calls it; it implements none of the installer's rules itself except the same local pre-checks, so a bad artifact is refused before any network access.
 #
 #   infra/release/publish-plugin-release.sh --zip <ai-commerce-copilot-X.zip> --manifest <...X.manifest.json> [--sha256-file <...X.zip.sha256>] --installer <install-plugin-release.sh>
-#        --stage-host H --stage-ip IPV4 --stage-id <32 hex> [--set-current] [--key K] [--user aicc] [--dry-run] [--check-only]
+#        --stage-host H --stage-ip IPV4 --stage-id <32 hex> [--signature <...X.manifest.sig>] [--plugin-dir <Plugin repo or build dir>] [--pubkeys <b64[,b64]>]
+#        [--allow-unsigned (STAGING ONLY)] [--set-current] [--key K] [--user aicc] [--dry-run] [--check-only]
 #   infra/release/publish-plugin-release.sh --point-at <version> --installer <install-plugin-release.sh> --stage-host H --stage-ip IPV4 --stage-id ID [--key K]      (roll back / forward; nothing uploaded but the installer)
 #   PRODUCTION (--env production): --stage-host www.copilt.org, --key ~/.ssh/aicc_cp_prod*, --known-hosts <pinned file>, --confirm-production <the version>, and --apply.
 #        WITHOUT --apply a production run is a DRY RUN (local verification + the plan; no network).
+#
+# SIGNED UPDATE CHANNEL (docs/launch/update-signing.md in the Plugin repo): the release must come with the owner's OFFLINE Ed25519 signature, ai-commerce-copilot-<version>.manifest.sig (made by the
+# Plugin's `php bin/sign-release.php sign`; found next to the manifest or given with --signature). It is checked here as far as possible, uploaded next to the ZIP and the manifest, and passed to the
+# host installer with --signature (which verifies it again BEFORE installing, and keeps it immutable). Local checks: the file is a regular file named for the manifest's version, is JSON with
+# alg ed25519, a 64-byte base64 signature and a signing time; and, when the Plugin's tool and the owner's PUBLIC key list are available (--plugin-dir holding bin/sign-release.php and
+# release/endpoints.conf UPDATE_PUBLIC_KEYS, or --pubkeys with --plugin-dir), `php bin/sign-release.php verify` must pass AND every public key baked into the ZIP must be on that list.
+# --env production REFUSES a release whose signature could not be verified that way, and never accepts --allow-unsigned. Staging may publish an unsigned release only with the explicit
+# --allow-unsigned flag (the store then never offers it to a merchant's updater). --point-at (roll back / forward) needs none of this: the installer re-verifies the installed signature.
 #
 # Local verification (refuses with exit 3 before any network access):
 #   * the ZIP is named ai-commerce-copilot-<strict version>.zip; the manifest names the same slug/version/file name; SHA-256 and size of the ZIP equal the manifest's;
@@ -23,6 +32,7 @@ set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$HERE/../provision/lib/ip-guard.sh"
 ZIP=""; MAN=""; SHAF=""; INSTALLER=""; SHOST=""; SIP=""; SID=""; KEY=""; USER_NAME="aicc"; ENVN="stage"; KNOWN_HOSTS=""; CONFIRM=""; APPLY=0; DRY=0; CHECK_ONLY=0; SETCUR=0; POINT=""
+SIGARG=""; ALLOW_UNSIGNED=0; PLUGDIR=""; PUBKEYS=""
 RELDIR="/srv/aicc/shared/plugin-releases"
 DENY_IPS="139.59.157.231 185.199.108.153 185.199.109.153 185.199.110.153 185.199.111.153"
 while [ $# -gt 0 ]; do
@@ -31,7 +41,8 @@ while [ $# -gt 0 ]; do
     --stage-host) SHOST="${2:-}"; shift 2 ;; --stage-ip) SIP="${2:-}"; shift 2 ;; --stage-id) SID="${2:-}"; shift 2 ;; --key) KEY="${2:-}"; shift 2 ;; --user) USER_NAME="${2:-}"; shift 2 ;;
     --env) ENVN="${2:-}"; shift 2 ;; --known-hosts) KNOWN_HOSTS="${2:-}"; shift 2 ;; --confirm-production) CONFIRM="${2:-}"; shift 2 ;; --apply) APPLY=1; shift ;;
     --dry-run) DRY=1; shift ;; --check-only) CHECK_ONLY=1; shift ;; --set-current) SETCUR=1; shift ;; --point-at) POINT="${2:-}"; shift 2 ;;
-    -h|--help) sed -n 2,26p "${BASH_SOURCE[0]}"; exit 0 ;;
+    --signature) SIGARG="${2:-}"; shift 2 ;; --allow-unsigned) ALLOW_UNSIGNED=1; shift ;; --plugin-dir) PLUGDIR="${2:-}"; shift 2 ;; --pubkeys) PUBKEYS="${2:-}"; shift 2 ;;
+    -h|--help) sed -n 2,34p "${BASH_SOURCE[0]}"; exit 0 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
 done
@@ -42,8 +53,13 @@ VER_RE='^[0-9]{1,4}\.[0-9]{1,4}\.[0-9]{1,4}(-[0-9A-Za-z]+(\.[0-9A-Za-z]+)*)?$'
 if [ -n "$POINT" ]; then
   [ -z "$ZIP$MAN$SHAF" ] || refuse "--point-at cannot be combined with --zip/--manifest/--sha256-file"
   [[ "$POINT" =~ $VER_RE ]] || refuse "--point-at: not a strict version: $POINT"
+  [ -z "$SIGARG" ] && [ "$ALLOW_UNSIGNED" = 0 ] || refuse "--point-at takes neither --signature nor --allow-unsigned: the installer re-verifies the signature already installed with that version"
 else
   [ -n "$ZIP" ] && [ -n "$MAN" ] || { echo "--zip and --manifest are required (or --point-at VERSION)" >&2; exit 2; }
+  if [ "$ALLOW_UNSIGNED" = 1 ]; then
+    [ "$ENVN" != production ] || refuse "--allow-unsigned is never accepted with --env production: the owner's signature is mandatory there"
+    [ -z "$SIGARG" ] || refuse "--allow-unsigned together with --signature is ambiguous: give one"
+  fi
 fi
 [[ "$SIP" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]] || refuse "--stage-ip must be a literal IPv4 address"
 aicc_ip_guard "$SIP" "--stage-ip " || exit 3
@@ -104,6 +120,66 @@ PY
   [ -n "$SHAF" ] || echo "NOTE: no --sha256-file given: the expected hash is taken from the manifest, which travels with the ZIP. Pass the build machine's .sha256 file so a swapped ZIP+manifest pair is caught." >&2
   WANTV="$VERSION"
 fi
+# ---- the owner's signature (A-02): present, sane, named for this version, verified against the owner's public key list where possible ----------------
+SIGFILE=""; SIGNAME=""; SIGVERIFIED=0; SIGNOTE=""
+if [ -z "$POINT" ]; then
+  if [ "$ALLOW_UNSIGNED" = 1 ]; then
+    echo "WARNING: publishing $VERSION WITHOUT a signature (--allow-unsigned, staging only): no merchant's updater will ever be offered it, and the Control Plane launch gate fails while it is current." >&2
+    SIGNOTE="UNSIGNED (--allow-unsigned, staging only)"
+  else
+    SIGNAME="ai-commerce-copilot-$VERSION.manifest.sig"
+    SIGFILE="${SIGARG:-${MAN%.json}.sig}"
+    if [ ! -f "$SIGFILE" ] || [ -L "$SIGFILE" ]; then
+      refuse "no signature: $SIGFILE is not a regular file. Sign the manifest OFFLINE first (php bin/sign-release.php sign --manifest ..., docs/launch/update-signing.md) and put the .manifest.sig next to it or pass --signature. Staging only: --allow-unsigned."
+    fi
+    [ "$(basename "$SIGFILE")" = "$SIGNAME" ] || refuse "the signature file is named $(basename "$SIGFILE") but must be $SIGNAME (the manifest's version): a signature made for another release"
+    python3 -I - "$SIGFILE" <<'PY' || exit 3
+import base64, json, os, re, sys
+def fail(m): sys.stderr.write("REFUSED: signature file: " + m + "\n"); sys.exit(1)
+p = sys.argv[1]
+if os.path.getsize(p) > 4096: fail("too large to be a signature")
+try: d = json.load(open(p))
+except Exception: fail("not JSON")
+if not isinstance(d, dict) or d.get("alg") != "ed25519": fail("alg is not ed25519")
+s = d.get("signature")
+try: raw = base64.b64decode(s, validate=True) if isinstance(s, str) and len(s) <= 128 else b""
+except Exception: raw = b""
+if len(raw) != 64: fail("the signature is not 64 base64-encoded bytes")
+if not isinstance(d.get("issued_at"), str) or not re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", d["issued_at"]): fail("issued_at is missing or malformed")
+if not isinstance(d.get("key_id"), str) or not re.fullmatch(r"[0-9a-f-]{1,64}", d["key_id"]): fail("key_id is missing or malformed")
+PY
+    # the owner's PUBLIC key list: --pubkeys, else release/endpoints.conf UPDATE_PUBLIC_KEYS of the Plugin build dir
+    KEYS="$PUBKEYS"
+    if [ -z "$KEYS" ] && [ -n "$PLUGDIR" ] && [ -f "$PLUGDIR/release/endpoints.conf" ]; then
+      KEYS="$(sed -n 's/^UPDATE_PUBLIC_KEYS=//p' "$PLUGDIR/release/endpoints.conf" | head -1 | tr -d ' \r')"
+    fi
+    PHPBIN="${PHP_BIN:-php}"
+    if [ -n "$KEYS" ] && [ -n "$PLUGDIR" ] && [ -f "$PLUGDIR/bin/sign-release.php" ] && command -v "$PHPBIN" >/dev/null 2>&1; then
+      [[ "$KEYS" =~ ^[A-Za-z0-9+/]{43}=(,[A-Za-z0-9+/]{43}=)?$ ]] || refuse "the public key list is malformed (one or two base64 keys of 32 bytes, comma separated)"
+      vout="$("$PHPBIN" "$PLUGDIR/bin/sign-release.php" verify --manifest "$MAN" --sig "$SIGFILE" --pubkeys "$KEYS" 2>&1)" || refuse "the signature does NOT verify against the owner's public key list: ${vout:-no reason}"
+      python3 -I - "$ZIP" "$KEYS" <<'PY' || exit 3
+import base64, re, sys, zipfile
+def fail(m): sys.stderr.write("REFUSED: " + m + "\n"); sys.exit(1)
+keys = {k.strip() for k in sys.argv[2].split(",") if k.strip()}
+try:
+    d = zipfile.ZipFile(sys.argv[1]).read("ai-commerce-copilot/includes/aicc-release-defaults.php").decode("utf-8", "replace")
+except Exception: fail("the ZIP has no includes/aicc-release-defaults.php (not a release build)")
+m = re.search(r"const PUBLIC_KEYS = '([A-Za-z0-9+/=,]*)';", d)
+baked = {k.strip() for k in (m.group(1) if m else "").split(",") if k.strip()}
+if not baked: fail("the ZIP carries no update-signing public key: a build that cannot verify its own updates is never published")
+if not baked <= keys: fail("the ZIP bakes a public key that is not on the owner's list (UPDATE_PUBLIC_KEYS): refusing")
+PY
+      SIGVERIFIED=1; SIGNOTE="signature verified locally ($vout)"
+      echo "$SIGNOTE"
+    else
+      if [ "$ENVN" = production ]; then
+        refuse "the signature cannot be verified locally (needs --plugin-dir with bin/sign-release.php and release/endpoints.conf UPDATE_PUBLIC_KEYS - or --pubkeys - and php with sodium). Production never publishes a release it could not verify."
+      fi
+      SIGNOTE="signature present and well-formed; NOT verified locally (no public key list / Plugin tool here: the host installer verifies it against the key the ZIP carries)"
+      echo "NOTE: $SIGNOTE" >&2
+    fi
+  fi
+fi
 if [ "$ENVN" = production ]; then
   [ "$CONFIRM" = "$WANTV" ] && [ -n "$CONFIRM" ] || refuse "--confirm-production must equal the version being published or pointed at ($WANTV): a conscious per-version step"
   [ "$APPLY" = 1 ] || DRY=1        # production is a dry run unless --apply
@@ -119,15 +195,17 @@ if [ -n "$POINT" ]; then INSTALL_ARGS="$INSTALL_ARGS --point-at $POINT"
 else
   SCFLAG=""; if [ "$SETCUR" = 1 ]; then SCFLAG=" --set-current"; fi
   INSTALL_ARGS="$INSTALL_ARGS --zip ~$USER_NAME/$INC/$ZIPNAME --manifest ~$USER_NAME/$INC/manifest.json --expect-sha256 $SHA$SCFLAG"
+  if [ -n "$SIGNAME" ]; then INSTALL_ARGS="$INSTALL_ARGS --signature ~$USER_NAME/$INC/$SIGNAME"; fi
 fi
 if [ "$DRY" = 1 ]; then
   cat <<EOT
 DRY-RUN plan ($ENVN; local verification passed; nothing sent):
   1. ssh $USER_NAME@$SIP (key $KEY, host key $SHK): read /etc/aicc-stage-identity, require $([ "$ENVN" = production ] && echo production || echo staging) + $SHOST + $SID
-  2. rsync the installer (sha256 $ISHA)$([ -z "$POINT" ] && echo ", the ZIP and the manifest") -> ~$USER_NAME/$INC/ (0700)
+  2. rsync the installer (sha256 $ISHA)$([ -z "$POINT" ] && echo ", the ZIP and the manifest")$([ -n "$SIGNAME" ] && echo ", the signature $SIGNAME") -> ~$USER_NAME/$INC/ (0700)
   3. ssh: re-check the installer's sha256 on the host, then: sudo ~$USER_NAME/$INC/install-plugin-release.sh $INSTALL_ARGS
   4. ssh: read the store back through WordPress (AICC_LM_Release_Store::configuration_problem() must be empty$([ "$SETCUR" = 1 ] || [ -n "$POINT" ] || echo "; skipped: no --set-current, the release is only staged")), remove ~$USER_NAME/$INC
   action: $TARGET_DESC
+$([ -z "$POINT" ] && echo "  signature: $SIGNOTE")
 $([ "$ENVN" = production ] && [ "$APPLY" != 1 ] && echo "  (production: add --apply to run it)")
 EOT
   exit 0
@@ -149,6 +227,7 @@ rsync -a -e "$RSH" "$INSTALLER" "$USER_NAME@$SIP:$INC/install-plugin-release.sh"
 if [ -z "$POINT" ]; then
   rsync -a -e "$RSH" "$ZIP" "$USER_NAME@$SIP:$INC/$ZIPNAME"
   rsync -a -e "$RSH" "$MAN" "$USER_NAME@$SIP:$INC/manifest.json"
+  if [ -n "$SIGNAME" ]; then rsync -a -e "$RSH" "$SIGFILE" "$USER_NAME@$SIP:$INC/$SIGNAME"; fi
 fi
 "${SSH[@]}" "echo '$ISHA  $INC/install-plugin-release.sh' | sha256sum -c - >/dev/null" || { "${SSH[@]}" "rm -rf ~/$INC" || true; refuse "the installer on the host does not have the sha256 of the local file: transfer damaged or tampered; NOT executed"; }
 rc=0

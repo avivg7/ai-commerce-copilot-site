@@ -83,6 +83,8 @@ function genRouting(operator = false) {
   const named = (id, re) => L.push(`\t@${id} path_regexp ${id} ${re}`);
   const deny = (id, code, text) => L.push(`\thandle @${id} {`, `\t\theader Cache-Control "no-store"`, `\t\trespond "${text}" ${code}`, `\t}`);
   const OPS = "{$AICC_OPERATOR_CIDRS}";
+  // The operator listener tells PHP so with a FastCGI parameter written by the edge: the arguments of `import to_wordpress*` travel to the php_fastcgi block of (wp_proxy_fastcgi). The public listener passes none.
+  const ENV = operator ? " env AICC_EDGE_LISTENER operator" : "";
   // `vars_regexp` on {http.request.uri.path} sees the path AS SENT (decoded, not cleaned); Caddy's path/path_regexp matchers see a CLEANED path (real-run finding, see rehearsal.md)
   L.push(`\t@bad_path vars_regexp bad_path {http.request.uri.path} ${M.BAD_PATH_RE}`);
   deny("bad_path", 400, "Bad request");
@@ -109,7 +111,7 @@ function genRouting(operator = false) {
   for (const [id, re] of [["wp_private_dirs", M.WP_PRIVATE_DIRS_RE], ["sensitive_ext", M.SENSITIVE_EXT_RE]]) { named(id, re); L.push(`\thandle @${id} {`, `\t\terror 404`, `\t}`); }
   // everything of /wp-admin/ that is still here is an operator (or the public admin-ajax/admin-post): operators may upload big files, the public routes keep the 2 MB cap
   L.push(`\t@wp_admin_big {`, `\t\tpath_regexp wp_admin_big ${M.WP_ADMIN_RE}`, `\t\tnot path_regexp wp_admin_big_public ${M.WP_ADMIN_PUBLIC_RE}`, `\t}`);
-  L.push(`\thandle @wp_admin_big {`, `\t\timport to_wordpress_admin`, `\t}`);
+  L.push(`\thandle @wp_admin_big {`, `\t\timport to_wordpress_admin${ENV}`, `\t}`);
   named("dup_error", M.DUPLICATE_ERROR_RE);
   L.push(`\thandle @dup_error {`, `\t\terror 404`, `\t}`);
   if (!operator) {
@@ -126,19 +128,19 @@ function genRouting(operator = false) {
   named("static_assets", M.STATIC_ASSET_RE);
   L.push(`\thandle @static_assets {`, `\t\theader Cache-Control "public, max-age=86400"`, `\t\timport static_csp`, `\t\timport to_static`, `\t}`);
   named("wp_machine", M.WP_MACHINE_RE);
-  L.push(`\thandle @wp_machine {`, `\t\timport to_wordpress_nocache`, `\t}`);
+  L.push(`\thandle @wp_machine {`, `\t\timport to_wordpress_nocache${ENV}`, `\t}`);
   named("wp_assets", M.WP_ASSETS_RE);
-  L.push(`\thandle @wp_assets {`, `\t\timport to_wordpress`, `\t}`);
+  L.push(`\thandle @wp_assets {`, `\t\timport to_wordpress${ENV}`, `\t}`);
   L.push(`\t@wp_root_query {`, `\t\tpath_regexp wp_root ${M.WP_ROOT_PATH_RE}`, `\t\texpression ${qph}.matches('${M.WP_ROOT_QUERY}')`, `\t}`);
-  L.push(`\thandle @wp_root_query {`, `\t\timport to_wordpress_nocache`, `\t}`);
+  L.push(`\thandle @wp_root_query {`, `\t\timport to_wordpress_nocache${ENV}`, `\t}`);
   named("rsc_under_wp", M.RSC_UNDER_WP_RE);
   L.push(`\thandle @rsc_under_wp {`, `\t\terror 404`, `\t}`);
   named("static_rsc", M.STATIC_RSC_RE);
   L.push(`\thandle @static_rsc {`, `\t\theader Cache-Control "public, max-age=0, must-revalidate"`, `\t\timport to_static`, `\t}`);
   named("wp_nocache", M.WP_NOCACHE_RE);
-  L.push(`\thandle @wp_nocache {`, `\t\timport to_wordpress_nocache`, `\t}`);
+  L.push(`\thandle @wp_nocache {`, `\t\timport to_wordpress_nocache${ENV}`, `\t}`);
   named("wp_pages", M.WP_PAGES_RE);
-  L.push(`\thandle @wp_pages {`, `\t\timport to_wordpress`, `\t}`);
+  L.push(`\thandle @wp_pages {`, `\t\timport to_wordpress${ENV}`, `\t}`);
   L.push(`\thandle {`, `\t\theader Cache-Control "public, max-age=0, must-revalidate"`, `\t\timport static_csp`, `\t\timport to_static`, `\t}`);
   return L;
 }
@@ -200,9 +202,10 @@ function parseMatchers(lines) {
       const act = { origin: null, cache: null };
       for (i++; lines[i] !== "}"; i++) {
         let n;
-        if (lines[i] === "import to_wordpress") act.origin = "wordpress";
-        else if (lines[i] === "import to_wordpress_admin") { act.origin = "wordpress"; act.cache = "private, no-store, max-age=0"; }
-        else if (lines[i] === "import to_wordpress_nocache") { act.origin = "wordpress"; act.cache = "private, no-store, max-age=0"; }
+        if ((n = /^import (to_wordpress(?:_admin|_nocache)?)( env AICC_EDGE_LISTENER operator)?$/.exec(lines[i]))) {
+          act.origin = "wordpress"; act.listenerEnv = Boolean(n[2]);
+          if (n[1] !== "to_wordpress") act.cache = "private, no-store, max-age=0";
+        }
         else if (lines[i] === "import to_static") act.origin = "static";
         else if (lines[i] === "import static_csp") act.csp = true;
         else if (lines[i] === "error 404") act.origin = "404";
@@ -450,12 +453,31 @@ if (!QUIET) console.log(`test-redirects: ${CASES.length} cases, stand-in edge on
     ok(/format filter \{[\s\S]*?request>headers delete[\s\S]*?request>uri regexp "\(\?i\)/.test(glob.split("\n").filter((l) => !/^\s*#/.test(l)).join("\n")), "the global (error) log must delete request>headers and redact the URI too: Caddy writes the whole request into an error entry");
   }
   // ---- the WordPress origin forms
-  ok(/^\s*import wp_proxy_fastcgi\s*$/m.test(snipText("wp_proxy")), "the committed (wp_proxy) selector must import the fastcgi form (the Linux target)");
+  ok(/^\s*import wp_proxy_fastcgi \{args\[:\]\}\s*$/m.test(snipText("wp_proxy")), "the committed (wp_proxy) selector must import the fastcgi form (the Linux target) and pass its arguments on (the operator listener's env parameter)");
   const fcgi = snipText("wp_proxy_fastcgi");
   ok(/php_fastcgi \{\$AICC_PHP_FPM_SOCKET:unix\/\/run\/php\/aicc-cp\.sock\}/.test(fcgi) && /root \* \{\$AICC_WP_ROOT\}/.test(fcgi) && /^file_server$/m.test(fcgi), "wp_proxy_fastcgi must be php_fastcgi on the unix socket with root {$AICC_WP_ROOT} and a file_server");
   ok(!/\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}:\d+|localhost:\d+/.test(fcgi), "wp_proxy_fastcgi must not contain an HTTP upstream address (unix socket only)");
   ok(/resolve_root_symlink/.test(fcgi), "wp_proxy_fastcgi must resolve the docroot symlink (opcache across release switches)");
   for (const pat of ["X-Forwarded-*", "X-Remote-*", "X-Client-*", "X-Real-*", "X-Original-*", "X-Rewrite-*", "X-Custom-IP-*", "X-HTTP-Method-Override"]) ok(new RegExp(`^header_up -${pat.replace(/[*]/g, "\\*")}$`, "m").test(fcgi), `wp_proxy_fastcgi must strip the whole header family ${pat} (security review I1: deny-lists of single names rot)`);
+  // AICC_EDGE_LISTENER: the Control Plane accepts `AICC_EDGE_LISTENER=operator` (a FastCGI parameter) as ONE of its three operator signals for privileged-role sign-in. It must be set by the edge on the
+  // OPERATOR listener's php_fastcgi ONLY, never on the public listener, and no client header may be able to fake it.
+  {
+    const code = (txt) => txt.split("\n").filter((l) => !/^\s*#/.test(l)).join("\n");
+    const opR = code(regenerated.split("# BEGIN GENERATED: routing operator\n")[1]?.split("# END GENERATED: routing operator")[0] || "");
+    const pubR = code(regenerated.split("# BEGIN GENERATED: routing\n")[1]?.split("# END GENERATED: routing\n")[0] || "");
+    const imports = (t) => t.split("\n").map((l) => l.trim()).filter((l) => /^import to_wordpress/.test(l));
+    ok(opR.length > 100 && pubR.length > 100, "AICC_EDGE_LISTENER: both generated routing blocks must be found");
+    ok(imports(opR).length >= 4 && imports(opR).every((l) => /^import to_wordpress(?:_admin|_nocache)? env AICC_EDGE_LISTENER operator$/.test(l)), `every WordPress import of the OPERATOR routing must pass \`env AICC_EDGE_LISTENER operator\` (${imports(opR).join(" | ")})`);
+    ok(imports(pubR).length >= 3 && imports(pubR).every((l) => /^import to_wordpress(?:_admin|_nocache)?$/.test(l)), `the PUBLIC routing must import the WordPress snippets WITHOUT arguments (${imports(pubR).join(" | ")})`);
+    ok(!/AICC_EDGE_LISTENER/.test(pubR), "the PUBLIC routing block must not mention AICC_EDGE_LISTENER at all");
+    const all = code(regenerated);
+    ok(all.split("\n").filter((l) => /AICC_EDGE_LISTENER/.test(l)).every((l) => /^\s*import to_wordpress(?:_admin|_nocache)? env AICC_EDGE_LISTENER operator$/.test(l)), "AICC_EDGE_LISTENER may appear in the Caddyfile only as the argument of an operator-routing `import to_wordpress*` (never as a literal env line of a shared snippet, never on the public listener)");
+    const fcb = code(snipText("wp_proxy_fastcgi"));
+    ok(/^\s*\{args\[:\]\}\s*$/m.test(fcb.split("php_fastcgi")[1]?.split("file_server")[0] || ""), "the php_fastcgi block of wp_proxy_fastcgi must expand the snippet arguments ({args[:]}) - the only way the operator listener's env parameter reaches PHP");
+    ok(/^\s*header_up -Aicc-\*\s*$/m.test(fcb), "wp_proxy_fastcgi must strip the Aicc-* request-header family (a client cannot forge the Control Plane's edge signal)");
+    for (const n of ["to_wordpress", "to_wordpress_nocache", "to_wordpress_admin"]) ok((structure.snippets.get(n)?.body || []).some((l) => l.trim() === "import wp_proxy {args[:]}"), `snippet ${n} must pass its arguments to wp_proxy`);
+    ok(/^\s*import wp_proxy_fastcgi \{args\[:\]\}\s*$/m.test(code(snipText("wp_proxy"))), "wp_proxy must pass its arguments to the fastcgi form");
+  }
   // request body cap (E9): every PUBLIC WordPress route is capped at 2 MB; only the operator-only /wp-admin/ route may take more
   for (const n of ["to_wordpress", "to_wordpress_nocache"]) ok(structure.snippets.get(n)?.body.includes("import wp_body_cap"), `snippet ${n} must import wp_body_cap (public WordPress routes have a request body cap)`);
   ok(/request_body \{\s*max_size 2MB\s*\}/.test((structure.snippets.get("wp_body_cap")?.body || []).join("\n").replace(/\n+/g, " ")) || (structure.snippets.get("wp_body_cap")?.body || []).join(" ").includes("max_size 2MB"), "wp_body_cap must set max_size 2MB");
@@ -656,7 +678,7 @@ async function selfTest() {
     ["fastcgi snippet stops stripping Via", (t) => afterHead(t, "(wp_proxy_fastcgi) {", "\t\theader_up -Via\n", "")],
     ["fastcgi upstream becomes a TCP address (HTTP/fastcgi port on the network)", (t) => t.replace("{$AICC_PHP_FPM_SOCKET:unix//run/php/aicc-cp.sock}", "{$AICC_PHP_FPM_SOCKET:127.0.0.1:9000}")],
     ["fastcgi snippet sets X-Forwarded-For again (XFF-trust dependency)", (t) => afterHead(t, "(wp_proxy_fastcgi) {", "\t\theader_up -X-Forwarded-For\n", "\t\theader_up X-Forwarded-For {remote_host}\n")],
-    ["wp_proxy selector points at the http proxy in the committed text", (t) => t.replace("(wp_proxy) {\n\timport wp_proxy_fastcgi\n}", "(wp_proxy) {\n\timport wp_proxy_http\n}")],
+    ["wp_proxy selector points at the http proxy in the committed text", (t) => t.replace("(wp_proxy) {\n\timport wp_proxy_fastcgi {args[:]}\n}", "(wp_proxy) {\n\timport wp_proxy_http\n}")],
     ["the stage identity route leaks into the committed (production) template", (t) => t.replace("(aicc_stage_identity) {\n}", "(aicc_stage_identity) {\n\t@aicc_stage_identity path /.well-known/aicc-stage-identity\n\thandle @aicc_stage_identity {\n\t\trespond \"x\" 200\n\t}\n}")],
     ["trusted_proxies added to the public edge", (t) => t.replace("\tauto_https disable_redirects\n", "\tauto_https disable_redirects\n\tservers {\n\t\ttrusted_proxies static private_ranges\n\t}\n")],
     ["the PHP entry-point whitelist is widened to any wp-content file (generated drift)", (t) => t.replace("not path_regexp php_entry ^/(?:index|wp-login|wp-cron)", "not path_regexp php_entry ^/(?:wp-content/.*|index|wp-login|wp-cron)")],
@@ -679,6 +701,15 @@ async function selfTest() {
     ["F-11: the dotfile deny also blocks /.well-known/ (ACME / security.txt would break)", (t) => t.replace(/\t\tnot path_regexp dotfile_ok [^\n]*\n/g, "")],
     ["F-11: WooCommerce private upload dirs are no longer denied", (t) => t.replace("uploads/(?:woocommerce_uploads|wc-logs)|", "")],
     ["F-11: archives/dumps are no longer in the sensitive-extension deny", (t) => t.replace("sql|dump|bak|old|orig|swp|log|gz|tgz|tar|zip|7z|rar|bz2|xz|env", "log|env")],
+    // ---- AICC_EDGE_LISTENER (operator signal for the Control Plane's privileged sign-in)
+    ["AICC_EDGE_LISTENER: the PUBLIC routing passes the operator env too (every visitor would look like an operator; generated drift)", (t) => t.replace("\thandle @wp_pages {\n\t\timport to_wordpress\n", "\thandle @wp_pages {\n\t\timport to_wordpress env AICC_EDGE_LISTENER operator\n")],
+    ["AICC_EDGE_LISTENER: the env line is hard-coded in the shared php_fastcgi block (both listeners set it)", (t) => afterHead(t, "(wp_proxy_fastcgi) {", "\t\theader_up -X-HTTP-Method\n", "\t\theader_up -X-HTTP-Method\n\t\tenv AICC_EDGE_LISTENER operator\n")],
+    ["AICC_EDGE_LISTENER: the operator routing forgets the env on /wp-admin/ (generated drift)", (t) => t.replace("\t\timport to_wordpress_admin env AICC_EDGE_LISTENER operator\n", "\t\timport to_wordpress_admin\n")],
+    ["AICC_EDGE_LISTENER: the operator routing forgets the env on wp-login / machine paths (generated drift)", (t) => { const i = t.indexOf("# BEGIN GENERATED: routing operator"); return t.slice(0, i) + t.slice(i).replace("\t\timport to_wordpress_nocache env AICC_EDGE_LISTENER operator\n", "\t\timport to_wordpress_nocache\n"); }],
+    ["AICC_EDGE_LISTENER: to_wordpress_nocache stops passing its arguments (the env never reaches php_fastcgi)", (t) => afterHead(t, "(to_wordpress_nocache) {", "\timport wp_proxy {args[:]}\n", "\timport wp_proxy\n")],
+    ["AICC_EDGE_LISTENER: wp_proxy stops passing its arguments", (t) => t.replace("(wp_proxy) {\n\timport wp_proxy_fastcgi {args[:]}\n}", "(wp_proxy) {\n\timport wp_proxy_fastcgi\n}")],
+    ["AICC_EDGE_LISTENER: the php_fastcgi block no longer expands the arguments", (t) => afterHead(t, "(wp_proxy_fastcgi) {", "\t\t{args[:]}\n", "")],
+    ["AICC_EDGE_LISTENER: the Aicc-* request header family is no longer stripped", (t) => afterHead(t, "(wp_proxy_fastcgi) {", "\t\theader_up -Aicc-*\n", "")],
     ["the ACME CA default is no longer Let's Encrypt production", (t) => t.replace("https://acme-v02.api.letsencrypt.org/directory", "https://acme.zerossl.com/v2/DV90")],
   ];
   const tmp = fs.mkdtempSync(path.join(process.env.TMPDIR || "/tmp", "aicc-redirect-mutants-"));

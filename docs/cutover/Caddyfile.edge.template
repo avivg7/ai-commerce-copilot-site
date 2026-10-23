@@ -263,7 +263,7 @@
 # An upstream 5xx (PHP fatal, WordPress critical error page) is NOT shown to the visitor: it becomes the edge's own 5xx page with the same status (handle_errors below).
 # Upstream leaks (X-Powered-By, Server) are removed. Do NOT add `trusted_proxies` to the public edge.
 (wp_proxy) {
-	import wp_proxy_fastcgi
+	import wp_proxy_fastcgi {args[:]}
 }
 
 # FASTCGI form (Linux): the edge reads the WordPress docroot ({$AICC_WP_ROOT}) and hands PHP files to PHP-FPM over a UNIX SOCKET (no HTTP upstream port exists). Existing files that are not PHP
@@ -313,6 +313,13 @@
 		header_up -X-HTTP-Method-Override
 		header_up -X-Method-Override
 		header_up -X-HTTP-Method
+		# The Control Plane's own identity header family (docs/cutover/runbook.md, operator signal): no client-supplied header of this family reaches PHP (a request header would only ever arrive as
+		# HTTP_AICC_*, never as the FastCGI parameter below, but the family is removed anyway).
+		header_up -Aicc-*
+		# OPERATOR LISTENER ONLY: the routing blocks of the operator listener pass `env AICC_EDGE_LISTENER operator` as the arguments of `import to_wordpress*` (-> wp_proxy -> here); the public listener
+		# passes none, so on the public listener this line expands to NOTHING and PHP never sees the parameter. It is a FastCGI parameter written by this file, not a header: a client cannot set it.
+		# The Control Plane uses it as ONE of three operator signals when it refuses privileged-role sign-in on the public site.
+		{args[:]}
 		header_down -X-Powered-By
 		header_down -Server
 		# REAL-CADDY FINDING: `error {rp.status_code}` does not take the placeholder (every upstream 5xx became a 500), so one handle_response per status keeps 502/503/504 as they are.
@@ -409,7 +416,7 @@
 # WordPress upstream for pages and WordPress's own static files: Cache-Control is whatever WordPress sends (it sends no-store/private for personalised pages and validators for files).
 (to_wordpress) {
 	import wp_body_cap
-	import wp_proxy
+	import wp_proxy {args[:]}
 }
 
 # Commerce, account and machine paths (cart, checkout, my-account, wp-json, wp-admin, wp-login, wc-ajax, wc-api, wp-cron): the edge forces "never cache" even if WordPress
@@ -420,7 +427,7 @@
 		Cache-Control "private, no-store, max-age=0"
 	}
 	import wp_body_cap
-	import wp_proxy
+	import wp_proxy {args[:]}
 }
 
 # /wp-admin/* after the operator allowlist (generated rule wp_admin_big): staff may upload media, so a larger body cap. Public admin-ajax.php / admin-post.php do NOT come here.
@@ -432,7 +439,7 @@
 	request_body {
 		max_size 64MB
 	}
-	import wp_proxy
+	import wp_proxy {args[:]}
 }
 
 (to_static) {
@@ -1027,7 +1034,7 @@ www.copilt.org:{$AICC_OPERATOR_PORT:8443} {
 		not path_regexp wp_admin_big_public (?i)^/wp-admin/(?:admin-ajax|admin-post)\.php$
 	}
 	handle @wp_admin_big {
-		import to_wordpress_admin
+		import to_wordpress_admin env AICC_EDGE_LISTENER operator
 	}
 	@dup_error path_regexp dup_error ^/(?:404|_not-found)(?:/|\.html)?$|^/(?:wp-activate|wp-signup)\.php$|^/50x\.html$
 	handle @dup_error {
@@ -1052,18 +1059,18 @@ www.copilt.org:{$AICC_OPERATOR_PORT:8443} {
 	}
 	@wp_machine path_regexp wp_machine ^/(?:wp-json|wp-admin|wc-api|wc-ajax)(?:/.*)?$|^/(?:wp-login\.php|wp-cron\.php|xmlrpc\.php)$
 	handle @wp_machine {
-		import to_wordpress_nocache
+		import to_wordpress_nocache env AICC_EDGE_LISTENER operator
 	}
 	@wp_assets path_regexp wp_assets ^/(?:wp-content|wp-includes)(?:/.*)?$
 	handle @wp_assets {
-		import to_wordpress
+		import to_wordpress env AICC_EDGE_LISTENER operator
 	}
 	@wp_root_query {
 		path_regexp wp_root ^(/(?:he|es|ru))?/$
 		expression {http.request.uri.query}.matches('(^|&)(wc-ajax|wc-api|rest_route)=')
 	}
 	handle @wp_root_query {
-		import to_wordpress_nocache
+		import to_wordpress_nocache env AICC_EDGE_LISTENER operator
 	}
 	@rsc_under_wp path_regexp rsc_under_wp ^(/(?:he|es|ru))?/(?:pricing|privacy|terms|refund-policy|accessibility)/(?:__next[^/]*|index)\.txt$
 	handle @rsc_under_wp {
@@ -1076,11 +1083,11 @@ www.copilt.org:{$AICC_OPERATOR_PORT:8443} {
 	}
 	@wp_nocache path_regexp wp_nocache ^(/(?:he|es|ru))?/(?:cart|checkout|my-account)(?:/.*)?$|^/wp-(?:json|admin|login\.php)(?:/.*)?$|^/wc-(?:ajax|api)(?:/.*)?$
 	handle @wp_nocache {
-		import to_wordpress_nocache
+		import to_wordpress_nocache env AICC_EDGE_LISTENER operator
 	}
 	@wp_pages path_regexp wp_pages ^(/(?:he|es|ru))?/(?:pricing|privacy|terms|refund-policy|data-processing-addendum|accessibility|cart|checkout|my-account|product-category|shop)(?:/.*)?$|^(/(?:he|es|ru))?/product/.+$
 	handle @wp_pages {
-		import to_wordpress
+		import to_wordpress env AICC_EDGE_LISTENER operator
 	}
 	handle {
 		header Cache-Control "public, max-age=0, must-revalidate"
