@@ -29,7 +29,7 @@
 #   * refuses to continue unless the host presents /etc/aicc-stage-identity with AICC_ENV=staging (production: AICC_ENV=production + the id) and AICC_HOSTNAME equal to --stage-host.
 #   * file names come from the server's status.json but are re-validated against a strict pattern before use (no path traversal from a hostile server).
 #   * a copy is accepted only if: sha256 of the received bytes == the server's .sha256 sidecar == the hash recorded in status.json, and gzip -t passes.
-#   * writes no secrets. Note: the files archive contains the host's wp-config.php (DB password, salts) and uploads: dest dir is 0700, files 0600. Keep this
+#   * writes no secrets. Note: the files archive no longer contains the rendered wp-config.php (security review F-05); it holds uploads, plugin releases and edge/ops config, and the database dump holds customer data: dest dir is 0700, files 0600, and production encrypts both (--encrypt-to). Keep this
 #     folder on an encrypted disk (FileVault). --no-files-archive pulls the database dump only.
 # Output files in --dest: aicc_cp-<UTC>-<label>.sql.gz(+.sha256), aicc-files-<UTC>-<label>.tar.gz(+.sha256), pull.log.
 # Schedule it yourself if you want (launchd/cron); this script does not install anything.
