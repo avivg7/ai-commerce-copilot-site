@@ -46,6 +46,14 @@ const STATES = [
 const FREEZE = `*,*::before,*::after{animation:none!important;transition:none!important;caret-color:transparent!important}
 .aicc-site-header,header.aicc-header,#aicc-lang-toast,.aicc-lang-toast,.aicc-skip,[class*="a11y-trigger"],[class*="cookie"],[id*="wpadminbar"]{display:none!important}`;
 
+// every image of the demo (Reco, product art) must be decoded and the fonts ready before anything is measured or captured (a slow single-threaded dev server otherwise yields a half-loaded first snapshot)
+async function settle(p) {
+  await p.evaluate(async () => {
+    if (document.fonts) await document.fonts.ready;
+    await Promise.all([...document.querySelectorAll(".aicc-fbt img")].map((i) => (i.loading === "lazy" ? (i.loading = "eager", 0) : 0, i.decode ? i.decode().catch(() => {}) : 0)));
+  });
+}
+
 async function openDemo(browser, locale, width) {
   const ctx = await browser.newContext({ viewport: { width, height: 900 }, reducedMotion: "reduce", deviceScaleFactor: 1, locale: locale === "he" ? "he-IL" : "en-US" });
   const p = await ctx.newPage();
@@ -57,7 +65,7 @@ async function openDemo(browser, locale, width) {
   await p.addStyleTag({ content: FREEZE });
   await p.evaluate(() => (document.querySelector("#demo") || document.querySelector(".aicc-fbt"))?.scrollIntoView());
   await p.waitForSelector(".aicc-fbt [data-surface]", { state: "attached", timeout: 30000 });
-  await p.evaluate(() => document.fonts && document.fonts.ready);
+  await settle(p);
   return { ctx, p, errors };
 }
 
@@ -67,12 +75,20 @@ async function setState(p, st) {
   await p.click(`.aicc-fbt [data-mode=${st.mode}]`);
   if (st.view === "merchant") await p.click(`.aicc-fbt [data-view=merchant]`);
   await p.waitForTimeout(350);
-  await p.evaluate(() => document.fonts && document.fonts.ready);
+  await settle(p);
 }
 
+// wait until the demo's box stops moving (late image decode / font swap shift the layout by a few pixels), then clip the page screenshot to the DOCUMENT box of the demo:
+// an element screenshot measures the box once and can clip a section that is still growing
 async function shot(p) {
-  const el = await p.$(".aicc-fbt");
-  return el.screenshot({ type: "png", animations: "disabled" });
+  let last = "", stable = 0;
+  for (let i = 0; i < 40 && stable < 4; i++) {
+    const box = await p.evaluate(() => { const r = document.querySelector(".aicc-fbt").getBoundingClientRect(); return [Math.round(r.left + scrollX), Math.round(r.top + scrollY), Math.round(r.width), Math.ceil(r.height)].join(","); });
+    if (box === last) stable++; else { stable = 0; last = box; }
+    await p.waitForTimeout(120);
+  }
+  const [x, y, width, height] = last.split(",").map(Number);
+  return p.screenshot({ type: "png", animations: "disabled", fullPage: true, clip: { x, y, width, height } });
 }
 
 // compare two PNG buffers inside a throwaway page (no image library needed)
