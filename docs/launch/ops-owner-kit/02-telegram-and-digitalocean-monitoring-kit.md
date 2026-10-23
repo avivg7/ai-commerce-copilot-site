@@ -10,7 +10,7 @@ Hard rules for you: the bot token is typed ONLY into the hidden prompt on the se
 
 ## Part 1. Telegram (about 20 minutes)
 
-The server-side tool, subcommands and exit codes below were verified against the repo (`infra/aicc-ops/bin/aicc-ops-secrets`, `aicc_ops/cli.py`); `ops:test` (339 tests at Site 914fade, including the Telegram adapter against fakes) passes. The live Telegram delivery itself is NOT proven until you do the steps.
+The server-side tool, subcommands and exit codes below were verified against the repo (`infra/aicc-ops/bin/aicc-ops-secrets`, `aicc_ops/cli.py`); `npm run ops:test` (including the Telegram adapter against fakes) passes at the heads above (re-run it on the day; counts change). The live Telegram delivery itself is NOT proven until you do the steps.
 
 Create TWO bots (one minute each): `AICC Ops` for the server and a separate `AICC Sentinel` for the GitHub watcher (package 3), so revoking one never blinds the other. Keep the chat the same.
 
