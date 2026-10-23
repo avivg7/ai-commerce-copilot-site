@@ -12,12 +12,20 @@
 #
 # Supply chain: the two actions are pinned to full commit SHAs (resolved read-only through the GitHub API on 2026-10-22: actions/checkout v7.0.1, actions/cache v6.1.0). Re-pin deliberately
 # (and review the diff) rather than following a moving tag. The workflow never triggers on pull_request, pull_request_target, issues or forks, so no foreign code runs next to the secrets.
+# --fail-on-down (ops owner kit, 2026-10-23): when a target is in the DOWN state after the N-of-M decision (2 of the last 3 runs failed, never a single blip) the run itself FAILS, and GitHub sends its own
+# workflow-failure notification (email/web, to the user who created the workflow: docs.github.com "Notifications for workflow runs") - a second alert path that does NOT depend on Telegram.
+# It repeats on every run while the target stays down (about 6 per hour); delete the flag if you prefer Telegram only.
 # Secrets reach the process only through env: (never in run: text or arguments). The log prints state changes only (--quiet-ok) and the sentinel never prints a token or chat id.
 name: aicc-sentinel
 on:
   schedule:
     - cron: "7,17,27,37,47,57 * * * *"
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      send_test:
+        description: "Send ONE [TEST] Telegram message and stop (proves the two Actions secrets); no probe is made"
+        type: boolean
+        default: false
 permissions:
   contents: read
 concurrency:
@@ -36,13 +44,20 @@ jobs:
           path: .sentinel-state
           key: sentinel-state-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: sentinel-state-
+      - name: Telegram test message (manual run with send_test only)
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.send_test }}
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python3 sentinel.py --config targets.toml --test-notify --host-label github-actions
       - name: Probe
+        if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.send_test) }}
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
           python3 --version
-          python3 sentinel.py --config targets.toml --once --quiet-ok --state-file .sentinel-state/state.json --host-label github-actions
+          python3 sentinel.py --config targets.toml --once --quiet-ok --fail-on-down --state-file .sentinel-state/state.json --host-label github-actions
       - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9   # v6.1.0
         if: always()                  # keep the state even when a step above failed
         with:

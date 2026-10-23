@@ -1,0 +1,63 @@
+== sandbox /var/folders/l2/tsp2g97x4x1b58gmkd973q5m0000gn/T//aicc-signing-selftest.oEjKvi; php 8.5.8 sodium=yes
+== 0. clone the Plugin into the sandbox (the real repo is never modified)
+== 1. encrypted key medium (macOS encrypted disk image; the real one lives on the USB stick) + keygen onto it
+PASS  encrypted image created (AES-256)
+PASS  image mounted
+PASS  keygen PRIMARY onto the encrypted image
+PASS  keygen STANDBY onto the encrypted image
+PASS  keygen REFUSES to overwrite an existing key  [sign-release: refusing to overwrite an existing file: /var/folders/l2/tsp2g97x4x1b58gmkd973q5m0000gn/T//aicc-signing-selftest.oEjKvi/mnt/aicc-release-]
+PASS  keygen REFUSES a path inside the repository  [sign-release: refusing to write a secret key inside the repository ]
+PASS  keygen REFUSES a relative path  [sign-release: --secret-out must be an absolute path ]
+PASS  primary key file mode 0600
+PASS  standby key file mode 0600
+PASS  two distinct 44-character public keys
+      primary public: xQ12+iQHotG+/xi3Q4X2lvx6zkoumVRNAtD8qv6rv5g=  fingerprint(independent, shasum): 3334-5349-2429-0259
+      standby public: iVe5OjjyprJAavzczNZuF6V48HKfvHoQRgZm5Rj6aZw=  fingerprint(independent, shasum): 4ead-12dd-d012-af5c
+== 2. put BOTH public keys in release/endpoints.conf and commit (the only thing that goes in git)
+PASS  endpoints.conf holds primary,standby
+PASS  committed (clean tree for the build)
+PASS  working tree clean
+== 3. build the release, sign with the PRIMARY, verify (the owner commands)
+PASS  build-release.sh --out dist
+      version under test: 1.1.0-dev.5
+PASS  the ZIP carries both public keys (baked)
+PASS  sign REFUSES a group/world-readable key file  [sign-release: refusing the signing key file: mode 0644 lets group/other read or write it (chmod 600 it) ]
+PASS  sign REFUSES a missing key env var  [sign-release: set AICC_RELEASE_SIGNING_KEY_FILE to the path of the offline signing key file ]
+PASS  sign with the PRIMARY
+PASS  signature key_id == independently computed fingerprint of the primary (3334-5349-2429-0259)
+PASS  verify (tool, keys from the ZIP)
+PASS  verify (tool, explicit --pubkeys)
+PASS  INDEPENDENT hand-check (no AICC code) accepts with the primary public key
+PASS  INDEPENDENT hand-check rejects with the standby public key (wrong key)  []
+PASS  ZIP sha256 sidecar matches
+== 3b. the Site's publish-plugin-release.sh --check-only (LOCAL checks only: no network, no host) accepts the signed release and rejects bad ones
+PASS  check-only: genuine ZIP + manifest + PRIMARY signature pass every LOCAL check ('signature verified locally'); it then stops only because ssh is stubbed
+PASS  check-only: tampered ZIP refused  [REFUSED: the ZIP's SHA-256 differs from the manifest ]
+PASS  check-only: a one-bit-flipped signature refused  [REFUSED: the signature does NOT verify against the owner's public key list: sign-release: NOT VERIFIED (bad_signature) ]
+== 4. TAMPER tests: every one must be REJECTED
+PASS  manifest with a different VERSION (9.9.9)  [sign-release: NOT VERIFIED (bad_signature) ]
+PASS  manifest with a different SHA-256  [sign-release: NOT VERIFIED (bad_signature) ]
+PASS  manifest with a different SIZE  [sign-release: NOT VERIFIED (bad_signature) ]
+PASS  signature with ONE flipped bit  [sign-release: NOT VERIFIED (bad_signature) ]
+PASS  signing time altered  [sign-release: NOT VERIFIED (bad_signature) ]
+PASS  empty signature file  [sign-release: no readable signature file: /var/folders/l2/tsp2g97x4x1b58gmkd973q5m0000gn/T//aicc-signing-selftest.oEjKvi/s.empty ]
+PASS  garbage signature file  [sign-release: NOT VERIFIED (missing) ]
+PASS  verify against an UNRELATED public key (attacker key only)  [sign-release: NOT VERIFIED (bad_signature) ]
+PASS  ZIP with one byte changed (hash no longer matches the signed manifest)  [sign-release: the ZIP does not match the manifest (size or SHA-256): refusing ]
+PASS  SIGN refuses a tampered ZIP  [sign-release: the ZIP does not match the manifest (size or SHA-256): refusing ]
+PASS  ...and wrote no signature
+PASS  SIGN with an attacker key refused: the ZIP does not carry that public key  [sign-release: the ZIP does not carry this signing key's PUBLIC key (UPDATE_PUBLIC_KEYS in release/endpoints.conf at build time): a build that cannot v]
+PASS  the genuine manifest and signature are unchanged by all of the above
+PASS  the genuine pair still verifies after all attacks
+== 5. STANDBY can sign the same build (rotation / emergency path) and is accepted
+PASS  sign with the STANDBY
+PASS  standby-signed pair verifies
+== 6. determinism: rebuilding the same commit gives the same bytes (so a signature is reproducible evidence)
+PASS  rebuild is byte-identical
+== 7. a build with NO key baked is never signable (what keeps the updater launch-blocked)
+PASS  build prints the loud no-key WARNING
+PASS  sign REFUSES a ZIP that carries no key  [sign-release: the ZIP does not carry this signing key's PUBLIC key (UPDATE_PUBLIC_KEYS in release/endpoints.conf at build time): a build that cannot v]
+== 8. the image is unreadable without the passphrase (key medium check)
+PASS  wrong passphrase cannot mount the image
+== RESULT: 47 passed, 0 failed
+sandbox deleted: /var/folders/l2/tsp2g97x4x1b58gmkd973q5m0000gn/T//aicc-signing-selftest.oEjKvi

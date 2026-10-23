@@ -4,7 +4,7 @@ Nothing here has been published, enabled or pushed. Creating the repository and 
 
 ## What it is
 
-A scheduled workflow in its **own small public repository** runs `sentinel.py` (the same standard-library sentinel the Mac LaunchAgent runs) every 10 minutes against **one public URL**, `https://www.copilt.org/healthz` (answered by Caddy itself: DNS + firewall + TLS certificate + the edge; no PHP, no database, no cookies). It expects HTTP 200, body `ok` and the Reserved IPv4 `206.189.248.204` in DNS, so a rollback of DNS to GitHub Pages or a hijack also shows up (stage `dns`). It sends `[DOWN]` / `[RECOVERED]` / certificate-expiry messages to Telegram through the repository's Actions secrets. DOWN needs 2 of the last 3 runs to fail, so one blip never pages.
+A scheduled workflow in its **own small public repository** runs `sentinel.py` (the same standard-library sentinel the Mac LaunchAgent runs) every 10 minutes against **one public URL**, `https://www.copilt.org/healthz` (answered by Caddy itself: DNS + firewall + TLS certificate + the edge; no PHP, no database, no cookies). It expects HTTP 200, body `ok` and the Reserved IPv4 `206.189.248.204` in DNS, so a rollback of DNS to GitHub Pages or a hijack also shows up (stage `dns`). It sends `[DOWN]` / `[RECOVERED]` / certificate-expiry messages to Telegram through the repository's Actions secrets. DOWN needs 2 of the last 3 runs to fail (not necessarily consecutive), so one blip never pages. While a target is DOWN the workflow run itself FAILS (`--fail-on-down`), so GitHub also sends its own workflow-failure notification: a second alert path that does not depend on Telegram. A second DOWN within the 60-minute cooldown of the previous notice sends no second Telegram message (the failed run still notifies).
 
 ## Why a new repository and not `avivg7/ai-commerce-copilot-site`
 
@@ -14,7 +14,7 @@ A scheduled workflow in its **own small public repository** runs `sentinel.py` (
 | `main` of that repository is the **live old www site** (GitHub Pages deploy workflow) and the rollback artifact `old-site-rollback-815350b` | Pushing anything to its `main` can redeploy the live site. The cutover rules say never to merge into it. A sentinel commit there would be a change to the thing we are protecting. |
 | The other repositories (`aicc-backend`, `aicc-control-plane`, `ai-commerce-copilot-plugin`, `aicc-recommendation-service`) are **PRIVATE** | A private repository's Actions minutes come from a quota (GitHub Free: 2,000 minutes per month): a 10-minute cadence is about 4,400 runs a month and would not fit; the free scheduled-minutes argument only holds for a public repository. Do not use them. |
 
-So: a dedicated public repository, containing only `sentinel.py`, `targets.toml`, the workflow and this README. `prepare-sentinel-repo.sh --out DIR` stages exactly that directory (no network, no publishing).
+So: a dedicated public repository, containing only `sentinel.py`, `targets.toml`, the workflow, a short **public** `README.md` (`PUBLIC-README.md` here; this owner guide names private repositories and must never be published) and `SHA256SUMS`. `prepare-sentinel-repo.sh --out DIR` stages exactly that directory (no network, no publishing).
 
 ## What is public (and what is not)
 
@@ -30,10 +30,11 @@ cd ~/aicc-sentinel-repo && git init -b main && git add -A && git commit -m "AICC
 gh repo create avivg7/aicc-sentinel --public --source . --push                      # creates the PUBLIC repository
 gh secret set TELEGRAM_BOT_TOKEN --repo avivg7/aicc-sentinel                       # hidden prompt, paste, Enter
 gh secret set TELEGRAM_CHAT_ID   --repo avivg7/aicc-sentinel
-gh workflow run aicc-sentinel --repo avivg7/aicc-sentinel                           # first run now
+gh workflow run aicc-sentinel --repo avivg7/aicc-sentinel -f send_test=true       # ONE [TEST] Telegram message, no probe: proves the two secrets
+gh workflow run aicc-sentinel --repo avivg7/aicc-sentinel                           # first real run now
 gh run list --repo avivg7/aicc-sentinel --limit 3                                   # expect: completed / success
 ```
-Before the cutover `www.copilt.org/healthz` is the old site (404), so **do not enable the workflow until the cutover day** (section 10 of `docs/cutover/production-promotion.md`), or run the first test with the Mac-only dry run `python3.12 infra/sentinel/sentinel.py --config infra/sentinel/github/targets.github.toml --plan`. Account hygiene: 2FA on the GitHub account (the account holds every secret in this repository) and no collaborators.
+Before the cutover `www.copilt.org/healthz` is the old site (404), so stage the repository for the CURRENT phase first (`docs/launch/ops-owner-kit/scripts/sentinel-phase.sh --repo ~/aicc-sentinel-repo --phase stage|dark|www`: `stage` watches `https://stage.copilt.org/healthz` until promotion, `dark` watches `https://api.copilt.org/health` while production is dark, `www` after the DNS cutover). Otherwise **do not enable the workflow until the cutover day** (section 10 of `docs/cutover/production-promotion.md`), or run the first test with the Mac-only dry run `python3.12 infra/sentinel/sentinel.py --config infra/sentinel/github/targets.github.toml --plan`. Account hygiene: 2FA on the GitHub account (the account holds every secret in this repository) and no collaborators.
 
 Remove it: `gh repo delete avivg7/aicc-sentinel` (or disable the workflow in the Actions tab). The workflow stores nothing else.
 
