@@ -88,7 +88,20 @@ export const PHP_ENTRY_RE = "^/(?:index|wp-login|wp-cron)\\.php$|^/wp-admin/[A-Z
  * under plugins (WooCommerce ships sample-data/*.csv). Public assets (js, css, images, fonts, json that scripts fetch) are untouched.
  */
 export const WP_HIDDEN_RE = "(?i)^/wp-(?:content|includes)/(?:.*/\\.|.*/(?:readme|changelog|licen[cs]e)\\.(?:txt|md|html)$|.*\\.(?:log|sql|bak|old|orig|swp|env|ini|sh|po|pot|mo)$|(?:.*/)?(?:composer\\.(?:json|lock)|installed\\.json|package(?:-lock)?\\.json|yarn\\.lock|pnpm-lock\\.yaml|phpcs[^/]*\\.xml(?:\\.dist)?|phpunit[^/]*\\.xml(?:\\.dist)?)$|plugins/.*\\.csv$|(?:plugins|themes)/[^/]+/(?:.*/)?(?:sample-data|sample_data|tests?|docs)/)";
-/** Paths that must be a branded edge 404: the export's error-page duplicates, the multisite entry points (WordPress would 302 them to wp-login.php?action=register = 403), and the 5xx page file itself (served only by handle_errors). */
+
+/**
+ * Security review B, F-11 (2026-10-23): Apache's .htaccess protections (WooCommerce's woocommerce_uploads / wc-logs, WordPress backup plugins' dirs) do not exist under Caddy, and the static
+ * `file_server` had no dotfile or extension deny. Three edge rules for BOTH listeners, all answering the branded 404 whether or not a file exists there:
+ *   DOTFILE_RE          any path segment that starts with a dot, except /.well-known/ (ACME is handled by Caddy itself before the routes; Search Console/security.txt live under it);
+ *   WP_PRIVATE_DIRS_RE  WooCommerce's private upload dirs (invoices, downloadable products, logs) and the usual backup/log/upgrade directories of WordPress;
+ *   SENSITIVE_EXT_RE    dumps, backups, archives, key and config files anywhere (static export, WordPress docroot, uploads). Archives are never legitimate public files here: the Plugin ZIP is
+ *                       delivered by a PHP route from a store outside every web root, not by URL.
+ */
+export const DOTFILE_RE = "(?i)(?:^|/)\\.";
+/** The one dot-path that stays public (Caddy's regexp engine is RE2: no look-ahead, so the exception is a separate `not` matcher). */
+export const DOTFILE_PUBLIC_RE = "(?i)^/\\.well-known(?:/|$)";
+export const WP_PRIVATE_DIRS_RE = "(?i)^/wp-content/(?:uploads/(?:woocommerce_uploads|wc-logs)|wc-logs|upgrade|ai1wm-backups|updraft|backups?|backup-db|wflogs)(?:/|$)";
+export const SENSITIVE_EXT_RE = "(?i)\\.(?:sql|dump|bak|old|orig|swp|log|gz|tgz|tar|zip|7z|rar|bz2|xz|env|ini|cnf|conf|ya?ml|toml|sh|pem|key|p12|pfx|sqlite3?|db|wpress)$";/** Paths that must be a branded edge 404: the export's error-page duplicates, the multisite entry points (WordPress would 302 them to wp-login.php?action=register = 403), and the 5xx page file itself (served only by handle_errors). */
 export const DUPLICATE_ERROR_RE = "^/(?:404|_not-found)(?:/|\\.html)?$|^/(?:wp-activate|wp-signup)\\.php$|^/50x\\.html$";
 export const WP_MACHINE_RE = "^/(?:wp-json|wp-admin|wc-api|wc-ajax)(?:/.*)?$|^/(?:wp-login\\.php|wp-cron\\.php|xmlrpc\\.php)$";
 /** WordPress's own static files: routed to WordPress but NOT forced to no-store (WordPress / the hosting stack send validators and decide caching; forcing no-store made every theme asset uncacheable). */
@@ -445,6 +458,15 @@ export const CASES = [
   o("https://www.copilt.org/wp-content/uploads/2026/10/export.csv", "wordpress", 200, { cache: "", note: "uploads are not plugin sample data" }),
   o("https://www.copilt.org/wp-content/uploads/2026/10/tests/photo.png", "wordpress", 200, { cache: "", note: "the tests/docs rule is plugins/themes only" }),
   o("https://www.copilt.org/wp-includes/ID3/license.txt", "404", 404),
+  // security review B, F-11: Apache's .htaccess protections do not exist under Caddy. Dotfiles anywhere (except /.well-known/), WooCommerce's private upload dirs, WordPress backup/log dirs and sensitive
+  // extensions are an edge 404 whether or not a file exists there (the real-Caddy test puts the files in place).
+  ...["/.env", "/.git/config", "/.git/HEAD", "/.htaccess", "/.DS_Store", "/.npmrc", "/.aws/credentials", "/pricing/.env", "/_next/static/.env", "/demo/.hidden", "/.ENV", "/he/.git/config", "/%2e%65nv"].map((p) => o(`https://www.copilt.org${p}`, "404", 404, { note: "F-11: dotfile (outside /.well-known/)" })),
+  ...["/wp-content/uploads/woocommerce_uploads/x.pdf", "/wp-content/uploads/woocommerce_uploads/2026/10/invoice.pdf", "/wp-content/uploads/wc-logs/fatal-errors-2026-10-22-abc.log", "/wp-content/uploads/wc-logs/a.log.gz", "/wp-content/wc-logs/a.txt",
+    "/wp-content/upgrade/plugin.zip", "/wp-content/ai1wm-backups/site.wpress", "/wp-content/updraft/db.gz", "/wp-content/backups/db.txt", "/wp-content/wflogs/rules.php.txt", "/wp-content/uploads/WooCommerce_Uploads/x.pdf"]
+    .map((p) => o(`https://www.copilt.org${p}`, "404", 404, { note: "F-11: WordPress/WooCommerce private directory (their .htaccess does nothing under Caddy)" })),
+  ...["/backup.sql", "/db.dump", "/site.zip", "/export.tar", "/export.tgz", "/a/b/data.gz", "/app.env", "/config.yml", "/config.yaml", "/settings.toml", "/id_rsa.pem", "/server.key", "/cert.p12", "/x.sqlite", "/x.sqlite3", "/run.sh", "/notes.swp", "/page.old", "/page.orig",
+    "/wp-content/uploads/2026/10/bundle.zip", "/wp-content/uploads/2026/10/export.tar.gz", "/demo/backup.sql", "/_next/static/x.bak", "/he/backup.sql", "/Backup.SQL"].map((p) => o(`https://www.copilt.org${p}`, "404", 404, { note: "F-11: sensitive extension, never served from any static or WordPress root" })),
+  o("https://www.copilt.org/.well-known/security.txt", "404", 404, { note: "F-11: /.well-known/ is NOT blocked by the dotfile rule; this file does not exist in the static export, so the answer is the ordinary branded 404" }),
   o("https://www.copilt.org/wp-content/uploads/backup.sql", "404", 404),
   o("https://www.copilt.org/wp-content/uploads/site.bak", "404", 404),
   o("https://www.copilt.org/wp-admin/includes/file.php", "404", 404, { peer: "operator", note: "even an operator reaches only the direct children of /wp-admin/" }),

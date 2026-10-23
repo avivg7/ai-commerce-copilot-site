@@ -166,7 +166,7 @@
 # Cart-Token / Cart-Hash / User-Id headers into the log in clear; a Cart-Token is a JWT that restores a guest cart).
 #   * `request>headers` and `resp_headers` are deleted WHOLE. Nothing a client or WordPress puts in a header can reach the log, whatever it is called (a header added by a future plugin,
 #     a payment gateway, a different casing). Caddy's filter encoder has no keep-list, so the allow-list is rebuilt from `log_append` placeholders below: exactly these request headers
-#     (req_user_agent, req_referer, req_accept_language, req_content_type, req_content_length, req_range, req_if_none_match) and these response headers (resp_content_type,
+#     (req_user_agent, req_referer, req_accept_language, req_content_type, req_content_length, req_range, req_if_none_match, req_sec_fetch_site) and these response headers (resp_content_type,
 #     resp_content_length, resp_content_encoding, resp_cache_control, resp_location, resp_content_range); the request id is the `request_id` field (the same value as X-Request-Id).
 #     Anything not listed here is NOT logged. Adding a field is a reviewed change to this list AND to the real-Caddy test (docs/cutover/rehearsal.md "Logging").
 #   * the schema is flat on purpose: fail2ban (infra/fail2ban) and AICC Ops read request.remote_ip / request.method / request.uri / status, which did not move; the appended fields come AFTER them.
@@ -212,6 +212,8 @@
 	log_append req_content_length {http.request.header.Content-Length}
 	log_append req_range {http.request.header.Range}
 	log_append req_if_none_match {http.request.header.If-None-Match}
+	# F-09: set by the BROWSER (same-origin | same-site | cross-site | none), not forgeable by a web page; the 4xx-flood jail does not count requests a browser labels cross-site
+	log_append req_sec_fetch_site {http.request.header.Sec-Fetch-Site}
 	# the response-header allow-list
 	log_append resp_content_type {http.response.header.Content-Type}
 	log_append resp_content_length {http.response.header.Content-Length}
@@ -860,6 +862,21 @@ www.copilt.org {
 	handle @wp_hidden {
 		error 404
 	}
+	@dotfile_deny {
+		path_regexp dotfile_deny (?i)(?:^|/)\.
+		not path_regexp dotfile_ok (?i)^/\.well-known(?:/|$)
+	}
+	handle @dotfile_deny {
+		error 404
+	}
+	@wp_private_dirs path_regexp wp_private_dirs (?i)^/wp-content/(?:uploads/(?:woocommerce_uploads|wc-logs)|wc-logs|upgrade|ai1wm-backups|updraft|backups?|backup-db|wflogs)(?:/|$)
+	handle @wp_private_dirs {
+		error 404
+	}
+	@sensitive_ext path_regexp sensitive_ext (?i)\.(?:sql|dump|bak|old|orig|swp|log|gz|tgz|tar|zip|7z|rar|bz2|xz|env|ini|cnf|conf|ya?ml|toml|sh|pem|key|p12|pfx|sqlite3?|db|wpress)$
+	handle @sensitive_ext {
+		error 404
+	}
 	@wp_admin_big {
 		path_regexp wp_admin_big (?i)^/wp-admin(?:/|$)
 		not path_regexp wp_admin_big_public (?i)^/wp-admin/(?:admin-ajax|admin-post)\.php$
@@ -988,6 +1005,21 @@ www.copilt.org:{$AICC_OPERATOR_PORT:8443} {
 	}
 	@wp_hidden path_regexp wp_hidden (?i)^/wp-(?:content|includes)/(?:.*/\.|.*/(?:readme|changelog|licen[cs]e)\.(?:txt|md|html)$|.*\.(?:log|sql|bak|old|orig|swp|env|ini|sh|po|pot|mo)$|(?:.*/)?(?:composer\.(?:json|lock)|installed\.json|package(?:-lock)?\.json|yarn\.lock|pnpm-lock\.yaml|phpcs[^/]*\.xml(?:\.dist)?|phpunit[^/]*\.xml(?:\.dist)?)$|plugins/.*\.csv$|(?:plugins|themes)/[^/]+/(?:.*/)?(?:sample-data|sample_data|tests?|docs)/)
 	handle @wp_hidden {
+		error 404
+	}
+	@dotfile_deny {
+		path_regexp dotfile_deny (?i)(?:^|/)\.
+		not path_regexp dotfile_ok (?i)^/\.well-known(?:/|$)
+	}
+	handle @dotfile_deny {
+		error 404
+	}
+	@wp_private_dirs path_regexp wp_private_dirs (?i)^/wp-content/(?:uploads/(?:woocommerce_uploads|wc-logs)|wc-logs|upgrade|ai1wm-backups|updraft|backups?|backup-db|wflogs)(?:/|$)
+	handle @wp_private_dirs {
+		error 404
+	}
+	@sensitive_ext path_regexp sensitive_ext (?i)\.(?:sql|dump|bak|old|orig|swp|log|gz|tgz|tar|zip|7z|rar|bz2|xz|env|ini|cnf|conf|ya?ml|toml|sh|pem|key|p12|pfx|sqlite3?|db|wpress)$
+	handle @sensitive_ext {
 		error 404
 	}
 	@wp_admin_big {

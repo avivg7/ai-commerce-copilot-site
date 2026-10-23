@@ -38,8 +38,9 @@ backend   = auto
 port      = http,https
 protocol  = tcp
 ignoreip  = 127.0.0.1/8 ::1
-# 60 client errors in 60 seconds from one address -> 30 minutes. Moderate: it only stops obvious scanners.
-maxretry  = 60
+# 100 scanner-class errors (400/401/403/404/405, minus static assets and browser-labelled cross-site requests, see the filter) in 60 seconds from one address -> 30 minutes.
+# F-09: it only stops obvious scanners; it cannot be turned against a visitor by an <img> flood on another site. The sentinel only sees 200s and is never counted.
+maxretry  = 100
 findtime  = 60s
 bantime   = 30m
 bantime.increment = true

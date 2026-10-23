@@ -79,7 +79,9 @@ t_eq "fail2ban: an operator-owned zz-aicc-local.local survives a re-install (eve
 t_ok "...and the shipped jail file is back to the repo version" cmp "$INFRA/fail2ban/jail.d-aicc-edge.local" "$PFX/etc/fail2ban/jail.d/aicc-edge.local"
 t_contains "the shipped jail file documents the operator override and says the installer replaces it" "$(cat "$INFRA/fail2ban/jail.d-aicc-edge.local")" "zz-aicc-local.local"
 t_contains "the login filter states the exact limitation (every POST counts, successful or not)" "$(cat "$INFRA/fail2ban/filter.d-aicc-wp-login.conf")" "PRECISE LIMITATION"
-t_contains "the flood filter excludes 421" "$(grep '^failregex' "$INFRA/fail2ban/filter.d-caddy-4xx-flood.conf")" '(?!421\b)'
+t_contains "the flood filter counts only the scanner classes (421 and 429 are not among them; F-09)" "$(grep '^failregex' "$INFRA/fail2ban/filter.d-caddy-4xx-flood.conf")" '(?:400|401|403|404|405)'
+t_not_contains "...421/429 are not counted" "$(grep '^failregex' "$INFRA/fail2ban/filter.d-caddy-4xx-flood.conf")" '421'
+t_contains "...a browser-labelled cross-site request is ignored" "$(cat "$INFRA/fail2ban/filter.d-caddy-4xx-flood.conf")" '"req_sec_fetch_site":"cross-site"'
 rm -f "$PFX/etc/fail2ban/jail.d/zz-aicc-local.local"
 DRYP="$(env AICC_TEST_HARNESS=1 AICC_ROOT_PREFIX="$PFX" bash "$PROV/install-stack.sh" --dry-run --only php 2>&1)"
 t_contains "dry-run on an installed prefix reports unchanged" "$DRYP" "unchanged: /etc/php/8.3/fpm/pool.d/aicc.conf"

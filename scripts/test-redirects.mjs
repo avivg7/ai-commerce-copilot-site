@@ -104,6 +104,9 @@ function genRouting(operator = false) {
   L.push(`\thandle @php_direct {`, `\t\terror 404`, `\t}`);
   named("wp_hidden", M.WP_HIDDEN_RE);
   L.push(`\thandle @wp_hidden {`, `\t\terror 404`, `\t}`);
+  // security review B, F-11: Apache-only protections do not exist under Caddy (dotfiles, WooCommerce private dirs, dumps/backups/archives/keys). Both listeners.
+  L.push(`\t@dotfile_deny {`, `\t\tpath_regexp dotfile_deny ${M.DOTFILE_RE}`, `\t\tnot path_regexp dotfile_ok ${M.DOTFILE_PUBLIC_RE}`, `\t}`, `\thandle @dotfile_deny {`, `\t\terror 404`, `\t}`);
+  for (const [id, re] of [["wp_private_dirs", M.WP_PRIVATE_DIRS_RE], ["sensitive_ext", M.SENSITIVE_EXT_RE]]) { named(id, re); L.push(`\thandle @${id} {`, `\t\terror 404`, `\t}`); }
   // everything of /wp-admin/ that is still here is an operator (or the public admin-ajax/admin-post): operators may upload big files, the public routes keep the 2 MB cap
   L.push(`\t@wp_admin_big {`, `\t\tpath_regexp wp_admin_big ${M.WP_ADMIN_RE}`, `\t\tnot path_regexp wp_admin_big_public ${M.WP_ADMIN_PUBLIC_RE}`, `\t}`);
   L.push(`\thandle @wp_admin_big {`, `\t\timport to_wordpress_admin`, `\t}`);
@@ -406,12 +409,15 @@ if (!QUIET) console.log(`test-redirects: ${CASES.length} cases, stand-in edge on
     ok(/import edge_log operator\s*$/m.test(opSite.text), "the operator listener's access log must say listener=operator (import edge_log operator)");
     ok(opSite.addresses.every((a) => !a.startsWith("http://")), "the operator listener is an https address");
   }
+  // Caddy compiles every matcher regexp with Go RE2: look-ahead / look-behind / back-references are a LOAD ERROR that only a real Caddy reports (found by the F-11 real-Caddy run)
+  const re2Bad = regenerated.split("\n").filter((l) => !/^\s*#/.test(l) && /(?:path_regexp|vars_regexp|header_regexp)\s/.test(l) && /\(\?(?:=|!|<=|<!)/.test(l));
+  ok(re2Bad.length === 0, `matcher regexps must be RE2-compatible (no look-ahead/look-behind): ${re2Bad.slice(0, 2).join(" | ")}`);
   ok((code.match(/^\s*bind\s/gm) || []).length === 1, "exactly one `bind` in the template (the operator listener's 127.0.0.1); the public listeners use the host's addresses");
   ok(/@aicc_op_not_loopback not remote_ip 127\.0\.0\.1 ::1\s*\n\s*abort @aicc_op_not_loopback/.test(snipText("aicc_operator_guard")), "aicc_operator_guard must abort every peer that is not loopback");
   const opRouting = regenerated.split("# BEGIN GENERATED: routing operator\n")[1]?.split("# END GENERATED: routing operator")[0] || "";
   const pubRouting = regenerated.split("# BEGIN GENERATED: routing\n")[1]?.split("# END GENERATED: routing")[0] || "";
   for (const n of ["wp_cron_deny", "wp_admin_deny", "wp_login_deny"]) { ok(pubRouting.includes(`@${n}`), `the PUBLIC routing must deny with @${n}`); ok(!opRouting.includes(`@${n}`), `the OPERATOR routing must not contain @${n} (that is what the listener is for)`); }
-  for (const n of ["bad_path", "bad_method", "xmlrpc_deny", "php_direct", "wp_hidden", "wp_admin_big"]) { ok(pubRouting.includes(`@${n}`) && opRouting.includes(`@${n}`), `both routing blocks must contain @${n}`); }
+  for (const n of ["bad_path", "bad_method", "xmlrpc_deny", "php_direct", "wp_hidden", "dotfile_deny", "wp_private_dirs", "sensitive_ext", "wp_admin_big"]) { ok(pubRouting.includes(`@${n}`) && opRouting.includes(`@${n}`), `both routing blocks must contain @${n}`); }
   ok(!/(wp_cron_deny|wp_admin_deny|wp_login_deny)/.test(opRouting), "no public deny rule may leak into the operator routing");
   // ---- stage identity: empty in the committed (production) text, never in production
   if (!STAGE_HOST) {
@@ -430,7 +436,7 @@ if (!QUIET) console.log(`test-redirects: ${CASES.length} cases, stand-in edge on
   // ---- access log (architecture review H-5): an ALLOW-LIST. The whole header maps are deleted; only the listed headers come back through log_append; retention 50 MiB x 10
   {
     const lg = snipText("edge_log");
-    const REQ_OK = ["User-Agent", "Referer", "Accept-Language", "Content-Type", "Content-Length", "Range", "If-None-Match"];
+    const REQ_OK = ["User-Agent", "Referer", "Accept-Language", "Content-Type", "Content-Length", "Range", "If-None-Match", "Sec-Fetch-Site"];   // Sec-Fetch-Site added deliberately for F-09 (browser-set, non-secret: same-origin|same-site|cross-site|none)
     const RESP_OK = ["Content-Type", "Content-Length", "Content-Encoding", "Cache-Control", "Location", "Content-Range"];
     ok(/^request>headers delete$/m.test(lg) && /^resp_headers delete$/m.test(lg), "edge_log must delete `request>headers` and `resp_headers` WHOLE (allow-list posture: a header nobody thought of must not reach the log)");
     const reqUsed = [...lg.matchAll(/\{http\.request\.header\.([A-Za-z-]+)\}/g)].map((m) => m[1]);
@@ -669,6 +675,10 @@ async function selfTest() {
     ["error log: request>headers no longer deleted (a 502 entry carries every request header)", (t) => afterHead(t, "# BEGIN GLOBAL OPTIONS", "\t\t\t\trequest>headers delete\n", "")],
     ["fastcgi snippet stops stripping the X-Remote-* family (X-Remote-Addr reaches PHP; security review I1)", (t) => afterHead(t, "(wp_proxy_fastcgi) {", "\t\theader_up -X-Remote-*\n", "")],
     ["wp_hidden loses the dependency-manifest rule (installed.json / composer.json public again; security review L4)", (t) => t.replace("composer\\.(?:json|lock)|installed\\.json|", "")],
+    ["F-11: the dotfile deny is removed from both routing blocks", (t) => t.replace(/\t@dotfile_deny \{\n(?:\t\t[^\n]*\n)*\t\}\n\thandle @dotfile_deny \{\n(?:\t\t[^\n]*\n)*\t\}\n/g, "")],
+    ["F-11: the dotfile deny also blocks /.well-known/ (ACME / security.txt would break)", (t) => t.replace(/\t\tnot path_regexp dotfile_ok [^\n]*\n/g, "")],
+    ["F-11: WooCommerce private upload dirs are no longer denied", (t) => t.replace("uploads/(?:woocommerce_uploads|wc-logs)|", "")],
+    ["F-11: archives/dumps are no longer in the sensitive-extension deny", (t) => t.replace("sql|dump|bak|old|orig|swp|log|gz|tgz|tar|zip|7z|rar|bz2|xz|env", "log|env")],
     ["the ACME CA default is no longer Let's Encrypt production", (t) => t.replace("https://acme-v02.api.letsencrypt.org/directory", "https://acme.zerossl.com/v2/DV90")],
   ];
   const tmp = fs.mkdtempSync(path.join(process.env.TMPDIR || "/tmp", "aicc-redirect-mutants-"));

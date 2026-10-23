@@ -15,8 +15,8 @@ def load(path):
     text = open(path).read()
     m = re.search(r"(?ms)^failregex\s*=\s*(.*?)^(?:ignoreregex|datepattern)", text)
     regs = [l.strip() for l in m.group(1).splitlines() if l.strip()]
-    ig = re.search(r"(?m)^ignoreregex\s*=\s*(.*)$", text)
-    ignore = [ig.group(1).strip()] if ig and ig.group(1).strip() else []
+    ig = re.search(r"(?ms)^ignoreregex\s*=\s*(.*?)^datepattern", text)       # fail2ban accepts several ignoreregex lines (continuation lines are indented)
+    ignore = [l.strip() for l in ig.group(1).splitlines() if l.strip()] if ig else []
     # NOTE: compiled WITHOUT re.I on purpose: fail2ban compiles failregex case-sensitively (verified on the real thing), so the patterns must carry (?i:...) themselves
     return ([re.compile(r.replace("<HOST>", HOST_RE)) for r in regs], [re.compile(r.replace("<HOST>", HOST_RE)) for r in ignore])
 
@@ -46,13 +46,25 @@ def truth_login(j):
     return a or b
 
 
+STATIC_EXT = re.compile(r"\.(?:png|jpe?g|gif|webp|avif|svg|ico|css|js|mjs|map|woff2?|ttf|otf|eot|mp4|webm|mp3|vtt|pdf|txt|xml)$", re.I)
+COUNTED = (400, 401, 403, 404, 405)     # F-09: the classes a scanner produces; 421 (M-6), 429 (already throttled by the app), 408/413/414 and the rest do not count
+
+
 def truth_flood(j):
     uri = j["request"]["uri"]
+    path = uri.split("?")[0]
     if uri.startswith(("/.well-known/acme-challenge/", "/favicon.ico")):
         return False
-    if j["status"] == 421:      # misdirected-request answers (unknown Host, e.g. scanners using the IP address) do not count (review M-6)
+    if j["status"] not in COUNTED:
         return False
-    return 400 <= j["status"] <= 499
+    # F-09: a visitor's browser can be made to fire dozens of GETs at us by any page ("<img src=https://www.copilt.org/x-N>"): static-asset GETs never count ...
+    if j["request"]["method"] in ("GET", "HEAD") and (STATIC_EXT.search(path) or path.startswith(("/_next/static/", "/demo/"))):
+        return False
+    # ... and neither does anything the BROWSER itself labels cross-site (Sec-Fetch-Site is set by the browser; the attacker's page cannot forge or remove it). A scanner that sends the header
+    # merely escapes the jail, which is noise control and not a security boundary (the edge's deny rules are).
+    if j.get("req_sec_fetch_site") == "cross-site":
+        return False
+    return True
 
 
 log = os.path.expanduser("~/aicc-rehearsal/logs/aicc-edge.log")
@@ -70,7 +82,7 @@ if not real:
     print("no real Caddy access-log lines found: using hand-written samples of both shapes")
 
 
-def synth(method, uri, status, ip="198.51.100.7", ua=None, referer=None, shape=1):
+def synth(method, uri, status, ip="198.51.100.7", ua=None, referer=None, shape=1, sfs=None):
     j = json.loads(json.dumps(bases[shape]))
     j["request"]["method"] = method; j["request"]["uri"] = uri; j["request"]["remote_ip"] = ip; j["request"]["client_ip"] = ip; j["status"] = status
     if shape == 0:
@@ -79,6 +91,7 @@ def synth(method, uri, status, ip="198.51.100.7", ua=None, referer=None, shape=1
     else:
         if ua is not None: j["req_user_agent"] = ua
         if referer is not None: j["req_referer"] = referer
+        if sfs is not None: j["req_sec_fetch_site"] = sfs
     return json.dumps(j, separators=(",", ":"))
 
 
@@ -96,6 +109,14 @@ for shape in (0, 1):
         syn.append(synth("GET", "/", st, ip="203.0.113.50", shape=shape))
     syn.append(synth("GET", "/robots.txt", 404, shape=shape))
     syn.append(synth("GET", "/robots.txt", 421, shape=shape))
+# F-09 (security review B): cross-site forcing must not ban a visitor; scanners still must be counted
+f09 = []
+for sfs in (None, "", "none", "same-origin", "same-site", "cross-site"):
+    for m in ("GET", "HEAD", "POST"):
+        for uri in ("/x-1", "/x-1.png", "/img/a.JPG?cb=1", "/x.php", "/wp-content/plugins/foo/readme.txt", "/pricing/?next=a.png", "/_next/static/chunks/zz.js", "/demo/missing.mp4", "/.env", "/wp-login.php", "/phpmyadmin/"):
+            for st in (200, 400, 401, 403, 404, 405, 408, 413, 421, 429, 499):
+                f09.append(synth(m, uri, st, shape=1, sfs=sfs))
+syn += f09
 # forgery attempts: header/query content that LOOKS like log fields must not count (inner quotes are escaped in JSON)
 forged = []
 for shape in (0, 1):
@@ -127,5 +148,19 @@ if matches(login_filter, l) != "203.0.113.77":
 l6 = synth("POST", "/wp-login.php", 200, ip="2001:db8::1", shape=1)
 if matches(login_filter, l6) != "2001:db8::1":
     bad += 1; print("IPv6 host capture wrong")
+# explicit F-09 expectations (not derived from truth_flood, so a wrong truth function cannot hide a wrong regex)
+def counted(method, uri, st, sfs=None): return matches(flood_filter, synth(method, uri, st, shape=1, sfs=sfs)) is not None
+EXPECT = [
+    (("GET", "/x-1.png", 404, "cross-site"), False), (("GET", "/x-1.png", 404, None), False), (("GET", "/A/B.PNG", 404, ""), False), (("HEAD", "/a.css", 404, None), False),
+    (("GET", "/x-1", 404, "cross-site"), False),            # the forcing case: no extension, but the browser says cross-site
+    (("GET", "/x-1", 404, "same-origin"), True), (("GET", "/x-1", 404, None), True), (("GET", "/x-1", 404, ""), True), (("GET", "/x.php", 404, None), True),
+    (("GET", "/wp-login.php", 403, None), True), (("POST", "/x.png", 404, None), True), (("GET", "/pricing/?next=a.png", 404, None), True),
+    (("GET", "/_next/static/chunks/zz.js", 404, None), False), (("GET", "/demo/missing.mp4", 404, None), False),
+    (("GET", "/x-1", 429, None), False), (("GET", "/x-1", 413, None), False), (("GET", "/x-1", 408, None), False), (("GET", "/x-1", 421, None), False),
+    (("GET", "/x-1", 401, None), True), (("GET", "/x-1", 405, None), True), (("GET", "/x-1", 400, None), True), (("GET", "/favicon.ico", 404, None), False),
+]
+for args, want in EXPECT:
+    if counted(*args) != want:
+        bad += 1; print("F-09 EXPECTATION FAILED %s want=%s" % (args, want))
 print("%d real log line(s) + %d synthetic + %d forged; login-filter matches=%d, 4xx-filter matches=%d; mismatches=%d" % (real, len(syn), len(forged), counts["login"], counts["flood"], bad))
 sys.exit(1 if bad else 0)
