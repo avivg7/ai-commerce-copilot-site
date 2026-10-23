@@ -64,6 +64,8 @@ C.2 Verification that does not need the production site build: identity file, `a
 (The full `production-edge-check.sh` run needs the production Site build and therefore comes after step E; see E.3.)
 Claude after C: records the checker output as the open-items list for the owner.
 
+**C-last. Handshake rehearsal (needs the NEW Backend answering on `api.copilt.org` in `enforced` mode, i.e. Backend gates G0-G12 of `docs/launch/backend-cutover-final-checklist.md` done):** run step K.1 now, in the dark phase, so a secret/KID mismatch between the Control Plane and the Backend is found before DNS cutover instead of by the first paying merchant. K.1 is repeated after DNS cutover as part of the final smoke.
+
 ## D. SIGNED PLUGIN SEED (publish the first Plugin release into the private store)
 
 BLOCKING for the CP launch gate rule 5g. Needs the owner's offline signing keys and decisions (first version; recommended 1.1.0, release notes; Reco mascot art rights): `owner-kit/A-ops/`. Command text: 6.10 (build with `bin/build-release.sh` from a CLEAN Plugin commit AFTER `UPDATE_PUBLIC_KEYS=<primary>,<standby>` is committed; `php bin/sign-release.php sign` on the owner's offline machine; `verify`; `publish-plugin-release.sh --env production ... --confirm-production <version>` as a dry run, then `--apply`, then `--apply --set-current`). The store is `/srv/aicc/shared/plugin-releases` (root:aicc-cp 0750, in the backup).

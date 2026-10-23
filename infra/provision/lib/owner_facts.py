@@ -36,7 +36,7 @@ FREE_TEXT = {  # key -> maximum length in characters
     "AICC_LEGAL_PAYMENT_PROCESSOR": 80, "AICC_LEGAL_VAT_DETAILS": 300,
 }
 TRUE_ONLY = ("AICC_LEGAL_REVIEW_APPROVED", "AICC_STRUCTURED_DATA_OFFERS", "AICC_LM_PAYMENT_GATE_STRICT")
-# Production derives strictness from its host name, so it never needs (and may not set) AICC_LM_PAYMENT_GATE_STRICT; staging rehearses a payment sandbox with it.
+# Production derives strictness from its host name (www.copilt.org) or WP_ENVIRONMENT_TYPE=production (set by the production template), so it never needs (and may not set) AICC_LM_PAYMENT_GATE_STRICT; staging rehearses a payment sandbox with it.
 # Staging never carries legal facts, launch switches or the launch allowlist: those describe the public launch.
 KEYS_FOR = {
     "production": [k for k in ORDER if k != "AICC_LM_PAYMENT_GATE_STRICT"],  # includes AICC_LM_PLUGIN_SIGNING_PUBKEYS (public keys only; production serves the signed Plugin releases)
