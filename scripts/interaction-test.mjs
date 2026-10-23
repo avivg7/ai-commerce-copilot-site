@@ -238,14 +238,15 @@ for (const loc of ["en", "he", "es", "ru"]) {
   await p.waitForTimeout(500);
   const t1 = await total();
   check(`demo[${loc}]: Space ticks a product and the bundle total updates (${t0} -> ${t1})`, t0 !== t1 && (await boxes[2].isChecked()));
-  await boxes[0].focus();
+  const live = await p.$$(".aicc-fbt input[type=checkbox]:not(:disabled)"); // the viewed product's tick is locked (disabled) on the Product page, like the real widget
+  await live[0].focus();
   // The Hebrew demo is an English fallback (lang=en dir=ltr), so arrows follow ITS direction, not the page's.
   const dirNow = await p.$eval(".aicc-fbt", (e) => getComputedStyle(e).direction);
   const nextKey = dirNow === "rtl" ? "ArrowLeft" : "ArrowRight";
   await p.keyboard.press(nextKey);
-  check(`demo[${loc}]: ${nextKey} moves to the next product (follows the demo's own reading direction: ${dirNow})`, await p.evaluate(() => document.activeElement === document.querySelectorAll(".aicc-fbt input[type=checkbox]")[1]));
+  check(`demo[${loc}]: ${nextKey} moves to the next product (follows the demo's own reading direction: ${dirNow})`, await p.evaluate(() => document.activeElement === document.querySelectorAll(".aicc-fbt input[type=checkbox]:not(:disabled)")[1]));
   await p.keyboard.press("ArrowDown");
-  check(`demo[${loc}]: ArrowDown moves on`, await p.evaluate(() => document.activeElement === document.querySelectorAll(".aicc-fbt input[type=checkbox]")[2]));
+  check(`demo[${loc}]: ArrowDown moves on`, await p.evaluate(() => document.activeElement === document.querySelectorAll(".aicc-fbt input[type=checkbox]:not(:disabled)")[2]));
   const why1 = await p.$eval(".aicc-fbt__why p[data-why]", (e) => e.textContent);
   await p.click(".aicc-fbt__mode[aria-pressed=false]");
   const mode = await p.$eval(".aicc-fbt", (e) => e.dataset.mode);
@@ -263,13 +264,13 @@ for (const loc of ["en", "he", "es", "ru"]) {
   await p.goto(urlFor(loc, ""));
   await p.evaluate(() => document.querySelector("#demo").scrollIntoView());
   await p.waitForSelector(".aicc-fbt input[type=checkbox]");
-  const fits = await p.evaluate(() => document.documentElement.scrollWidth <= innerWidth && [...document.querySelectorAll(".aicc-fbt *")].every((e) => e.getBoundingClientRect().right <= innerWidth + 1));
+  const fits = await p.evaluate(() => document.documentElement.scrollWidth <= innerWidth && [...document.querySelectorAll(".aicc-fbt *")].filter((e) => !e.closest(".aicc-fbt__cands") || e.matches(".aicc-fbt__cands")).every((e) => e.getBoundingClientRect().right <= innerWidth + 1)); // the card rail scrolls inside itself (like the real widget); the rail box must fit
   check(`demo[${loc}] @360: fits without horizontal scroll`, fits);
   const boxes = await p.$$(".aicc-fbt input[type=checkbox]");
   await boxes[3].focus(); await p.keyboard.press("Space");
   await p.waitForTimeout(40);
   const t = await p.$eval(".aicc-fbt__total strong", (e) => e.textContent.trim());
-  check(`demo[${loc}] @360 reduced motion: total updates immediately without counting animation (${t})`, t === "$54", t);
+  check(`demo[${loc}] @360 reduced motion: total updates immediately without counting animation (${t})`, t === "$54.00", t);
   await p.click(".aicc-fbt__mode[aria-pressed=false]");
   check(`demo[${loc}] @360: no Strong/Medium/Light strength bars exist (tiers are not in the product)`, await p.evaluate(() => !document.querySelector(".aicc-fbt__bar") && !/\b(strong|medium|light) link/i.test(document.querySelector(".aicc-fbt").textContent)));
   check(`demo[${loc}] @360: still fits after switching to With AICC`, await p.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
@@ -285,7 +286,7 @@ for (const loc of ["en", "he", "es", "ru"]) {
   await boxes[3].focus(); await p.keyboard.press("Space"); await p.waitForTimeout(40);
   const t = await p.$eval(".aicc-fbt__total strong", (e) => e.textContent.trim());
   await p.click(".aicc-fbt__mode[aria-pressed=false]");
-  check(`demo: data-aicc-motion="reduce" disables counters (${t})`, t === "$54", t);
+  check(`demo: data-aicc-motion="reduce" disables counters (${t})`, t === "$54.00", t);
   const heroAnim = await p.evaluate(() => getComputedStyle(document.querySelector(".aicc-hero__copy .aicc-fade-up")).animationName);
   check(`site: data-aicc-motion="reduce" removes the hero entrance animation (${heroAnim})`, heroAnim === "none", heroAnim);
   await ctx.close();
@@ -469,9 +470,9 @@ for (const loc of ["en", "es", "ru", "he"]) {
   await p.evaluate(() => document.querySelector("#demo").scrollIntoView());
   await p.waitForSelector(".aicc-fbt input[type=checkbox]");
   const st = await p.evaluate(() => ({ lang: document.querySelector(".aicc-fbt").getAttribute("lang"), dir: getComputedStyle(document.querySelector(".aicc-fbt")).direction }));
-  const boxes = await p.$$(".aicc-fbt input[type=checkbox]");
-  await boxes[0].focus(); await p.keyboard.press("ArrowLeft");
-  check(`demo (translated RTL simulation): not marked as fallback (lang=${st.lang}, ${st.dir}) and ArrowLeft moves to the next product`, st.lang === "he" && st.dir === "rtl" && (await p.evaluate(() => document.activeElement === document.querySelectorAll(".aicc-fbt input[type=checkbox]")[1])));
+  const live = await p.$$(".aicc-fbt input[type=checkbox]:not(:disabled)");
+  await live[0].focus(); await p.keyboard.press("ArrowLeft");
+  check(`demo (translated RTL simulation): not marked as fallback (lang=${st.lang}, ${st.dir}) and ArrowLeft moves to the next product`, st.lang === "he" && st.dir === "rtl" && (await p.evaluate(() => document.activeElement === document.querySelectorAll(".aicc-fbt input[type=checkbox]:not(:disabled)")[1])));
   await ctx.close();
 }
 // 8c. Merchant view on a phone: no squeezed columns (a product name never breaks letter by letter)
@@ -633,42 +634,55 @@ for (const route of ["", "product"]) {
   check(`home hero: approved headline, subheadline, category, availability and the two approved CTAs (${h.ctas.join(" | ")})`, h.h1 === "Turn every shopper journey into a smarter selling opportunity." && h.lead === "AI Commerce Copilot turns your store data into relevant recommendations and smarter merchandising \u2014 helping shoppers discover more while you manage less and stay in control." && /available for woocommerce/i.test(h.eyebrow) && h.cat === "Commerce recommendation and merchandising copilot" && h.ctas.join("|") === "See it in action|View plans" && h.hasDemoTrigger, JSON.stringify(h));
   const o = await p.evaluate(() => ({ titles: [...document.querySelectorAll(".aicc-pillars h3, .aicc-pillars [class*=title]")].map((x) => x.textContent.trim()), order: [...document.querySelectorAll("main > section[id], main > .aicc-section[id]")].map((x) => x.id) }));
   check(`home order: three merchant outcomes first (${o.titles.join(" | ")})`, o.titles.slice(0, 3).join("|") === "Help shoppers discover more|Merchandise less by hand|Stay in control", JSON.stringify(o));
-  const ord = await p.evaluate(() => ["surfaces", "demo", "workspace", "why", "how-it-works"].map((id) => document.getElementById(id)?.getBoundingClientRect().top + scrollY));
-  check(`home order: outcomes, then product page + cart proof, then evidence/control, then workspace, then mechanics (${ord.map(Math.round).join(" < ")})`, ord.every((v, i) => v > 0 && (i === 0 || v > ord[i - 1])), JSON.stringify(ord));
-  const wm = (root) => p.evaluate((r0) => {
-    const r = document.querySelector(r0 + " .aicc-wmock"), cards = [...r.querySelectorAll(".aicc-wmock__card")];
-    return { title: r.querySelector(".aicc-wmock__title").textContent.trim(), subtitle: r.querySelector(".aicc-wmock__subtitle").textContent.trim(), cards: cards.length, source: cards.filter((x) => x.dataset.source).length, ticked: cards.filter((x) => x.dataset.selected).length, lockedChecks: r.querySelectorAll(".aicc-wmock__check[data-locked]").length, names: cards.map((x) => x.querySelector(".aicc-wmock__name").textContent.trim()), prices: cards.map((x) => x.querySelector(".aicc-wmock__price").textContent.trim()), arts: r.querySelectorAll(".aicc-wmock__thumb svg").length, label: r.querySelector(".aicc-wmock__total-label").textContent.trim(), total: r.querySelector(".aicc-wmock__total-amount").textContent.trim(), add: r.querySelector(".aicc-wmock__add").textContent.trim(), brand: r.querySelector(".aicc-wmock__brand").textContent.replace(/\s+/g, " ").trim(), wrap: getComputedStyle(r.querySelector(".aicc-wmock__rail")).flexWrap, headings: r.querySelectorAll("h1,h2,h3,h4,button,a,input").length };
-  }, root);
-  const pageW = await wm("#surf-p-page");
-  const tabs = await p.evaluate(() => [...document.querySelectorAll("#surfaces [role=tab]")].map((x) => x.textContent.trim()));
-  await p.click("#surf-t-cart"); await p.waitForTimeout(200);
-  const cartW = await wm("#surf-p-cart");
-  const c = await p.evaluate(() => ({ sel: document.getElementById("surf-t-cart").getAttribute("aria-selected"), cartVisible: !document.getElementById("surf-p-cart").hidden && !document.getElementById("surf-p-cart").inert, pageHidden: document.getElementById("surf-p-page").hidden || document.getElementById("surf-p-page").inert, note: document.querySelector(".aicc-surfaces__note").textContent }));
-  check("surfaces: Product page and Cart are an explicit two-tab switch; the Cart tab shows the cart state and the scope note keeps checkout with WooCommerce", tabs.join("|") === "Product page|Cart" && c.sel === "true" && c.cartVisible && c.pageHidden && /Checkout and payment stay entirely with WooCommerce/.test(c.note) && /invented sample products/.test(c.note), JSON.stringify({ tabs, c }));
-  check("surfaces: the Product page widget follows the real shopper widget (title and subtitle, the viewed product first, ticked and locked, a non-wrapping card rail with product images, Bundle total, \"Add N products to cart\", Powered by signature)",
-    pageW.title === "Frequently Bought Together" && pageW.subtitle === "Customers often purchase these products together." && pageW.cards === 4 && pageW.source === 1 && pageW.lockedChecks === 1 && pageW.ticked === 3 && pageW.names[0] === "Pour-over coffee set" && pageW.arts === 4 && pageW.prices.join() === "$38.00,$14.00,$46.00,$16.00" && pageW.label === "Bundle total" && pageW.total === "$98.00" && pageW.add === "Add 3 products to cart" && /Powered by AI Commerce Copilot/.test(pageW.brand) && pageW.wrap === "nowrap" && pageW.headings === 0, JSON.stringify(pageW));
-  check("surfaces: the Cart widget has no source card and leaves out the product already in the cart; recommended products are the demo's own, with the same anatomy",
-    cartW.title === "Frequently Bought Together" && cartW.cards === 4 && cartW.source === 0 && cartW.lockedChecks === 0 && !cartW.names.includes("Pour-over coffee set") && cartW.ticked === 2 && cartW.total === "$60.00" && cartW.add === "Add 2 products to cart" && cartW.arts === 4 && /Powered by AI Commerce Copilot/.test(cartW.brand) && cartW.wrap === "nowrap", JSON.stringify(cartW));
-  const cp = await p.evaluate(() => {
-    const q = (x) => document.querySelector(x), qa = (x) => [...document.querySelectorAll(x)];
-    const lines = qa("#surf-p-cart .aicc-cartmock__line").map((l) => ({ name: l.querySelector(".aicc-cartmock__name").textContent.trim(), thumb: !!l.querySelector(".aicc-cartmock__thumb svg"), unit: l.querySelector(".aicc-cartmock__unit").textContent.trim(), qty: l.querySelector(".aicc-cartmock__qty b").textContent.trim(), sub: l.querySelector(".aicc-cartmock__sub").textContent.trim() }));
-    const recNames = qa("#surf-p-cart .aicc-wmock__name").map((x) => x.textContent.trim());
-    const items = q("#surf-p-cart .aicc-cartmock__items").getBoundingClientRect(), summary = q("#surf-p-cart .aicc-cartmock__summary").getBoundingClientRect(), widget = q("#surf-p-cart .aicc-wmock").getBoundingClientRect();
-    const checkout = q("#surf-p-cart .aicc-cartmock__checkout");
-    return { head: qa("#surf-p-cart .aicc-cartmock__head span").map((x) => x.textContent.trim()).filter(Boolean), lines, recNames, overlap: lines.filter((l) => recNames.includes(l.name)).length, summaryRows: qa("#surf-p-cart .aicc-cartmock__row").map((r) => r.textContent.replace(/\s+/g, " ").trim()), checkoutText: checkout.textContent.trim(), checkoutGradient: /gradient/.test(getComputedStyle(checkout).backgroundImage), sideBySide: summary.left >= items.right - 1, stacked: summary.top >= items.bottom - 1, widgetAfter: widget.top >= Math.max(items.bottom, summary.bottom) - 1, pageHasProduct: !!q("#surf-p-page .aicc-mock__product"), cartHasProduct: !!q("#surf-p-cart .aicc-mock__product"), pageHasCartParts: !!q("#surf-p-page .aicc-cartmock"), widgetCard: q("#surf-p-cart .aicc-wmock__card") ? "card" : "" };
+  const ord = await p.evaluate(() => ["demo", "workspace", "why", "how-it-works"].map((id) => document.getElementById(id)?.getBoundingClientRect().top + scrollY));
+  check(`home order: outcomes, then the interactive "What shoppers see" demo (which holds the Product page / Cart switch), then workspace, then mechanics (${ord.map(Math.round).join(" < ")})`, ord.every((v, i) => v > 0 && (i === 0 || v > ord[i - 1])) && !(await p.evaluate(() => !!document.getElementById("surfaces"))), JSON.stringify(ord));
+  // The Product page / Cart switch lives INSIDE the demo: one canonical shopper-facing section, no separate proof section.
+  await p.evaluate(() => document.querySelector("#demo").scrollIntoView()); await p.waitForSelector(".aicc-fbt [data-surface]", { state: "attached", timeout: 8000 });
+  const snap = () => p.evaluate(() => {
+    const f = document.querySelector(".aicc-fbt"), q = (x) => f.querySelector(x), qa = (x) => [...f.querySelectorAll(x)];
+    const cards = qa("[data-cands] .aicc-fbt-card");
+    return { surface: qa("[data-surface][aria-pressed=true]").map((b) => b.dataset.surface).join(), mode: f.dataset.mode, title: q("[data-title]").textContent.trim(), sub: q("[data-sub]").textContent.trim(),
+      cards: cards.length, anchor: cards.filter((c) => c.dataset.anchor).length, locked: qa("[data-cands] input:disabled").length, ticked: cards.filter((c) => c.querySelector("input").checked).length,
+      names: cards.map((c) => c.querySelector(".aicc-fbt-card__name").textContent.trim()), arts: qa("[data-cands] .aicc-art").length, wrap: getComputedStyle(q("[data-cands]")).flexWrap,
+      total: q("[data-total]").textContent.trim(), label: q(".aicc-fbt__total span").textContent.trim(), add: q("[data-add-text]").textContent.trim(), brand: q(".aicc-fbt__brand").textContent.replace(/\s+/g, " ").trim(),
+      store: { product: !!q("[data-store] .aicc-store__product"), cart: !!q("[data-store] .aicc-cart"), lines: qa("[data-store] .aicc-cart__line").map((l) => l.querySelector(".aicc-cart__name").textContent.trim()), rows: qa("[data-store] .aicc-cart__row").map((r) => r.textContent.replace(/\s+/g, " ").trim()), checkout: q("[data-store] .aicc-cart__checkout")?.textContent.trim() || "" },
+      plain: { shown: !q("[data-plain]").hidden, names: qa("[data-plainlist] .aicc-fbt-card__name").map((x) => x.textContent.trim()), ticks: qa("[data-plain] input").length }, result: q("[data-result]").textContent.trim() };
   });
-  check(`cart page context: a real cart (column headers ${cp.head.join("/")}, ${cp.lines.length} products already in it, each with thumbnail, unit price, quantity and line subtotal), an order-summary card, and the widget placed after both`,
-    cp.head.join("|") === "Product|Price|Quantity|Subtotal" && cp.lines.length === 2 && cp.lines.every((l) => l.thumb && /^\$\d+\.\d{2}$/.test(l.unit) && /^\d+$/.test(l.qty) && /^\$\d+\.\d{2}$/.test(l.sub)) && cp.summaryRows.length === 3 && /^Subtotal\$86\.00$/.test(cp.summaryRows[0]) && /^Shipping/.test(cp.summaryRows[1]) && /^Total\$86\.00$/.test(cp.summaryRows[2]) && cp.sideBySide && cp.widgetAfter, JSON.stringify(cp));
-  check("cart page context: in-cart products are never offered as recommendations; no 'viewed product' card; the checkout control belongs to the fake store (neutral, not an AICC gradient) and is quieter than the AICC button", cp.overlap === 0 && cp.recNames.length === 4 && cp.checkoutText === "Proceed to checkout" && !cp.checkoutGradient, JSON.stringify({ overlap: cp.overlap, rec: cp.recNames, checkout: cp.checkoutText, gradient: cp.checkoutGradient }));
-  check("surfaces: the Product page and Cart mocks are structurally distinct (product block vs cart lines + order summary) and the inactive state is not displayed (no blank space under the shorter one)", cp.pageHasProduct && !cp.cartHasProduct && !cp.pageHasCartParts && (await p.evaluate(() => getComputedStyle(document.getElementById("surf-p-page")).display === "none")), JSON.stringify({ page: cp.pageHasProduct, cart: cp.cartHasProduct }));
-  const th = await p.evaluate(() => { const add = document.querySelector("#surf-p-cart .aicc-wmock__add"), hero = document.querySelector(".aicc-btn--primary"), tick = document.querySelector("#surf-p-cart .aicc-wmock__check[data-on]"); const g = (e) => getComputedStyle(e).backgroundImage; return { add: g(add), hero: g(hero), tick: g(tick), addColor: getComputedStyle(add).color, radius: getComputedStyle(add).borderTopLeftRadius }; });
-  check("widget theme: the add button uses the same blue/teal gradient as the site's primary buttons (white text) and the ticked checkboxes carry it too", /gradient/.test(th.add) && th.add === th.hero && th.tick === th.hero && th.addColor === "rgb(255, 255, 255)", JSON.stringify(th));
-  await p.click("#surf-t-page"); await p.waitForTimeout(200);
-  const pcopy = await p.evaluate(() => ({ h: document.querySelector("#surf-p-page .aicc-surfaces__headline").textContent.trim(), b: document.querySelector("#surf-p-page .aicc-surfaces__body").textContent.trim() }));
-  await p.click("#surf-t-cart"); await p.waitForTimeout(200);
-  const ccopy = await p.evaluate(() => ({ h: document.querySelector("#surf-p-cart .aicc-surfaces__headline").textContent.trim(), b: document.querySelector("#surf-p-cart .aicc-surfaces__body").textContent.trim() }));
-  check("surfaces copy: outcome headline + one calm sentence for the Product page and the Cart (no 'starts ticked' mechanics)",
-    pcopy.h === "Help shoppers discover what belongs with the product they\u2019re already viewing." && pcopy.b === "They can choose the recommendations they want and add them together in one step." && ccopy.h === "Keep product discovery going in the cart." && ccopy.b === "Recommendations adapt to what\u2019s already there, without suggesting products the shopper has already added." && !/starts ticked|starting point|left out/i.test(pcopy.b + ccopy.b), JSON.stringify({ pcopy, ccopy }));
+  const surfaces = await p.evaluate(() => [...document.querySelectorAll(".aicc-fbt [data-surface]")].map((b) => b.textContent.trim()));
+  const pg = await snap();
+  check("shoppers demo: a Product page | Cart switch sits inside the demo (Product page selected first), next to the WooCommerce / With AICC comparison, with no separate section", surfaces.join("|") === "Product page|Cart" && pg.surface === "page" && pg.mode === "with" && pg.store.product && !pg.store.cart, JSON.stringify({ surfaces, pg: { surface: pg.surface, mode: pg.mode } }));
+  check("shoppers demo / Product page: follows the real widget (title and subtitle, the viewed product first, ticked and locked, a non-wrapping card rail with product images, Bundle total, \"Add N product(s) to cart\", Powered by signature)",
+    pg.title === "Frequently Bought Together" && pg.sub === "Customers often purchase these products together." && pg.cards === 5 && pg.anchor === 1 && pg.locked === 1 && pg.ticked === 1 && pg.names[0] === "Pour-over coffee set" && pg.arts === pg.cards && pg.label.toLowerCase() === "bundle total" && pg.total === "$38.00" && pg.add === "Add 1 product to cart" && /Powered by AI Commerce Copilot/.test(pg.brand) && pg.wrap === "nowrap", JSON.stringify(pg));
+  await p.click(".aicc-fbt [data-surface=cart]"); await p.waitForTimeout(250);
+  const ct = await snap();
+  check("shoppers demo / Cart: shows what is already in the cart (lines, subtotal, shipping, total, a neutral checkout control) and recommends BELOW it: no viewed-product card, nothing already in the cart is offered, recommendations start unticked",
+    ct.surface === "cart" && ct.store.cart && !ct.store.product && ct.store.lines.length === 2 && ct.store.rows.length === 3 && /^Subtotal\$86\.00$/.test(ct.store.rows[0]) && /^Total\$86\.00$/.test(ct.store.rows[2]) && ct.store.checkout === "Proceed to checkout" && ct.anchor === 0 && ct.locked === 0 && ct.ticked === 0 && ct.total === "$0.00" && !ct.names.some((n) => ct.store.lines.includes(n)) && ct.arts === ct.cards, JSON.stringify(ct));
+  check("shoppers demo: the Product page and the Cart are structurally different (a product block vs cart lines and totals) and the widget's own result line follows the surface", pg.store.product && ct.store.cart && pg.result !== ct.result && /cart/i.test(ct.result), JSON.stringify({ a: pg.result, b: ct.result }));
+  const order = await p.evaluate(() => { const f = document.querySelector(".aicc-fbt"); const cart = f.querySelector("[data-store] .aicc-cart").getBoundingClientRect(), w = f.querySelector(".aicc-fbt__widgetbox").getBoundingClientRect(); return w.top >= cart.bottom - 1; });
+  check("shoppers demo / Cart: the widget sits under the cart (cart-page placement), not beside it", order);
+  await p.click(".aicc-fbt [data-mode=without]"); await p.waitForTimeout(250);
+  const cw = await snap();
+  const cx = await p.evaluate(() => { const f = document.querySelector(".aicc-fbt"); return { btn: f.querySelector("[data-mode=without]").textContent.trim(), title: f.querySelector("[data-title]").textContent.trim(), sub: f.querySelector("[data-sub]").textContent.trim(), hint: f.querySelector("[data-plainhint]").textContent.trim(), why: f.querySelector("[data-why]").textContent.trim(), tags: [...f.querySelectorAll("[data-plainlist] .aicc-fbt-plain__tag")].map((x) => x.textContent.trim()), tiles: f.querySelectorAll("[data-plainlist] li").length, controls: f.querySelectorAll("[data-plain] input, [data-plain] button, [data-plain] [data-total], [data-plain] [data-add]").length, widgetHidden: f.querySelector("[data-bundle]").hidden, artFilter: getComputedStyle(f.querySelector("[data-plainlist] .aicc-art")).filter }; });
+  check("shoppers demo / Cart + WooCommerce cross-sells: plain grey cross-sells block (no ticks, no total, no button), without the products already in the cart", cw.mode === "without" && cw.plain.shown && cw.plain.ticks === 0 && cw.plain.names.length >= 2 && !cw.plain.names.some((n) => cw.store.lines.includes(n)) && /cross-sell/i.test(cw.result), JSON.stringify(cw.plain));
+  check("shoppers demo / Cart + WooCommerce: says plainly that cross-sells are manually linked and not learned (title, one-line note, per-product tag, hint and side explanation), with no controls and the AICC widget hidden",
+    cx.btn === "WooCommerce manual cross-sells" && cx.title === "WooCommerce cart cross-sells" && cx.sub === "Products you manually link to items in your catalog can appear here." && cx.hint === "WooCommerce does not learn these from what shoppers buy together: the merchant chooses the cross-sells manually." && /links? to items by hand/.test(cx.why) && /does not learn them/.test(cx.why) && /a store with none configured shows none/.test(cx.why) && /by hand.*does not learn them/.test(cw.result) && cx.tiles >= 2 && cx.tags.length === cx.tiles && cx.tags.every((t) => t === "Manually linked") && cx.controls === 0 && cx.widgetHidden && /grayscale/.test(cx.artFilter), JSON.stringify(cx));
+  await p.click(".aicc-fbt [data-surface=page]"); await p.waitForTimeout(250);
+  const pw = await snap();
+  check("shoppers demo / Product page + WooCommerce related products: the plain block, 3 tiles, the same two-way comparison, unchanged (no manual-link tag, category wording)", pw.surface === "page" && pw.mode === "without" && pw.plain.shown && pw.plain.names.length === 3 && pw.plain.ticks === 0 && /related/i.test(pw.result) && /same category/.test(pw.result) && (await p.$$(".aicc-fbt [data-plainlist] .aicc-fbt-plain__tag")).length === 0, JSON.stringify(pw.plain));
+  const grey = await p.evaluate(() => { const li = document.querySelector("[data-plainlist] li"), art = li.querySelector(".aicc-art"); return { filter: getComputedStyle(art).filter, bg: getComputedStyle(li).backgroundColor }; });
+  check("shoppers demo: the WooCommerce side is neutral grey (grayscale artwork, no brand colour)", /grayscale/.test(grey.filter), JSON.stringify(grey));
+  await p.click(".aicc-fbt [data-mode=with]"); await p.click(".aicc-fbt [data-surface=cart]"); await p.waitForTimeout(250);
+  const boxesNow = await p.$$(".aicc-fbt [data-cands] input:not(:disabled)");
+  await boxesNow[0].focus(); await p.keyboard.press("Space"); await p.waitForTimeout(600);
+  const ct2 = await snap();
+  await p.click(".aicc-fbt [data-surface=page]"); await p.waitForTimeout(250);
+  const back = await snap();
+  await p.click(".aicc-fbt [data-surface=cart]"); await p.waitForTimeout(250);
+  check("shoppers demo / Cart: ticking a recommendation updates the bundle total and the button label, and the Product page keeps its own selection", ct2.ticked === 1 && ct2.total !== "$0.00" && ct2.add === "Add 1 product to cart" && back.ticked === 1 && back.total === "$38.00", JSON.stringify({ ct2: [ct2.ticked, ct2.total, ct2.add], back: [back.ticked, back.total] }));
+  await p.click(".aicc-fbt [data-view=merchant]"); await p.waitForTimeout(250);
+  const mv = await p.evaluate(() => ({ disabled: [...document.querySelectorAll(".aicc-fbt [data-surface], .aicc-fbt [data-mode]")].every((b) => b.disabled), merchant: !document.querySelector(".aicc-fbt [data-panel=merchant]").hidden, rows: document.querySelectorAll(".aicc-fbt [data-rows] .aicc-fbt-row").length }));
+  check("shoppers demo: the merchant view still works (evidence rows, rules) and the surface / comparison switches are unavailable there", mv.disabled && mv.merchant && mv.rows >= 3, JSON.stringify(mv));
+  await p.click(".aicc-fbt [data-view=shopper]"); await p.waitForTimeout(250);
   await p.evaluate(() => document.querySelector("#demo").scrollIntoView()); await p.waitForSelector(".aicc-fbt__view", { state: "attached", timeout: 8000 });
   const v = await p.evaluate(() => ({ titles: [...document.querySelectorAll("#demo .aicc-versus h3")].map((x) => x.textContent.trim()), toggle: [...document.querySelectorAll("#demo .aicc-fbt__view")].map((x) => x.textContent.trim()) }));
   check(`demo: "What shoppers see" versus "What you see and control" (${v.titles.join(" | ")})`, v.titles.join("|") === "What shoppers see|What you see and control" && v.toggle.includes("What you see and control"), JSON.stringify(v));
@@ -688,8 +702,14 @@ for (const [w, h] of [[390, 844], [360, 740], [320, 640]]) {
   await p.waitForTimeout(500);
   const m = await p.evaluate(() => { const r = (q) => document.querySelector(q)?.getBoundingClientRect(); const lead = document.querySelector(".aicc-hero-lead"); return { sw: document.documentElement.scrollWidth, iw: innerWidth, ih: innerHeight, cta: r(".aicc-hero-actions a, .aicc-hero-actions button")?.bottom, h1Lines: Math.round(r("h1").height / parseFloat(getComputedStyle(document.querySelector("h1")).lineHeight)), visual: r(".aicc-hero__visual, .aicc-reco-hero")?.top, pill: r(".aicc-pillars")?.top, words: document.querySelector(".aicc-hero").innerText.trim().split(/\s+/).length, lastWord: lead.textContent.trim().split(/\s+/).pop() }; });
   check(`phone ${w}x${h}: no horizontal scroll, the primary CTA is inside the first viewport, the hero stays light (${m.words} words), the headline wraps to at most five lines (${m.h1Lines})`, m.sw <= m.iw && m.cta < m.ih + (w < 340 ? 240 : 0) && m.words <= 70 && m.h1Lines <= 5, JSON.stringify(m));
-  const ov = await p.evaluate(async () => { const out = {}; for (const id of ["surf-t-page", "surf-t-cart"]) { document.getElementById(id).click(); await new Promise((r) => setTimeout(r, 150)); const m = document.querySelector("#surfaces .aicc-mock:not([hidden]) , #surfaces [role=tabpanel]:not([hidden]) .aicc-mock"); const r = m.getBoundingClientRect(); out[id] = { page: document.documentElement.scrollWidth <= innerWidth, mockInside: r.left >= -1 && r.right <= innerWidth + 1, innerRail: !![...m.querySelectorAll(".aicc-wmock__rail")].length }; } const it = document.querySelector("#surf-p-cart .aicc-cartmock__items").getBoundingClientRect(), sm = document.querySelector("#surf-p-cart .aicc-cartmock__summary").getBoundingClientRect(), ad = document.querySelector("#surf-p-cart .aicc-wmock__add").getBoundingClientRect(); out.cartLayout = { stacked: sm.top >= it.bottom - 1, summaryInside: sm.left >= -1 && sm.right <= innerWidth + 1, itemsInside: it.left >= -1 && it.right <= innerWidth + 1, addInside: ad.left >= -1 && ad.right <= innerWidth + 1, addTall: ad.height >= 44, subsInside: [...document.querySelectorAll("#surf-p-cart .aicc-cartmock__sub, #surf-p-cart .aicc-cartmock__qty")].every((e) => { const r = e.getBoundingClientRect(); return r.left >= -1 && r.right <= innerWidth + 1; }) }; return out; });
-  check(`phone ${w}x${h}: the Product page and Cart mocks stay inside the viewport (only the card rail scrolls, never the page); the cart summary stacks under the cart lines and the add button stays usable (44px+)`, [ov["surf-t-page"], ov["surf-t-cart"]].every((x) => x.page && x.mockInside && x.innerRail) && Object.values(ov.cartLayout).every(Boolean), JSON.stringify(ov));
+  await p.evaluate(() => document.querySelector("#demo").scrollIntoView()); await p.waitForSelector(".aicc-fbt [data-surface]", { state: "attached", timeout: 8000 });
+  const ov = {};
+  for (const surf of ["page", "cart"]) {
+    await p.click(`.aicc-fbt [data-surface=${surf}]`); await p.waitForTimeout(250);
+    ov[surf] = await p.evaluate(() => { const f = document.querySelector(".aicc-fbt"), st = f.querySelector(".aicc-store").getBoundingClientRect(), rail = f.querySelector("[data-cands]"), rr = rail.getBoundingClientRect(), add = f.querySelector("[data-add]").getBoundingClientRect(), pills = [...f.querySelectorAll("[data-surface]")].map((b) => b.getBoundingClientRect()); const inside = (r) => r.left >= -1 && r.right <= innerWidth + 1; const out = { page: document.documentElement.scrollWidth <= innerWidth, storeInside: inside(st), railInside: inside(rr), railScrolls: rail.scrollWidth > rail.clientWidth, addInside: inside(add), addTall: add.height >= 44, pillsTall: pills.every((r) => r.height >= 44) };
+      const cart = f.querySelector("[data-store] .aicc-cart"); if (cart) { const it = cart.querySelector(".aicc-cart__items").getBoundingClientRect(), sm = cart.querySelector(".aicc-cart__summary").getBoundingClientRect(); out.cartStacked = sm.top >= it.bottom - 1; out.cartInside = inside(it) && inside(sm); out.names = [...cart.querySelectorAll(".aicc-cart__name")].every((n) => n.getBoundingClientRect().width >= 60); } return out; });
+  }
+  check(`phone ${w}x${h}: the Product page and Cart stay inside the viewport (only the card rail scrolls, never the page); the cart summary stacks under the cart lines, product names stay readable and the add button is 44px+`, Object.values(ov).every((x) => Object.values(x).every(Boolean)), JSON.stringify(ov));
   await ctx.close();
 }
 // 14. FAQ search / filter (kit module faq-search.js)
@@ -1142,7 +1162,7 @@ for (const w of [1280, 390, 320]) {
     h.eyebrow?.toLowerCase() === "available for woocommerce" && h.h1 === "Turn every shopper journey into a smarter selling opportunity." && h.paras === 1 && h.lead === "AI Commerce Copilot turns your store data into relevant recommendations and smarter merchandising \u2014 helping shoppers discover more while you manage less and stay in control." &&
     h.ctas.join("|") === "See it in action|View plans" && h.category === "Commerce recommendation and merchandising copilot" && h.conf.length === 0 && h.words <= 60 &&
     h.order.join(",") === "aicc-hero__kicker,aicc-hero-title,aicc-hero-lead,aicc-hero-actions", JSON.stringify(h));
-  check(`pillars strip: three pillars with one line each and anchor links, right after the hero and before the demo (${h.strip.join(" / ")}; ${h.stripLinks.join(" ")})`, h.strip.length === 3 && h.stripLinks.join() === "#surfaces,#workspace,#demo" && h.stripBeforeDemo);
+  check(`pillars strip: three pillars with one line each and anchor links, right after the hero and before the demo (${h.strip.join(" / ")}; ${h.stripLinks.join(" ")})`, h.strip.length === 3 && h.stripLinks.join() === "#demo,#workspace,#demo" && h.stripBeforeDemo);
   await p.evaluate(() => document.querySelector("#demo").scrollIntoView()); await p.waitForSelector(".aicc-fbt input[type=checkbox]", { state: "attached", timeout: 8000 });
   check(`demo section: titled "See what each recommendation is based on." (not the Frequently Bought Together category line); the widget inside keeps its own heading`, h.demoTitle === "See what each recommendation is based on." && /Frequently Bought Together/.test(await p.evaluate(() => document.querySelector(".aicc-fbt")?.textContent || "")), h.demoTitle);
   check("hero: nothing about Frequently Bought Together in the eyebrow, headline or hero sentence", !/frequently[- ]bought/i.test(`${h.eyebrow} ${h.h1} ${h.lead}`));
@@ -1168,8 +1188,8 @@ for (const w of [1280, 390, 320]) {
     ticked: [...document.querySelectorAll('.aicc-fbt-row[data-ticked="true"]')].map((r) => r.dataset.id + ":" + r.querySelector(".aicc-fbt-row__ticked")?.textContent.trim()),
     whys: [...document.querySelectorAll(".aicc-fbt-row__why")].map((e) => e.textContent.trim()),
   }));
-  check(`merchant view: the evidence layer is labelled an illustration and lists the order (bought together, same category, newest, then your rules); the product the shopper ticked is marked here too (${m.ticked.join(",")})`,
-    /How the list is built \(illustration\)/.test(m.heading) && /bought together first, then the same category, then your newest in-stock products\. Your rules apply last/.test(m.heading) && /a pinned product shows only a price/.test(m.heading) && /^Basis \(illustration\)$/.test(m.colWhy) && m.ticked.join() === "grinder:Ticked in the shopper view" && m.whys.some((w) => /^Bought together \d+ times$/.test(w)), JSON.stringify(m));
+  check(`merchant view: the evidence layer is labelled an illustration and lists the order (bought together, then relevant catalog products when history is thin, newest, then your rules); the product the shopper ticked is marked here too (${m.ticked.join(",")})`,
+    /How the list is built \(illustration\)/.test(m.heading) && /bought together in your orders first\. When history is thin, it fills the remaining spots with relevant in-stock products from your catalog.*Your rules apply last/.test(m.heading) && /a pinned product shows only a price/.test(m.heading) && /^Basis \(illustration\)$/.test(m.colWhy) && m.ticked.join() === "grinder:Ticked in the shopper view" && m.whys.some((w) => /^Bought together \d+ times$/.test(w)), JSON.stringify(m));
   check(`merchant view: the sample list shows ALL kinds of evidence the real ranking uses, including a real "newest in stock" fallback row (${m.whys.join(" | ")})`, m.whys.filter((w) => /^Bought together \d+ times$/.test(w)).length === 2 && m.whys.some((w) => /filled in from your catalog/.test(w)) && m.whys.some((w) => /newest in-stock/.test(w)), JSON.stringify(m.whys));
   const tiles = await p.evaluate(() => [...document.querySelectorAll(".aicc-fbt-tile strong")].map((e) => e.textContent.trim()));
   check(`merchant view: the sample dashboard numbers are the dashboard replica's numbers (${tiles.join(" / ")}), so the two samples never contradict each other`, tiles.join() === "3,860,241,97", tiles.join());

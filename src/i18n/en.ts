@@ -208,18 +208,27 @@ export const en = {
       without: "WooCommerce related products pick from the same category: {names}. Nothing about them comes from what shoppers buy together.",
       withTwo: "Same product. With AICC the partners are {a} and {b}, bought together {na} and {nb} times.",
       withOne: "Same product. With AICC the first partner is {a}, bought together {na} times; your rules shape the rest.",
-      withNone: "Same product. Your rules have removed the partners AICC learned from your orders, so the list is filled in from your catalog.",
+      withNone: "Same product. Your rules have removed the partners AICC learned from your orders, so AICC fills the list from signals in your catalog instead.",
+      cartWithout: "WooCommerce cross-sells are products the merchant links to items by hand, for example {names}. WooCommerce does not learn them from what shoppers buy together.",
+      cartWithTwo: "In the cart. AICC starts from the first item and leaves out what is already there: the partners are {a} and {b}, bought together {na} and {nb} times.",
+      cartWithOne: "In the cart. AICC starts from the first item and leaves out what is already there: the first partner is {a}, bought together {na} times; your rules shape the rest.",
+      cartWithNone: "In the cart. Your rules have removed the partners AICC learned from your orders, so AICC fills the list from signals in your catalog instead.",
       merchant: "The same bundle from your side: how each product was ranked, and the rules that shape the list.",
     },
     plain: {
       title: "Related products",
       note: "WooCommerce's own related products: the same category or tags, with no bundle and no total.",
+      cartTitle: "WooCommerce cart cross-sells",
+      cartNote: "Products you manually link to items in your catalog can appear here.",
+      manual: "Manually linked",
     },
     summary: "Selected: {count}. Bundle total: {total}.",
     widget: {
       title: "Frequently Bought Together",
       subtitle: "Customers often purchase these products together.",
       bundleTotal: "Bundle total",
+      addToCart: "Add to cart",
+      poweredBy: "Powered by",
       addOne: "Add 1 product to cart",
       addMany: "Add {count} products to cart",
       added: "Added to cart",
@@ -230,13 +239,15 @@ export const en = {
     mode: {
       legend: "Compare",
       without: "WooCommerce related products",
+      withoutCart: "WooCommerce manual cross-sells",
       with: "With AICC",
       captionWithout: "WooCommerce related products: same category, not from orders.",
       captionWith: "With AICC: products bought together come first.",
       withoutCaption:
         "WooCommerce's own related products come from the same category or tags. They are not based on what shoppers buy together.",
-      withCaption: "AICC lists the products that appear in the same orders as the product being viewed first, then fills the remaining spots from your catalog.",
+      withCaption: "AICC lists the products that appear in the same orders first. When order history is thin, it keeps the list useful with relevant in-stock products from your catalog, and real bought-together partners take over as orders arrive.",
     },
+    surface: { legend: "Where shoppers see it", page: "Product page", cart: "Cart" },
     view: {
       legend: "View",
       shopper: "What shoppers see",
@@ -252,6 +263,17 @@ export const en = {
       scale: "Travel mug",
     },
     anchorTag: "Viewing this product",
+    store: {
+      addToCart: "Add to cart",
+      cartTitle: "Your cart",
+      cols: { product: "Product", price: "Price", quantity: "Quantity", subtotal: "Subtotal" },
+      totals: "Cart totals",
+      subtotal: "Subtotal",
+      shipping: "Shipping",
+      shippingNote: "Calculated at checkout",
+      total: "Total",
+      checkout: "Proceed to checkout",
+    },
     merchant: {
       heading: "How each product was ranked",
       intro: "A sample styled after the AICC dashboard; rules are set in the Merchant Controls form. The products and counts are invented.",
@@ -277,7 +299,7 @@ export const en = {
       byRule: { pin: "Pinned by you", prefer: "Preferred by you", deprioritize: "Deprioritized by you", exclude: "Excluded by you" },
       inBundle: "Ticked in the shopper view",
       evidenceHeading: "How the list is built (illustration).",
-      evidenceOrder: "AICC fills the list in this order: products bought together first, then the same category, then your newest in-stock products. Your rules apply last. In your dashboard, a learned partner (bought together in your orders) shows a count; a fallback (filled in from your catalog) or a pinned product shows only a price.",
+      evidenceOrder: "AICC builds the list in this order: products bought together in your orders first. When history is thin, it fills the remaining spots with relevant in-stock products from your catalog (related products first, then your newest). Your rules apply last. In your dashboard, a learned partner (bought together in your orders) shows a count; a fallback (filled in from your catalog) or a pinned product shows only a price.",
       previewNote: "In your AICC dashboard, Recommendation Preview lets you pick any product and see its own list.",
       shopperNow: "The shopper sees now:",
       ruleLabel: "Rule for {product}",
@@ -298,10 +320,11 @@ export const en = {
       none: "Tick a product to see what this sample bases its place on.",
       filters: "Paper filters: bought together with the pour-over set more often than any other product in this sample.",
       grinder: "Hand grinder: bought together with the pour-over set less often than the filters, so it is listed next.",
-      mug: "Ceramic mug: no purchase history for this pair in the sample, so this spot is filled in from the same category.",
-      towel: "Linen tea towel: filled in from your newest in-stock products, after the bought-together partners and the same-category products.",
+      mug: "Ceramic mug: no purchase history for this pair in the sample, so AICC fills this spot with a related product from your catalog.",
+      towel: "Linen tea towel: filled in from your newest in-stock products, after the bought-together partners and the related products.",
       without:
         "WooCommerce related products come from the same category, which is how they work by default. Nothing about them comes from what your shoppers buy together.",
+      withoutCart: "WooCommerce cart cross-sells are products the merchant links to items by hand; a store with none configured shows none. WooCommerce does not learn them from what shoppers buy together.",
       merchant:
         "A sample of how the list is built: how many times each product was bought together with the pour-over set, and which spots are filled in from your catalog.",
     },
@@ -310,6 +333,7 @@ export const en = {
     },
     keyboardHint: "Use Tab and Space to tick products. Arrow keys move between them.",
     plainHint: "This is the WooCommerce related-products block: nothing to tick, no bundle total.",
+    plainHintCart: "WooCommerce does not learn these from what shoppers buy together: the merchant chooses the cross-sells manually.",
     sample: "Sample",
   },
 
@@ -488,38 +512,6 @@ export const en = {
       c: { title: "Stay in control", body: "See why products are recommended, understand what shoppers do with them, and change what appears when you want.", link: "See the evidence" },
     },
     // Visual proof: where the recommendations appear (product page and cart), shown as a two-state view of the same sample bundle.
-    surfaces: {
-      label: "Where recommendations appear",
-      title: "On every product page and in the cart.",
-      lead: "Shoppers meet your recommendations at two moments when they are already choosing: while they look at a product, and again in the cart.",
-      tabsLabel: "Choose where to look",
-      page: {
-        tab: "Product page",
-        title: "On a product page",
-        headline: "Help shoppers discover what belongs with the product they’re already viewing.",
-        body: "They can choose the recommendations they want and add them together in one step.",
-        mock: "A sample product page: the product above and, below it, the recommendation cards with the viewed product ticked, a bundle total and an add-to-cart button.",
-      },
-      cart: {
-        tab: "Cart",
-        title: "In the cart",
-        headline: "Keep product discovery going in the cart.",
-        body: "Recommendations adapt to what’s already there, without suggesting products the shopper has already added.",
-        mock: "A sample cart page: two items already in the cart with quantities and prices, an order summary and, below them, the recommendation cards for other products with a bundle total and an add-to-cart button.",
-      },
-      scope: "Product pages and the cart page only. Checkout and payment stay entirely with WooCommerce.",
-      caption: "Illustration with invented sample products, not a real store.",
-      mockPoweredBy: "Powered by",
-      mockAdd: "Add to cart",
-      mockCartTitle: "Your cart",
-      mockTotals: "Cart totals",
-      cartCols: { product: "Product", price: "Price", quantity: "Quantity", subtotal: "Subtotal" },
-      mockSubtotal: "Subtotal",
-      mockShipping: "Shipping",
-      mockShippingNote: "Calculated at checkout",
-      mockTotal: "Total",
-      mockCheckout: "Proceed to checkout",
-    },
     demo: {
       title: "See what each recommendation is based on.",
       lead:
@@ -542,8 +534,8 @@ export const en = {
           body: "AICC counts which products appear together in your completed and processing orders, and lists the most frequent partners first.",
         },
         fallback: {
-          title: "Thin history gets a safe fallback.",
-          body: "When a product has few co-purchases, the remaining spots are filled with fallbacks: in-stock products from the same category, then your newest in-stock products. Nothing is invented. Learned partners (products your orders show were bought together) and fallbacks share the widget heading today; your dashboard preview shows which is which.",
+          title: "Limited history still gets relevant picks.",
+          body: "When a product has few co-purchases, AICC still fills the widget, using signals from your catalog beyond past purchases: relevant in-stock products first, then your newest in-stock products. Nothing is invented, and real bought-together pairs take over as orders are counted. Learned partners (products your orders show were bought together) and fallbacks share the widget heading today; your dashboard preview shows which is which.",
         },
       },
       link: "See how a recommendation is decided",
@@ -594,7 +586,7 @@ export const en = {
         },
         learn: {
           title: "Learn",
-          body: "AICC prepares your catalog in the background. Once your store is ready, recommendations start with same-category and newest products, then move to real bought-together pairs as orders are counted. Import your past orders (optional) to start with pairs already learned.",
+          body: "AICC prepares your catalog in the background. Once your store is ready, the widget starts with relevant in-stock products from your catalog, then moves to real bought-together pairs as orders are counted. Import your past orders (optional) to start with pairs already learned.",
         },
         recommend: {
           title: "Recommend",
@@ -684,8 +676,8 @@ export const en = {
           body: "AICC looks at your completed and processing orders. When customers buy product A, which other products are in the same order? Those counts, highest first, are the recommendations.",
         },
         category: {
-          title: "Same category",
-          body: "If a product has too little purchase history to fill the widget, the remaining spots are filled with in-stock products from the same category.",
+          title: "Relevant in your catalog",
+          body: "If a product has too little purchase history to fill the widget, the remaining spots go to in-stock products relevant to it from your catalog. They come from your catalog, not from a purchase count.",
         },
         newest: {
           title: "Newest in stock",
@@ -699,11 +691,11 @@ export const en = {
     },
     // A one-key unit on purpose (product.learn keeps its translations): retranslate it alone.
     learnPlain:
-      "Every recommendation can be explained: it comes from counting your own orders, from your catalog (same category, newest products) or from a rule you set, not from a generative model or a profile of the shopper. The same data gives the same result.",
+      "Every recommendation can be explained: it comes from counting your own orders, from your catalog (relevant in-stock products, newest products) or from a rule you set, not from a generative model or a profile of the shopper. The same data gives the same result.",
     sparse: {
-      title: "What happens when there isn't much history.",
-      lead: "AICC fills the spots that purchase history can't.",
-      p1: "The spots that purchase history can't fill are filled with in-stock products from the same category, then your newest in-stock products. As orders come in, real co-purchases take over from the fallbacks.",
+      title: "Not much history? You still get relevant recommendations.",
+      lead: "AICC uses signals from your catalog beyond past purchases, so the widget isn't left empty.",
+      p1: "The spots that purchase history can't fill go to relevant in-stock products from your catalog, then your newest in-stock products. They come from your catalog, not from purchases. As orders come in, real co-purchases take over from these fallbacks.",
       p2: "You can import up to 24 months of past orders (optional), so AICC can start from your history instead of from zero.",
       limitTitle: "In the widget",
       limit:
@@ -711,7 +703,7 @@ export const en = {
       slots: {
         caption: "Illustration with sample numbers: the four recommendations next to the viewed product on a product page, with two learned partners.",
         learned: "Bought together {n} times",
-        category: "Same category",
+        category: "Relevant in your catalog",
         newest: "Newest in stock",
         slot: "Spot {n}",
       },
@@ -746,7 +738,7 @@ export const en = {
         "A rule can target one product pair (when shoppers view product A, product B gets the action) or one product everywhere (it gets the action on every product's list). Rules can have an optional expiry date and an internal note. There are no rules by category.",
       guardTitle: "What a rule can't override",
       guard:
-        "Out-of-stock and deleted products stay out, even when pinned. Prefer and deprioritize never move a product past one from another group (learned partners, same-category products, newest products). Only pin forces a position. The widget shows only a few products, so a deprioritized product at the last visible spot can slip out of view.",
+        "Out-of-stock and deleted products stay out, even when pinned. Prefer and deprioritize never move a product past one from another group (learned partners, relevant catalog products, newest products). Only pin forces a position. The widget shows only a few products, so a deprioritized product at the last visible spot can slip out of view.",
     },
     ask: {
       title: "What Ask Reco adds.",
@@ -804,7 +796,7 @@ export const en = {
     history: {
       title: "Your past orders can give AICC a head start.",
       lead: "After your store is connected, AICC offers to import up to 24 months of your past orders, so recommendations can learn from your existing history. It is optional: you choose.",
-      p1: "Skip it and AICC starts with same-category and newest-product recommendations, and learns from new orders. AICC doesn't import your past orders until you choose. Orders placed before you connected are not sent unless you import them; orders placed after connecting are sent as they are created or updated.",
+      p1: "Skip it and AICC still recommends from your catalog (relevant in-stock products, then your newest) and learns from new orders. AICC doesn't import your past orders until you choose. Orders placed before you connected are not sent unless you import them; orders placed after connecting are sent as they are created or updated.",
       p2: "You can start the import later from the dashboard. It reads your orders and sends order facts to AICC without changing them in WooCommerce, orders already imported aren't duplicated, and you can cancel an import from the dashboard. Timing varies with catalog size and your site's scheduled tasks.",
       p3: "Coming back after a pause? AICC can preserve your store history when access pauses, so returning merchants can continue instead of starting from zero. If you imported your history, AICC catches up from your real WooCommerce history; a store that chose Not now is never imported without asking. It never invents impressions, clicks or revenue for the time it wasn't running.",
       link: "Exact retention, today and as our target",
@@ -830,7 +822,7 @@ export const en = {
       colWoo: "WooCommerce related products",
       colAicc: "AICC",
       rows: {
-        chosen: { topic: "How products are chosen", woo: "Shared category and tags (plus hand-picked Upsells and Cross-sells)", aicc: "What customers in your store bought together; category and newest as fallbacks" },
+        chosen: { topic: "How products are chosen", woo: "Shared category and tags (plus hand-picked Upsells and Cross-sells)", aicc: "What customers in your store bought together; catalog signals (relevant and newest in-stock products) where history is thin" },
         see: { topic: "What you can see", woo: "The block itself", aicc: "A dashboard: views, clicks, bundle add-to-carts, associated orders, observations" },
         control: { topic: "Control", woo: "Hand-picked Upsells and Cross-sells; related products themselves are automatic", aicc: "Rules: pin, exclude, prefer, deprioritize, pair-specific or everywhere" },
         explain: { topic: "Explainability", woo: "Simple: shared category or tag", aicc: "Counting you can inspect in the Recommendation Preview" },

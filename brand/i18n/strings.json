@@ -79,18 +79,27 @@
         "without": "WooCommerce related products pick from the same category: {names}. Nothing about them comes from what shoppers buy together.",
         "withTwo": "Same product. With AICC the partners are {a} and {b}, bought together {na} and {nb} times.",
         "withOne": "Same product. With AICC the first partner is {a}, bought together {na} times; your rules shape the rest.",
-        "withNone": "Same product. Your rules have removed the partners AICC learned from your orders, so the list is filled in from your catalog.",
+        "withNone": "Same product. Your rules have removed the partners AICC learned from your orders, so AICC fills the list from signals in your catalog instead.",
+        "cartWithout": "WooCommerce cross-sells are products the merchant links to items by hand, for example {names}. WooCommerce does not learn them from what shoppers buy together.",
+        "cartWithTwo": "In the cart. AICC starts from the first item and leaves out what is already there: the partners are {a} and {b}, bought together {na} and {nb} times.",
+        "cartWithOne": "In the cart. AICC starts from the first item and leaves out what is already there: the first partner is {a}, bought together {na} times; your rules shape the rest.",
+        "cartWithNone": "In the cart. Your rules have removed the partners AICC learned from your orders, so AICC fills the list from signals in your catalog instead.",
         "merchant": "The same bundle from your side: how each product was ranked, and the rules that shape the list."
       },
       "plain": {
         "title": "Related products",
-        "note": "WooCommerce's own related products: the same category or tags, with no bundle and no total."
+        "note": "WooCommerce's own related products: the same category or tags, with no bundle and no total.",
+        "cartTitle": "WooCommerce cart cross-sells",
+        "cartNote": "Products you manually link to items in your catalog can appear here.",
+        "manual": "Manually linked"
       },
       "summary": "Selected: {count}. Bundle total: {total}.",
       "widget": {
         "title": "Frequently Bought Together",
         "subtitle": "Customers often purchase these products together.",
         "bundleTotal": "Bundle total",
+        "addToCart": "Add to cart",
+        "poweredBy": "Powered by",
         "addOne": "Add 1 product to cart",
         "addMany": "Add {count} products to cart",
         "added": "Added to cart",
@@ -101,11 +110,17 @@
       "mode": {
         "legend": "Compare",
         "without": "WooCommerce related products",
+        "withoutCart": "WooCommerce manual cross-sells",
         "with": "With AICC",
         "captionWithout": "WooCommerce related products: same category, not from orders.",
         "captionWith": "With AICC: products bought together come first.",
         "withoutCaption": "WooCommerce's own related products come from the same category or tags. They are not based on what shoppers buy together.",
-        "withCaption": "AICC lists the products that appear in the same orders as the product being viewed first, then fills the remaining spots from your catalog."
+        "withCaption": "AICC lists the products that appear in the same orders first. When order history is thin, it keeps the list useful with relevant in-stock products from your catalog, and real bought-together partners take over as orders arrive."
+      },
+      "surface": {
+        "legend": "Where shoppers see it",
+        "page": "Product page",
+        "cart": "Cart"
       },
       "view": {
         "legend": "View",
@@ -122,6 +137,22 @@
         "scale": "Travel mug"
       },
       "anchorTag": "Viewing this product",
+      "store": {
+        "addToCart": "Add to cart",
+        "cartTitle": "Your cart",
+        "cols": {
+          "product": "Product",
+          "price": "Price",
+          "quantity": "Quantity",
+          "subtotal": "Subtotal"
+        },
+        "totals": "Cart totals",
+        "subtotal": "Subtotal",
+        "shipping": "Shipping",
+        "shippingNote": "Calculated at checkout",
+        "total": "Total",
+        "checkout": "Proceed to checkout"
+      },
       "merchant": {
         "heading": "How each product was ranked",
         "intro": "A sample styled after the AICC dashboard; rules are set in the Merchant Controls form. The products and counts are invented.",
@@ -152,7 +183,7 @@
         },
         "inBundle": "Ticked in the shopper view",
         "evidenceHeading": "How the list is built (illustration).",
-        "evidenceOrder": "AICC fills the list in this order: products bought together first, then the same category, then your newest in-stock products. Your rules apply last. In your dashboard, a learned partner (bought together in your orders) shows a count; a fallback (filled in from your catalog) or a pinned product shows only a price.",
+        "evidenceOrder": "AICC builds the list in this order: products bought together in your orders first. When history is thin, it fills the remaining spots with relevant in-stock products from your catalog (related products first, then your newest). Your rules apply last. In your dashboard, a learned partner (bought together in your orders) shows a count; a fallback (filled in from your catalog) or a pinned product shows only a price.",
         "previewNote": "In your AICC dashboard, Recommendation Preview lets you pick any product and see its own list.",
         "shopperNow": "The shopper sees now:",
         "ruleLabel": "Rule for {product}",
@@ -183,9 +214,10 @@
         "none": "Tick a product to see what this sample bases its place on.",
         "filters": "Paper filters: bought together with the pour-over set more often than any other product in this sample.",
         "grinder": "Hand grinder: bought together with the pour-over set less often than the filters, so it is listed next.",
-        "mug": "Ceramic mug: no purchase history for this pair in the sample, so this spot is filled in from the same category.",
-        "towel": "Linen tea towel: filled in from your newest in-stock products, after the bought-together partners and the same-category products.",
+        "mug": "Ceramic mug: no purchase history for this pair in the sample, so AICC fills this spot with a related product from your catalog.",
+        "towel": "Linen tea towel: filled in from your newest in-stock products, after the bought-together partners and the related products.",
         "without": "WooCommerce related products come from the same category, which is how they work by default. Nothing about them comes from what your shoppers buy together.",
+        "withoutCart": "WooCommerce cart cross-sells are products the merchant links to items by hand; a store with none configured shows none. WooCommerce does not learn them from what shoppers buy together.",
         "merchant": "A sample of how the list is built: how many times each product was bought together with the pour-over set, and which spots are filled in from your catalog."
       },
       "reco": {
@@ -193,6 +225,7 @@
       },
       "keyboardHint": "Use Tab and Space to tick products. Arrow keys move between them.",
       "plainHint": "This is the WooCommerce related-products block: nothing to tick, no bundle total.",
+      "plainHintCart": "WooCommerce does not learn these from what shoppers buy together: the merchant chooses the cross-sells manually.",
       "sample": "Sample"
     },
     "rules": {
@@ -479,18 +512,27 @@
         "without": "מוצרים קשורים של WooCommerce נבחרים מאותה קטגוריה: {names}. שום דבר בהם לא מגיע ממה שקונים רוכשים יחד.",
         "withTwo": "אותו מוצר. עם AICC המוצרים הנלווים הם {a} ו{b}, שנרכשו יחד {na} ו־{nb} פעמים.",
         "withOne": "אותו מוצר. עם AICC המוצר הנלווה הראשון הוא {a}, שנרכש יחד {na} פעמים; הכללים שלכם מעצבים את השאר.",
-        "withNone": "אותו מוצר. הכללים שלכם הסירו את המוצרים הנלווים ש־AICC למד מההזמנות שלכם, ולכן הרשימה מתמלאת מהקטלוג שלכם.",
+        "withNone": "אותו מוצר. הכללים שלכם הסירו את המוצרים הנלווים ש־AICC למד מההזמנות שלכם, ולכן AICC ממלא את הרשימה לפי אותות מהקטלוג שלכם.",
+        "cartWithout": "מכירות צולבות של WooCommerce הן מוצרים שבעל החנות מקשר ידנית לפריטים, למשל {names}. הן אינן נלמדות מתוך מה שקונים רוכשים יחד.",
+        "cartWithTwo": "בעגלה. AICC מתחיל מהפריט הראשון ומשאיר בחוץ את מה שכבר בעגלה: המוצרים הנלווים הם {a} ו{b}, שנרכשו יחד {na} ו־{nb} פעמים.",
+        "cartWithOne": "בעגלה. AICC מתחיל מהפריט הראשון ומשאיר בחוץ את מה שכבר בעגלה: המוצר הנלווה הראשון הוא {a}, שנרכש יחד {na} פעמים; הכללים שלכם מעצבים את השאר.",
+        "cartWithNone": "בעגלה. הכללים שלכם הסירו את המוצרים הנלווים ש־AICC למד מההזמנות שלכם, ולכן AICC ממלא את הרשימה לפי אותות מהקטלוג שלכם.",
         "merchant": "אותה חבילה מהצד שלכם: איך כל מוצר דורג, והכללים שמעצבים את הרשימה."
       },
       "plain": {
         "title": "מוצרים קשורים",
-        "note": "המוצרים הקשורים של WooCommerce עצמו: אותה קטגוריה או אותן תגיות, בלי חבילה ובלי סך הכל."
+        "note": "המוצרים הקשורים של WooCommerce עצמו: אותה קטגוריה או אותן תגיות, בלי חבילה ובלי סך הכל.",
+        "cartTitle": "מכירות צולבות בעגלה ב־WooCommerce",
+        "cartNote": "מוצרים שמקשרים ידנית לפריטים בקטלוג יכולים להופיע כאן.",
+        "manual": "מקושר ידנית"
       },
       "summary": "נבחרו: {count}. סך החבילה: {total}.",
       "widget": {
         "title": "נרכשים לעיתים קרובות יחד",
         "subtitle": "לקוחות רוכשים לעיתים קרובות את המוצרים האלה יחד.",
         "bundleTotal": "סך הכל בחבילה",
+        "addToCart": "הוספה לעגלה",
+        "poweredBy": "מופעל על ידי",
         "addOne": "הוספת מוצר אחד לעגלה",
         "addMany": "הוספת {count} מוצרים לעגלה",
         "added": "נוסף לעגלה",
@@ -501,11 +543,17 @@
       "mode": {
         "legend": "השוואה",
         "without": "מוצרים קשורים של WooCommerce",
+        "withoutCart": "מכירות צולבות ידניות של WooCommerce",
         "with": "עם AICC",
         "captionWithout": "מוצרים קשורים של WooCommerce: אותה קטגוריה, לא מההזמנות.",
         "captionWith": "עם AICC: קודם המוצרים שנרכשים יחד.",
         "withoutCaption": "המוצרים הקשורים של WooCommerce עצמו מגיעים מאותה קטגוריה או מאותן תגיות. הם לא מבוססים על מה שהקונים רוכשים יחד.",
-        "withCaption": "AICC מציג קודם את המוצרים שמופיעים באותן הזמנות יחד עם המוצר הנצפה, ואחר כך ממלא את המקומות שנותרו מהקטלוג שלכם."
+        "withCaption": "AICC מציג קודם את המוצרים שמופיעים באותן הזמנות. כשהיסטוריית ההזמנות דלה, הוא שומר על רשימה שימושית במוצרים רלוונטיים וזמינים מהקטלוג שלכם, והמוצרים שנרכשו יחד בפועל תופסים את מקומם ככל שמגיעות הזמנות."
+      },
+      "surface": {
+        "legend": "איפה הקונים רואים את זה",
+        "page": "דף מוצר",
+        "cart": "עגלה"
       },
       "view": {
         "legend": "תצוגה",
@@ -522,6 +570,22 @@
         "scale": "כוס נסיעות"
       },
       "anchorTag": "המוצר הנצפה",
+      "store": {
+        "addToCart": "הוספה לעגלה",
+        "cartTitle": "העגלה שלכם",
+        "cols": {
+          "product": "מוצר",
+          "price": "מחיר",
+          "quantity": "כמות",
+          "subtotal": "סכום ביניים"
+        },
+        "totals": "סיכום העגלה",
+        "subtotal": "סכום ביניים",
+        "shipping": "משלוח",
+        "shippingNote": "מחושב בקופה",
+        "total": "סך הכל",
+        "checkout": "המשך לתשלום"
+      },
       "merchant": {
         "heading": "איך כל מוצר דורג",
         "intro": "דוגמה בסגנון הדשבורד של AICC; הכללים נקבעים בטופס הבקרות. המוצרים והספירות מומצאים.",
@@ -552,7 +616,7 @@
         },
         "inBundle": "מסומן בתצוגת הקונה",
         "evidenceHeading": "איך הרשימה נבנית (המחשה).",
-        "evidenceOrder": "AICC ממלא את הרשימה בסדר הזה: קודם מוצרים שנרכשו יחד, אחר כך אותה קטגוריה, ואחר כך המוצרים החדשים ביותר שלכם במלאי. הכללים שלכם מוחלים אחרונים. בדשבורד שלכם, מוצר נלווה שנלמד (שנרכש יחד בהזמנות שלכם) מציג ספירה; מוצר השלמה (שמולא מהקטלוג שלכם) או מוצר נעוץ מציג רק מחיר.",
+        "evidenceOrder": "AICC בונה את הרשימה בסדר הזה: קודם מוצרים שנרכשו יחד בהזמנות שלכם. כשההיסטוריה דלה, הוא ממלא את המקומות שנותרו במוצרים רלוונטיים וזמינים מהקטלוג שלכם (קודם מוצרים קשורים, ואחר כך החדשים ביותר). הכללים שלכם מוחלים אחרונים. בדשבורד שלכם, מוצר נלווה שנלמד (שנרכש יחד בהזמנות שלכם) מציג ספירה; מוצר השלמה (שמולא מהקטלוג שלכם) או מוצר נעוץ מציג רק מחיר.",
         "previewNote": "בדשבורד של AICC, ״תצוגה מקדימה של המלצות״ מאפשרת לבחור כל מוצר ולראות את הרשימה שלו.",
         "shopperNow": "הקונה רואה עכשיו:",
         "ruleLabel": "כלל עבור {product}",
@@ -583,9 +647,10 @@
         "none": "סמנו מוצר כדי לראות על מה הדוגמה הזו מבססת את מקומו.",
         "filters": "פילטרי נייר: נרכשו יחד עם ערכת הפור־אובר יותר פעמים מכל מוצר אחר בדוגמה הזו.",
         "grinder": "מטחנה ידנית: נרכשה יחד עם ערכת הפור־אובר פחות פעמים מהפילטרים, ולכן היא מוצגת אחריהם.",
-        "mug": "ספל קרמיקה: אין היסטוריית רכישות לצמד הזה בדוגמה, ולכן המקום הזה מולא מאותה קטגוריה.",
-        "towel": "מגבת מטבח מפשתן: מולאה מהמוצרים החדשים ביותר שלכם במלאי, אחרי המוצרים הנלווים שנרכשו יחד והמוצרים מאותה קטגוריה.",
+        "mug": "ספל קרמיקה: אין היסטוריית רכישות לצמד הזה בדוגמה, ולכן AICC ממלא את המקום הזה במוצר קשור מהקטלוג שלכם.",
+        "towel": "מגבת מטבח מפשתן: מולאה מהמוצרים החדשים ביותר שלכם במלאי, אחרי המוצרים הנלווים שנרכשו יחד והמוצרים הקשורים.",
         "without": "מוצרים קשורים של WooCommerce מגיעים מאותה קטגוריה, וכך הם עובדים כברירת מחדל. שום דבר בהם לא מגיע ממה שהקונים שלכם רוכשים יחד.",
+        "withoutCart": "מכירות צולבות בעגלה ב־WooCommerce הן מוצרים שבעל החנות מקשר ידנית לפריטים; בחנות שלא הוגדרו בה כאלה לא יוצג דבר. הן אינן נלמדות מתוך מה שהקונים שלכם רוכשים יחד.",
         "merchant": "דוגמה לאופן שבו הרשימה נבנית: כמה פעמים כל מוצר נרכש יחד עם ערכת הפור־אובר, ואילו מקומות מולאו מהקטלוג שלכם."
       },
       "reco": {
@@ -593,6 +658,7 @@
       },
       "keyboardHint": "השתמשו ב־Tab וברווח כדי לסמן מוצרים. מקשי החיצים עוברים ביניהם.",
       "plainHint": "זה בלוק המוצרים הקשורים של WooCommerce: אין מה לסמן, ואין סך הכל לחבילה.",
+      "plainHintCart": "אלה אינן נלמדות מתוך מה שקונים רוכשים יחד: בעל החנות בוחר את המכירות הצולבות ידנית.",
       "sample": "דוגמה"
     },
     "rules": {
@@ -879,18 +945,27 @@
         "without": "Los productos relacionados de WooCommerce se eligen de la misma categoría: {names}. Nada de ello procede de lo que los compradores compran juntos.",
         "withTwo": "El mismo producto. Con AICC, los acompañantes son «{a}» y «{b}», comprados juntos {na} y {nb} veces.",
         "withOne": "El mismo producto. Con AICC, el primer acompañante es «{a}», comprado junto {na} veces; sus reglas dan forma al resto.",
-        "withNone": "El mismo producto. Sus reglas han quitado los acompañantes que AICC aprendió de sus pedidos, así que la lista se completa con su catálogo.",
+        "withNone": "El mismo producto. Sus reglas han quitado los acompañantes que AICC aprendió de sus pedidos, así que AICC completa la lista con señales de su catálogo.",
+        "cartWithout": "Las ventas cruzadas de WooCommerce son productos que el comerciante vincula a mano a los artículos, por ejemplo {names}. WooCommerce no las aprende de lo que los compradores compran juntos.",
+        "cartWithTwo": "En el carrito. AICC parte del primer artículo y deja fuera lo que ya está en el carrito: los acompañantes son «{a}» y «{b}», comprados juntos {na} y {nb} veces.",
+        "cartWithOne": "En el carrito. AICC parte del primer artículo y deja fuera lo que ya está en el carrito: el primer acompañante es «{a}», comprado junto {na} veces; sus reglas dan forma al resto.",
+        "cartWithNone": "En el carrito. Sus reglas han quitado los acompañantes que AICC aprendió de sus pedidos, así que AICC completa la lista con señales de su catálogo.",
         "merchant": "El mismo paquete visto desde su lado: cómo se ordenó cada producto y las reglas que dan forma a la lista."
       },
       "plain": {
         "title": "Productos relacionados",
-        "note": "Los productos relacionados propios de WooCommerce: la misma categoría o las mismas etiquetas, sin paquete y sin total."
+        "note": "Los productos relacionados propios de WooCommerce: la misma categoría o las mismas etiquetas, sin paquete y sin total.",
+        "cartTitle": "Ventas cruzadas del carrito de WooCommerce",
+        "cartNote": "Aquí pueden aparecer los productos que usted vincula manualmente a los artículos de su catálogo.",
+        "manual": "Vinculado manualmente"
       },
       "summary": "Seleccionados: {count}. Total del paquete: {total}.",
       "widget": {
         "title": "Comprados juntos con frecuencia",
         "subtitle": "Los clientes suelen comprar estos productos juntos.",
         "bundleTotal": "Total del paquete",
+        "addToCart": "Añadir al carrito",
+        "poweredBy": "Con tecnología de",
         "addOne": "Añadir 1 producto al carrito",
         "addMany": "Añadir {count} productos al carrito",
         "added": "Añadido al carrito",
@@ -901,11 +976,17 @@
       "mode": {
         "legend": "Comparar",
         "without": "Productos relacionados de WooCommerce",
+        "withoutCart": "Ventas cruzadas manuales de WooCommerce",
         "with": "Con AICC",
         "captionWithout": "Productos relacionados de WooCommerce: misma categoría, no a partir de pedidos.",
         "captionWith": "Con AICC: primero los productos comprados juntos.",
         "withoutCaption": "Los productos relacionados de WooCommerce salen de la misma categoría o de las mismas etiquetas. No se basan en lo que los compradores compran juntos.",
-        "withCaption": "AICC lista primero los productos que aparecen en los mismos pedidos que el producto que se está viendo y después completa los puestos restantes con su catálogo."
+        "withCaption": "AICC lista primero los productos que aparecen en los mismos pedidos. Cuando el historial de pedidos es escaso, mantiene la lista útil con productos relevantes y con stock de su catálogo, y los acompañantes realmente comprados juntos ocupan su lugar a medida que llegan pedidos."
+      },
+      "surface": {
+        "legend": "Dónde lo ven los compradores",
+        "page": "Página de producto",
+        "cart": "Carrito"
       },
       "view": {
         "legend": "Vista",
@@ -922,6 +1003,22 @@
         "scale": "Taza de viaje"
       },
       "anchorTag": "Viendo este producto",
+      "store": {
+        "addToCart": "Añadir al carrito",
+        "cartTitle": "Su carrito",
+        "cols": {
+          "product": "Producto",
+          "price": "Precio",
+          "quantity": "Cantidad",
+          "subtotal": "Subtotal"
+        },
+        "totals": "Totales del carrito",
+        "subtotal": "Subtotal",
+        "shipping": "Envío",
+        "shippingNote": "Se calcula al pagar",
+        "total": "Total",
+        "checkout": "Finalizar compra"
+      },
       "merchant": {
         "heading": "Cómo se ordenó cada producto",
         "intro": "Un ejemplo con el estilo del panel de AICC, cuyas etiquetas están en inglés; las reglas se configuran en el formulario Merchant Controls. Los productos y las cantidades son inventados.",
@@ -952,7 +1049,7 @@
         },
         "inBundle": "Marcado en la vista del comprador",
         "evidenceHeading": "Cómo se construye la lista (ilustración).",
-        "evidenceOrder": "AICC completa la lista en este orden: primero los productos comprados juntos, después la misma categoría y después sus productos con stock más recientes. Sus reglas se aplican al final. En su panel, un acompañante aprendido (comprado junto en sus pedidos) muestra un recuento; una alternativa (completada con su catálogo) o un producto fijado muestra solo un precio.",
+        "evidenceOrder": "AICC construye la lista en este orden: primero los productos comprados juntos en sus pedidos. Cuando el historial es escaso, completa los puestos restantes con productos relevantes y con stock de su catálogo (primero los relacionados y después los más recientes). Sus reglas se aplican al final. En su panel, un acompañante aprendido (comprado junto en sus pedidos) muestra un recuento; una alternativa (completada con su catálogo) o un producto fijado muestra solo un precio.",
         "previewNote": "En su panel de AICC, Recommendation Preview le permite elegir cualquier producto y ver su propia lista.",
         "shopperNow": "El comprador ve ahora:",
         "ruleLabel": "Regla para {product}",
@@ -983,9 +1080,10 @@
         "none": "Marque un producto para ver en qué se basa su puesto en este ejemplo.",
         "filters": "Filtros de papel: comprados juntos con el juego de café de filtro más veces que cualquier otro producto de este ejemplo.",
         "grinder": "Molinillo manual: comprado junto con el juego de café de filtro menos veces que los filtros, así que se lista a continuación.",
-        "mug": "Taza de cerámica: no hay historial de compras de este par en el ejemplo, así que este puesto se completa con la misma categoría.",
-        "towel": "Paño de cocina de lino: completado con sus productos con stock más recientes, después de los acompañantes comprados juntos y de los productos de la misma categoría.",
+        "mug": "Taza de cerámica: no hay historial de compras de este par en el ejemplo, así que AICC completa este puesto con un producto relacionado de su catálogo.",
+        "towel": "Paño de cocina de lino: completado con sus productos con stock más recientes, después de los acompañantes comprados juntos y de los productos relacionados.",
         "without": "Los productos relacionados de WooCommerce salen de la misma categoría, que es como funcionan por defecto. Nada de ello procede de lo que compran juntos sus compradores.",
+        "withoutCart": "Las ventas cruzadas del carrito de WooCommerce son productos que el comerciante vincula a mano a los artículos; una tienda que no ha configurado ninguna no muestra ninguna. WooCommerce no las aprende de lo que compran juntos sus compradores.",
         "merchant": "Un ejemplo de cómo se construye la lista: cuántas veces se compró cada producto junto con el juego de café de filtro y qué puestos se completan con su catálogo."
       },
       "reco": {
@@ -993,6 +1091,7 @@
       },
       "keyboardHint": "Use Tab y la barra espaciadora para marcar productos. Las teclas de flecha permiten pasar de uno a otro.",
       "plainHint": "Este es el bloque de productos relacionados de WooCommerce: nada que marcar y sin total del paquete.",
+      "plainHintCart": "WooCommerce no aprende esto de lo que los compradores compran juntos: el comerciante elige las ventas cruzadas manualmente.",
       "sample": "Ejemplo"
     },
     "rules": {
@@ -1279,18 +1378,27 @@
         "without": "Похожие товары WooCommerce подбираются из той же категории: {names}. К тому, что покупатели берут вместе, они отношения не имеют.",
         "withTwo": "Тот же товар. С AICC сопутствующие товары — «{a}» и «{b}»: их покупали вместе {na} и {nb} раз.",
         "withOne": "Тот же товар. С AICC первым сопутствующим будет «{a}»: вместе куплено {na} раз, а остальное формируют ваши правила.",
-        "withNone": "Тот же товар. Ваши правила убрали сопутствующие товары, найденные AICC по вашим заказам, поэтому список заполнен из вашего каталога.",
+        "withNone": "Тот же товар. Ваши правила убрали сопутствующие товары, найденные AICC по вашим заказам, поэтому AICC заполняет список по сигналам из вашего каталога.",
+        "cartWithout": "Перекрёстные продажи WooCommerce — это товары, которые владелец магазина привязывает к позициям вручную, например {names}. WooCommerce не выясняет их из того, что покупатели берут вместе.",
+        "cartWithTwo": "В корзине. AICC исходит из первой позиции и не предлагает то, что уже в корзине: сопутствующие товары — «{a}» и «{b}», их покупали вместе {na} и {nb} раз.",
+        "cartWithOne": "В корзине. AICC исходит из первой позиции и не предлагает то, что уже в корзине: первым сопутствующим будет «{a}», вместе куплено {na} раз, а остальное формируют ваши правила.",
+        "cartWithNone": "В корзине. Ваши правила убрали сопутствующие товары, найденные AICC по вашим заказам, поэтому AICC заполняет список по сигналам из вашего каталога.",
         "merchant": "Тот же набор с вашей стороны: как ранжирован каждый товар и какие правила формируют список."
       },
       "plain": {
         "title": "Похожие товары",
-        "note": "Собственные похожие товары WooCommerce: та же категория или те же метки, без набора и без итога."
+        "note": "Собственные похожие товары WooCommerce: та же категория или те же метки, без набора и без итога.",
+        "cartTitle": "Перекрёстные продажи WooCommerce в корзине",
+        "cartNote": "Здесь могут появляться товары, которые вы вручную привязали к позициям каталога.",
+        "manual": "Привязано вручную"
       },
       "summary": "Выбрано: {count}. Итого за набор: {total}.",
       "widget": {
         "title": "Часто покупают вместе",
         "subtitle": "Покупатели часто приобретают эти товары вместе.",
         "bundleTotal": "Итого за набор",
+        "addToCart": "Добавить в корзину",
+        "poweredBy": "Работает на",
         "addOne": "Добавить 1 товар в корзину",
         "addMany": "Добавить {count} товаров в корзину",
         "added": "Добавлено в корзину",
@@ -1301,11 +1409,17 @@
       "mode": {
         "legend": "Сравнение",
         "without": "Похожие товары WooCommerce",
+        "withoutCart": "Ручные перекрёстные продажи WooCommerce",
         "with": "С AICC",
         "captionWithout": "Похожие товары WooCommerce: та же категория, не по заказам.",
         "captionWith": "С AICC: сначала товары, которые покупали вместе.",
         "withoutCaption": "Похожие товары WooCommerce берутся из той же категории или с теми же метками. Они не основаны на том, что покупатели берут вместе.",
-        "withCaption": "AICC сначала ставит товары, которые встречаются в тех же заказах, что и просматриваемый товар, а затем заполняет оставшиеся места из вашего каталога."
+        "withCaption": "AICC сначала ставит товары, которые встречаются в тех же заказах. Когда история заказов скромная, он сохраняет список полезным за счёт подходящих товаров в наличии из вашего каталога, а по мере поступления заказов их место занимают товары, которые действительно покупали вместе."
+      },
+      "surface": {
+        "legend": "Где это видят покупатели",
+        "page": "Страница товара",
+        "cart": "Корзина"
       },
       "view": {
         "legend": "Вид",
@@ -1322,6 +1436,22 @@
         "scale": "Дорожная кружка"
       },
       "anchorTag": "Вы смотрите этот товар",
+      "store": {
+        "addToCart": "В корзину",
+        "cartTitle": "Ваша корзина",
+        "cols": {
+          "product": "Товар",
+          "price": "Цена",
+          "quantity": "Количество",
+          "subtotal": "Подытог"
+        },
+        "totals": "Итого по корзине",
+        "subtotal": "Подытог",
+        "shipping": "Доставка",
+        "shippingNote": "Рассчитывается при оформлении",
+        "total": "Итого",
+        "checkout": "Перейти к оформлению"
+      },
       "merchant": {
         "heading": "Как ранжирован каждый товар",
         "intro": "Образец в стиле панели AICC; правила задаются в форме управления правилами. Подписи панели остаются на английском, как в самом плагине. Товары и числа придуманы.",
@@ -1352,7 +1482,7 @@
         },
         "inBundle": "Отмечено в виде покупателя",
         "evidenceHeading": "Как построен список (иллюстрация).",
-        "evidenceOrder": "AICC заполняет список в таком порядке: сначала товары, которые покупали вместе, затем та же категория, затем ваши самые новые товары в наличии. Ваши правила применяются в последнюю очередь. На панели найденный по заказам товар (его покупали вместе в ваших заказах) показывает число; запасной вариант (подобранный из каталога) или закреплённый товар показывает только цену.",
+        "evidenceOrder": "AICC строит список в таком порядке: сначала товары, которые покупали вместе в ваших заказах. Когда история скромная, оставшиеся места он заполняет подходящими товарами в наличии из вашего каталога (сначала похожие, затем самые новые). Ваши правила применяются в последнюю очередь. На панели найденный по заказам товар (его покупали вместе в ваших заказах) показывает число; запасной вариант (подобранный из каталога) или закреплённый товар показывает только цену.",
         "previewNote": "На панели AICC в Recommendation Preview можно выбрать любой товар и увидеть его собственный список.",
         "shopperNow": "Покупатель видит сейчас:",
         "ruleLabel": "Правило для товара «{product}»",
@@ -1383,9 +1513,10 @@
         "none": "Отметьте товар, чтобы увидеть, на чём в этом примере основано его место.",
         "filters": "Бумажные фильтры: в этом примере их покупали вместе с набором для пуровера чаще любого другого товара.",
         "grinder": "Ручная кофемолка: в этом примере её покупали вместе с набором реже, чем фильтры, поэтому она следующая.",
-        "mug": "Керамическая кружка: в примере нет истории покупок для этой пары, поэтому место заполнено из той же категории.",
-        "towel": "Льняное чайное полотенце: подобрано из ваших самых новых товаров в наличии — после товаров, которые покупали вместе, и товаров из той же категории.",
+        "mug": "Керамическая кружка: в примере нет истории покупок для этой пары, поэтому AICC заполняет это место похожим товаром из вашего каталога.",
+        "towel": "Льняное чайное полотенце: подобрано из ваших самых новых товаров в наличии — после товаров, которые покупали вместе, и похожих товаров.",
         "without": "Похожие товары WooCommerce берутся из той же категории: так они работают по умолчанию. К тому, что ваши покупатели берут вместе, они отношения не имеют.",
+        "withoutCart": "Перекрёстные продажи WooCommerce в корзине — это товары, которые владелец магазина привязывает к позициям вручную; если в магазине ничего не настроено, ничего и не показывается. WooCommerce не выясняет их из того, что ваши покупатели берут вместе.",
         "merchant": "Образец того, как построен список: сколько раз каждый товар покупали вместе с набором для пуровера и какие места заполнены из вашего каталога."
       },
       "reco": {
@@ -1393,6 +1524,7 @@
       },
       "keyboardHint": "Клавишами Tab и пробел отмечайте товары. Стрелки переключают между ними.",
       "plainHint": "Это блок похожих товаров WooCommerce: отмечать нечего, итога по набору нет.",
+      "plainHintCart": "WooCommerce не выясняет это из того, что покупатели берут вместе: перекрёстные продажи владелец магазина выбирает вручную.",
       "sample": "Пример"
     },
     "rules": {

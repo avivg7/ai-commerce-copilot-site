@@ -13,7 +13,6 @@ import { LocaleLink } from "@/components/ui/LocaleLink";
 import { RecoImage } from "@/components/ui/RecoImage";
 import { RecoHero } from "@/components/brand/RecoHero";
 import { FbtSection } from "@/components/brand/FbtSection";
-import { Surfaces } from "@/components/home/Surfaces";
 import { WatchDemo } from "@/components/brand/WatchDemo";
 import { Fb, Strip, Tabs, Track } from "@/components/blocks/Blocks";
 import { DashPreview, Flow, InsightsPreview, Loop, RecoAskPanel, RulesDemo } from "@/components/blocks/KitMounts";
@@ -62,7 +61,7 @@ export function HomePage({ locale, t }: { locale: Locale; t: Dictionary }) {
       <section className="aicc-pillars" aria-label={h.pillars.label} {...fb("home.pillars")}>
         <Container>
           <ul className="aicc-pillars__list">
-            {([["a", "#surfaces"], ["b", "#workspace"], ["c", "#demo"]] as const).map(([k, href], i) => (
+            {([["a", "#demo"], ["b", "#workspace"], ["c", "#demo"]] as const).map(([k, href], i) => (
               <li key={k}>
                 <span className="aicc-pillars__n" aria-hidden="true">{i + 1}</span>
                 <div>
@@ -79,7 +78,6 @@ export function HomePage({ locale, t }: { locale: Locale; t: Dictionary }) {
       </section>
 
       {/* 1c. Visual proof, part 1: where shoppers see the recommendations (product page and cart) */}
-      <Surfaces locale={locale} t={t} />
 
       {/* 2. Visual proof, part 2 and the core differentiator: what each recommendation is based on, from the shopper's side and from yours */}
       <FbtSection locale={locale} t={t}>

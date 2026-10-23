@@ -1,8 +1,12 @@
 // "Frequently-bought-together, actually learned." interactive demo (vanilla; used by the site and the Control Plane theme).
 // Honest by construction: invented sample goods and sample counts (labelled "Sample data: not from a real store"), no revenue/CTR/customer claims.
-// Two controls, same sample bundle:
-//   Compare:  WooCommerce related products / With AICC   (what a shopper sees: WooCommerce's own related-products block vs. the AICC bundle)
-//   View:     What shoppers see / What you see      (the merchant side: how the list is ranked, the rule controls, the dashboard tiles)
+// Three controls, same sample bundle:
+//   View:     What shoppers see / What you see and control   (the merchant side: how the list is ranked, the rule controls, the dashboard tiles)
+//   Surface:  Product page / Cart   (where the shopper meets the widget: the plugin places it on product pages and on the cart page, and nowhere else)
+//   Compare:  WooCommerce related products (cart: cross-sells) / With AICC   (WooCommerce's own block drawn plainly and in grey vs. the AICC widget)
+// The AICC widget is drawn from the real storefront widget (plugin assets/css/widget.css + includes/class-aicc-widget.php): a title and subtitle, a horizontal rail of
+// image-first cards with the checkbox over the card's corner, "Bundle total", the add button, and the quiet "Powered by" line. On a product page the viewed product is
+// the first card, ticked and locked; in the cart there is no viewed-product card and products already in the cart are left out. Recommended products start unticked.
 // The demo OPENS on "With AICC" (the result first); the WooCommerce related-products block is one click away, and a live result line under the toggles says
 // in one sentence what the current state shows.
 // Shopper view, With AICC: base product -> partners (real checkboxes in a fieldset) -> bundle total -> "Add N products to cart" (adds nothing).
@@ -17,10 +21,11 @@
 import { icon } from "./icons.js";
 import { esc, motionAllowed, setLang, labeler } from "./motion.js";
 import { applyRules } from "./rules-core.js";
+import { productArt } from "./product-art.js";
 
 const ANCHOR = { id: "kit", price: 38, icon: "coffee" };
 // AICC's own order for the sample product, one row per kind of evidence the real ranking uses.
-// tier: learned (counted from orders) | category (same-category fallback) | newest (newest-in-stock fallback).
+// tier: learned (counted from orders) | category (filled in from the catalog: related products) | newest (filled in from the catalog: newest in stock).
 const WITH = [
   { id: "filters", price: 14, icon: "filter", tier: "learned", count: 9 },
   { id: "grinder", price: 46, icon: "cog", tier: "learned", count: 6 },
@@ -32,10 +37,13 @@ const WITHOUT = [
   { id: "towel", price: 18, icon: "layers" },
   { id: "scale", price: 24, icon: "package" },
 ];
+// The sample cart (cart surface): the first item is the starting point for AICC's list; products already in the cart are never recommended again.
+const CART = [{ id: "kit", price: 38, qty: 1 }, { id: "scale", price: 24, qty: 2 }];
 // The same sample numbers as the dashboard replica (dash-preview.js), so the two modules never contradict each other.
 const BASE_TILES = { views: 3860, clicks: 241, adds: 97 };
 
-const money = (n) => "$" + new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(n);
+// Two decimals, as WooCommerce prints prices (and as the real widget does): $38.00.
+const money = (n) => "$" + new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
 
 /** "Add N products to cart": exact 1 uses addOne; Russian "few" (2-4) uses addFew; otherwise addMany. */
 export function addToCartText(locale, w, count) {
@@ -58,7 +66,7 @@ export function mountFbt(el, opts) {
   const { T, A } = labeler(s, { locale });
   const rtl = !fallback && (opts.dir || document.documentElement.dir) === "rtl";
   const num = new Intl.NumberFormat(fallback ? "en" : locale);
-  const state = { mode: "with", view: "shopper", switched: false, checked: { kit: true }, last: null, added: false, shown: ANCHOR.price, raf: 0, rules: [], seq: 0, addsDelta: 0, announce: "" };
+  const state = { mode: "with", view: "shopper", surface: "page", switched: false, checkedBy: { page: { kit: true }, cart: {} }, get checked() { return this.checkedBy[this.surface]; }, last: null, added: false, shown: ANCHOR.price, raf: 0, rules: [], seq: 0, addsDelta: 0, announce: "" };
 
   el.classList.add("aicc-fbt");
   el.removeAttribute("aria-busy");
@@ -69,22 +77,30 @@ export function mountFbt(el, opts) {
     `<div class="aicc-fbt__controls">` +
     `<div role="group" aria-label="${esc(s.view.legend)}" class="aicc-fbt__views">` +
     `<button type="button" class="aicc-fbt__view" data-view="shopper" aria-pressed="true">${T(s.view.shopper)}</button>` +
-    `<button type="button" class="aicc-fbt__view" data-view="merchant" aria-pressed="false">${T(s.view.merchant)}</button></div>` +
+    `<button type="button" class="aicc-fbt__view" data-view="merchant" aria-pressed="false">${T(s.view.merchant)}</button></div></div></div>` +
+    `<div class="aicc-fbt__scope">` +
+    `<div role="group" aria-label="${esc(s.surface.legend)}" class="aicc-fbt__surfaces" data-surfaces>` +
+    `<button type="button" class="aicc-fbt__surface" data-surface="page" aria-pressed="true">${T(s.surface.page)}</button>` +
+    `<button type="button" class="aicc-fbt__surface" data-surface="cart" aria-pressed="false">${T(s.surface.cart)}</button></div>` +
     `<div role="group" aria-label="${esc(s.mode.legend)}" class="aicc-fbt__modes" data-modes>` +
     `<button type="button" class="aicc-fbt__mode" data-mode="without" aria-pressed="false">${T(s.mode.without)}</button>` +
-    `<button type="button" class="aicc-fbt__mode" data-mode="with" aria-pressed="true">${T(s.mode.with)}</button></div></div></div>` +
+    `<button type="button" class="aicc-fbt__mode" data-mode="with" aria-pressed="true">${T(s.mode.with)}</button></div></div>` +
     `<p class="aicc-fbt__result" aria-live="polite" aria-atomic="true" data-result></p>` +
     `<p class="aicc-fbt__nudge">${T(s.nudge)}</p>` +
     `<div data-panel="shopper" class="aicc-fbt__panel">` +
+    `<div class="aicc-store"><div class="aicc-store__chrome" aria-hidden="true"><i></i><i></i><i></i></div>` +
+    `<div class="aicc-store__page"><div data-store aria-hidden="true"></div>` +
+    `<div class="aicc-fbt__widgetbox">` +
     `<div class="aicc-fbt__head"><h3 data-title></h3><p data-sub></p><p class="aicc-sr-only" data-subsr hidden>${T(s.mode.withCaption)}</p></div>` +
     `<div data-bundle>` +
-    `<fieldset class="aicc-fbt__fieldset"><legend class="aicc-sr-only">${T(s.groupLabel)}</legend><div data-anchor></div><ul class="aicc-fbt__cands" data-cands></ul></fieldset>` +
+    `<fieldset class="aicc-fbt__fieldset"><legend class="aicc-sr-only">${T(s.groupLabel)}</legend><ul class="aicc-fbt__cands" data-cands></ul></fieldset>` +
     `<div class="aicc-fbt__whyinline"><h3>${T(s.why.heading)}</h3><p data-why-inline></p></div>` +
     `<p class="aicc-fbt__hint" data-kbd>${T(s.keyboardHint)}</p>` +
     `<div class="aicc-fbt__foot"><p class="aicc-fbt__total"><span>${T(s.widget.bundleTotal)}</span><strong><bdi data-total></bdi></strong></p>` +
     `<button type="button" class="aicc-btn aicc-btn--primary" data-add aria-disabled="false"><span data-add-icon></span><span data-add-text></span></button></div>` +
-    `<p class="aicc-fbt__status" data-status></p></div>` +
-    `<div data-plain hidden><ul class="aicc-fbt__plain" data-plainlist></ul><p class="aicc-fbt__hint">${T(s.plainHint)}</p></div></div>` +
+    `<p class="aicc-fbt__status" data-status></p>` +
+    `<p class="aicc-fbt__brand"><svg viewBox="0 0 32 32" width="16" height="16" aria-hidden="true" focusable="false"><rect x="14" y="4.5" width="4" height="3" rx="1.5" fill="currentColor"/><rect x="6.5" y="9" width="19" height="15" rx="5" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="12.5" cy="15" r="1.7" fill="currentColor"/><circle cx="19.5" cy="15" r="1.7" fill="currentColor"/><path d="M12.5 18.8 Q16 21.4 19.5 18.8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" fill="none"/></svg><span>${T(s.widget.poweredBy)} <b dir="ltr">AI Commerce Copilot</b></span></p></div>` +
+    `<div data-plain hidden><ul class="aicc-fbt__plain" data-plainlist></ul><p class="aicc-fbt__hint" data-plainhint></p></div></div></div></div></div>` +
     `<div data-panel="merchant" class="aicc-fbt__panel aicc-fbt__merchant" hidden>` +
     `<div class="aicc-fbt__head"><h3>${T(s.merchant.heading)}</h3><p>${T(s.merchant.intro)}</p></div>` +
     `<p class="aicc-fbt__ctx"><span class="aicc-fbt__ctxthumb" aria-hidden="true">${icon(ANCHOR.icon, 18)}</span><span>${T(s.merchant.forProduct)} <strong>${T(s.products[ANCHOR.id])}</strong></span><em>${T(s.merchant.sameBundle)}</em></p>` +
@@ -101,23 +117,50 @@ export function mountFbt(el, opts) {
   const $ = (sel) => el.querySelector(sel);
   const boxes = [];
   const withShown = () => applyRules(WITH, state.rules).shown;
-  const items = () => (state.mode === "with" ? [ANCHOR, ...withShown()] : []);
+  // WooCommerce's own block never offers what is already in the cart either: the cart view drops the sample cart's own products.
+  const withoutList = () => (state.surface === "cart" ? WITHOUT.filter((x) => !CART.some((l) => l.id === x.id)) : WITHOUT);
+  const items = () => (state.mode === "with" ? (state.surface === "page" ? [ANCHOR, ...withShown()] : withShown()) : []);
   const nameOf = (id) => s.products[id];
   const ruleOf = (id) => state.rules.find((r) => r.id === id)?.action || "none";
   const list = (names) => (names.length ? names.join(", ") : s.merchant.listEmpty);
 
   const cardHTML = (it, meta, anchor) =>
     `<label class="aicc-fbt-card" data-checked="${!!state.checked[it.id]}"${anchor ? ' data-anchor="true"' : ""}>` +
-    `<input type="checkbox" data-id="${it.id}"${state.checked[it.id] ? " checked" : ""}>` +
-    `<span class="aicc-fbt-card__thumb" aria-hidden="true">${icon(it.icon, 26)}</span>` +
+    `<input type="checkbox" data-id="${it.id}"${state.checked[it.id] ? " checked" : ""}${anchor ? " disabled" : ""}>` +
+    `<span class="aicc-fbt-card__thumb" aria-hidden="true">${productArt(it.id)}</span>` +
     `<span class="aicc-fbt-card__body"><span class="aicc-fbt-card__name">${T(nameOf(it.id))}</span><span class="aicc-fbt-card__price"><bdi>${money(it.price)}</bdi></span>${meta}</span></label>`;
 
+  /** The store around the widget (decorative): a product page, or a cart that already holds products. */
+  function renderStore() {
+    const cart = state.surface === "cart";
+    if (!cart) {
+      $("[data-store]").innerHTML =
+        `<div class="aicc-store__product"><div class="aicc-store__photo">${productArt(ANCHOR.id)}</div><div class="aicc-store__details">` +
+        `<strong class="aicc-store__name">${T(nameOf(ANCHOR.id))}</strong><span class="aicc-store__price"><bdi>${money(ANCHOR.price)}</bdi></span>` +
+        `<span class="aicc-store__bar"></span><span class="aicc-store__bar aicc-store__bar--short"></span><span class="aicc-store__btn">${T(s.store.addToCart)}</span></div></div>`;
+      return;
+    }
+    const sub = CART.reduce((n, l) => n + l.price * l.qty, 0), c = s.store.cols;
+    $("[data-store]").innerHTML =
+      `<strong class="aicc-store__title">${T(s.store.cartTitle)}</strong>` +
+      `<div class="aicc-cartbox"><div class="aicc-cart"><div class="aicc-cart__items"><div class="aicc-cart__head"><span></span><span>${T(c.product)}</span><span>${T(c.price)}</span><span>${T(c.quantity)}</span><span>${T(c.subtotal)}</span></div>` +
+      CART.map((l) => `<div class="aicc-cart__line"><span class="aicc-cart__thumb">${productArt(l.id)}</span><span class="aicc-cart__name">${T(nameOf(l.id))}</span>` +
+        `<span class="aicc-cart__meta"><span class="aicc-cart__unit"><bdi>${money(l.price)}</bdi></span><span class="aicc-cart__qty"><i>&minus;</i><b>${l.qty}</b><i>+</i></span></span>` +
+        `<span class="aicc-cart__sub"><bdi>${money(l.price * l.qty)}</bdi></span></div>`).join("") + `</div>` +
+      `<div class="aicc-cart__summary"><div class="aicc-cart__stitle">${T(s.store.totals)}</div>` +
+      `<div class="aicc-cart__row"><span>${T(s.store.subtotal)}</span><span><bdi>${money(sub)}</bdi></span></div>` +
+      `<div class="aicc-cart__row"><span>${T(s.store.shipping)}</span><span class="aicc-cart__note">${T(s.store.shippingNote)}</span></div>` +
+      `<div class="aicc-cart__row aicc-cart__row--total"><span>${T(s.store.total)}</span><span><bdi>${money(sub)}</bdi></span></div>` +
+      `<span class="aicc-cart__checkout">${T(s.store.checkout)}</span></div></div></div>`;
+  }
+
   function renderList() {
-    $("[data-anchor]").innerHTML = cardHTML(ANCHOR, `<span class="aicc-fbt__tag">${T(s.anchorTag)}</span>`, true);
-    $("[data-cands]").innerHTML = withShown().map((c) => `<li>${cardHTML(c, "", false)}</li>`).join("");
-    $("[data-plainlist]").innerHTML = WITHOUT.map((c) => `<li class="aicc-fbt-plain"><span class="aicc-fbt-card__thumb" aria-hidden="true">${icon(c.icon, 26)}</span><span class="aicc-fbt-card__name">${T(nameOf(c.id))}</span><span class="aicc-fbt-card__price"><bdi>${money(c.price)}</bdi></span></li>`).join("");
+    // The viewed product is the first card of a PRODUCT PAGE widget (ticked and locked, as in the plugin); the cart has no such card.
+    const anchorLi = state.surface === "page" ? `<li>${cardHTML(ANCHOR, `<span class="aicc-sr-only">${T(s.anchorTag)}</span>`, true)}</li>` : "";
+    $("[data-cands]").innerHTML = anchorLi + withShown().map((c) => `<li>${cardHTML(c, "", false)}</li>`).join("");
+    $("[data-plainlist]").innerHTML = withoutList().map((c) => `<li class="aicc-fbt-plain"><span class="aicc-fbt-card__thumb" aria-hidden="true">${productArt(c.id)}</span><span class="aicc-fbt-card__body"><span class="aicc-fbt-card__name">${T(nameOf(c.id))}</span><span class="aicc-fbt-card__price"><bdi>${money(c.price)}</bdi></span>${state.surface === "cart" ? `<span class="aicc-fbt-plain__tag">${T(s.plain.manual)}</span>` : ""}</span></li>`).join("");
     boxes.length = 0;
-    el.querySelectorAll('[data-bundle] input[type="checkbox"]').forEach((b) => boxes.push(b));
+    el.querySelectorAll('[data-bundle] input[type="checkbox"]:not(:disabled)').forEach((b) => boxes.push(b));
   }
 
   const why = (it) => (it.tier === "category" ? s.merchant.fallback : it.tier === "newest" ? s.merchant.fallbackNewest : s.merchant.boughtTogether.replace("{n}", num.format(it.count)));
@@ -169,20 +212,26 @@ export function mountFbt(el, opts) {
 
   /** The one-sentence outcome of the current state (also the polite live region for the toggles). */
   function resultText() {
+    const cart = state.surface === "cart";
     if (state.view === "merchant") return s.result.merchant;
-    if (state.mode === "without") return s.result.without.replace("{names}", WITHOUT.map((x) => nameOf(x.id)).join(", "));
+    if (state.mode === "without") return (cart ? s.result.cartWithout : s.result.without).replace("{names}", withoutList().map((x) => nameOf(x.id)).join(", "));
     const learned = withShown().filter((it) => it.tier === "learned");
     const fill = (t, a, b) => t.replace("{a}", nameOf(a.id)).replace("{na}", num.format(a.count)).replace("{b}", b ? nameOf(b.id) : "").replace("{nb}", b ? num.format(b.count) : "");
-    if (learned.length >= 2) return fill(s.result.withTwo, learned[0], learned[1]);
-    if (learned.length === 1) return fill(s.result.withOne, learned[0]);
-    return s.result.withNone;
+    if (learned.length >= 2) return fill(cart ? s.result.cartWithTwo : s.result.withTwo, learned[0], learned[1]);
+    if (learned.length === 1) return fill(cart ? s.result.cartWithOne : s.result.withOne, learned[0]);
+    return cart ? s.result.cartWithNone : s.result.withNone;
   }
 
   function update(speak = false) {
     const { mode, view } = state;
     const withMode = mode === "with";
+    const cart = state.surface === "cart";
     el.dataset.mode = mode;
     el.dataset.view = view;
+    el.dataset.surface = state.surface;
+    el.querySelectorAll("button[data-surface]").forEach((b) => { b.setAttribute("aria-pressed", b.dataset.surface === state.surface ? "true" : "false"); b.disabled = view === "merchant"; });
+    // WooCommerce's own block differs by surface: related products on a product page, cross-sells in the cart.
+    $('button[data-mode="without"]').innerHTML = T(cart ? s.mode.withoutCart : s.mode.without);
     el.querySelectorAll("button[data-mode]").forEach((b) => { b.setAttribute("aria-pressed", b.dataset.mode === mode ? "true" : "false"); b.disabled = view === "merchant"; });
     el.querySelectorAll("button[data-view]").forEach((b) => b.setAttribute("aria-pressed", b.dataset.view === view ? "true" : "false"));
     $('[data-panel="shopper"]').hidden = view === "merchant";
@@ -197,12 +246,13 @@ export function mountFbt(el, opts) {
     // The per-product caption is NEUTRAL and about the sample list; Reco only points to the real Recommendation Preview (it cannot explain a single pairing).
     let whyText;
     if (view === "merchant") whyText = s.why.merchant;
-    else if (!withMode) whyText = s.why.without;
+    else if (!withMode) whyText = cart ? s.why.withoutCart : s.why.without;
     else whyText = focus ? s.why[focus.id] : s.why.none;
     $("[data-result]").innerHTML = T(resultText());
     $(".aicc-fbt__nudge").hidden = state.switched;
-    $("[data-title]").textContent = withMode ? s.widget.title : s.plain.title;
-    $("[data-sub]").textContent = withMode ? s.widget.subtitle : s.plain.note;
+    $("[data-title]").textContent = withMode ? s.widget.title : cart ? s.plain.cartTitle : s.plain.title;
+    $("[data-sub]").textContent = withMode ? s.widget.subtitle : cart ? s.plain.cartNote : s.plain.note;
+    $("[data-plainhint]").textContent = cart ? s.plainHintCart : s.plainHint;
     $("[data-subsr]").hidden = !withMode;
     $("[data-why]").innerHTML = T(whyText);
     $("[data-why-inline]").innerHTML = T(whyText);
@@ -211,7 +261,7 @@ export function mountFbt(el, opts) {
     const addBtn = $("[data-add]");
     addBtn.setAttribute("aria-disabled", String(n === 0));
     $("[data-add-icon]").innerHTML = icon(state.added ? "check" : "shopping-cart", 18);
-    $("[data-add-text]").textContent = state.added ? s.widget.added : addToCartText(locale, s.widget, Math.max(1, n));
+    $("[data-add-text]").textContent = state.added ? s.widget.added : n === 0 ? s.widget.addToCart : addToCartText(locale, s.widget, n);
     $("[data-status]").textContent = n === 0 ? s.widget.selectAtLeastOne : state.added ? s.widget.noteAdd : "";
     $("[data-announce]").innerHTML = T(state.announce || (speak && withMode && view === "shopper" ? `${s.summary.replace("{count}", String(n)).replace("{total}", money(t))}${n === 0 ? ` ${s.widget.selectAtLeastOne}.` : ""}${state.added ? ` ${s.widget.added}.` : ""}` : ""));
     state.announce = "";
@@ -244,6 +294,15 @@ export function mountFbt(el, opts) {
       renderList(); renderMerchant(); update();
       return;
     }
+    const sf = e.target.closest("button[data-surface]");
+    if (sf && !sf.disabled) {
+      if (state.surface !== sf.dataset.surface) {
+        state.surface = sf.dataset.surface; state.switched = true; state.added = false; state.last = null;
+        state.shown = total();
+        renderStore(); renderList(); update(true);
+      }
+      return;
+    }
     const m = e.target.closest("button[data-mode]");
     if (m && !m.disabled) {
       state.mode = m.dataset.mode; state.switched = true; state.added = false;
@@ -268,6 +327,7 @@ export function mountFbt(el, opts) {
     if (next >= 0 && next < boxes.length) boxes[next].focus(); // no wrapping
   });
 
+  renderStore();
   renderList();
   renderMerchant();
   state.shown = total();
