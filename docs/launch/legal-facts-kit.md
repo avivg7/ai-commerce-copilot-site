@@ -12,7 +12,7 @@ Files: the form is `03a-LEGAL-FACTS-FORM.md` (this folder). Repo copies (local b
 |---|---|---|
 | L1. Fill Part 1 of the form (F1 to F11) | owner | BLOCKING (public pages stay "pending" and both launch checks fail) |
 | L2. Give Part 2 to counsel; counsel returns edits C-1 to C-10 and the approval | owner + counsel | BLOCKING for removing the draft notices and for legal soundness; NOT needed to build or test |
-| L3. Claude applies F1 to F8 (this kit, section 4) and re-runs both launch checks | Claude | needs L1 and the follow-up F3 of kit 01 (see 2.1) |
+| L3. Claude applies F1 to F8 (this kit, section 4) and re-runs both launch checks | Claude | needs L1 and `aicc-owner-facts` (F3, done; see 2.1) |
 | L4. Counsel edits go into the source files; Claude re-seeds, rebuilds | Claude + counsel | needs L2 |
 | L5. Approval switches (section 3) set only after counsel approves | owner decides, Claude sets | BLOCKING for launch |
 | L6. `AICC_LEGAL_SUBPROCESSORS_VERIFIED` date set after C-4 is corrected and compared with production | owner + counsel | BLOCKING for the CP gate |
@@ -21,7 +21,7 @@ What Claude does immediately after L1: nothing is possible on the production hos
 
 ### 2.1 Known gap that blocks live application (verified)
 
-`infra/provision/wp-config.production.template.php` (Site ad30a00) carries NO `AICC_LEGAL_*` lines (the owner-facts batch says so: "the production template does not carry these lines yet"), and `render-wp-config.sh` regenerates the whole file on every run, so a hand edit on the host is erased by the next render. The Control Plane reads each constant from `define()` first, then from an environment variable of the same name (`AICC_LM_Legal_Config::get`), but the PHP-FPM pool runs `clear_env=yes`. Therefore: follow-up F3 (Claude, Site `infra/provision/`): an owner-facts region in the production template fed from a root-owned file such as `/etc/aicc-mail`-style `/etc/aicc-legal/legal.php` (root:aicc-cp 0640), validated by the renderer like the mail region. Until F3 exists, apply and test on a local CP only.
+**CLOSED 2026-10-23 (plumb round, follow-up F3):** the production template (and, restricted, the staging one) now has an owner-facts region fed by `render-wp-config.sh` from the root-only file `/etc/aicc/owner-facts.env`, which survives every re-render (the renderer never writes it). Set each Control Plane constant on the host with `sudo aicc-owner-facts set AICC_LEGAL_ENTITY_NAME '...'` (and the other `AICC_LEGAL_*` keys, `AICC_LEGAL_REVIEW_APPROVED` and `AICC_LEGAL_SUBPROCESSORS_VERIFIED`), then `sudo aicc-render-wp-config --env production --confirm-production` and `sudo systemctl reload php8.3-fpm`, then re-seed (section 4.2). Values are validated (no control characters, no `<` `>` `@@`, apostrophes escaped), so an apostrophe in a legal name is fine. Exact commands, the key table and the unset command: `docs/cutover/production-path.md` section 3a. Why a file and not the process environment: the PHP-FPM pool runs `clear_env=yes`, and a hand edit of wp-config.php is erased by the next render.
 
 ---------------------------------------------------------------------------------------------------
 
@@ -81,7 +81,7 @@ AICC_CHECKOUT_URL=https://www.copilt.org/checkout/ npm run launch:check -- --str
 ```
 The production RELEASE is built by `infra/release/build-site-release.sh --target production --out-dir ~/aicc-releases` from the same shell (it runs `npm run build` and inherits the environment): export the facts BEFORE running it, or the release publishes pending lines.
 
-### 4.2 Control Plane (local/QA now; production after follow-up F3)
+### 4.2 Control Plane (local/QA, and production through `aicc-owner-facts`: section 2.1)
 ```bash
 # constants available to WordPress (wp-config.php define(), or env on a local CP), then:
 AICC_LEGAL_SEED_APPLY=1 wp eval-file scripts/seed-legal-documents.php          # publishes NEW immutable versions with the values baked in; idempotent
