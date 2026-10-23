@@ -166,6 +166,17 @@ gate_checks() { # prints PASS/FAIL lines; returns the number of failures
     grep -q 'stage\.copilt\.org' "$OPSCONF" && bad "AICC Ops config names the staging host" || pass "AICC Ops config names no staging host"
   else bad "--ops-config FILE is required (infra/aicc-ops/config/aicc-ops.production.toml)"; fi
   command -v jq >/dev/null 2>&1 && pass "jq available" || bad "jq is required"
+  # The owner-facts file (/etc/aicc/owner-facts.env) is NOT in the rollback bundle and is NOT wiped with /etc/aicc/secrets: whatever the STAGING rehearsals put there is rendered into the
+  # PRODUCTION wp-config by the wpconfig step, AFTER the database was dropped. A stage-only key (AICC_LM_PAYMENT_GATE_STRICT) makes that render refuse mid-promotion; a sandbox host or gateway list
+  # would be carried over silently. Validate it for production here, and print what would be carried over (non-secret facts) for a human to read.
+  local of ofout; of="$(P /etc/aicc/owner-facts.env)"
+  if [ -e "$of" ] || [ -L "$of" ]; then
+    if ofout="$(python3 -I "$SELF/lib/owner_facts.py" check --file "$of" --env production 2>&1)"; then
+      pass "owner facts file is valid for PRODUCTION (${ofout#ok: })"
+      printf 'NOTE  owner facts that will be rendered into the PRODUCTION wp-config (read them: a staging/sandbox value must not be carried over):\n'
+      python3 -I "$SELF/lib/owner_facts.py" list --file "$of" --env production 2>/dev/null | sed 's/^/NOTE    /'
+    else bad "owner facts file is NOT valid for production (the wpconfig step would refuse AFTER the staging database is dropped): ${ofout#REFUSED: }"; fi
+  else printf 'NOTE  no owner-facts file yet: set AICC_ACTIVATION_PROOF_KID (equal to the Backend ACTIVATION_PROOF_KID_CURRENT) before wp-install, then re-render\n'; fi
   if [ -z "$AICC_PREFIX" ]; then
     local free; free="$(df -Pk / | awk 'NR==2{printf "%d", ($4*100)/($3+$4)}')"
     [ "$free" -ge 30 ] && pass "${free}% disk free" || bad "only ${free}% free"
