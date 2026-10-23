@@ -21,7 +21,7 @@ Not legal advice. A blank answer stays blank: nothing is invented, the sites the
 
 ## Part 2. DECISIONS ONLY COUNSEL CAN MAKE (no value can fill them; give this table to your lawyer)
 
-Source: Site `docs/launch/owner-facts-batch.md` section C and `docs/launch/legal-readiness.md`, re-read at ad30a00 on 2026-10-23. Proposed wording for each is in `legal-readiness.md`. Mark each when done.
+Source: Site `docs/launch/owner-facts-batch.md` section C and `docs/launch/legal-readiness.md`, re-read at Site 914fade on 2026-10-23. Proposed wording for each is in `legal-readiness.md`. Mark each when done.
 
 | # | Counsel item | Where | Status |
 |---|---|---|---|

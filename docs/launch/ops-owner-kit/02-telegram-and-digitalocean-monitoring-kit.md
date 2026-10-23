@@ -1,12 +1,16 @@
 # Package 2: TELEGRAM + DIGITALOCEAN MONITORING KIT (one session, about 45 minutes)
 
+Verified against heads: Site 914fade CP 7d61559 Plugin c879b4a Backend 1f99cc0 (2026-10-23).
+
+Paths: `SITE=~/self_projects/ai_copilot_site-worktrees/launch-integration` (until `launch/integration` is landed; never `launch-kitA` or `launch-infra`). Every relative `infra/...` / `scripts/...` command below is run from `cd "$SITE"` (from the home directory it fails with "No such file").
+
 Result: (1) AICC Ops on the Control Plane Droplet messages you in Telegram (`[WARNING]`, `[CRITICAL]`, `[RECOVERED]`), (2) DigitalOcean emails you from the hypervisor side if CPU/memory/disk/load go bad, and both paths are PROVEN by a test alert you received. Today (verified read-only 2026-10-22 and again 2026-10-23): `/etc/aicc-ops/secrets.env` does not exist, so no alert has EVER been delivered anywhere; the DO agent (`do-agent` 3.18.16) is installed and active on the staging Droplet (checked 2026-10-23 with one read-only ssh session), so DO's memory/disk/load policies can work.
 
 Hard rules for you: the bot token is typed ONLY into the hidden prompt on the server (or into BotFather's chat on your phone); never into this chat, a file, a ticket or a shell command line. Scope every DigitalOcean policy to the Control Plane Droplet only; never select "All Droplets"; never touch the API Droplet (`139.59.157.231`, api.copilt.org) or DigitalOcean billing.
 
 ## Part 1. Telegram (about 20 minutes)
 
-The server-side tool, subcommands and exit codes below were verified against the repo (`infra/aicc-ops/bin/aicc-ops-secrets`, `aicc_ops/cli.py`); `ops:test` (330 tests, including the Telegram adapter against fakes) passes. The live Telegram delivery itself is NOT proven until you do the steps.
+The server-side tool, subcommands and exit codes below were verified against the repo (`infra/aicc-ops/bin/aicc-ops-secrets`, `aicc_ops/cli.py`); `ops:test` (339 tests at Site 914fade, including the Telegram adapter against fakes) passes. The live Telegram delivery itself is NOT proven until you do the steps.
 
 Create TWO bots (one minute each): `AICC Ops` for the server and a separate `AICC Sentinel` for the GitHub watcher (package 3), so revoking one never blinds the other. Keep the chat the same.
 
@@ -24,7 +28,7 @@ Create TWO bots (one minute each): `AICC Ops` for the server and a separate `AIC
    * `sudo rm /var/run/reboot-required`: within ~60 s `[RECOVERED] <label> ...` with the duration.
    * (optional, wait 31 minutes first or a FLAPPING notice replaces it) touch again, wait 90 s, remove: NO second `[WARNING]` and no `[RECOVERED]` (cooldown; none owed).
    * what was recorded: `curl -s 'http://127.0.0.1:9190/export.json?kind=alerts&limit=6'` shows the FIRING/RECOVERED rows for `reboot_required`, including the suppressed episode. Claude can read this part itself afterwards (no sudo).
-7. Secret-leak check (from the Mac, about 1 minute): `~/aicc-rehearsal/bin/stage-ssh -t 'sudo python3 -I -' < ~/self_projects/ai_copilot_site-worktrees/launch-kitA/infra/aicc-ops/tools/secret_leak_audit.py` (or the same file from the repo you use). Expected `RESULT: CLEAN` and `secrets file: mode 640 uid 0 gid <aicc-ops>`; it searches the journal, `/var/log` (+ rotated), `/var/lib`, `/etc`, `/srv/aicc/shared`, `/tmp`, `/run`, shell histories and every process's argv/environment and prints only paths and counts. `LEAK` lines = the token is burned: `/revoke` in BotFather and redo from step 1. Also `sudo stat -c '%a %U:%G' /etc/aicc-ops/secrets.env` -> `640 root:aicc-ops`.
+7. Secret-leak check (from the Mac, about 1 minute): `~/aicc-rehearsal/bin/stage-ssh -t 'sudo python3 -I -' < "$SITE/infra/aicc-ops/tools/secret_leak_audit.py"` (after the promotion use `$PSSH` instead of `stage-ssh`: the wrapper then logs into PRODUCTION). Expected `RESULT: CLEAN` and `secrets file: mode 640 uid 0 gid <aicc-ops>`; it searches the journal, `/var/log` (+ rotated), `/var/lib`, `/etc`, `/srv/aicc/shared`, `/tmp`, `/run`, shell histories and every process's argv/environment and prints only paths and counts. `LEAK` lines = the token is burned: `/revoke` in BotFather and redo from step 1. Also `sudo stat -c '%a %U:%G' /etc/aicc-ops/secrets.env` -> `640 root:aicc-ops`.
 
 Failure reading: `telegram-send-test` exit 1 = Telegram refused (revoked token, wrong chat id, bot never started); 3 = unusable credentials file (mode/owner); the service log (`journalctl -u aicc-ops`) shows only an enum reason. Replace a token: `/revoke` in BotFather, then step 3 again. Remove: `sudo aicc-ops-secrets remove-telegram`.
 
@@ -57,7 +61,7 @@ Prove delivery (10-20 minutes, then delete):
 Do not add DigitalOcean's paid Uptime checks (price not verified). Do not touch the API Droplet's monitoring.
 
 ## Time and order
-Telegram steps 1-5 12 min, step 6 8 min (can overlap the DO wait), step 7 1 min; DO 4 policies 8 min, test 10-20 min wait. Order: none between Part 1 and Part 2. Part 1 needs a host session (today the staging Droplet; after promotion the production key). Redo only the Telegram steps 2-5 after promotion if the host label or secrets file is lost (`promote-to-production.sh` keeps `/etc/aicc-ops/secrets.env`: verify with `telegram-status`).
+Telegram steps 1-5 12 min, step 6 8 min (can overlap the DO wait), step 7 1 min; DO 4 policies 8 min, test 10-20 min wait. Order: none between Part 1 and Part 2. Part 1 needs a host session (today the staging Droplet; after promotion the production key). `promote-to-production.sh` keeps `/etc/aicc-ops/secrets.env` (verify with `telegram-status`), but the production re-check is REQUIRED, not optional: after promotion step 6.8 repeat steps 5 (`telegram-send-test --send`) and 7 (leak audit) on the PRODUCTION host with `$PSSH` (production-promotion.md 6.8 and host-readiness item 10). The `[TEST]` message must carry the label `aicc-cp-prod (production)` and the audit must print `RESULT: CLEAN`; redo steps 2-4 as well if the label or the secrets file is lost.
 
 ## After your steps: what Claude does immediately
 * Reads (no sudo, read-only ssh) the loopback alert history to confirm the WARNING/FIRING and RECOVERED rows, and the `[TEST]` event, and compares them with what you pasted (only the first words of each message, never a token).

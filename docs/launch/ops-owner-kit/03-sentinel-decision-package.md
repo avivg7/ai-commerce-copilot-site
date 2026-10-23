@@ -1,5 +1,7 @@
 # Package 3: 24/7 SENTINEL DECISION PACKAGE (decision 10 min; if you say yes, setup about 25 min)
 
+Verified against heads: Site 914fade CP 7d61559 Plugin c879b4a Backend 1f99cc0 (2026-10-23).
+
 The question: who notices, at 3 a.m., that `www.copilt.org` is unreachable (Droplet dead, DNS wrong, certificate expired, firewall mistake) when AICC Ops and the DigitalOcean policies die or stay silent with the host? Today the only thing outside the host is the Mac LaunchAgent sentinel, which does nothing while the Mac sleeps.
 
 ## Recommendation (one option)
@@ -27,7 +29,7 @@ Not evaluated in depth (new third-party accounts, nothing in the repo supports t
 
 If you refuse any public repository: take A plus "Mac plugged in, never sleeps" (`sudo pmset -c sleep 0` on a desktop/always-on Mac; your decision) and write down that a whole-host outage while the Mac is off is detected by nothing external except DigitalOcean's missing metrics.
 
-## What I changed to make B good (Site branch `launch/kitA`, all tested)
+## What I changed to make B good (merged into Site `launch/integration`, all tested)
 
 1. `infra/sentinel/github/aicc-sentinel.workflow.yml`: `--fail-on-down` (the run fails, GitHub emails you, independent of Telegram; repeats each run while down, ~6/hour; delete the flag if you prefer Telegram only) and a manual `send_test` input (`gh workflow run aicc-sentinel -f send_test=true` sends ONE `[TEST]` message and probes nothing: proves the two secrets without waiting for an outage).
 2. `infra/sentinel/github/PUBLIC-README.md` + `prepare-sentinel-repo.sh` installs it as the public README (see above).
@@ -37,16 +39,17 @@ Findings from the proof worth knowing (they are the sentinel's real behaviour, n
 
 ## Proven vs not
 
-PROVEN locally (`proof/sentinel-e2e-selftest.log`, re-run: `bash scripts/sentinel-e2e-selftest.sh --site-repo <Site checkout>`): the official `prepare-sentinel-repo.sh` output (5 files, checksums, no `.git`, byte-identical `sentinel.py`, no secret/path/name); `actionlint` clean; workflow structure (only schedule + workflow_dispatch, `contents: read`, both actions pinned to 40-hex SHAs, secrets only through `env:`, cron gaps >= 5 min); the exact workflow command line against a local stand-in target and a local fake api.telegram.org: healthy = silence, blip = silence, 2-of-3 = one `[DOWN]` with the failing stage and `observer: github-actions`, no repeat (cooldown), `[RECOVERED]`, 404 (the old site, pre-cutover) = DOWN at `http`, wrong body = DOWN at `body`, Telegram refusing = no crash and exit code 1, no secrets configured = exit code 1, `send_test` = one `[TEST]`, the fake token/chat id never in output, state or any file; three phase files all valid. Repo tests: `npm run sentinel:test` 83/83, `ops:test` 330/330 (see SUMMARY).
+PROVEN locally (`proof/sentinel-e2e-selftest.log`, re-run: `bash scripts/sentinel-e2e-selftest.sh --site-repo <Site checkout>`): the official `prepare-sentinel-repo.sh` output (5 files, checksums, no `.git`, byte-identical `sentinel.py`, no secret/path/name); `actionlint` clean; workflow structure (only schedule + workflow_dispatch, `contents: read`, both actions pinned to 40-hex SHAs, secrets only through `env:`, cron gaps >= 5 min); the exact workflow command line against a local stand-in target and a local fake api.telegram.org: healthy = silence, blip = silence, 2-of-3 = one `[DOWN]` with the failing stage and `observer: github-actions`, no repeat (cooldown), `[RECOVERED]`, 404 (the old site, pre-cutover) = DOWN at `http`, wrong body = DOWN at `body`, Telegram refusing = no crash and exit code 1, no secrets configured = exit code 1, `send_test` = one `[TEST]`, the fake token/chat id never in output, state or any file; three phase files all valid. Repo tests at Site 914fade: `npm run sentinel:test` 85/85, `ops:test` 339/339 (see SUMMARY).
 NOT proven (needs your account and the internet): GitHub actually firing the cron and its real skew, the runner image's Python 3.12 (the workflow comment says ubuntu-24.04 ships it; unverified here), `actions/cache` across runs, GitHub's failure email reaching you, real Telegram delivery, the cron being switched off at day 60.
 
 ## If you say yes: the 25-minute setup (STOP markers: nothing here is done for you)
 
 Prerequisites: a Telegram bot for the sentinel (package 2, BotFather) and your chat id (a private chat's id is the same for every bot you start; press **Start** on the new bot first), `gh` logged in, 2FA on the GitHub account (it will hold both secrets), no collaborators.
 ```bash
-SITE=~/self_projects/ai_copilot_site-worktrees/launch-kitA      # until launch/kitA is merged
-bash $SITE/infra/sentinel/github/prepare-sentinel-repo.sh --out ~/aicc-sentinel-repo          # local only; or copy the pre-staged ~/Downloads/AICC-launch-evidence/owner-kit/A-ops/sentinel-repo-staged
-bash <kit>/scripts/sentinel-phase.sh --repo ~/aicc-sentinel-repo --phase stage                 # watch stage.copilt.org until promotion
+SITE=~/self_projects/ai_copilot_site-worktrees/launch-integration      # until launch/integration is landed
+cd "$SITE"
+bash "$SITE/infra/sentinel/github/prepare-sentinel-repo.sh" --out ~/aicc-sentinel-repo          # local only; or copy the pre-staged ~/Downloads/AICC-launch-evidence/owner-kit/A-ops/sentinel-repo-staged
+bash "$SITE/docs/launch/ops-owner-kit/scripts/sentinel-phase.sh" --repo ~/aicc-sentinel-repo --phase stage    # watch stage.copilt.org until promotion
 cd ~/aicc-sentinel-repo && git init -b main && git add -A && git commit -m "AICC external sentinel"
 # STOP: next line creates a PUBLIC repository under your account (your decision, your name)
 gh repo create <your-github-user>/aicc-sentinel --public --source . --push
@@ -55,7 +58,7 @@ gh secret set TELEGRAM_CHAT_ID   --repo <your-github-user>/aicc-sentinel
 gh workflow run aicc-sentinel --repo <your-github-user>/aicc-sentinel -f send_test=true       # expect the [TEST] message in Telegram
 gh run list --repo <your-github-user>/aicc-sentinel --limit 3                                  # expect: completed / success; scheduled runs follow every ~10 min
 ```
-Then: GitHub -> Settings -> Notifications -> Actions: make sure failed-run email/web is on (optionally "only failed workflows"). Add a calendar reminder every 45 days: "Actions tab shows green scheduled runs within the last hour; if it says disabled, re-enable and commit". Prove the DOWN path once (optional, 10 min): run `sentinel-phase.sh --phase stage` with a deliberately wrong URL path, commit, wait 25-40 minutes, expect `[DOWN]` and a failure email, then restore the phase and commit (expect `[RECOVERED]`). At promotion: `--phase dark`; after the DNS cutover: `--phase www` (commit + push each time). Remove everything: `gh repo delete <user>/aicc-sentinel`.
+Then: GitHub -> Settings -> Notifications -> Actions: make sure failed-run email/web is on (optionally "only failed workflows"). Add a calendar reminder every 45 days: "Actions tab shows green scheduled runs within the last hour; if it says disabled, re-enable and commit". Prove the DOWN path once (optional, 10 min): run `sentinel-phase.sh --phase stage` with a deliberately wrong URL path, commit, wait 25-40 minutes, expect `[DOWN]` and a failure email, then restore the phase and commit (expect `[RECOVERED]`). **ONE rule (same in production-promotion.md 6.4/10.2 and kit 05 B.3b/I.10):** the repository may be created any time before the promotion, on `--phase stage`. The promotion step `apply` RETIRES `stage.copilt.org`, so IMMEDIATELY after `apply` run `bash "$SITE/docs/launch/ops-owner-kit/scripts/sentinel-phase.sh" --repo ~/aicc-sentinel-repo --phase dark`, then `git -C ~/aicc-sentinel-repo commit -am "phase: dark" && git -C ~/aicc-sentinel-repo push`; if you skip this, the workflow (`--fail-on-down`) reports `stage-edge` DOWN and GitHub emails you about every 10 minutes. After the DNS cutover (kit 05 I steps 5 and 8 green): the same with `--phase www`. If you create the repository only after `apply`, start it on `--phase dark`. Remove everything: `gh repo delete <user>/aicc-sentinel`.
 
 ## After your steps: what Claude does immediately
 Using only your report ("repo created", run URLs without secrets): checks via `gh run list --json` ONLY if you ask and approve the call (Claude does not hold your GitHub credentials); computes the real scheduler skew from run timestamps you paste; updates `alerting.md` sections 3-4 and the production-promotion observer step with the observed facts; if you decline B, rewrites those sections to the "Mac-only, not 24/7" wording.
