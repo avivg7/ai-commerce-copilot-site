@@ -213,6 +213,7 @@ if [ -x "$LOCALMY/mysqld" ] && command -v jq >/dev/null 2>&1; then
     env AICC_TEST_HARNESS=1 bash "$PROV/create-staging-db.sh" --socket "$M/s.sock" --secrets-dir "$SEC" --backup-cnf "$PFX/etc/aicc/backup.cnf" --mysql-bin "$LOCALMY/mysql" >/dev/null 2>&1
     "${SQL[@]}" -e "CREATE TABLE aicc_cp.wp_users_marker (id INT PRIMARY KEY, who VARCHAR(40)); INSERT INTO aicc_cp.wp_users_marker VALUES (1,'STAGING-TEST-USER'); CREATE TABLE aicc_cp.wp_options (option_name VARCHAR(64), option_value TEXT); INSERT INTO aicc_cp.wp_options VALUES ('siteurl','https://stage.copilt.org');"
     OLDDBPW="$(cat "$SEC/db-cp.pass")"
+    printf 'AICC_ACTIVATION_PROOF_KID=promo-kid-1\nAICC_LEGAL_PAYMENT_PROCESSOR=PromoPay\n' > "$PFX/etc/aicc/owner-facts.env"; chmod 600 "$PFX/etc/aicc/owner-facts.env"     # owner facts set BEFORE the promotion
     BIN="$TMP/bin"; mkdir -p "$BIN"
     cat > "$BIN/aicc-backup" <<EOF
 #!/usr/bin/env bash
@@ -292,6 +293,7 @@ EOF
     t_ok "wp-config: webhook URL on the API host" grep -q "https://api.copilt.org/v1/internal/entitlement/webhook" "$WCF"
     t_ok "wp-config: carries the owner webhook secret" grep -q "$SECA" "$WCF"
     t_ok "wp-config: carries the NEW db password" grep -q "$NEWDBPW" "$WCF"
+    t_ok "wp-config: the owner facts file (set before the promotion) is rendered by the promotion's wpconfig step" bash -c "grep -q \"define( 'AICC_ACTIVATION_PROOF_KID', 'promo-kid-1' )\" '$WCF' && grep -q \"define( 'AICC_LEGAL_PAYMENT_PROCESSOR', 'PromoPay' )\" '$WCF'"
     t_not_contains "wp-config: no staging host, no old salt, no old db password" "$(cat "$WCF")" "OLD-STAGE"
     t_not_contains "wp-config: no old database password" "$(cat "$WCF")" "$OLDDBPW"
     t_not_contains "wp-config: no staging host" "$(cat "$WCF")" "stage.copilt.org"

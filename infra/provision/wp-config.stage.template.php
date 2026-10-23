@@ -91,6 +91,11 @@ define( 'AICC_LM_PLUGIN_RELEASE_DIR', '/srv/aicc/shared/plugin-releases' );
 // Staging-only random secrets generated on the host (they are NOT the production values and unlock nothing elsewhere).
 define( 'AICC_ACTIVATION_PROOF_SECRET', '@@AICC_ACTIVATION_PROOF_SECRET@@' );
 define( 'AICC_ENTITLEMENT_WEBHOOK_SECRET', '@@AICC_ENTITLEMENT_WEBHOOK_SECRET@@' );
+// @@OWNER_FACTS_BEGIN@@
+// OWNER FACTS (non-secret): rendered ONLY from the root-only host file /etc/aicc/owner-facts.env by render-wp-config.sh (validated, escaped); absent or empty = this whole region is removed. Staging may carry only
+// AICC_ACTIVATION_PROOF_KID, AICC_LM_PAID_GATEWAYS and AICC_LM_PAYMENT_GATE_STRICT (a payment SANDBOX rehearsal runs the production rules); an owner-set extra outbound host is appended to WP_ACCESSIBLE_HOSTS above by the renderer.
+@@OWNER_FACTS@@
+// @@OWNER_FACTS_END@@
 // AICC_LM_ALLOW_DEV_SECRET_BOOTSTRAP and AICC_LM_TEST_FIXTURE are intentionally NOT defined.
 
 // ---- bootstrap -----------------------------------------------------------------------------------------------------------------------------------------

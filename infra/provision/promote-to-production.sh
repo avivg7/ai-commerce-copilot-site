@@ -290,7 +290,7 @@ step_wpconfig() {
   fi
   local args=(--env production --confirm-production)
   is_dry && args+=(--dry-run)
-  if [ -n "$AICC_PREFIX" ]; then args+=(--out "$(P "$WPCFG")" --secrets-dir "$(P "$SECRETS")" --mail-dir "$(P /etc/aicc-mail)" --plugin-release-dir "$(P /srv/aicc/shared/plugin-releases)" --owner "$(id -un):$(id -gn)"); fi
+  if [ -n "$AICC_PREFIX" ]; then args+=(--out "$(P "$WPCFG")" --secrets-dir "$(P "$SECRETS")" --mail-dir "$(P /etc/aicc-mail)" --plugin-release-dir "$(P /srv/aicc/shared/plugin-releases)" --owner-facts-file "$(P /etc/aicc/owner-facts.env)" --owner "$(id -un):$(id -gn)"); fi
   AICC_TEST_HARNESS="${AICC_TEST_HARNESS:-0}" bash "$SELF/render-wp-config.sh" "${args[@]}"
   mark_done wpconfig
 }

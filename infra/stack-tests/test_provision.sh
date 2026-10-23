@@ -449,6 +449,179 @@ if [ -x "$LOCALMY/mysqld" ]; then
     rm -f "$SMTPF"
     t_ok "removing smtp.env and re-rendering turns the mail layer off again" PW --confirm-production
     t_eq "...no AICC_MAIL_ constant left" "$(grep -c "define( 'AICC_MAIL_" "$WC/prod.php" || true)" "0"
+    echo "== owner facts region (AICC_ACTIVATION_PROOF_KID, AICC_LEGAL_*, gateway allowlists, extra gateway host): rendered from a root-only host file; unset = byte-for-byte what it always was =="
+    OFD="$TMP/ofacts"; OFSEC="$OFD/sec"; mkdir -p "$OFSEC" "$OFD/rel" "$OFD/abs"; chmod 700 "$OFSEC"; chmod 750 "$OFD/rel"; echo '<?php' > "$OFD/abs/wp-settings.php"
+    printf 'golden_db_pass_0001\n' > "$OFSEC/db-cp.pass"; OFHEX="$(printf 'ab12%.0s' $(seq 16))"
+    seedsalts() { { for k in AUTH_KEY SECURE_AUTH_KEY LOGGED_IN_KEY NONCE_KEY AUTH_SALT SECURE_AUTH_SALT LOGGED_IN_SALT NONCE_SALT; do printf '%s=SALTVALUE_%s\n' "$k" "$k"; done; printf 'AICC_ACTIVATION_PROOF_SECRET=%s\nAICC_ENTITLEMENT_WEBHOOK_SECRET=%s\n' "$OFHEX" "$OFHEX"; } > "$OFSEC/wp-secrets.env"; chmod 600 "$OFSEC/wp-secrets.env"; }
+    seedsalts
+    printf 'WEBHOOK-test-0123456789-0123456789-abcdef\n' > "$OFSEC/entitlement-webhook.secret"; printf 'PROOF-test-0123456789-0123456789-abcdefgh\n' > "$OFSEC/activation-proof.secret"; chmod 600 "$OFSEC/"*.secret
+    OFU="$(id -un):$(id -gn)"; OFF="$OFD/owner-facts.env"     # the default location is next to the secrets directory (/etc/aicc/owner-facts.env on a host)
+    OFR() { env AICC_TEST_HARNESS=1 bash "$PROV/render-wp-config.sh" --env production --confirm-production --out "$OFD/prod.php" --secrets-dir "$OFSEC" --mail-dir "$OFD/nomail" --plugin-release-dir "$OFD/rel" --owner "$OFU" "$@"; }
+    OFS() { env AICC_TEST_HARNESS=1 bash "$PROV/render-wp-config.sh" --out "$OFD/stage.php" --secrets-dir "$OFSEC" --plugin-release-dir "$OFD/rel" --owner "$OFU" "$@"; }
+    OFT() { env AICC_TEST_HARNESS=1 bash "$PROV/owner-facts.sh" --file "$OFF" --env production "$@"; }
+    OFTS() { env AICC_TEST_HARNESS=1 bash "$PROV/owner-facts.sh" --file "$OFF" --env stage "$@"; }
+    hexnorm() { sed -E 's/[0-9a-f]{64}/HEX64/g' "$1"; }
+    cst() { local f="$1"; shift; php -r 'define("ABSPATH",$argv[2]); require $argv[1]; $o=array(); foreach (array_slice($argv,3) as $n) { $o[$n]=defined($n)?constant($n):null; } echo json_encode($o);' "$f" "$OFD/abs/" "$@"; }
+    sha() { shasum -a 256 "$1" | cut -d' ' -f1; }
+    ALLK="AICC_ACTIVATION_PROOF_KID AICC_LEGAL_ENTITY_NAME AICC_LEGAL_ENTITY_ADDRESS AICC_LEGAL_SUPPORT_EMAIL AICC_LEGAL_GOVERNING_LAW AICC_LEGAL_JURISDICTION AICC_LEGAL_PAYMENT_PROCESSOR AICC_LEGAL_VAT_DETAILS AICC_LEGAL_REVIEW_APPROVED AICC_LEGAL_SUBPROCESSORS_VERIFIED AICC_STRUCTURED_DATA_OFFERS AICC_LM_PAID_GATEWAYS AICC_LAUNCH_REAL_GATEWAYS AICC_LM_PAYMENT_GATE_STRICT"
+    # --- unset: byte-for-byte golden files, produced by the renderer and templates as they were BEFORE this region existed
+    t_ok "the production template has the owner-facts region exactly once" bash -c "[ \"\$(grep -c '@@OWNER_FACTS_BEGIN@@' '$PROV/wp-config.production.template.php')/\$(grep -c '@@OWNER_FACTS_END@@' '$PROV/wp-config.production.template.php')/\$(grep -c '^@@OWNER_FACTS@@' '$PROV/wp-config.production.template.php')\" = 1/1/1 ]"
+    t_ok "the stage template has the owner-facts region exactly once" bash -c "[ \"\$(grep -c '@@OWNER_FACTS_BEGIN@@' '$PROV/wp-config.stage.template.php')/\$(grep -c '@@OWNER_FACTS_END@@' '$PROV/wp-config.stage.template.php')/\$(grep -c '^@@OWNER_FACTS@@' '$PROV/wp-config.stage.template.php')\" = 1/1/1 ]"
+    OFR >/dev/null 2>&1; t_ok "UNSET production render == golden (byte for byte, 64-hex values normalised)" bash -c "diff <(sed -E 's/[0-9a-f]{64}/HEX64/g' '$OFD/prod.php') '$HERE/golden/wp-config.production.no-owner-facts.php'"
+    OFS >/dev/null 2>&1; t_ok "UNSET stage render == golden (byte for byte, 64-hex values normalised)" bash -c "diff <(sed -E 's/[0-9a-f]{64}/HEX64/g' '$OFD/stage.php') '$HERE/golden/wp-config.stage.no-owner-facts.php'"
+    t_eq "...the unset render contains no owner-facts marker, placeholder or region comment" "$(grep -c 'OWNER_FACTS\|OWNER FACTS\|@@' "$OFD/prod.php" "$OFD/stage.php" | tr '\n' ' ')" "$OFD/prod.php:0 $OFD/stage.php:0 "
+    t_eq "...and defines none of the owner-fact constants (the launch gate keeps its empty AICC_LAUNCH_REAL_GATEWAYS fallback; the payment gate keeps its empty allowlist)" "$(cst "$OFD/prod.php" $ALLK | jq -c '[.[]|select(.!=null)]')" "[]"
+    t_eq "...and WP_ACCESSIBLE_HOSTS is exactly the API host" "$(cst "$OFD/prod.php" WP_ACCESSIBLE_HOSTS | jq -r .WP_ACCESSIBLE_HOSTS)" "api.copilt.org"
+    printf '# only a comment\n\n' > "$OFF"; chmod 600 "$OFF"
+    OFR >/dev/null 2>&1; t_ok "an EMPTY (comment-only) facts file renders the same golden file" bash -c "diff <(sed -E 's/[0-9a-f]{64}/HEX64/g' '$OFD/prod.php') '$HERE/golden/wp-config.production.no-owner-facts.php'"
+    t_contains "the dry run reports zero values" "$(OFR --dry-run 2>&1)" "owner facts: 0 value(s)"
+    rm -f "$OFF"
+    # --- the operator command: set / list / unset
+    t_rc "set: nothing is created for an unknown key" 1 OFT set AICC_NOT_A_KEY x
+    t_fail "...no facts file was created by the refusal" test -e "$OFF"
+    t_ok "set AICC_ACTIVATION_PROOF_KID" OFT set AICC_ACTIVATION_PROOF_KID prod-2026-10
+    t_eq "the facts file is mode 0600" "$(mode "$OFF")" "600"
+    t_ok "set the six required legal facts + the optional VAT text" bash -c "set -e; T() { env AICC_TEST_HARNESS=1 bash '$PROV/owner-facts.sh' --file '$OFF' --env production \"\$@\" >/dev/null; }; T set AICC_LEGAL_ENTITY_NAME 'Example Studio Ltd'; T set AICC_LEGAL_ENTITY_ADDRESS '1 Example Street, Example City'; T set AICC_LEGAL_SUPPORT_EMAIL support@copilt.org; T set AICC_LEGAL_GOVERNING_LAW 'the laws of Example'; T set AICC_LEGAL_JURISDICTION 'the courts of Example City'; T set AICC_LEGAL_PAYMENT_PROCESSOR PayPlus; T set AICC_LEGAL_VAT_DETAILS 'VAT exempt'"
+    t_ok "set the two launch switches and the date" bash -c "set -e; T() { env AICC_TEST_HARNESS=1 bash '$PROV/owner-facts.sh' --file '$OFF' --env production \"\$@\" >/dev/null; }; T set AICC_LEGAL_REVIEW_APPROVED true; T set AICC_LEGAL_SUBPROCESSORS_VERIFIED 2026-10-23; T set AICC_STRUCTURED_DATA_OFFERS true"
+    t_ok "set the payment gateway family (card + wallets, exact ids) and the launch list" bash -c "set -e; T() { env AICC_TEST_HARNESS=1 bash '$PROV/owner-facts.sh' --file '$OFF' --env production \"\$@\" >/dev/null; }; T set AICC_LM_PAID_GATEWAYS 'payplus-payment-gateway:payplus_transaction_uid, payplus-payment-gateway-applepay:payplus_transaction_uid,payplus-payment-gateway-googlepay:payplus_transaction_uid'; T set AICC_LAUNCH_REAL_GATEWAYS payplus-payment-gateway"
+    t_ok "set an extra outbound host for the payment gateway" OFT set AICC_EXTRA_ACCESSIBLE_HOSTS restapi.payplus.co.il
+    t_eq "the file still has mode 0600 after every write" "$(mode "$OFF")" "600"
+    t_eq "list shows the key" "$(OFT list | grep -c '^AICC_ACTIVATION_PROOF_KID=prod-2026-10$')" "1"
+    # --- set values are rendered, exactly
+    OFSUM="$(sha "$OFF")"
+    OUTF="$(OFR 2>&1)"; rcf=$?
+    t_eq "production render with facts succeeds" "$rcf" "0"
+    t_ok "...php -l clean" php -l "$OFD/prod.php"
+    t_eq "...mode 0640 (unchanged)" "$(mode "$OFD/prod.php")" "640"
+    t_eq "...owner is the one passed to the renderer (the host passes root:aicc-cp)" "$(stat -c '%U:%G' "$OFD/prod.php" 2>/dev/null || stat -f '%Su:%Sg' "$OFD/prod.php")" "$OFU"
+    t_eq "...the renderer did not touch the facts file" "$(sha "$OFF")" "$OFSUM"
+    t_eq "...no placeholder or marker is left" "$(grep -c '@@' "$OFD/prod.php" || true)" "0"
+    FC="$(cst "$OFD/prod.php" $ALLK WP_ACCESSIBLE_HOSTS WP_HTTP_BLOCK_EXTERNAL)"
+    t_eq "proof key id rendered" "$(echo "$FC" | jq -r .AICC_ACTIVATION_PROOF_KID)" "prod-2026-10"
+    t_eq "the seven legal facts rendered verbatim" "$(echo "$FC" | jq -c '[.AICC_LEGAL_ENTITY_NAME,.AICC_LEGAL_ENTITY_ADDRESS,.AICC_LEGAL_SUPPORT_EMAIL,.AICC_LEGAL_GOVERNING_LAW,.AICC_LEGAL_JURISDICTION,.AICC_LEGAL_PAYMENT_PROCESSOR,.AICC_LEGAL_VAT_DETAILS]')" '["Example Studio Ltd","1 Example Street, Example City","support@copilt.org","the laws of Example","the courts of Example City","PayPlus","VAT exempt"]'
+    t_eq "the switches are real booleans / the date is the string the gate expects" "$(echo "$FC" | jq -c '[.AICC_LEGAL_REVIEW_APPROVED,.AICC_STRUCTURED_DATA_OFFERS,.AICC_LEGAL_SUBPROCESSORS_VERIFIED]')" '[true,true,"2026-10-23"]'
+    t_eq "AICC_LM_PAID_GATEWAYS: exactly the three listed ids, strict (transaction id required), proof meta kept" "$(echo "$FC" | jq -c '.AICC_LM_PAID_GATEWAYS')" '{"payplus-payment-gateway":{"require_transaction_id":true,"proof_meta":["payplus_transaction_uid"]},"payplus-payment-gateway-applepay":{"require_transaction_id":true,"proof_meta":["payplus_transaction_uid"]},"payplus-payment-gateway-googlepay":{"require_transaction_id":true,"proof_meta":["payplus_transaction_uid"]}}'
+    t_eq "AICC_LAUNCH_REAL_GATEWAYS: the one enabled card gateway (a subset of the runtime list)" "$(echo "$FC" | jq -c .AICC_LAUNCH_REAL_GATEWAYS)" '["payplus-payment-gateway"]'
+    t_eq "WP_ACCESSIBLE_HOSTS: the API host plus exactly the owner's gateway host; outbound stays blocked" "$(echo "$FC" | jq -r '[.WP_ACCESSIBLE_HOSTS,.WP_HTTP_BLOCK_EXTERNAL]|join(" ")')" "api.copilt.org,restapi.payplus.co.il true"
+    t_eq "AICC_LM_PAYMENT_GATE_STRICT is NOT defined by a production render (production is strict by its host name)" "$(echo "$FC" | jq -r .AICC_LM_PAYMENT_GATE_STRICT)" "null"
+    t_ok "the facts are in ONE region: every owner-fact define is a single line" bash -c "[ \"\$(grep -c \"^define( 'AICC_\(ACTIVATION_PROOF_KID\|LEGAL_\|STRUCTURED\|LM_PAID_GATEWAYS\|LAUNCH_REAL\)\" '$OFD/prod.php')\" = 13 ]"
+    t_not_contains "the render output names no value (nothing from the facts file is printed)" "$OUTF" "Example Studio"
+    DIFFO="$(php -r '$dump=function($f){ $code=file_get_contents($f); preg_match_all("/define\(\s*\x27([A-Z_]+)\x27,\s*(.*?)\s*\);/", $code, $m, PREG_SET_ORDER); $o=[]; foreach($m as $x){ if(preg_match("/^(AUTH|SECURE_AUTH|LOGGED_IN|NONCE)_(KEY|SALT)$/",$x[1])) continue; $o[$x[1]]=$x[2]; } return $o; }; $s=$dump($argv[1]); $p=$dump($argv[2]); $d=[]; foreach(array_unique(array_merge(array_keys($s),array_keys($p))) as $k){ if(($s[$k]??null)!==($p[$k]??null)) $d[]=$k; } sort($d); echo json_encode($d);' "$OFD/stage.php" "$OFD/prod.php")"
+    t_eq "PINNED (with owner facts): the constants that differ from the stage render are the environment ones plus EXACTLY the thirteen owner-fact constants" "$DIFFO" '["AICC_ACTIVATION_PROOF_KID","AICC_ACTIVATION_PROOF_SECRET","AICC_ENTITLEMENT_WEBHOOK_SECRET","AICC_ENTITLEMENT_WEBHOOK_URL","AICC_LAUNCH_REAL_GATEWAYS","AICC_LEGAL_ENTITY_ADDRESS","AICC_LEGAL_ENTITY_NAME","AICC_LEGAL_GOVERNING_LAW","AICC_LEGAL_JURISDICTION","AICC_LEGAL_PAYMENT_PROCESSOR","AICC_LEGAL_REVIEW_APPROVED","AICC_LEGAL_SUBPROCESSORS_VERIFIED","AICC_LEGAL_SUPPORT_EMAIL","AICC_LEGAL_VAT_DETAILS","AICC_LM_PAID_GATEWAYS","AICC_STRUCTURED_DATA_OFFERS","WP_ACCESSIBLE_HOSTS","WP_ENVIRONMENT_TYPE","WP_HOME","WP_SITEURL"]'
+    t_contains "dry run reports the number of values and prints none" "$(OFR --dry-run 2>&1)" "owner facts: 14 value(s)"
+    t_not_contains "...nor any value" "$(OFR --dry-run 2>&1)" "Example Studio"
+    # --- a re-render never loses an owner-set value
+    P0="$(hexnorm "$OFD/prod.php" | grep -v '^define( .\(AUTH\|SECURE\|LOGGED\|NONCE\)' | shasum -a 256)"
+    OFR >/dev/null 2>&1; OFR --force-salts >/dev/null 2>&1; OFR >/dev/null 2>&1
+    seedsalts      # --force-salts replaced the fixed test salts with random ones (and dropped the stage-only values): restore the fixed inputs for the golden comparisons below
+    OFR >/dev/null 2>&1
+    t_eq "after re-renders (including --force-salts) every owner fact is still there" "$(cst "$OFD/prod.php" $ALLK | jq -c '[.[]|select(.!=null)]|length')" "13"
+    t_eq "...and the file is identical apart from the regenerated salts" "$(hexnorm "$OFD/prod.php" | grep -v '^define( .\(AUTH\|SECURE\|LOGGED\|NONCE\)' | shasum -a 256)" "$P0"
+    t_eq "the facts file was never modified by any render" "$(sha "$OFF")" "$OFSUM"
+    t_ok "a deleted wp-config is re-created WITH the facts (what the restore tool does)" bash -c "rm -f '$OFD/prod.php'; cd '$TMP' && env AICC_TEST_HARNESS=1 bash '$PROV/render-wp-config.sh' --env production --confirm-production --out '$OFD/prod.php' --secrets-dir '$OFSEC' --mail-dir '$OFD/nomail' --plugin-release-dir '$OFD/rel' --owner '$OFU' >/dev/null 2>&1 && grep -q \"define( 'AICC_LEGAL_ENTITY_NAME', 'Example Studio Ltd' )\" '$OFD/prod.php'"
+    ln -sfn "$PROV/render-wp-config.sh" "$TMP/aicc-render-wp-config"; ln -sfn "$PROV/owner-facts.sh" "$TMP/aicc-owner-facts"
+    t_ok "the renderer works through the /usr/local/sbin-style symlink (it resolves its own directory)" env AICC_TEST_HARNESS=1 bash "$TMP/aicc-render-wp-config" --env production --confirm-production --out "$OFD/prod.sym.php" --secrets-dir "$OFSEC" --mail-dir "$OFD/nomail" --plugin-release-dir "$OFD/rel" --owner "$OFU"
+    t_ok "...and so does the owner-facts command" env AICC_TEST_HARNESS=1 bash "$TMP/aicc-owner-facts" --file "$OFF" --env production list
+    # --- unset restores the golden render; the other values stay
+    t_ok "unset one value" OFT unset AICC_LEGAL_VAT_DETAILS
+    t_eq "...it is gone from the file, the rest stays (13)" "$(OFT list | wc -l | tr -d ' ')" "13"
+    t_contains "unsetting a value that is not set says so and changes nothing" "$(OFT unset AICC_LEGAL_VAT_DETAILS 2>&1)" "was not set"
+    t_rc "unsetting the paid-gateway list while the launch list still names its gateway is refused (order matters)" 1 OFT unset AICC_LM_PAID_GATEWAYS
+    for k in AICC_LAUNCH_REAL_GATEWAYS AICC_LM_PAID_GATEWAYS AICC_ACTIVATION_PROOF_KID AICC_LEGAL_ENTITY_NAME AICC_LEGAL_ENTITY_ADDRESS AICC_LEGAL_SUPPORT_EMAIL AICC_LEGAL_GOVERNING_LAW AICC_LEGAL_JURISDICTION AICC_LEGAL_PAYMENT_PROCESSOR AICC_LEGAL_REVIEW_APPROVED AICC_LEGAL_SUBPROCESSORS_VERIFIED AICC_STRUCTURED_DATA_OFFERS AICC_EXTRA_ACCESSIBLE_HOSTS; do OFT unset $k >/dev/null 2>&1; done
+    t_eq "after unsetting everything the file lists nothing" "$(OFT list | wc -l | tr -d ' ')" "0"
+    OFR >/dev/null 2>&1; t_ok "...and the production render is the golden file again, byte for byte" bash -c "diff <(sed -E 's/[0-9a-f]{64}/HEX64/g' '$OFD/prod.php') '$HERE/golden/wp-config.production.no-owner-facts.php'"
+    # --- validation: nothing invalid is accepted, nothing partial is written
+    rm -f "$OFF"; OFT set AICC_ACTIVATION_PROOF_KID keep-1 >/dev/null; OFSUM="$(sha "$OFF")"
+    bad() { t_rc "REFUSED: $1" 1 OFT set "$2" "$3"; }
+    bad "a newline inside a legal fact" AICC_LEGAL_ENTITY_NAME $'Acme\ndefine(1)'
+    bad "a carriage return" AICC_LEGAL_ENTITY_NAME $'Acme\rLtd'
+    bad "a tab / control character" AICC_LEGAL_ENTITY_NAME $'Acme\tLtd'
+    bad "a PHP open tag" AICC_LEGAL_ENTITY_NAME '<?php system("id"); ?>'
+    bad "a PHP close tag" AICC_LEGAL_ENTITY_ADDRESS 'x ?> y'
+    bad "an angle bracket (no markup in a legal fact)" AICC_LEGAL_JURISDICTION 'a<b'
+    bad "a template placeholder" AICC_LEGAL_ENTITY_NAME '@@DB_PASSWORD@@'
+    bad "a bidirectional override character" AICC_LEGAL_ENTITY_NAME $'Acme \xe2\x80\xaeLtd'
+    bad "an over-long value" AICC_LEGAL_ENTITY_NAME "$(printf 'a%.0s' $(seq 1 201))"
+    bad "an empty value" AICC_LEGAL_ENTITY_NAME "   "
+    bad "a support address that is not an address" AICC_LEGAL_SUPPORT_EMAIL "a b@copilt.org"
+    bad "a support address with a quote" AICC_LEGAL_SUPPORT_EMAIL "a'b@copilt.org"
+    bad "a key id with a quote" AICC_ACTIVATION_PROOF_KID "k';system(1);//"
+    bad "a key id with a space" AICC_ACTIVATION_PROOF_KID "k 1"
+    bad "a switch that is not exactly true" AICC_LEGAL_REVIEW_APPROVED yes
+    bad "a switch set to false (unset it instead)" AICC_STRUCTURED_DATA_OFFERS false
+    bad "an impossible date" AICC_LEGAL_SUBPROCESSORS_VERIFIED 2026-02-31
+    bad "a date in another format" AICC_LEGAL_SUBPROCESSORS_VERIFIED 23/10/2026
+    bad "the strict-mode switch in production" AICC_LM_PAYMENT_GATE_STRICT true
+    bad "a placeholder gateway" AICC_LM_PAID_GATEWAYS bacs
+    bad "a placeholder gateway next to a real one" AICC_LM_PAID_GATEWAYS "payplus-payment-gateway,cod"
+    bad "an upper-case gateway id (ids are exact and lower case)" AICC_LM_PAID_GATEWAYS PayPlus
+    bad "a gateway id with a pattern character" AICC_LM_PAID_GATEWAYS 'payplus-*'
+    bad "a gateway id with a quote" AICC_LM_PAID_GATEWAYS "x'=>1"
+    bad "a duplicated gateway id" AICC_LM_PAID_GATEWAYS "a-gw,a-gw"
+    bad "a proof meta key with a quote" AICC_LM_PAID_GATEWAYS "a-gw:x'y"
+    bad "a stray comma in a gateway list" AICC_LM_PAID_GATEWAYS "a-gw,"
+    bad "a launch gateway that the runtime list does not know" AICC_LAUNCH_REAL_GATEWAYS not-in-the-paid-list
+    for h in '*.payplus.co.il' 'payplus.co.il,*' '127.0.0.1' '10.0.0.5' 'localhost' 'internal.service.internal' 'host:8443' 'https://restapi.payplus.co.il' 'restapi.payplus.co.il/path' 'a_b.payplus.co.il' 'api.copilt.org' 'stage.copilt.org' 'evil.copilt.org' 'www.copilt.org' 'singlelabel' '-bad.example.com' 'x.payplus.co.il,' $'a.example.net\nb.example.net' "a'.example.net" 'a.b.c.d.e,f.g,h.i,j.k,l.m,n.o'; do bad "extra host '$h'" AICC_EXTRA_ACCESSIBLE_HOSTS "$h"; done
+    t_eq "every refusal left the facts file untouched" "$(sha "$OFF")" "$OFSUM"
+    t_ok "an upper-case host is accepted and lower-cased" OFT set AICC_EXTRA_ACCESSIBLE_HOSTS 'RestAPI.PayPlus.co.il'
+    t_eq "...stored lower case" "$(OFT list | sed -n 's/^AICC_EXTRA_ACCESSIBLE_HOSTS=//p')" "restapi.payplus.co.il"
+    t_ok "two hosts are accepted" OFT set AICC_EXTRA_ACCESSIBLE_HOSTS 'restapi.payplus.co.il, restapidev.payplus.co.il'
+    OFR >/dev/null 2>&1; t_eq "...both rendered after the API host, nothing else" "$(cst "$OFD/prod.php" WP_ACCESSIBLE_HOSTS | jq -r .WP_ACCESSIBLE_HOSTS)" "api.copilt.org,restapi.payplus.co.il,restapidev.payplus.co.il"
+    # --- injection attempts that ARE legal text are escaped, never executed (round trip through real PHP)
+    OFT unset AICC_EXTRA_ACCESSIBLE_HOSTS >/dev/null
+    rt() { OFT set AICC_LEGAL_ENTITY_NAME "$2" >/dev/null 2>&1 && OFR >/dev/null 2>&1 && t_eq "round trip through PHP: $1" "$(cst "$OFD/prod.php" AICC_LEGAL_ENTITY_NAME AICC_EVIL | jq -r '[.AICC_LEGAL_ENTITY_NAME,(.AICC_EVIL|tostring)]|join("|")')" "$2|null" || t_bad "round trip through PHP: $1" "set or render failed"; }
+    rt "an apostrophe" "O'Brien & Sons"
+    rt "a quote-semicolon sequence that would end the string and the statement" "x'); define('AICC_EVIL', 1); //"
+    rt "a backslash before a quote" "a\\' b"
+    rt "a trailing backslash" "Acme\\"
+    rt "a double backslash and quote" "Acme \\\\' x"
+    rt "dollar, braces, backtick and command substitution syntax" 'Acme $x ${y} `id` $(id)'
+    rt "a double quote and a percent sign" 'Acme "Pro" 100%'
+    rt "Hebrew and accents" 'חברה בע"מ Café'
+    t_not_contains "the rendered file has no second statement from the attack" "$(cat "$OFD/prod.php")" "define('AICC_EVIL'"
+    t_ok "...and still passes php -l" php -l "$OFD/prod.php"
+    # --- a facts file edited BY HAND (or planted) is validated by the renderer itself: nothing is written
+    OFH="$(sha "$OFD/prod.php")"
+    hand() { printf '%b' "$2" > "$OFF"; chmod 600 "$OFF"; t_rc "REFUSED by the renderer: $1" 1 OFR; }
+    hand "a value that tries to close the string" "AICC_LEGAL_ENTITY_NAME=x'; define('AICC_EVIL', 1); //\nAICC_LEGAL_ENTITY_ADDRESS=<?php echo 1;\n"
+    hand "a carriage-return line ending" "AICC_ACTIVATION_PROOF_KID=k1\r\n"
+    hand "an unknown key" "AICC_SOMETHING_ELSE=1\n"
+    hand "a repeated key" "AICC_ACTIVATION_PROOF_KID=k1\nAICC_ACTIVATION_PROOF_KID=k2\n"
+    hand "a line that is not KEY=value" "AICC_ACTIVATION_PROOF_KID k1\n"
+    hand "an indented key" " AICC_ACTIVATION_PROOF_KID=k1\n"
+    hand "a shell-style export" "export AICC_ACTIVATION_PROOF_KID=k1\n"
+    hand "the strict switch in production" "AICC_LM_PAYMENT_GATE_STRICT=true\n"
+    hand "a launch gateway missing from the runtime list" "AICC_LAUNCH_REAL_GATEWAYS=gw-x\n"
+    hand "a wildcard host" "AICC_EXTRA_ACCESSIBLE_HOSTS=*.example.net\n"
+    hand "a NUL byte" "AICC_ACTIVATION_PROOF_KID=k1\0\n"
+    hand "invalid UTF-8" "AICC_LEGAL_ENTITY_NAME=\xff\xfe\n"
+    t_eq "...and no refusal changed the previously rendered production file" "$(sha "$OFD/prod.php")" "$OFH"
+    t_fail "...nothing from the planted file reached any output" grep -q "AICC_EVIL" "$OFD/prod.php"
+    printf 'AICC_ACTIVATION_PROOF_KID=k1\n' > "$OFF"
+    chmod 644 "$OFF"; t_rc "a world-readable facts file (0644) is refused" 1 OFR
+    chmod 660 "$OFF"; t_rc "a group-writable facts file (0660) is refused" 1 OFR
+    chmod 666 "$OFF"; t_rc "a world-writable facts file (0666) is refused" 1 OFR
+    chmod 400 "$OFF"; t_ok "a read-only 0400 facts file is accepted" OFR
+    chmod 600 "$OFF"
+    rm -f "$OFF"; ln -s "$OFD/elsewhere.env" "$OFF"; t_rc "a symbolic link as the facts file is refused" 1 OFR
+    rm -f "$OFF"; mkdir "$OFF"; t_rc "a directory as the facts file is refused" 1 OFR; rmdir "$OFF"
+    printf 'AICC_ACTIVATION_PROOF_KID=k1\n' > "$OFF"; chmod 600 "$OFF"
+    t_rc "the owner-facts command refuses to write through a symbolic link" 1 bash -c "rm -f '$OFD/linked.env'; ln -s '$OFD/target.env' '$OFD/linked.env'; env AICC_TEST_HARNESS=1 bash '$PROV/owner-facts.sh' --file '$OFD/linked.env' --env production set AICC_ACTIVATION_PROOF_KID k2"
+    t_fail "...and wrote nothing at the link target" test -e "$OFD/target.env"
+    if [ "$(id -u)" != 0 ]; then t_rc "without the test harness the command needs root" 1 bash "$PROV/owner-facts.sh" --file "$OFF" --env production set AICC_ACTIVATION_PROOF_KID k2; fi
+    if [ ! -e /etc/aicc-stage-identity ]; then t_rc "the command refuses a host whose identity says neither production nor staging (no --env)" 1 env AICC_TEST_HARNESS=1 bash "$PROV/owner-facts.sh" --file "$OFF" list; fi
+    # --- staging: only the sandbox-rehearsal keys; the stage template stays untouched when unset
+    rm -f "$OFF"
+    t_rc "stage refuses a legal fact" 1 OFTS set AICC_LEGAL_ENTITY_NAME x
+    t_rc "stage refuses the launch allowlist" 1 OFTS set AICC_LAUNCH_REAL_GATEWAYS payplus-payment-gateway
+    t_ok "stage accepts a key id, the paid list, strict mode and the sandbox host" bash -c "set -e; T() { env AICC_TEST_HARNESS=1 bash '$PROV/owner-facts.sh' --file '$OFF' --env stage \"\$@\" >/dev/null; }; T set AICC_ACTIVATION_PROOF_KID stage-1; T set AICC_LM_PAID_GATEWAYS payplus-payment-gateway:payplus_transaction_uid; T set AICC_LM_PAYMENT_GATE_STRICT true; T set AICC_EXTRA_ACCESSIBLE_HOSTS restapidev.payplus.co.il"
+    OFS >/dev/null 2>&1; SC="$(cst "$OFD/stage.php" AICC_ACTIVATION_PROOF_KID AICC_LM_PAYMENT_GATE_STRICT AICC_LM_PAID_GATEWAYS WP_ACCESSIBLE_HOSTS AICC_LEGAL_ENTITY_NAME)"
+    t_eq "stage render: key id, strict mode, the gateway, the sandbox host appended to the stage host, no legal fact" "$(echo "$SC" | jq -c '[.AICC_ACTIVATION_PROOF_KID,.AICC_LM_PAYMENT_GATE_STRICT,(.AICC_LM_PAID_GATEWAYS|keys),.WP_ACCESSIBLE_HOSTS,.AICC_LEGAL_ENTITY_NAME]')" '["stage-1",true,["payplus-payment-gateway"],"stage.copilt.org,restapidev.payplus.co.il",null]'
+    t_ok "...and the stage render still passes php -l" php -l "$OFD/stage.php"
+    cp "$OFF" "$OFD/stage-facts.env"; printf 'AICC_LEGAL_ENTITY_NAME=x\n' > "$OFF"; chmod 600 "$OFF"
+    t_rc "a production-only key planted in the stage facts file makes the STAGE renderer refuse" 1 OFS
+    rm -f "$OFF"; OFS >/dev/null 2>&1; t_ok "stage with no facts file is the golden again" bash -c "diff <(sed -E 's/[0-9a-f]{64}/HEX64/g' '$OFD/stage.php') '$HERE/golden/wp-config.stage.no-owner-facts.php'"
+    t_ok "the owner-facts command and its validator are installed with the renderer (install-stack scripts step)" bash -c "test -x '$PFX/usr/local/lib/aicc/provision/owner-facts.sh' && test -f '$PFX/usr/local/lib/aicc/provision/lib/owner_facts.py' && test -L '$PFX/usr/local/sbin/aicc-owner-facts'"
     t_not_contains "the stale template says nothing about 'NOT usable' any more" "$(cat "$PROV/wp-config.stage.template.php")" "NOT usable"
     t_rc "rendering without the DB password file is refused" 1 env AICC_TEST_HARNESS=1 bash "$PROV/render-wp-config.sh" --out "$WC/x.php" --secrets-dir "$TMP/emptysecrets"
     t_rc "--dry-run prints nothing secret" 0 bash "$PROV/render-wp-config.sh" --dry-run

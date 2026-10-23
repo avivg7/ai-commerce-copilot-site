@@ -10,16 +10,22 @@
 #   group aicc-cp, mode 0640 or 0600 or 0440 (nothing for "other", nothing writable by the group), exactly the two keys AICC_MAIL_SMTP_USER and AICC_MAIL_SMTP_PASS with non-empty values and no
 #   quote/newline/space in them. A file that exists but is unsafe makes the renderer REFUSE (nothing written); an absent file removes the region (production sends no mail). The stage render never
 #   contains the region (staging keeps the mail sink). The values are never printed.
+# OWNER FACTS (both environments; the owner-facts region): non-secret launch facts (AICC_ACTIVATION_PROOF_KID, AICC_LEGAL_*, AICC_LM_PAID_GATEWAYS, AICC_LAUNCH_REAL_GATEWAYS, extra outbound gateway host) are read from the
+#   root-only file /etc/aicc/owner-facts.env (mode 0600 or 0400, a regular file, root:root; default = next to the secrets directory, --owner-facts-file for tests). The renderer NEVER writes that file, so a re-render can never
+#   lose a value; `aicc-owner-facts set|unset|list` edits it. Every value is validated (lib/owner_facts.py) and written as an escaped PHP literal. A file that exists but is unsafe or invalid makes the renderer REFUSE (nothing
+#   written); an absent file or an empty one renders exactly what an unset file always rendered, byte for byte. Production allows every key; staging only the proof key id, the paid-gateway list, the strict-mode switch and the extra host.
 # Inputs : /etc/aicc/secrets/db-cp.pass (written by create-staging-db.sh); /etc/aicc/secrets/wp-secrets.env (created here once: eight WordPress keys/salts and
 #          two staging-only plugin secrets, 256-bit random each; reused on later runs so sessions survive a re-render; --force-salts regenerates them).
 # Output : /srv/aicc/shared/wp-config.php, mode 0640, owner root:aicc-cp (PHP-FPM and WP-CLI run as aicc-cp: read, cannot modify), `php -l` checked (when php is installed; otherwise a warning) before it replaces
 #          the old file (atomic rename). Idempotent: identical input gives an identical file ("unchanged").
 # Test seams: --template --out --secrets-dir (absolute paths) for tests; defaults are the host paths.
 set -euo pipefail
-SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# SELF = the real directory of this script even when called through the /usr/local/sbin/aicc-render-wp-config symlink (lib/ and the templates live next to the real file)
+self="${BASH_SOURCE[0]}"; while [ -L "$self" ]; do d="$(cd "$(dirname "$self")" && pwd)"; self="$(readlink "$self")"; case "$self" in /*) ;; *) self="$d/$self";; esac; done
+SELF="$(cd "$(dirname "$self")" && pwd)"
 . "$SELF/lib/common.sh"
 TEMPLATE=""; ENVN="stage"; CONFIRM=0; OUT="/srv/aicc/shared/wp-config.php"; SECRETS="/etc/aicc/secrets"; FORCE_SALTS=0
-DB="aicc_cp"; DBUSER="aicc_cp"; OWNER="root:aicc-cp"; MAILDIR="/etc/aicc-mail"; RELDIR="/srv/aicc/shared/plugin-releases"
+DB="aicc_cp"; DBUSER="aicc_cp"; OWNER="root:aicc-cp"; MAILDIR="/etc/aicc-mail"; RELDIR="/srv/aicc/shared/plugin-releases"; OWNERF=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --dry-run) AICC_DRY_RUN=1; shift ;;
@@ -31,6 +37,7 @@ while [ $# -gt 0 ]; do
     --secrets-dir) SECRETS="$2"; shift 2 ;;
     --mail-dir) MAILDIR="$2"; shift 2 ;;
     --plugin-release-dir) RELDIR="$2"; shift 2 ;;
+    --owner-facts-file) OWNERF="$2"; shift 2 ;;
     --owner) OWNER="$2"; shift 2 ;;
     -h|--help) sed -n 2,10p "${BASH_SOURCE[0]}"; exit 0 ;;
     *) die "unknown argument: $1" ;;
@@ -38,7 +45,8 @@ while [ $# -gt 0 ]; do
 done
 case "$ENVN" in stage|production) ;; *) die "--env must be stage or production" ;; esac
 [ -n "$TEMPLATE" ] || TEMPLATE="$SELF/wp-config.$ENVN.template.php"
-[[ "$OUT" == /* && "$SECRETS" == /* && "$TEMPLATE" == /* ]] || die "paths must be absolute"
+[ -n "$OWNERF" ] || OWNERF="$(dirname "$SECRETS")/owner-facts.env"
+[[ "$OUT" == /* && "$SECRETS" == /* && "$TEMPLATE" == /* && "$OWNERF" == /* ]] || die "paths must be absolute"
 [ -r "$TEMPLATE" ] || die "template not readable: $TEMPLATE"
 # The template must belong to the environment asked for (a stage template can never become a production config and the other way round).
 if [ "$ENVN" = production ]; then
@@ -81,7 +89,19 @@ sys.exit(0 if set(keys) == {"AICC_MAIL_SMTP_USER", "AICC_MAIL_SMTP_PASS"} else 1
 PY
   MAIL=1
 fi
-if is_dry; then would "render $OUT from $TEMPLATE using secrets in $SECRETS (mode 0640 $OWNER); mail layer $([ "$MAIL" = 1 ] && echo ENABLED || echo "not enabled"); nothing printed"; exit 0; fi
+# OWNER FACTS: absent = nothing to render. Present = must be a regular root-owned file nobody else can read or write, and every value must validate for this environment.
+NFACTS=0
+if [ -e "$OWNERF" ] || [ -L "$OWNERF" ]; then
+  [ -f "$OWNERF" ] && [ ! -L "$OWNERF" ] || die "REFUSED: $OWNERF is not a regular file"
+  ofm="$(stat -c '%a' "$OWNERF" 2>/dev/null || stat -f '%Lp' "$OWNERF")"
+  case "$ofm" in 600|400) ;; *) die "REFUSED: $OWNERF must be mode 0600 (is $ofm)" ;; esac
+  if [ "${AICC_TEST_HARNESS:-0}" != "1" ]; then
+    [ "$(stat -c '%U:%G' "$OWNERF")" = "root:root" ] || die "REFUSED: $OWNERF must be owned root:root (is $(stat -c '%U:%G' "$OWNERF")): PHP-FPM runs as aicc-cp and must not be able to change what the renderer will write"
+  fi
+  ofout="$(python3 -I "$SELF/lib/owner_facts.py" check --file "$OWNERF" --env "$ENVN" 2>&1)" || die "REFUSED: $OWNERF: ${ofout#REFUSED: }"
+  NFACTS="$(printf '%s' "$ofout" | sed -n 's/^ok: \([0-9][0-9]*\) value.*/\1/p')"
+fi
+if is_dry; then would "render $OUT from $TEMPLATE using secrets in $SECRETS (mode 0640 $OWNER); mail layer $([ "$MAIL" = 1 ] && echo ENABLED || echo "not enabled"); owner facts: ${NFACTS} value(s) from $OWNERF; nothing printed"; exit 0; fi
 if [ "$ENVN" = production ]; then
   for f in entitlement-webhook.secret activation-proof.secret; do
     [ -s "$SECRETS/$f" ] || die "REFUSED: $SECRETS/$f is missing: the OWNER places it (0600); it is never generated for production"
@@ -105,9 +125,9 @@ if [ ! -s "$ENVF" ] || [ "$FORCE_SALTS" = 1 ]; then
 fi
 tmp="$(mktemp "$(dirname "$OUT")/.wpcfg.XXXXXX" 2>/dev/null || mktemp)"
 trap 'rm -f "$tmp"' EXIT
-python3 -I - "$TEMPLATE" "$ENVF" "$SECRETS/db-cp.pass" "$DB" "$DBUSER" "$ENVN" "$SECRETS" "$MAIL" > "$tmp" <<'PY'
-import re, sys
-tpl, envf, passf, db, dbuser, envn, secdir, mail = sys.argv[1:9]
+python3 -I - "$TEMPLATE" "$ENVF" "$SECRETS/db-cp.pass" "$DB" "$DBUSER" "$ENVN" "$SECRETS" "$MAIL" "$OWNERF" "$SELF/lib/owner_facts.py" > "$tmp" <<'PY'
+import importlib.util, re, sys
+tpl, envf, passf, db, dbuser, envn, secdir, mail, ownerf, ofpy = sys.argv[1:11]
 s = open(tpl).read()
 # the mail region exists only in the production template; it is kept only when the renderer verified the secrets file (MAIL=1)
 if "@@MAIL_BEGIN@@" in s:
@@ -138,6 +158,26 @@ for k, fname in (("AICC_ACTIVATION_PROOF_SECRET", "activation-proof.secret"), ("
         v = env[k]
         assert re.fullmatch(r"[0-9a-f]{64}", v)
     s = s.replace("@@%s@@" % k, v)
+# OWNER FACTS (after every other substitution: a validated value can contain neither '@@' nor markup, so it can never be re-interpreted as a placeholder)
+spec = importlib.util.spec_from_file_location("owner_facts", ofpy); of = importlib.util.module_from_spec(spec); spec.loader.exec_module(of)
+try:
+    facts = of.parse_file(ownerf, envn)
+    region, extra_hosts = of.render(facts, envn)
+except of.OwnerFactsError as e:
+    sys.exit("REFUSED: owner facts: %s" % e)
+RB, RE = "// @@OWNER_FACTS_BEGIN@@\n", "// @@OWNER_FACTS_END@@\n"
+if RB in s:
+    a = s.index(RB); b = s.index(RE) + len(RE)
+    if s.count(RB) != 1 or s.count(RE) != 1 or b < a: sys.exit("REFUSED: the template's owner-facts region is malformed")
+    body = s[a:b].replace(RB, "").replace(RE, "")
+    s = s[:a] + (body.replace("@@OWNER_FACTS@@\n", "\n".join(region) + "\n") if region else "") + s[b:]
+elif region:
+    sys.exit("REFUSED: the template has no owner-facts region but the owner facts file sets values")
+if extra_hosts:
+    base = {"production": "api.copilt.org", "stage": "stage.copilt.org"}[envn]
+    old = "define( 'WP_ACCESSIBLE_HOSTS', '%s' );" % base
+    if s.count(old) != 1: sys.exit("REFUSED: the template's WP_ACCESSIBLE_HOSTS line is not the expected single '%s' definition" % base)
+    s = s.replace(old, "define( 'WP_ACCESSIBLE_HOSTS', '%s' );" % ",".join([base] + extra_hosts))
 left = re.findall(r"@@[A-Z_]+@@", s)
 if left: sys.exit("unreplaced placeholders: %s" % ", ".join(sorted(set(left))))
 sys.stdout.write(s)

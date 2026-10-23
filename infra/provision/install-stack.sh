@@ -334,6 +334,10 @@ step_scripts() {
   install_file "$INFRA/provision/lib/common.sh" "$LIB_DIR/provision/lib/common.sh" 0644 root:root
   for t in "$INFRA"/provision/wp-config.*.template.php; do install_file "$t" "$LIB_DIR/provision/$(basename "$t")" 0644 root:root; done
   ensure_symlink "$LIB_DIR/provision/render-wp-config.sh" "$SBIN/aicc-render-wp-config"
+  # the owner-facts tool (non-secret launch facts rendered into wp-config.php) and the validator it shares with the renderer; the facts file itself (/etc/aicc/owner-facts.env) is the owner's and is never created or touched here
+  install_file "$INFRA/provision/owner-facts.sh" "$LIB_DIR/provision/owner-facts.sh" 0755 root:root
+  install_file "$INFRA/provision/lib/owner_facts.py" "$LIB_DIR/provision/lib/owner_facts.py" 0644 root:root
+  ensure_symlink "$LIB_DIR/provision/owner-facts.sh" "$SBIN/aicc-owner-facts"
   # release tooling (host side)
   [ -f "$INFRA/release/activate-release.sh" ] || die "infra/release missing from the bundle"
   for f in activate-release.sh rollback-release.sh smoke-cp.sh smoke-site.sh warm-cp.sh; do install_file "$INFRA/release/$f" "$LIB_DIR/release/$f" 0755 root:root; done

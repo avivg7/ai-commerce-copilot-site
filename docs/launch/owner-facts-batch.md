@@ -20,7 +20,7 @@ The marketing Site is a static build, so its values are build-time environment v
 
 Optional: `AICC_LEGAL_VAT_DETAILS` (Control Plane only): VAT/tax text for Terms 4.3 and Refund 5.3; unset renders "(not applicable at this time)". Owner and accountant decide whether a tax number or tax statement must be shown.
 
-Where to put the Control Plane constants: the production `wp-config.php`, or the PHP-FPM pool environment. The production template `infra/provision/wp-config.production.template.php` does not carry these lines yet (a gap: add them to the owner-supplied block when the production host is built).
+Where to put the Control Plane constants: **on the production host with `sudo aicc-owner-facts set KEY VALUE`** (the root-only file `/etc/aicc/owner-facts.env`, rendered into wp-config.php by `aicc-render-wp-config`; exact commands, validation rules and the read-back in `docs/cutover/production-path.md` section 3a). The production template carries the owner-facts region since 2026-10-23; nothing is rendered until a value is set, and secrets are never placed there.
 
 ## B. Switches that are decisions, not facts
 
@@ -31,7 +31,7 @@ Where to put the Control Plane constants: the production `wp-config.php`, or the
 | 10 | Infrastructure statements in the Privacy policy and the DPA compared with the live production setup | after counsel has corrected the subprocessor schedule (C-4) | (printed as a precondition) | `AICC_LEGAL_SUBPROCESSORS_VERIFIED=YYYY-MM-DD` (new; a real date, at most 90 days old) | the CP gate fails on "Standby only", Render/Neon, "no hosting region fixed", "no email-sending service" |
 | 11 | Purchasable-price structured data | only when public checkout works | `NEXT_PUBLIC_AICC_STRUCTURED_OFFERS=on` | `AICC_STRUCTURED_DATA_OFFERS` = true | both gates fail if it is on while no real gateway is allow-listed |
 
-The real-gateway allowlists (payments workstream, same decision as #6): Site `scripts/lib/payment-gate.mjs` `REAL_GATEWAY_ALLOWLIST`, Control Plane `scripts/check-launch-blockers.php` constant `AICC_LAUNCH_REAL_GATEWAYS`. Both are empty today on purpose.
+The real-gateway allowlists (payments workstream, same decision as #6) are three DIFFERENT lists, not three copies of one: Site `scripts/lib/payment-gate.mjs` `REAL_GATEWAY_ALLOWLIST` holds the processor display name (compared with `NEXT_PUBLIC_AICC_PAYMENT_PROCESSOR`); Control Plane `AICC_LAUNCH_REAL_GATEWAYS` (launch gate) and `AICC_LM_PAID_GATEWAYS` (runtime payment gate) hold exact WooCommerce gateway ids, the launch list being a subset of the runtime list. All are empty today on purpose; the two Control Plane lists are set on the host with `aicc-owner-facts` (`docs/cutover/production-path.md` section 3a).
 
 ## C. Counsel text (source edits, not environment values)
 
