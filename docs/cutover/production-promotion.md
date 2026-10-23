@@ -33,6 +33,7 @@ Related documents: `production-path.md` (configuration and deploy path), `runboo
 | WordPress keys and salts | regenerated (`render-wp-config.sh`) | `/etc/aicc/secrets/wp-secrets.env`, `wp-config.php` | |
 | WordPress admin password | **typed by the owner** at a hidden prompt (`wp-install`) | not stored by us | no `wp-admin.pass` file is created in production; a guessable admin name is refused |
 | Mail credentials | owner (Brevo login + SMTP key) | `/etc/aicc-mail/smtp.env` 0640 `root:aicc-cp` | section 8; outside `/etc/aicc` because `/etc/aicc` is `0750 root:root` and the PHP user could not traverse it (verified on the host) |
+| Owner facts file (NON-secret) | owner, via `aicc-owner-facts set` | `/etc/aicc/owner-facts.env` 0600 root | **SURVIVES the promotion** (not in the rollback bundle, not wiped with `/etc/aicc/secrets`, in NO backup): it is rendered into the PRODUCTION wp-config by the `wpconfig` step. The read-only gate (`check`, and `apply`'s first step) validates it FOR PRODUCTION and prints every value that would be carried over (`NOTE` lines); a stage-only key (`AICC_LM_PAYMENT_GATE_STRICT`) fails the gate before anything changes, while a sandbox gateway host / staging gateway list / staging key id are valid and would be carried silently: CLEAR them first (`sudo aicc-owner-facts unset <KEY>`), then `check`. DR copy: `aicc-owner-facts export` / `import` (`production-path.md` 3a) |
 | Telegram bot token + chat id | owner | `/etc/aicc-ops/secrets.env` 0640 `root:aicc-ops` (not touched by the promotion) | `alerting.md` section 1 |
 | Backup recipient PRIVATE key (decrypts the Mac's copies) | owner, generated off the Mac | password manager + offline medium; **never** on the pull path; the Mac holds only the certificate | F-05, `README-backup.md` |
 | Mac off-host pull key, operator key | generated on the Mac | `authorized_keys` (restricted key for `aicc-offhost`, operator key for `aicc`) | new key pairs for production (step 6.1) |
@@ -179,6 +180,8 @@ Every line must say PASS. Preview the whole conversion: same command with `apply
 > **STOP: owner approval.** After this point staging is converted; `stage.copilt.org` stops answering. Rollback R1 exists.
 
 ### 6.4 Apply (dark production)
+
+**First clear the stage-only owner facts (H3).** `sudo aicc-owner-facts list` on the host, then `unset` every stage-only or sandbox fact (`AICC_LM_PAYMENT_GATE_STRICT`, a sandbox `AICC_EXTRA_ACCESSIBLE_HOSTS`, a staging `AICC_LM_PAID_GATEWAYS` / key id): the file survives the promotion and is rendered into the production wp-config. The gate (`check`, also the first step of `apply`) validates it for production and prints what would be carried over; re-run `check` until the NOTE list is exactly what production should carry.
 
 ```bash
 ~/aicc-rehearsal/bin/stage-ssh -t "cd ~/aicc-infra-bundle && sudo infra/provision/promote-to-production.sh apply --confirm-production --expect-stage-id $OLDID --caddyfile ~/aicc-infra-bundle/Caddyfile.pre --ops-config ~/aicc-infra-bundle/infra/aicc-ops/config/aicc-ops.production.toml"
@@ -331,13 +334,14 @@ All of: sections 5 and 6.9 satisfied; the owner has re-read `runbook.md` section
 > **STOP: owner approval.** Each numbered action below is irreversible-ish (public DNS). Do them in order and stop at the first failure.
 
 ```
-9.1  Mac: switch the observers to production names (they are idle until DNS moves, so first confirm they will not page: Telegram works):
+9.1  Mac: switch the observers to production names (they are idle until DNS moves, so first confirm they will not page: Telegram works; targets.production.toml is the after-Backend-cutover phase and also requires "entitlement_mode":"enforced" in api.copilt.org/health):
        infra/sentinel/macos/install-launchd.sh --targets infra/sentinel/targets.production.toml --apply
      (the Mac sentinel is NOT 24/7; the 24/7 GitHub Actions variant is created in step 10.2)
 9.2  Registrar: edit the www CNAME TARGET IN PLACE: avivg7.github.io.  ->  edge.copilt.org.      (CNAME to CNAME; never delete and re-add)
 9.3  Wait until the AUTHORITATIVE server shows it:   dig @dns1.registrar-servers.com +noall +answer www.copilt.org CNAME
 9.4  Host:  $PSSH "sudo ~/aicc-infra-bundle/infra/provision/promote-to-production.sh final-edge --confirm-cutover --caddyfile ~/aicc-infra-bundle/Caddyfile.final --expect-ip $RIP"
        (refuses unless public DNS already resolves www.copilt.org to $RIP; installs the automatic-HTTPS render, removes the dark overrides, enables the cert-expiry timer, RESTARTS the edge)
+     (final-edge ALSO runs the Control Plane launch gate read-only first, AICC_PRODUCTION=1 check-launch-blockers.php, and refuses while it reports a blocker; --accept-launch-blockers is the owner's explicit override)
      Watch: $PSSH 'journalctl -u aicc-edge -f'   until the certificates are obtained (seconds when validation works).
 9.5  Mac:   scripts/ops/production-edge-check.sh --ip $RIP --public --full-demo-hash          # every check, now with the public CA
      and the 270-case replay of runbook 1.5 against the live host, then the smoke checklist of runbook section 4.

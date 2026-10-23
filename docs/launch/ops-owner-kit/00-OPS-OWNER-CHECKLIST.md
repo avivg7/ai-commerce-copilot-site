@@ -1,5 +1,7 @@
 # OPS owner checklist (kit A): keys, monitoring, 24/7 watcher. About 3 sessions, 2.5 hours in total.
 
+> **WARNING (public repository):** the Site repository's `origin` on GitHub is PUBLIC. The branch `launch/integration` carries this owner kit and `infra/`, `docs/cutover/` (server and Reserved IP addresses, private repository names, ssh and backup details). It must NEVER be pushed to `origin`. The release flow publishes only the built static site export. Safe options: a PRIVATE mirror repository (create it private first), pushing only the public marketing-site commit from a branch without `infra/` and `docs/cutover/`, or keeping it local plus `git bundle`. Check `git remote -v` and the repository's visibility before any push; Claude never pushes.
+
 Rule for every step: secrets (private keys, bot tokens, passphrases) go only into a hidden prompt, a vault or a password manager. Never into chat. Claude asks you only for PUBLIC values (public keys, fingerprints, certificate fingerprint, a yes/no that an email arrived).
 Everything here is free. Nothing here touches www, the apex, api.copilt.org, the API Droplet, Neon, Render, DigitalOcean billing or DNS. Detail lives in the three packages next to this file.
 
