@@ -7,8 +7,8 @@
       "bytes": 22909
     },
     "aicc-brand.css": {
-      "sha256": "87b21c079aadddef929872c51a7eb1074446483416b9c572d42847d25d1d1849",
-      "bytes": 80514
+      "sha256": "0cc424051c2f939e2f5be181a7b19cf5cfc06555e78f464a6f29e5a1c903c308",
+      "bytes": 80750
     },
     "aicc-tokens.css": {
       "sha256": "bcf951af272e0adb914b154a811047c3d5224ff6d33179b7e9f9fcc792592955",
@@ -78,6 +78,10 @@
       "sha256": "24e54a37a950354798cab59fbc1e81294f456a560aa7cc56c0111f8dda52f0fc",
       "bytes": 7160
     },
+    "content/class-ownership.json": {
+      "sha256": "2ec8231d451fe68c5d09615f7876f54f808a9760f934e93d8eeb9524fc06cc56",
+      "bytes": 1135
+    },
     "content/facts.json": {
       "sha256": "de2b12b1b46101899e9341336bfd24888f9c04abe5e763fca1b1c37d59201dd0",
       "bytes": 4393
@@ -127,8 +131,8 @@
       "bytes": 8284
     },
     "js/fbt-demo.js": {
-      "sha256": "f5347e9d6b60d4fe2c2d8a91f7910569e979f4bebb5a0e609ed38e76400e6650",
-      "bytes": 27021
+      "sha256": "94e243fc07c3c25c981486436778bbb7471ce9ee77d743346685e6b34d84fac3",
+      "bytes": 27149
     },
     "js/flow.js": {
       "sha256": "7f992c41b22d2d1592e9afc4da0c4ac0e4055c0c9a471d84523026a8ada8de05",
@@ -163,8 +167,8 @@
       "bytes": 4286
     },
     "js/product-art.js": {
-      "sha256": "2844e8ffe590cd750f492e6ec724068606016b253c3a8d50a57f81107a488ecf",
-      "bytes": 2988
+      "sha256": "090fd0afa9f8b1387ba345a839cef5e2408fb9466e206e563963e53a7cb91a54",
+      "bytes": 2996
     },
     "js/reco-ask.js": {
       "sha256": "b96479d9ed2a2061f6f101f4f037926c189a40c6a845efcb1ecec9cccaee92cd",

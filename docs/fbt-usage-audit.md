@@ -116,6 +116,7 @@ Counts: before this pass 33 positioning slots across the four locales carried th
 | file `docs/AUTHORITY.md` | up to 2 mention(s) | A | documentation that explains the widget and the guard |
 | file `docs/claims-inventory-content-pass.md` | up to 14 mention(s) | A | documentation that explains the widget and the guard |
 | file `docs/content-architecture.md` | up to 5 mention(s) | A | documentation that explains the widget and the guard |
+| file `scripts/shopper-demo-guard.mjs` | up to 2 mention(s) | A | test or tooling text about the widget heading and the demo |
 | file `scripts/interaction-test.mjs` | up to 11 mention(s) | A | test or tooling text about the widget heading and the demo |
 | file `scripts/lang-scope-check.mjs` | up to 1 mention(s) | A | test or tooling text about the widget heading and the demo |
 | file `scripts/rules-core-test.mjs` | up to 3 mention(s) | A | test or tooling text about the widget heading and the demo |

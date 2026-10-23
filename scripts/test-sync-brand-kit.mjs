@@ -64,6 +64,32 @@ try {
   check("a symlinked assets/brand is not enumerated by --dry-run", r.status === 0 && /would remove 0 stale/.test(r.stdout), r.stdout);
   run("--to", theme2);
   check("...and nothing in the link target is deleted by --to", fs.existsSync(path.join(real, "important.txt")));
+  // ---- source-of-truth direction guards: the Site is canonical, the sync only ever writes Site -> consumer
+  let g = run("--to", path.join(ROOT, "brand"));
+  check("--to INTO the Site's own brand/ is refused (direction guard)", g.status === 1 && /REFUSED/.test(g.stderr), g.stderr);
+  g = run("--to", ROOT);
+  check("--to the Site root itself is refused", g.status === 1 && /REFUSED/.test(g.stderr), g.stderr);
+  const fakeSite = path.join(tmp, "looks-like-site");
+  fs.mkdirSync(path.join(fakeSite, "src", "i18n"), { recursive: true }); fs.writeFileSync(path.join(fakeSite, "src", "i18n", "en.ts"), "export default {};");
+  g = run("--to", fakeSite);
+  check("--to a directory that looks like a Site checkout is refused", g.status === 1 && /looks like a Site checkout/.test(g.stderr), g.stderr);
+  check("...and wrote nothing there", !fs.existsSync(path.join(fakeSite, "assets")));
+  // a STALE source (manifest != files): run the real script from a throwaway copy of the Site's tooling + brand/ with one kit file changed after the manifest was built
+  const tmpSite = path.join(tmp, "stale-site");
+  fs.mkdirSync(path.join(tmpSite, "scripts"), { recursive: true });
+  fs.cpSync(path.join(ROOT, "scripts", "lib"), path.join(tmpSite, "scripts", "lib"), { recursive: true });
+  for (const f of ["sync-brand-kit.mjs", "build-brand-manifest.mjs"]) fs.copyFileSync(path.join(ROOT, "scripts", f), path.join(tmpSite, "scripts", f));
+  fs.cpSync(path.join(ROOT, "brand"), path.join(tmpSite, "brand"), { recursive: true });
+  fs.copyFileSync(path.join(ROOT, "package.json"), path.join(tmpSite, "package.json"));
+  fs.symlinkSync(path.join(ROOT, "node_modules"), path.join(tmpSite, "node_modules"));
+  const staleTheme = path.join(tmp, "stale-theme"); fs.mkdirSync(staleTheme);
+  const runStale = (...a) => spawnSync(process.execPath, [path.join(tmpSite, "scripts", "sync-brand-kit.mjs"), ...a], { encoding: "utf8" });
+  g = runStale("--to", staleTheme);
+  check("(control) a consistent throwaway Site copy syncs", g.status === 0, g.stderr);
+  fs.appendFileSync(path.join(tmpSite, "brand", "aicc-brand.css"), "\n/* edited after the manifest was built */\n");
+  const staleTheme2 = path.join(tmp, "stale-theme2"); fs.mkdirSync(staleTheme2);
+  g = runStale("--to", staleTheme2);
+  check("a STALE source (kit file edited, manifest not rebuilt) is refused and nothing is copied", g.status === 1 && /REFUSED: brand\/MANIFEST.json does not match/.test(g.stderr) && !fs.existsSync(path.join(staleTheme2, "assets")), g.stderr);
 } finally {
   fs.rmSync(tmp, { recursive: true, force: true });
 }

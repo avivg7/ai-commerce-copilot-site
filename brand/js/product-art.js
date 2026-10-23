@@ -1,6 +1,6 @@
 // Flat product illustrations for the interactive demo: they stand in for the product photos the real storefront widget shows on a light tile.
 // Everything drawn here is INVENTED sample content (no real products, no photography). The WooCommerce side of the demo renders the same drawings in neutral grey
-// (CSS: `.aicc-fbt-plain .aicc-art { filter: grayscale(1) }`), so the colour difference between the two experiences is carried by styling, not by different artwork.
+// (CSS: `.aicc-fbt-plain .aicc-fbt-art { filter: grayscale(1) }`), so the colour difference between the two experiences is carried by styling, not by different artwork.
 const BODY = "#e2e8f0", LINE = "#94a3b8", BLUE = "#2563eb", TEAL = "#05865f", DARK = "#475569";
 
 const SHAPES = {
@@ -24,5 +24,5 @@ const SHAPES = {
 /** SVG markup for a sample product id (kit, filters, grinder, mug, towel, scale = the travel mug). Decorative: the product name is always next to it. */
 export function productArt(id) {
   const body = SHAPES[id] || SHAPES.mug;
-  return `<svg viewBox="0 0 120 120" class="aicc-art" focusable="false" aria-hidden="true">${body}</svg>`;
+  return `<svg viewBox="0 0 120 120" class="aicc-fbt-art" focusable="false" aria-hidden="true">${body}</svg>`;
 }
