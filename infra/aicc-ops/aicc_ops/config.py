@@ -75,6 +75,7 @@ DEFAULTS: dict = {
             "database": "",
             "prefix": "wp_",
             "window_minutes": 5,
+            "outbox_max_attempts": 8,    # AICC_LM_Entitlement_Dispatcher::MAX_ATTEMPTS (entitlement outbox gauges)
         },
         "backups": {
             "enabled": True, "interval_s": 300, "timeout_s": 5,

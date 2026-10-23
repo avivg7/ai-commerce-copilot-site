@@ -9,7 +9,10 @@
 #        steps (default order): gate bundle quiesce identity secrets backups db wpconfig edge ops          services stay STOPPED except mysql/sshd/aicc-ops
 #   sudo promote-to-production.sh start          [--confirm-production]                                starts php-fpm, the dark edge, cron + backup timers, restarts aicc-ops
 #   sudo promote-to-production.sh wp-install     --admin-user U --admin-email E                       fresh WordPress install on the new empty database (password typed at a hidden prompt)
-#   sudo promote-to-production.sh final-edge     --confirm-cutover --caddyfile FILE --expect-ip IP    CUTOVER DAY ONLY: automatic public-CA HTTPS render + restart (after DNS points here)
+#   sudo promote-to-production.sh final-edge     --confirm-cutover --caddyfile FILE --expect-ip IP [--accept-launch-blockers]
+#                                                CUTOVER DAY ONLY: automatic public-CA HTTPS render + restart (after DNS points here). Precondition (read-only): the Control Plane launch gate
+#                                                `AICC_PRODUCTION=1 aicc-wp eval-file /var/lib/aicc-cp/seed/check-launch-blockers.php` must exit 0, otherwise REFUSED (3) before anything changes;
+#                                                --accept-launch-blockers is the owner's explicit, logged override (the blockers are printed either way)
 #   sudo promote-to-production.sh dark-edge      --caddyfile FILE                                      back to the tls-internal waiting render (cutover rollback point on the host)
 #   sudo promote-to-production.sh rollback       --bundle DIR --confirm-rollback                      puts the STAGING identity/config/database back from the rollback bundle
 #
@@ -17,7 +20,7 @@
 # AICC_STAGE_ID equal to --expect-stage-id (typed by the operator: proves the right machine); the OWNER-PROVIDED secrets exist in the incoming directory (entitlement webhook secret, activation
 # proof key: mode 0600/0400, root-owned, >= 32 characters, >= 12 distinct characters; they are NEVER generated here); the Caddyfile is the pre-cutover production render; the AICC Ops config
 # is the production one. Every destructive step happens only after the rollback bundle (identity, configuration, secrets, the whole backup directory, a fresh VERIFIED database dump) exists.
-# Secrets are never printed. Test seams (flags, paths only): --socket --mysql-bin --backup-cmd --wp-bin --preflight-cmd --ops-cmd --dns-cmd; with AICC_TEST_HARNESS=1 + AICC_ROOT_PREFIX every
+# Secrets are never printed. Test seams (flags, paths only): --socket --mysql-bin --backup-cmd --wp-bin --preflight-cmd --ops-cmd --dns-cmd --launch-gate-cmd; with AICC_TEST_HARNESS=1 + AICC_ROOT_PREFIX every
 # absolute path is re-rooted (infra/stack-tests/test_promote.sh). Exit codes: 0 ok, 1 a step failed, 2 usage, 3 refused.
 set -euo pipefail
 SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -26,7 +29,7 @@ SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ACTION="${1:-}"; [ $# -gt 0 ] && shift
 CONFIRM=0; CONFIRM_CUTOVER=0; CONFIRM_ROLLBACK=0; EXPECT_ID=""; CADDYFILE=""; OPSCONF=""; ONLY=""; BUNDLE_ARG=""; STDIN=0
 INCOMING_ARG=""; SOCKET="/run/mysqld/mysqld.sock"; MYSQL="mysql"; BACKUP_CMD="/usr/local/sbin/aicc-backup"; WP_BIN="/usr/local/sbin/aicc-wp"
-PREFLIGHT_CMD="/usr/local/sbin/aicc-edge-preflight"; OPS_CMD="/opt/aicc-ops/bin/aicc-ops"; DNS_CMD=""; ADMIN_USER=""; ADMIN_EMAIL=""; EXPECT_IP=""; SECRET_NAME=""
+LAUNCH_GATE_CMD=""; ACCEPT_BLOCKERS=0; PREFLIGHT_CMD="/usr/local/sbin/aicc-edge-preflight"; OPS_CMD="/opt/aicc-ops/bin/aicc-ops"; DNS_CMD=""; ADMIN_USER=""; ADMIN_EMAIL=""; EXPECT_IP=""; SECRET_NAME=""
 STEPS_DEFAULT="gate bundle quiesce identity secrets backups db wpconfig edge ops"
 case "$ACTION" in set-owner-secret) SECRET_NAME="${1:-}"; [ $# -gt 0 ] && shift ;; esac
 while [ $# -gt 0 ]; do
@@ -49,10 +52,12 @@ while [ $# -gt 0 ]; do
     --preflight-cmd) PREFLIGHT_CMD="${2:-}"; shift 2 ;;
     --ops-cmd) OPS_CMD="${2:-}"; shift 2 ;;
     --dns-cmd) DNS_CMD="${2:-}"; shift 2 ;;
+    --launch-gate-cmd) LAUNCH_GATE_CMD="${2:-}"; shift 2 ;;
+    --accept-launch-blockers) ACCEPT_BLOCKERS=1; shift ;;
     --admin-user) ADMIN_USER="${2:-}"; shift 2 ;;
     --admin-email) ADMIN_EMAIL="${2:-}"; shift 2 ;;
     --expect-ip) EXPECT_IP="${2:-}"; shift 2 ;;
-    -h|--help) sed -n 2,26p "${BASH_SOURCE[0]}"; exit 0 ;;
+    -h|--help) sed -n 2,30p "${BASH_SOURCE[0]}"; exit 0 ;;
     *) echo "unknown argument: $1 (see --help)" >&2; exit 2 ;;
   esac
 done
@@ -458,6 +463,15 @@ cmd_final_edge() {
   if [ -n "$DNS_CMD" ]; then got="$("$DNS_CMD" "$PROD_HOST" 2>/dev/null | head -1)"
   else got="$(dig +short +time=3 +tries=1 @1.1.1.1 "$PROD_HOST" A 2>/dev/null | grep -E '^[0-9.]+$' | head -1)"; fi
   [ "$got" = "$EXPECT_IP" ] || refuse "$PROD_HOST resolves to '${got:-nothing}', not $EXPECT_IP: DNS has not moved (or the resolver still caches the old answer). Do not start public certificate issuance yet"
+  # Read-only precondition: the Control Plane launch gate (legal facts, payment gateway, support address, signed Plugin release, secrets/KID ...). It prints its findings either way.
+  local gout grc=0
+  if [ -n "$LAUNCH_GATE_CMD" ]; then gout="$("$LAUNCH_GATE_CMD" 2>&1)" || grc=$?
+  else gout="$(env AICC_PRODUCTION=1 "$WP_BIN" eval-file "$(P /var/lib/aicc-cp/seed/check-launch-blockers.php)" 2>&1)" || grc=$?; fi
+  printf '%s\n' "$gout" | tail -40 >&2
+  if [ "$grc" != 0 ]; then
+    if [ "$ACCEPT_BLOCKERS" = 1 ]; then warn "the Control Plane launch gate exited $grc (blockers above); --accept-launch-blockers: the owner decided to go on. Recorded."
+    else refuse "the Control Plane launch gate (check-launch-blockers.php with AICC_PRODUCTION=1) exited $grc: public certificate issuance and the go-live are blocked until it is green (findings above). If the owner consciously accepts the open items, repeat with --accept-launch-blockers"; fi
+  else info "Control Plane launch gate: green"; fi
   step "final-edge (automatic public-CA HTTPS for $PROD_HOST and the apex)"
   install_edge final "$CADDYFILE"
   strip_dark_ops

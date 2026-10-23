@@ -337,6 +337,53 @@ esac
         with self.assertRaises(CollectorError):
             cp.collect({}, {**self.sect("x"), "database": ""}, {}, 1)
 
+    # ---- entitlement outbox gauges (architecture review M1)
+    def test_outbox_sql_shape_and_definitions(self):
+        sql = cp.outbox_sql("wp_", 8)
+        self.assertIn("`wp_aicc_lm_entitlement_outbox`", sql)
+        for needle in ("'entitlement_outbox_pending'", "'entitlement_outbox_oldest_pending_age_s'", "'entitlement_outbox_abandoned'", "delivered_at IS NULL", "attempts < 8", "attempts >= 8",
+                       "n.activation_ref = o.activation_ref AND n.id > o.id", "UTC_TIMESTAMP()"):
+            self.assertIn(needle, sql)
+        self.assertEqual(cp.outbox_sql("x_", 3).count("< 3"), 2)   # the attempt cap is the configured integer, never text
+        self.assertNotIn("event_id", sql)                           # no identifier column is selected
+        self.assertNotIn("license_ref", sql)
+
+    def test_parse_outbox_keeps_only_known_names_and_plain_integers(self):
+        out = cp.parse_outbox("entitlement_outbox_pending\t3\nentitlement_outbox_oldest_pending_age_s\t1200\nentitlement_outbox_abandoned\t0\nevil_metric\t5\nentitlement_outbox_pending\t-1\nentitlement_outbox_abandoned\tabc\n")
+        self.assertEqual(out, {"cp.entitlement_outbox_pending": 3.0, "cp.entitlement_outbox_oldest_pending_age_s": 1200.0, "cp.entitlement_outbox_abandoned": 0.0})
+
+    def outbox_script(self, name, outbox_branch):
+        return write_exe(os.path.join(self.tmp, name), f'''
+case "$*" in
+  *aicc_lm_entitlement_outbox*) {outbox_branch} ;;
+  *aicc_ops_counters*) cat {fixture("cp_counters.tsv")} ;;
+  *actionscheduler_actions*GROUP*) printf 'pending\\t4\\n' ;;
+  *options*) printf 'wc_cron_last_run_age_seconds\\t120\\n' ;;
+  *) exit 1 ;;
+esac
+''')
+
+    def test_collects_outbox_gauges(self):
+        p = self.outbox_script("mo", "printf 'entitlement_outbox_pending\\t2\\nentitlement_outbox_oldest_pending_age_s\\t1500\\nentitlement_outbox_abandoned\\t1\\n'")
+        r = cp.collect({}, self.sect(p), {}, 6000)
+        self.assertEqual(r.errors, [])
+        self.assertEqual(r.metrics["cp.entitlement_outbox_pending"], 2.0)
+        self.assertEqual(r.metrics["cp.entitlement_outbox_oldest_pending_age_s"], 1500.0)
+        self.assertEqual(r.metrics["cp.entitlement_outbox_abandoned"], 1.0)
+        self.assertEqual(r.metrics["cp.outbox_reporting"], 1.0)
+
+    def test_outbox_absent_is_tolerated_without_error_or_gauges(self):
+        # table missing (older Control Plane / not migrated yet), no SELECT grant, or any other failure: no error, no gauges, "not reporting"
+        for name, branch in (("m1", "echo \"ERROR 1146 (42S02): Table 'wp.wp_aicc_lm_entitlement_outbox' doesn't exist\" >&2; exit 1"),
+                             ("m2", "echo \"ERROR 1142 (42000): SELECT command denied to user\" >&2; exit 1"),
+                             ("m3", "echo boom >&2; exit 1"),
+                             ("m4", "printf 'garbage\\n'")):
+            r = cp.collect({}, self.sect(self.outbox_script(name, branch)), {}, 6000)
+            self.assertEqual(r.errors, [], name)
+            self.assertEqual(r.metrics["cp.outbox_reporting"], 0.0, name)
+            self.assertFalse([k for k in r.metrics if "entitlement_outbox" in k], name)
+            self.assertEqual(r.metrics["cp.table_present"], 1.0, name)   # the rest of the collector is unaffected
+
 
 class BackupTests(TmpCase):
     def test_status_json_is_primary_source(self):

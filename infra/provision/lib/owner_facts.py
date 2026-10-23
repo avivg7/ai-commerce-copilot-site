@@ -29,6 +29,7 @@ ORDER = [
     "AICC_LEGAL_REVIEW_APPROVED", "AICC_LEGAL_SUBPROCESSORS_VERIFIED", "AICC_STRUCTURED_DATA_OFFERS",
     "AICC_LM_PAID_GATEWAYS", "AICC_LAUNCH_REAL_GATEWAYS", "AICC_LM_PAYMENT_GATE_STRICT",
     "AICC_EXTRA_ACCESSIBLE_HOSTS",
+    "AICC_LM_PLUGIN_SIGNING_PUBKEYS",
 ]
 FREE_TEXT = {  # key -> maximum length in characters
     "AICC_LEGAL_ENTITY_NAME": 200, "AICC_LEGAL_ENTITY_ADDRESS": 300, "AICC_LEGAL_GOVERNING_LAW": 300, "AICC_LEGAL_JURISDICTION": 300,
@@ -38,7 +39,7 @@ TRUE_ONLY = ("AICC_LEGAL_REVIEW_APPROVED", "AICC_STRUCTURED_DATA_OFFERS", "AICC_
 # Production derives strictness from its host name, so it never needs (and may not set) AICC_LM_PAYMENT_GATE_STRICT; staging rehearses a payment sandbox with it.
 # Staging never carries legal facts, launch switches or the launch allowlist: those describe the public launch.
 KEYS_FOR = {
-    "production": [k for k in ORDER if k != "AICC_LM_PAYMENT_GATE_STRICT"],
+    "production": [k for k in ORDER if k != "AICC_LM_PAYMENT_GATE_STRICT"],  # includes AICC_LM_PLUGIN_SIGNING_PUBKEYS (public keys only; production serves the signed Plugin releases)
     "stage": ["AICC_ACTIVATION_PROOF_KID", "AICC_LM_PAID_GATEWAYS", "AICC_LM_PAYMENT_GATE_STRICT", "AICC_EXTRA_ACCESSIBLE_HOSTS"],
 }
 BASE_HOST = {"production": "api.copilt.org", "stage": "stage.copilt.org"}
@@ -46,6 +47,7 @@ MAX_FILE_BYTES = 16384
 PLACEHOLDER_GATEWAYS = ("bacs", "cheque", "cod")
 MAX_GATEWAYS = 12
 MAX_EXTRA_HOSTS = 5
+MAX_SIGNING_KEYS = 2  # the Control Plane's AICC_LM_Release_Signature::MAX_KEYS (primary + standby so a rotation never strands anyone)
 # top-level domains that are never a payment provider's public API
 BAD_TLDS = {"localhost", "local", "internal", "intranet", "lan", "home", "corp", "test", "invalid", "example", "onion", "arpa", "localdomain"}
 
@@ -89,13 +91,40 @@ def _true(key, v):
 
 
 def _date(key, v):
-    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", v):
+    if not re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}", v):  # ASCII digits only: \d would also match other Unicode digits (the PHP launch gate is ASCII)
         raise OwnerFactsError("%s must be a date YYYY-MM-DD" % key)
     try:
         datetime.date(int(v[:4]), int(v[5:7]), int(v[8:10]))
     except ValueError:
         raise OwnerFactsError("%s is not a real calendar date" % key)
     return v
+
+
+def parse_signing_pubkeys(key, v):
+    """'<base64>[,<base64>]' -> canonical list: PUBLIC Ed25519 keys only, i.e. standard base64 of exactly 32 raw bytes (what AICC_LM_Release_Signature::parse_keys
+    accepts), at most two, no duplicates. A 64-byte secret key or anything else is refused. Returned canonically re-encoded so the PHP side reads exactly this."""
+    import base64
+    import binascii
+    out = []
+    for raw in v.split(","):
+        item = raw.strip()
+        if not item:
+            raise OwnerFactsError("%s has an empty entry (stray comma)" % key)
+        if len(item) != 44 or not re.fullmatch(r"[A-Za-z0-9+/]{43}=", item):
+            raise OwnerFactsError("%s: each key must be the standard base64 (44 characters, ending in '=') of a 32-byte Ed25519 PUBLIC key: this entry is not (%d characters)" % (key, len(item)))
+        try:
+            rawkey = base64.b64decode(item, validate=True)
+        except (binascii.Error, ValueError):
+            raise OwnerFactsError("%s: an entry is not valid base64" % key)
+        if len(rawkey) != 32:
+            raise OwnerFactsError("%s: each key must decode to exactly 32 bytes" % key)
+        canon = base64.b64encode(rawkey).decode("ascii")
+        if canon in out:
+            raise OwnerFactsError("%s lists the same key twice" % key)
+        out.append(canon)
+    if len(out) > MAX_SIGNING_KEYS:
+        raise OwnerFactsError("%s lists more than %d keys (primary + standby)" % (key, MAX_SIGNING_KEYS))
+    return out
 
 
 GW_ID = re.compile(r"[a-z0-9][a-z0-9_-]{0,63}")
@@ -203,6 +232,8 @@ def validate_value(key, value, env):
         return ",".join(parse_gateway_list(key, v))
     if key == "AICC_EXTRA_ACCESSIBLE_HOSTS":
         return ",".join(parse_hosts(key, v, env))
+    if key == "AICC_LM_PLUGIN_SIGNING_PUBKEYS":
+        return ",".join(parse_signing_pubkeys(key, v))
     raise OwnerFactsError("no validator for %s" % key)  # unreachable: keeps a new key from being added without one
 
 
@@ -246,17 +277,22 @@ def parse_file(path, env):
     return validate_all(raw, env)
 
 
-def write_file(path, facts, env):
-    """Atomic replace, mode 0600. `facts` must already be validated."""
+def file_text(facts):
+    """The exact text of the facts file for validated `facts` (also what `export` prints)."""
     lines = ["# AICC owner facts for the Control Plane wp-config.php. Managed by owner-facts.sh (set / unset / list); read by render-wp-config.sh. NOT secrets, never committed.",
              "# One KEY=value per line, value = the rest of the line. Edit with `sudo aicc-owner-facts set KEY VALUE`, then re-render."]
     lines += ["%s=%s" % (k, facts[k]) for k in ORDER if k in facts]
+    return "\n".join(lines) + "\n"
+
+
+def write_file(path, facts, env):
+    """Atomic replace, mode 0600. `facts` must already be validated."""
     d = os.path.dirname(os.path.abspath(path))
     fd, tmp = tempfile.mkstemp(prefix=".owner-facts.", dir=d)
     try:
         os.fchmod(fd, 0o600)
         with os.fdopen(fd, "w", encoding="utf-8") as f:
-            f.write("\n".join(lines) + "\n")
+            f.write(file_text(facts))
             f.flush()
             os.fsync(f.fileno())
         os.replace(tmp, path)
@@ -302,7 +338,7 @@ def render(facts, env):
 def main(argv):
     import argparse
     ap = argparse.ArgumentParser(prog="owner_facts.py")
-    ap.add_argument("cmd", choices=["list", "check", "set", "unset", "keys"])
+    ap.add_argument("cmd", choices=["list", "check", "set", "unset", "keys", "export", "import"])
     ap.add_argument("key", nargs="?")
     ap.add_argument("value", nargs="?")
     ap.add_argument("--file", required=True)
@@ -320,6 +356,23 @@ def main(argv):
             return 0
         if a.cmd == "check":
             print("ok: %d value(s) valid for %s" % (len(facts), a.env))
+            return 0
+        if a.cmd == "export":
+            # Disaster-recovery copy: the validated file text on stdout (non-secret). Keep it with the owner's records; `import` re-enters it on a rebuilt host.
+            sys.stdout.write(file_text(facts))
+            return 0
+        if a.cmd == "import":
+            if a.key is None or a.value is not None:
+                raise OwnerFactsError("import needs exactly one argument: the path of an exported facts file")
+            if not os.path.isabs(a.key):
+                raise OwnerFactsError("import: the path must be absolute")
+            new = parse_file(a.key, a.env)  # strict: regular file, size, UTF-8, every value validated FOR THIS ENVIRONMENT
+            if not os.path.lexists(a.key):
+                raise OwnerFactsError("import: %s does not exist" % a.key)
+            if facts and facts != new:
+                raise OwnerFactsError("import: %s already holds %d value(s) that differ from the import file: it never merges or overwrites (use `set` / `unset`, or move the current file away on purpose)" % (a.file, len(facts)))
+            write_file(a.file, new, a.env)
+            print("imported %d value(s) into %s (mode 0600). Now re-render: sudo aicc-render-wp-config --env %s%s" % (len(new), a.file, a.env, " --confirm-production" if a.env == "production" else ""))
             return 0
         if a.key is None:
             raise OwnerFactsError("%s needs a KEY" % a.cmd)

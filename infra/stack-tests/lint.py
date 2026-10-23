@@ -223,7 +223,7 @@ SECRET_RES = [
 HEX_RE = re.compile(r"\b[0-9a-f]{40,}\b")
 # checksums that are meant to be in the repo: pins and the tests that assert them (WordPress, WooCommerce, WP-CLI, Caddy, the stage-id used by tests)
 ALLOWED_HEX = {
-    "163b5bf217dad76a823432d8c01598ab3dc3f15cbdd69067b98f5a6ddf05c1c4",
+    "163b5bf217dad76a823432d8c01598ab3dc3f15cbdd69067b98f5a6ddf05c1c4", "74e8e96440b0a0e508b325f605dbadc4a00deb86a34c2249beeba7d23737f43f",
     "d2a09acb6a15e3b9c471d72557753c266d6f41a79ed19bfe04cbfe49e283b2a5", "491a78c7676b15dffcc69130c6054b8f49228a91", "6e58fc3ba9b18d1c9aee6b0227d3c3c09e4fe2c1332823bd2e0ac54ffcff64a9",
     "ce34ddd838f7351d6759068d09793f26755463b4a4610a5a5c0a97b68220d85c",
     "be928f6b8ca1e8dfb9d2f4b75a13aa4aee0896f8a9a0a1c45cd5d2c98605e6172e6d014dda2e27f88c98befc16c040cbb2bd1bfa121510ea5cdf5f6a30fe8832",

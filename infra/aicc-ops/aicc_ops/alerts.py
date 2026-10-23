@@ -444,6 +444,27 @@ def r_cron(ctx, p):
                 text=f"last completed scheduled action finished {v / 60:.0f} min ago (warn >= {p['warn_s'] / 60:.0f} min, critical >= {p['crit_s'] / 60:.0f} min)")]
 
 
+def r_outbox_stale(ctx, p):
+    """Entitlement events (license issued / revoked) that the Control Plane has not delivered to the Backend for a long time. A revocation the Backend never receives keeps its store entitled there."""
+    v = ctx.latest("cp.entitlement_outbox_oldest_pending_age_s")
+    if v is None:
+        return []   # gauge not reporting (table absent, no grant, older Control Plane): no alert, the dashboard says "not reporting"
+    n = ctx.latest("cp.entitlement_outbox_pending")
+    return [Obs("entitlement_outbox_stale", "outbox", v > p["warn_s"], clear=v <= p["clear_s"], severity=WARNING,
+                text=f"the oldest undelivered entitlement event is {v / 60:.0f} min old (warn > {p['warn_s'] / 60:.0f} min; {int(n) if n is not None else '?'} still retrying): "
+                     f"the Control Plane cannot reach or is rejected by the Backend webhook (wp aicc-ops gauges; docs/cutover/alerting.md)")]
+
+
+def r_outbox_abandoned(ctx, p):
+    """Events that exhausted every delivery attempt and are the newest of their activation: nothing retries them on its own any more."""
+    v = ctx.latest("cp.entitlement_outbox_abandoned")
+    if v is None:
+        return []
+    return [Obs("entitlement_outbox_abandoned", "outbox", v > 0, clear=v == 0, severity=CRITICAL,
+                text=f"{int(v)} entitlement event(s) exhausted every delivery attempt and are no longer retried automatically: a purchase or revocation never reached the Backend. "
+                     f"Operator task: wp aicc-ops gauges, then the Control Plane reconcile (docs/cutover/alerting.md)")]
+
+
 def r_backend_down(ctx, p):
     out = []
     up = ctx.latest("backend.up")
@@ -524,6 +545,10 @@ def default_rules(cfg: dict) -> list:
         RuleSpec("services_need_restart", "Running services use replaced code", r_secupd_services, for_samples=10, clear_samples=2, cooldown_s=43200),
         # The system cron (aicc-wp-cron.timer) runs every 2 minutes (WP_CRON_CADENCE_S); the thresholds below must stay far above it (tests/test_alerts.py::CronCadence).
         RuleSpec("wc_cron_stale", "Scheduled actions stale", r_cron, dict(warn_s=3600, crit_s=14400, clear_s=1800), for_samples=2, clear_samples=2, cooldown_s=3600),
+        # architecture review M1: Control Plane -> Backend entitlement delivery. Gauges come from the CP outbox table (collectors.cp); absent gauges never alert.
+        # WARNING when the oldest undelivered event is older than 15 minutes (the retry schedule is far shorter); CRITICAL as soon as any event is abandoned (needs an operator).
+        RuleSpec("entitlement_outbox_stale", "Entitlement events not reaching the Backend", r_outbox_stale, dict(warn_s=900, clear_s=300), for_samples=2, clear_samples=2, cooldown_s=3600),
+        RuleSpec("entitlement_outbox_abandoned", "Entitlement events abandoned", r_outbox_abandoned, for_samples=1, clear_samples=2, cooldown_s=21600, renotify_critical_s=21600),
     ]
 
 

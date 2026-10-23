@@ -22,7 +22,7 @@ if ! docker image inspect "$IMG" >/dev/null 2>&1; then
   docker commit "$NAME-base" "$IMG" >/dev/null; docker rm -f "$NAME-base" >/dev/null
 fi
 echo "building the Control Plane release for the container ..."
-bash "$REPO/infra/release/build-cp-release.sh" --out-dir "$TMP/art" >/dev/null 2>&1 || { echo "ubuntu: CP build failed (are the pinned sources cached in ~/.cache/aicc-release?)"; exit 1; }
+bash "$REPO/infra/release/build-cp-release.sh" --cp-worktree "${AICC_TEST_CP_WORKTREE:-/Users/avivgerman/Local Sites/woo-recommendation-qa/aicc-control-plane-worktrees/launch-integration}" --out-dir "$TMP/art" >/dev/null 2>&1 || { echo "ubuntu: CP build failed (are the pinned sources cached in ~/.cache/aicc-release?)"; exit 1; }
 docker run -d --init --cap-add SYS_PTRACE --name "$NAME" --hostname aicc-cp-stage -v "$REPO/infra":/bundle/infra:ro -v "$REPO/scripts/ops":/bundle/scripts/ops:ro "$IMG" sleep infinity >/dev/null || exit 1
 docker cp "$TMP/art" "$NAME:/art" >/dev/null && docker cp "$WP_PHAR" "$NAME:/opt/wp-cli.phar" >/dev/null
 LOG="$HOME/aicc-rehearsal/logs/aicc-edge.log"

@@ -61,7 +61,7 @@ Primary FIRST. Commit that file (a release is built only from a clean commit). A
 Where else the public keys go (all optional or later; none is secret):
 | Place | What | When |
 |---|---|---|
-| Control Plane production `wp-config.php` | `define( 'AICC_LM_PLUGIN_SIGNING_PUBKEYS', '<primary>,<standby>' );` so the Control Plane re-verifies each release when serving it (defence in depth). Without it the launch gate prints a NOTE, not a blocker. If set, it must contain a key the shipped build carries. | at promotion; tell Claude and it prepares the wp-config line |
+| Control Plane production `wp-config.php` | **on the host: `sudo aicc-owner-facts set AICC_LM_PLUGIN_SIGNING_PUBKEYS '<primary>,<standby>'`, then `sudo aicc-render-wp-config --env production --confirm-production` and `sudo systemctl reload php8.3-fpm`** (public keys only, validated: 32-byte Ed25519, at most 2). Do NOT hand-edit the rendered wp-config: the next render erases it. The Control Plane then re-verifies each release when serving it (defence in depth). Without it the launch gate prints a NOTE, not a blocker. If set, it must contain a key the shipped build carries. Afterwards run `sudo aicc-owner-facts export > owner-facts.env` and keep that file with your records (the facts file is not in any backup). | at promotion |
 | The website / README | the two FINGERPRINTS, so merchants can compare them with the one shown on their account page | after step A5; tell Claude the fingerprints |
 | A store's `wp-config.php` (`AICC_UPDATE_PUBLIC_KEYS`) | emergency/rotation only | never in normal operation |
 
