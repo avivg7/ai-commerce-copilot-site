@@ -18,6 +18,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import http from "node:http";
+import https from "node:https";
 import { analyzeDocument, robotsFindings, sitemapFindings, CANONICAL_ORIGIN, MUTATIONS, CLEAN_SAMPLES, cleanPage, wordingFindings } from "./lib/public-truth.mjs";
 
 const argv = process.argv.slice(2);
@@ -249,7 +250,16 @@ if (url) {
   const al = arg("alias");
   // A copy served from another origin (a local server, a fixture) is judged as if it were served from the canonical origin: its own origin is rewritten to https://www.copilt.org before the rules run.
   const alias = al ? { from: al.split("=")[0], to: al.split("=")[1] || CANONICAL_ORIGIN } : (url.replace(/\/+$/, "") !== CANONICAL_ORIGIN ? { from: url.replace(/\/+$/, ""), to: CANONICAL_ORIGIN } : null);
-  await scanUrl(url, { paths, alias, probes: arg("probes", "none") });
+  // --connect-to <ip>: judge the REAL public origin on a host public DNS does not point at yet (the DARK production host, before the DNS cutover): connect to this IP, keep the Host/SNI, accept the dark edge's internal CA
+  const ip = arg("connect-to");
+  const fetchVia = ip ? (u, o = {}) => new Promise((resolve, reject) => {
+    const x = new URL(u);
+    const req = https.request({ host: x.hostname, port: x.port || 443, path: x.pathname + x.search, method: "GET", headers: o.headers || {}, servername: x.hostname, rejectUnauthorized: false, lookup: (h, opt, cb) => (opt && opt.all ? cb(null, [{ address: ip, family: 4 }]) : cb(null, ip, 4)) }, (res) => {
+      const chunks = []; res.on("data", (c) => chunks.push(c)); res.on("end", () => { const b = Buffer.concat(chunks); resolve({ status: res.statusCode, headers: { get: (k) => { const v = res.headers[k.toLowerCase()]; return Array.isArray(v) ? v.join(", ") : v ?? null; } }, text: async () => b.toString("utf8") }); });
+    });
+    req.on("error", reject); req.setTimeout(30000, () => req.destroy(new Error("timeout"))); req.end();
+  }) : fetch;
+  await scanUrl(url, { paths, alias, probes: arg("probes", "none"), fetchImpl: fetchVia });
 }
 const summary = report(out && url ? `${out} + ${url}` : out || url);
 if (arg("json")) fs.writeFileSync(arg("json"), JSON.stringify({ summary, results: results.filter((r) => r.findings.length) }, null, 1));
