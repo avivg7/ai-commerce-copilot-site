@@ -865,7 +865,7 @@ www.copilt.org {
 	handle @php_direct {
 		error 404
 	}
-	@wp_hidden path_regexp wp_hidden (?i)^/wp-(?:content|includes)/(?:.*/\.|.*/(?:readme|changelog|licen[cs]e)\.(?:txt|md|html)$|.*\.(?:log|sql|bak|old|orig|swp|env|ini|sh|po|pot|mo)$|(?:.*/)?(?:composer\.(?:json|lock)|installed\.json|package(?:-lock)?\.json|yarn\.lock|pnpm-lock\.yaml|phpcs[^/]*\.xml(?:\.dist)?|phpunit[^/]*\.xml(?:\.dist)?)$|plugins/.*\.csv$|(?:plugins|themes)/[^/]+/(?:.*/)?(?:sample-data|sample_data|tests?|docs)/)
+	@wp_hidden path_regexp wp_hidden (?i)^/wp-(?:content|includes)/(?:.*/\.|.*/(?:readme|changelog|licen[cs]e)\.(?:txt|md|html)$|.*\.(?:log|sql|bak|old|orig|swp|env|ini|sh|po|pot|mo)$|(?:.*/)?(?:composer\.(?:json|lock)|installed\.json|package(?:-lock)?\.json|yarn\.lock|pnpm-lock\.yaml|phpcs[^/]*\.xml(?:\.dist)?|phpunit[^/]*\.xml(?:\.dist)?)$|plugins/.*\.csv$|.*\.(?:md|neon|dist|map)$|.*\.d\.ts$|(?:.*/)?(?:package\.xml|MANIFEST\.json|contract-baseline\.json|sources\.json)$|.*/languages/legal/|(?:plugins|themes)/[^/]+/(?:.*/)?(?:sample-data|sample_data|tests?|docs)/)
 	handle @wp_hidden {
 		error 404
 	}
@@ -1010,7 +1010,7 @@ www.copilt.org:{$AICC_OPERATOR_PORT:8443} {
 	handle @php_direct {
 		error 404
 	}
-	@wp_hidden path_regexp wp_hidden (?i)^/wp-(?:content|includes)/(?:.*/\.|.*/(?:readme|changelog|licen[cs]e)\.(?:txt|md|html)$|.*\.(?:log|sql|bak|old|orig|swp|env|ini|sh|po|pot|mo)$|(?:.*/)?(?:composer\.(?:json|lock)|installed\.json|package(?:-lock)?\.json|yarn\.lock|pnpm-lock\.yaml|phpcs[^/]*\.xml(?:\.dist)?|phpunit[^/]*\.xml(?:\.dist)?)$|plugins/.*\.csv$|(?:plugins|themes)/[^/]+/(?:.*/)?(?:sample-data|sample_data|tests?|docs)/)
+	@wp_hidden path_regexp wp_hidden (?i)^/wp-(?:content|includes)/(?:.*/\.|.*/(?:readme|changelog|licen[cs]e)\.(?:txt|md|html)$|.*\.(?:log|sql|bak|old|orig|swp|env|ini|sh|po|pot|mo)$|(?:.*/)?(?:composer\.(?:json|lock)|installed\.json|package(?:-lock)?\.json|yarn\.lock|pnpm-lock\.yaml|phpcs[^/]*\.xml(?:\.dist)?|phpunit[^/]*\.xml(?:\.dist)?)$|plugins/.*\.csv$|.*\.(?:md|neon|dist|map)$|.*\.d\.ts$|(?:.*/)?(?:package\.xml|MANIFEST\.json|contract-baseline\.json|sources\.json)$|.*/languages/legal/|(?:plugins|themes)/[^/]+/(?:.*/)?(?:sample-data|sample_data|tests?|docs)/)
 	handle @wp_hidden {
 		error 404
 	}

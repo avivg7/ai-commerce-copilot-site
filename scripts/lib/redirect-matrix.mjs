@@ -85,9 +85,10 @@ export const PHP_ENTRY_RE = "^/(?:index|wp-login|wp-cron)\\.php$|^/wp-admin/[A-Z
 /**
  * Security review L4 (2026-10-21): also dependency manifests and lock files (composer.json/.lock, vendor/composer/installed.json, package.json, package-lock.json, yarn.lock, pnpm-lock.yaml),
  * translation sources (.po/.pot/.mo: WordPress reads them from DISK, never over HTTP), tool configs (phpcs/phpunit .xml), sample-data and tests/docs directories of plugins and themes, and sample CSVs
- * under plugins (WooCommerce ships sample-data/*.csv). Public assets (js, css, images, fonts, json that scripts fetch) are untouched.
+ * under plugins (WooCommerce ships sample-data/*.csv), and, since the security review of 2026-10-24 (the raw legal Markdown sources with their internal placeholders and the build/dev files of WordPress,
+ * WooCommerce and the theme were served): any .md/.neon/.dist/.map file, any .d.ts file, package.xml, the brand MANIFEST.json / contract-baseline.json, sources.json and the whole plugins/NAME/languages/legal/ tree. Public assets (js, css, images, fonts, json that scripts fetch) are untouched.
  */
-export const WP_HIDDEN_RE = "(?i)^/wp-(?:content|includes)/(?:.*/\\.|.*/(?:readme|changelog|licen[cs]e)\\.(?:txt|md|html)$|.*\\.(?:log|sql|bak|old|orig|swp|env|ini|sh|po|pot|mo)$|(?:.*/)?(?:composer\\.(?:json|lock)|installed\\.json|package(?:-lock)?\\.json|yarn\\.lock|pnpm-lock\\.yaml|phpcs[^/]*\\.xml(?:\\.dist)?|phpunit[^/]*\\.xml(?:\\.dist)?)$|plugins/.*\\.csv$|(?:plugins|themes)/[^/]+/(?:.*/)?(?:sample-data|sample_data|tests?|docs)/)";
+export const WP_HIDDEN_RE = "(?i)^/wp-(?:content|includes)/(?:.*/\\.|.*/(?:readme|changelog|licen[cs]e)\\.(?:txt|md|html)$|.*\\.(?:log|sql|bak|old|orig|swp|env|ini|sh|po|pot|mo)$|(?:.*/)?(?:composer\\.(?:json|lock)|installed\\.json|package(?:-lock)?\\.json|yarn\\.lock|pnpm-lock\\.yaml|phpcs[^/]*\\.xml(?:\\.dist)?|phpunit[^/]*\\.xml(?:\\.dist)?)$|plugins/.*\\.csv$|.*\\.(?:md|neon|dist|map)$|.*\\.d\\.ts$|(?:.*/)?(?:package\\.xml|MANIFEST\\.json|contract-baseline\\.json|sources\\.json)$|.*/languages/legal/|(?:plugins|themes)/[^/]+/(?:.*/)?(?:sample-data|sample_data|tests?|docs)/)";
 
 /**
  * Security review B, F-11 (2026-10-23): Apache's .htaccess protections (WooCommerce's woocommerce_uploads / wc-logs, WordPress backup plugins' dirs) do not exist under Caddy, and the static
@@ -449,6 +450,10 @@ export const CASES = [
     "/wp-content/plugins/woocommerce/languages/woocommerce-he_IL.po", "/wp-content/plugins/woocommerce/i18n/languages/woocommerce.pot", "/wp-content/languages/plugins/woocommerce-he_IL.mo", "/wp-content/plugins/woocommerce/sample-data/sample_products.csv",
     "/wp-content/plugins/woocommerce/sample-data/", "/wp-content/plugins/aicc-license-manager/tests/run_x.php", "/wp-content/plugins/woocommerce/tests/readme", "/wp-content/plugins/some/docs/guide.png", "/wp-content/plugins/woocommerce/phpunit.xml.dist", "/wp-content/plugins/woocommerce/LICENCE.txt", "/wp-content/plugins/woocommerce/changelog.txt", "/wp-content/plugins/woocommerce/README.md",
     "/wp-content/PLUGINS/woocommerce/Composer.JSON"].map((p) => o(`https://www.copilt.org${p}`, "404", 404, { note: "review L4: never public" })),
+  // security review 2026-10-24 (secR3): raw legal Markdown sources (internal placeholders) and build/dev files were served from wp-content; never public
+  ...["/wp-content/plugins/aicc-license-manager/languages/legal/es_ES/privacy-policy.md", "/wp-content/plugins/aicc-license-manager/languages/legal/sources.json", "/wp-content/plugins/woocommerce/vendor/wordpress/mcp-adapter/phpstan.neon.dist",
+    "/wp-content/plugins/woocommerce/vendor/maxmind-db/reader/package.xml", "/wp-content/themes/aicc-admin/assets/brand/MANIFEST.json", "/wp-content/themes/aicc-admin/assets/brand/contract-baseline.json",
+    "/wp-content/plugins/woocommerce/vendor/x/y/index.d.ts", "/wp-content/plugins/x/assets/app.js.map"].map((p) => o(`https://www.copilt.org${p}`, "404", 404, { note: "secR3: never public" })),
   o("https://www.copilt.org/wp-content/plugins/woocommerce/assets/css/woocommerce.css", "wordpress", 200, { cache: "", note: "a real plugin asset next to the hidden files" }),
   o("https://www.copilt.org/wp-content/plugins/woocommerce/assets/js/frontend/cart.min.js", "wordpress", 200, { cache: "" }),
   o("https://www.copilt.org/wp-content/plugins/woocommerce/assets/fonts/WooCommerce.svg", "wordpress", 200, { cache: "" }),
