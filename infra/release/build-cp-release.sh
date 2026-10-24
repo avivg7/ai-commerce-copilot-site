@@ -1,13 +1,16 @@
 #!/usr/bin/env bash
 # Builds an IMMUTABLE Control Plane release ON THE MAC: WordPress core + WooCommerce (pinned, SHA-256 verified) + the AICC theme and plugin from the CP worktree.
 #
-#   infra/release/build-cp-release.sh --cp-worktree PATH [--out-dir DIR] [--wp-tar FILE] [--wc-zip FILE] [--storefront-zip FILE] [--with-payplus [--payplus-zip FILE]] [--allow-dirty] [--epoch N] [--no-lint] [--dry-run]
+#   infra/release/build-cp-release.sh --cp-worktree PATH [--out-dir DIR] [--wp-tar FILE] [--wc-zip FILE] [--storefront-zip FILE] [--with-payplus [--payplus-zip FILE]] [--environment production|staging] [--allow-dirty] [--epoch N] [--no-lint] [--dry-run]
 #
 #   --cp-worktree is REQUIRED (there is no default: the old default pointed at a stale worktree, so a forgotten flag silently shipped old code). Use the Control Plane worktree of the
 #   approved commit, e.g. .../aicc-control-plane-worktrees/launch-integration.
 #   --with-payplus (OPT-IN, off by default; the default build is byte-for-byte what it was): also packages the PINNED PayPlus Payment Gateway plugin (pins.env PAYPLUS_*, SHA-256 verified) as
 #   wp-content/plugins/payplus-payment-gateway, recorded in the manifest. It is a build input, NOT an endorsement and it activates nothing: the owner still chooses the gateway, WooCommerce
 #   settings and AICC_LM_PAID_GATEWAYS / AICC_EXTRA_ACCESSIBLE_HOSTS (owner facts) are separate owner steps (docs/launch/payplus-owner-kit.md).
+#   --environment (default production) is recorded in the operator-only BUILD-INFO.php inside the AICC plugin (environment, CP git sha + dirty flag, SHA-256 of the theme's brand MANIFEST.json, plugin version, build time =
+#   SOURCE_DATE_EPOCH so the build stays reproducible; the release id is the directory name on the host, the tree hash cannot be inside the tree). It is a PHP file that prints nothing when requested directly, so the web
+#   server never serves it; wp-admin shows it to administrators only and `wp aicc-ops build-info` prints it. The same facts as plain JSON (with the release id) are written next to the tarball: cp-<id>.build-info.json.
 #   Every build also runs `node scripts/sync-brand-kit.mjs --verify --strict` of THIS Site repo against the theme it just assembled and FAILS on drift (the Control Plane theme must carry the
 #   Site brand kit byte-for-byte; re-sync with `node scripts/sync-brand-kit.mjs --to <theme>` in the CP worktree and commit there).
 #
@@ -29,12 +32,13 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
 . "$HERE/pins.env"
 CP=""
-OUT="./release-out"; WPTAR=""; WCZIP=""; SFZIP=""; PPZIP=""; WITH_PP=0; DIRTY=""; EPOCH=""; LINT=1; DRY=0
+OUT="./release-out"; WPTAR=""; WCZIP=""; SFZIP=""; PPZIP=""; WITH_PP=0; ENVNAME="production"; DIRTY=""; EPOCH=""; LINT=1; DRY=0
 CACHE="${AICC_RELEASE_CACHE:-$HOME/.cache/aicc-release}"
 while [ $# -gt 0 ]; do
   case "$1" in
     --cp-worktree) CP="${2:-}"; shift 2 ;; --out-dir) OUT="${2:-}"; shift 2 ;; --wp-tar) WPTAR="${2:-}"; shift 2 ;; --wc-zip) WCZIP="${2:-}"; shift 2 ;; --storefront-zip) SFZIP="${2:-}"; shift 2 ;;
     --with-payplus) WITH_PP=1; shift ;; --payplus-zip) PPZIP="${2:-}"; shift 2 ;;
+    --environment) ENVNAME="${2:-}"; shift 2 ;;
     --allow-dirty) DIRTY="--allow-dirty"; shift ;; --epoch) EPOCH="${2:-}"; shift 2 ;; --no-lint) LINT=0; shift ;; --dry-run) DRY=1; shift ;;
     -h|--help) sed -n 2,28p "${BASH_SOURCE[0]}"; exit 0 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
@@ -42,6 +46,7 @@ while [ $# -gt 0 ]; do
 done
 [ -n "$CP" ] || rl_die "--cp-worktree is REQUIRED: pass the Control Plane worktree of the approved commit (there is deliberately no default; see --help)" 2
 [ "$WITH_PP" = 1 ] || [ -z "$PPZIP" ] || rl_die "--payplus-zip only makes sense together with --with-payplus" 2
+case "$ENVNAME" in production|staging) ;; *) rl_die "--environment must be production or staging" 2 ;; esac
 [ -d "$CP/admin/wp-content/plugins/aicc-license-manager" ] || rl_die "CP worktree not found at $CP" 2
 git -C "$CP" rev-parse --git-dir >/dev/null 2>&1 || rl_die "$CP is not a git worktree" 2
 mkdir -p "$CACHE"
@@ -76,6 +81,12 @@ command -v node >/dev/null 2>&1 || rl_die "node is required to verify the brand 
 SITE_ROOT="$(cd "$HERE/../.." && pwd)"
 node "$SITE_ROOT/scripts/sync-brand-kit.mjs" --verify "$TREE/wp-content/themes/aicc-admin" --strict >"$WORK/brand.out" 2>&1 || { cat "$WORK/brand.out" >&2; rl_die "BRAND KIT DRIFT: the packaged theme (CP worktree $CP) does not carry the brand kit of $SITE_ROOT byte-for-byte. Build from the matching Site and CP commits, or re-sync: node $SITE_ROOT/scripts/sync-brand-kit.mjs --to <CP theme dir> (then commit in the CP repo)" 1; }
 rl_log "brand kit: $(tail -1 "$WORK/brand.out")"
+# Operator-only build identification (see the header). Built from the facts assemble-cp recorded; deterministic.
+BI_SHA="$(python3 -I -c 'import json,sys; print(json.loads(sys.argv[1])["cp_commit"])' "$INFO")"
+BI_DIRTY=(); [ "$(python3 -I -c 'import json,sys; print(int(json.loads(sys.argv[1])["dirty"]))' "$INFO")" = 1 ] && BI_DIRTY=(--dirty)
+python3 -I "$HERE/lib/release_tool.py" build-info --plugin-dir "$TREE/wp-content/plugins/aicc-license-manager" --theme-dir "$TREE/wp-content/themes/aicc-admin" \
+  --environment "$ENVNAME" --cp-sha "$BI_SHA" --epoch "$EPOCH" --json-out "$WORK/build-info.json" ${BI_DIRTY[@]+"${BI_DIRTY[@]}"} >/dev/null
+rl_log "build info: environment=$ENVNAME cp=${BI_SHA:0:12}"
 if [ "$LINT" = 1 ] && command -v php >/dev/null 2>&1; then
   bad=0
   while IFS= read -r f; do php -l "$f" >/dev/null 2>"$WORK/lint.err" || { echo "php -l failed: $f"; cat "$WORK/lint.err"; bad=1; }; done < <(find "$TREE/wp-content/plugins/aicc-license-manager" "$TREE/wp-content/themes/aicc-admin" -name '*.php' -type f | sort)
@@ -95,4 +106,12 @@ if "payplus_version" in info:  # only an opt-in build (--with-payplus) records t
 print(json.dumps(meta))
 PY
 )"
-python3 -I "$HERE/lib/release_tool.py" pack --tree "$TREE" --kind cp --out-dir "$OUT" --epoch "$EPOCH" --meta "$META"
+PACKED="$(python3 -I "$HERE/lib/release_tool.py" pack --tree "$TREE" --kind cp --out-dir "$OUT" --epoch "$EPOCH" --meta "$META")"
+# plain-JSON copy of the build facts with the release id, OUTSIDE the document root (next to the tarball)
+python3 -I - "$PACKED" "$WORK/build-info.json" "$OUT" <<'PY'
+import json, os, sys
+packed = json.loads(sys.argv[1]); info = json.load(open(sys.argv[2])); info["release_id"] = packed["release_id"]
+with open(os.path.join(sys.argv[3], "cp-%s.build-info.json" % packed["release_id"]), "w") as f:
+    json.dump(info, f, indent=2, sort_keys=True); f.write("\n")
+PY
+echo "$PACKED"

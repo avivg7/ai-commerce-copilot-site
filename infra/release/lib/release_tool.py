@@ -3,6 +3,7 @@
 
 Sub-commands (all print a one-line result; non-zero exit = refusal):
   assemble-cp   build the Control Plane tree: WordPress core + WooCommerce (pinned, hash-checked) + AICC theme/plugin from a git worktree
+  build-info    write the operator-only BUILD-INFO.php (environment, CP git sha, brand manifest sha256, plugin version, release id, build time) into the AICC plugin
   pack          deterministic tarball + SHA256SUMS + manifest.json from a tree
   unpack        safe extraction of such a tarball (no absolute paths, no .., no devices)
   scan          secrets / fixture / forbidden-file scan of a tree
@@ -223,6 +224,39 @@ def cmd_assemble_cp(a):
         info["payplus_version"] = a.pp_version
     print(json.dumps(info))
 
+BUILD_INFO_ENVS = ("production", "staging", "QA", "development")
+
+
+def cmd_build_info(a):
+    """Writes <plugin-dir>/BUILD-INFO.php (and, with --json-out, the same facts as plain JSON OUTSIDE the document root). The PHP form exits when requested directly: a static
+    .json inside the document root would be served to anyone. Deterministic: the build time is the SOURCE_DATE_EPOCH, never the wall clock. No secret is read or written."""
+    if a.environment not in BUILD_INFO_ENVS:
+        die("--environment must be one of %s" % ", ".join(BUILD_INFO_ENVS), 2)
+    if not re.fullmatch(r"[0-9a-f]{40}", a.cp_sha):
+        die("--cp-sha must be a full 40-hex git commit", 2)
+    if a.release_id and not re.fullmatch(r"[0-9A-Za-z._-]{1,80}", a.release_id):
+        die("--release-id has characters outside [0-9A-Za-z._-]", 2)
+    main_php = os.path.join(a.plugin_dir, "aicc-license-manager.php")
+    manifest = os.path.join(a.theme_dir, "assets", "brand", "MANIFEST.json")
+    for f in (main_php, manifest):
+        if not os.path.isfile(f):
+            die("not found: " + f)
+    with open(main_php, encoding="utf-8") as f:
+        m = re.search(r"^\s*\*\s*Version:\s*(\S+)", f.read(), re.M)
+    if not m:
+        die("no plugin Version header in " + main_php)
+    info = {"environment": a.environment, "cp_git_sha": a.cp_sha, "dirty": bool(a.dirty), "brand_manifest_sha256": sha256_file(manifest), "plugin_version": m.group(1),
+            "release_id": a.release_id or "", "build_time": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(int(a.epoch)))}
+    body = json.dumps(info, indent=2, sort_keys=True)
+    php = ("<?php\n// AICC build identification, written by the release builder. Operator-only: requested directly this file prints nothing. No secrets.\n"
+           "defined( 'ABSPATH' ) || exit;\nreturn json_decode( <<<'AICC_BUILD_INFO'\n" + body + "\nAICC_BUILD_INFO\n, true );\n")
+    with open(os.path.join(a.plugin_dir, "BUILD-INFO.php"), "w", encoding="utf-8") as f:
+        f.write(php)
+    if a.json_out:
+        with open(a.json_out, "w", encoding="utf-8") as f:
+            f.write(body + "\n")
+    print(json.dumps(info, sort_keys=True))
+
 
 def cmd_pack(a):
     tree = a.tree
@@ -437,6 +471,10 @@ def main():
     for k in ("pp-zip", "pp-sha256", "pp-version"):
         p.add_argument("--" + k, default="")
     p.add_argument("--allow-dirty", action="store_true"); p.set_defaults(fn=cmd_assemble_cp)
+    p = sp.add_parser("build-info")
+    for k in ("plugin-dir", "theme-dir", "environment", "cp-sha", "epoch"):
+        p.add_argument("--" + k, required=True)
+    p.add_argument("--release-id", default=""); p.add_argument("--json-out", default=""); p.add_argument("--dirty", action="store_true"); p.set_defaults(fn=cmd_build_info)
     p = sp.add_parser("pack")
     p.add_argument("--tree", required=True); p.add_argument("--kind", required=True, choices=["cp", "site"]); p.add_argument("--out-dir", required=True)
     p.add_argument("--epoch", required=True); p.add_argument("--meta", default=""); p.set_defaults(fn=cmd_pack)

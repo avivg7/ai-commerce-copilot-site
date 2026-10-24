@@ -326,6 +326,21 @@ if [ -f "$HOME/.cache/aicc-release/wordpress-7.1.3.tar.gz" ] && [ -f "$HOME/.cac
   mkdir -p "$TMP/cp-unpack"; "${TOOL[@]}" unpack --tarball "$TB1" --dest "$TMP/cp-unpack/tree" >/dev/null
   t_ok "unpacked tree passes the secret/fixture scan again" "${TOOL[@]}" scan --tree "$TMP/cp-unpack/tree" --kind cp
   t_ok "unpacked tree verifies against SHA256SUMS" verify_tree "$TMP/cp-unpack/tree" "${TB1%.tar.gz}.SHA256SUMS"
+  # operator-only build identification (BUILD-INFO.php): present, correct, reproducible (covered above), and NOT a statically servable file
+  BIP="$TMP/cp-unpack/tree/wp-content/plugins/aicc-license-manager/BUILD-INFO.php"; BIJ="${TB1%.tar.gz}.build-info.json"
+  t_ok "BUILD-INFO.php is in the AICC plugin" test -f "$BIP"
+  t_eq "...no static BUILD-INFO.json anywhere in the tarball (a web server would serve it to anyone)" "$(printf '%s\n' "$LIST" | grep -ci 'build-info\.json' || true)" "0"
+  t_eq "...requested directly (no WordPress) it prints NOTHING" "$(php "$BIP" 2>&1 | wc -c | tr -d ' ')" "0"
+  t_contains "...it is guarded by the ABSPATH exit" "$(cat "$BIP")" "defined( 'ABSPATH' ) || exit;"
+  t_eq "...environment is production by default" "$(jq -r '.environment' "$BIJ")" "production"
+  t_eq "...cp_git_sha equals the manifest's cp_commit" "$(jq -r '.cp_git_sha' "$BIJ")" "$(jq -r '.sources.cp_commit' "$MAN1")"
+  t_eq "...brand_manifest_sha256 is the SHA-256 of the packaged theme's assets/brand/MANIFEST.json" "$(jq -r '.brand_manifest_sha256' "$BIJ")" "$(sha256_of_file "$TMP/cp-unpack/tree/wp-content/themes/aicc-admin/assets/brand/MANIFEST.json")"
+  t_eq "...plugin_version is the plugin header's" "$(jq -r '.plugin_version' "$BIJ")" "$(sed -n 's/^ \* Version:[[:space:]]*//p' "$TMP/cp-unpack/tree/wp-content/plugins/aicc-license-manager/aicc-license-manager.php" | head -1)"
+  t_eq "...the JSON copy next to the tarball carries the release id" "cp-$(jq -r '.release_id' "$BIJ")" "$(basename "${TB1%.tar.gz}")"
+  t_eq "...the JSON is outside the tree (not in the tarball) and holds no secret-looking key" "$(jq -r 'keys | join(",")' "$BIJ")" "brand_manifest_sha256,build_time,cp_git_sha,dirty,environment,plugin_version,release_id"
+  t_eq "...build_time is the SOURCE_DATE_EPOCH, not the wall clock" "$(jq -r '.build_time' "$BIJ")" "$(jq -r '.created_at' "$MAN1")"
+  t_rc "build-cp-release.sh --environment bogus is a usage error" 2 bash "$REL/build-cp-release.sh" --cp-worktree "$CPWT" --environment bogus --out-dir "$TMP/cp-bogusenv"
+  t_fail "release_tool build-info refuses a short git sha" "${TOOL[@]}" build-info --plugin-dir "$TMP/cp-unpack/tree/wp-content/plugins/aicc-license-manager" --theme-dir "$TMP/cp-unpack/tree/wp-content/themes/aicc-admin" --environment QA --cp-sha abc123 --epoch 1
   t_fail "a dirty worktree is refused unless --allow-dirty (tool-level check)" bash -c "cd '$TMP' && git init -q fakecp && mkdir -p fakecp/admin/wp-content/themes/aicc-admin fakecp/admin/wp-content/plugins/aicc-license-manager && cd fakecp && echo a > admin/wp-content/themes/aicc-admin/a.php && echo b > admin/wp-content/plugins/aicc-license-manager/b.php && git add . && git -c user.email=t@t -c user.name=t commit -qm i && echo c >> admin/wp-content/themes/aicc-admin/a.php && bash '$REL/build-cp-release.sh' --cp-worktree '$TMP/fakecp' --out-dir '$TMP/cp-dirty'"
   t_fail "a wrong pinned hash is refused" bash -c "echo junk > '$TMP/wp-wrong.tar.gz'; bash '$REL/build-cp-release.sh' --cp-worktree '$CPWT' --wp-tar '$TMP/wp-wrong.tar.gz' --out-dir '$TMP/cp-wrong'"
   t_eq "DEFAULT build: the manifest has no PayPlus entry (the opt-in is off)" "$(jq -r '.sources | has("payplus_payment_gateway")' "$MAN1")" "false"
