@@ -84,6 +84,17 @@ export function planUrl(plan: PlanId, locale: Locale): string {
 export const STRUCTURED_OFFERS = process.env.NEXT_PUBLIC_AICC_STRUCTURED_OFFERS === "on";
 
 /**
+ * COMMERCIAL CHECKOUT OPEN switch (round 3, "pre-commercial truth"). The public website goes live BEFORE anything can be bought: no payment gateway, no mail provider, no legal and business facts yet.
+ * "The site is live" and "checkout is open" are different states. This is the Site build's mirror of the Control Plane owner fact AICC_COMMERCE_OPEN (the CP decides at run time and fails closed; this static
+ * build cannot ask it, so the two are set together at launch, see docs/cutover/pre-commercial.md). Default CLOSED: unset or anything but exactly "true".
+ * Closed: no plan button, band or suggestion on this site promises a purchase ("Purchases open soon" instead), and a contact address is offered for questions. Open: the buttons that choose a plan.
+ * `npm run launch:check` prints the state; `npm run test:public-truth` proves the closed build is clean.
+ */
+export const COMMERCE_OPEN = process.env.NEXT_PUBLIC_AICC_COMMERCE_OPEN === "true";
+/** The address offered for questions while purchases are not open (the mailbox the owner named for this period; the same string as the Control Plane's AICC_LM_Commerce_State::PRE_COMMERCIAL_CONTACT). */
+export const PRE_COMMERCIAL_CONTACT = "support@copilt.org";
+
+/**
  * Legal review gate. Draft notices on the legal pages stay visible until a person with legal authority has approved the
  * text AND the build sets NEXT_PUBLIC_LEGAL_REVIEW_APPROVED=true. Supplying the company values does NOT hide them.
  * NEXT_PUBLIC_LEGAL_DRAFT_NOTICE=off only hides the pills (for screenshots); `npm run launch:check` still fails without approval.

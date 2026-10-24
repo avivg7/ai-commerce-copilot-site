@@ -346,7 +346,10 @@ for (const [w, h] of [[390, 844], [320, 256]]) {
   const tops = await p.$$eval(".aicc-plan__amount", (e) => e.map((x) => Math.round(x.getBoundingClientRect().top)));
   check(`pricing: the three prices align (badge row reserved): ${tops.join(",")}`, tops.length === 3 && Math.max(...tops) - Math.min(...tops) <= 1);
   const btn = await p.$$eval(".aicc-plan .aicc-btn", (e) => e.map((x) => x.classList.contains("aicc-btn--primary")));
-  check("pricing: only Studio's button uses the action gradient", btn.join() === "false,true,false");
+  // Open build: only Studio's button uses the action gradient. Closed build (the default: "Purchases open soon"): the three plan statements are quiet, none uses it, and none is a link.
+  const closedBuild = await p.evaluate(() => document.querySelectorAll(".aicc-plan [data-commerce='closed']").length === 3);
+  check(closedBuild ? "pricing (checkout closed): the three plan buttons are 'Purchases open soon' statements, not links, and none uses the action gradient" : "pricing: only Studio's button uses the action gradient",
+    closedBuild ? btn.join() === "false,false,false" && (await p.$$eval(".aicc-plan a[href*='plan=']", (e) => e.length)) === 0 : btn.join() === "false,true,false");
   await p.goto(urlFor("en", "privacy"));
   check("privacy: ONE draft notice per page (not one per section) and the muted pending lines are visible on the legal page", await p.evaluate(() => document.querySelectorAll("[data-legal-draft]").length === 1 && document.querySelectorAll("[data-pending]").length > 0 && !/\[.*pending.*\]/.test(document.querySelector("main").textContent)));
   await ctx.close();

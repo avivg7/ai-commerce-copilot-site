@@ -45,6 +45,8 @@ Question: "what does the pricing page's Get started / Choose Studio do when no g
 
 So today a visitor who clicks "Choose Studio" creates an account and then reaches a generic "store is in the works" page. Nothing pretends a payment can be made, but the pricing page promises more than the next click delivers. This is gated: `launch:check` fails the Site build while `NEXT_PUBLIC_AICC_PAYMENT_PROCESSOR` is unset, naming the plan buy links, and the CP gate carries the coming-soon notice. At launch both switches flip together (gateway allow-listed, coming-soon off), after which the path is: choose plan, sign in or register, WooCommerce checkout, pay, licence, connect.
 
+**UPDATE 2026-10-24 (round 3): implemented as the pre-commercial state, see `docs/cutover/pre-commercial.md` (one fail-closed switch `AICC_COMMERCE_OPEN`, plan buttons that say "Purchases open soon", registration/cart/checkout closed, calm "to be confirmed" statements, and the public-truth gate).**
+
 **Proposed minimal truthful behaviour for any period in which pricing is public but checkout is not** (not implemented: it changes the payment gate that the payments workstream owns, it is not clearly wrong in the launch state, and it needs an owner decision on whether to publish before the gateway exists):
 
 * keep the three prices (they are true);

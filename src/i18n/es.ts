@@ -36,12 +36,12 @@ export const es: DeepPartial<Dictionary> = {
         description: "Los datos de tienda y de pedidos que usa AICC, las cookies que puede establecer, cómo se mantienen separadas las tiendas y cuánto tiempo pueden conservarse los datos.",
       },
       privacy: {
-        title: "Política de privacidad (borrador)",
-        description: "Cómo trata AICC la información del sitio web, de las cuentas y de las tiendas conectadas. Borrador pendiente de revisión legal.",
+        title: "Política de privacidad",
+        description: "Cómo trata AICC la información del sitio web, de las cuentas y de las tiendas conectadas.",
       },
       terms: {
-        title: "Términos del servicio (borrador)",
-        description: "Los términos para usar los planes de AICC y conectar tiendas. Borrador pendiente de revisión legal.",
+        title: "Términos del servicio",
+        description: "Los términos para usar los planes de AICC y conectar tiendas.",
       },
       refund: {
         title: "Política de reembolso: garantía de devolución del dinero de 14 días",
@@ -62,8 +62,8 @@ export const es: DeepPartial<Dictionary> = {
     },
   },
   pending: {
-    line: "Los datos de soporte se publicarán antes del lanzamiento.",
-    detail: "Este dato se publicará antes del lanzamiento.",
+    line: "Se confirmará antes de que se abran las compras.",
+    detail: "Se confirmará antes de que se abran las compras.",
   },
   common: {
     skip: "Saltar al contenido principal",
@@ -133,9 +133,17 @@ export const es: DeepPartial<Dictionary> = {
       label: "Ruta de navegación",
     },
     draft: {
-      badge: "Borrador: pendiente de revisión legal",
-      text: "Este texto es un borrador. No lo ha revisado un abogado ni una persona con autoridad legal, y puede cambiar antes de ser definitivo.",
+      badge: "En proceso de finalización",
+      text: "Esta página se está ultimando y puede cambiar antes de que se abran las compras. Los datos marcados como “se confirmarán” se añadirán entonces; ninguno se rellena con suposiciones.",
       translation: "Los textos en hebreo, español y ruso aún no han sido revisados por hablantes nativos. Esta traducción es un borrador y además necesita un revisor legal nativo. Si difiere del texto en inglés, prevalece el texto en inglés.",
+    },
+    // Pre-commercial truth (round 3): shown instead of any purchase CTA while NEXT_PUBLIC_AICC_COMMERCE_OPEN is not "true".
+    soon: {
+      label: "Las compras abrirán pronto",
+      note: "Los planes y los precios son definitivos, pero las compras y las cuentas nuevas aún no están abiertas.",
+      contact: "¿Preguntas mientras tanto? Escriba a {contactEmail}.",
+      band: "Los planes y los precios son definitivos. Las compras y las cuentas nuevas abrirán pronto.",
+      faqNote: "Los planes y los precios son definitivos, pero las compras aún no están abiertas. Las respuestas siguientes describen cómo funcionan los planes cuando se abran.",
     },
     plan: {
       perYear: "al año",
@@ -152,9 +160,9 @@ export const es: DeepPartial<Dictionary> = {
     },
     toc: "En esta página",
     lastReviewed: "Última revisión",
-    draftUpdated: "Borrador actualizado por última vez",
+    draftUpdated: "Última actualización",
     version: "Estado",
-    versionDraft: "Borrador",
+    versionDraft: "En proceso de finalización",
     fallbackTag: "Inglés",
   },
   brand: {
@@ -1254,7 +1262,7 @@ export const es: DeepPartial<Dictionary> = {
         },
         pending: {
           h: "Lo que aún no hemos definido",
-          a: "Algunos detalles todavía no se han publicado: los datos de la empresa, la dirección de soporte, la ley aplicable, el procesador de pagos y la región de alojamiento. Se publicarán antes del lanzamiento.",
+          a: "Algunos detalles aún no son definitivos: los datos de la empresa, la dirección de soporte, la ley aplicable, el procesador de pagos y la región de alojamiento. Se confirmarán antes de que se abran las compras.",
         },
       },
     },

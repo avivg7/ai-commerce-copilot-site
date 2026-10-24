@@ -715,6 +715,10 @@ main:focus {
 .aicc-plan__amount { font-size: 3rem; font-weight: 750; line-height: 1; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; }
 .aicc-plan__per { color: var(--aicc-text-muted); font-weight: 600; }
 .aicc-plan__stores { font-weight: 700; font-size: var(--aicc-text-lg); }
+/* Purchases are not open (NEXT_PUBLIC_AICC_COMMERCE_OPEN is not "true"): the plan button is an honest statement, not a link into a checkout that cannot complete. Same rule in the Control Plane theme. */
+.aicc-btn--soon { cursor: default; margin: 0; border: 1.5px solid var(--aicc-border); background: var(--aicc-surface-sunken); color: var(--aicc-text-muted); }
+.aicc-btn--soon:hover { translate: none; }
+.aicc-soon-contact--inverse { color: inherit; opacity: 0.92; }
 .aicc-plan__list { list-style: none; padding: 0; display: grid; gap: var(--aicc-space-3); font-size: var(--aicc-text-sm); }
 .aicc-plan__list li { display: flex; gap: .6rem; align-items: flex-start; }
 .aicc-plan__list svg { flex: none; color: var(--aicc-success); margin-block-start: 0.2em; }

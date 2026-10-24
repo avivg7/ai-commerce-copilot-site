@@ -21,7 +21,14 @@ const VALUES = [
   ["NEXT_PUBLIC_AICC_PAYMENT_PROCESSOR", "payment processor"],
   ["NEXT_PUBLIC_AICC_HOSTING_REGION", "hosting region"],
 ];
-for (const [k, label] of VALUES) if (!env[k]) problems.push(`pending value: ${label} (${k}) is not set; the page would show "Support details will be published before launch."`);
+for (const [k, label] of VALUES) if (!env[k]) problems.push(`pending value: ${label} (${k}) is not set; the page would show "To be confirmed before purchases open."`);
+
+// Commercial checkout switch (round 3). The public site can be LIVE while checkout is CLOSED: that is a valid, truthful state ("Purchases open soon" instead of any purchase button, `npm run test:public-truth`
+// proves it is clean). THIS command is the COMMERCIAL launch gate, so a closed build is reported as a blocker here and is not one for the public release.
+const commerceOpen = env.NEXT_PUBLIC_AICC_COMMERCE_OPEN === "true";
+console.log(`commercial checkout switch (NEXT_PUBLIC_AICC_COMMERCE_OPEN): ${commerceOpen ? "OPEN: plan buttons and bands lead to the account area" : "CLOSED (default): the build shows \"Purchases open soon\" and no purchase CTA; set it to true together with the Control Plane owner fact AICC_COMMERCE_OPEN, in the same release"}`);
+if (!commerceOpen) problems.push("commercial checkout is CLOSED in this build (NEXT_PUBLIC_AICC_COMMERCE_OPEN is not true): correct for a pre-commercial public release, a blocker only for the commercial launch");
+if (env.NEXT_PUBLIC_AICC_COMMERCE_OPEN && !["true", "false"].includes(env.NEXT_PUBLIC_AICC_COMMERCE_OPEN)) problems.push(`NEXT_PUBLIC_AICC_COMMERCE_OPEN is "${env.NEXT_PUBLIC_AICC_COMMERCE_OPEN}": only the exact value "true" opens commerce (anything else is closed)`);
 
 // A placeholder is as bad as nothing: a support address that is set but obviously not real (review finding C M-2).
 if (env.NEXT_PUBLIC_AICC_SUPPORT_EMAIL && (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(env.NEXT_PUBLIC_AICC_SUPPORT_EMAIL) || /@(example|test|invalid|localhost)\b|\.(test|invalid|example|local)$/i.test(env.NEXT_PUBLIC_AICC_SUPPORT_EMAIL)))

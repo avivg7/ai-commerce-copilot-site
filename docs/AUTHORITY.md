@@ -32,7 +32,7 @@ other side carries a **mirror**: the same facts and wording, flagged as a mirror
 - Translations are not blocked by the English pass: a unit or FAQ question that has no current translation shows its English text marked `lang="en" dir="ltr"`
   (see `docs/content-architecture.md`). `npm run i18n:strict` fails until none is left.
 - Owner values that do not exist yet (company name, address, support email, governing law, payment processor, hosting region)
-  render one plain muted line ("Support details will be published before launch."). Set `NEXT_PUBLIC_AICC_LEGAL_NAME`,
+  render one calm muted line ("To be confirmed before purchases open."; see `docs/cutover/pre-commercial.md`). Set `NEXT_PUBLIC_AICC_LEGAL_NAME`,
   `NEXT_PUBLIC_AICC_ADDRESS`, `NEXT_PUBLIC_AICC_SUPPORT_EMAIL`, `NEXT_PUBLIC_AICC_GOVERNING_LAW`,
   `NEXT_PUBLIC_AICC_PAYMENT_PROCESSOR`, `NEXT_PUBLIC_AICC_HOSTING_REGION`. Never invent them in the dictionaries.
 - `npm run launch:check` lists everything that would be published pending, drafted or unapproved. It fails (exit 1) with `--strict`

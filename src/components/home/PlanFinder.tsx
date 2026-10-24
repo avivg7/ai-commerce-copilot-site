@@ -3,7 +3,7 @@ import { useState } from "react";
 import { FormField, Badge } from "@/components/ui/Primitives";
 import { Button } from "@/components/ui/Button";
 import { PLANS } from "@/data/plans";
-import { planUrl } from "@/lib/site";
+import { COMMERCE_OPEN, planUrl } from "@/lib/site";
 import type { Locale } from "@/i18n/config";
 
 export interface PlanFinderStrings {
@@ -16,6 +16,7 @@ export interface PlanFinderStrings {
   results: { solo: string; studio: string; agency: string };
   names: { solo: string; studio: string; agency: string };
   choose: string; // already contains the plan name placeholder {plan}
+  soon: string; // "Purchases open soon": shown instead of the button while commercial checkout is closed
 }
 
 /** Tiny helper: how many stores -> which plan. Validates on blur/submit, error tied to the field with aria-describedby. */
@@ -60,9 +61,13 @@ export function PlanFinder({ s, locale, lang, dir }: { s: PlanFinderStrings; loc
                 <Badge tone="success">{s.suggestion}</Badge>{" "}
                 <strong>{s.results[plan.id]}</strong>
               </p>
-              <Button href={planUrl(plan.id, locale)} variant="primary">
-                {s.choose.replace("{plan}", s.names[plan.id])}
-              </Button>
+              {COMMERCE_OPEN ? (
+                <Button href={planUrl(plan.id, locale)} variant="primary">
+                  {s.choose.replace("{plan}", s.names[plan.id])}
+                </Button>
+              ) : (
+                <p className="aicc-btn aicc-btn--soon" data-commerce="closed">{s.soon}</p>
+              )}
             </div>
           ) : (
             <p className="aicc-muted aicc-small">{error ? "" : s.empty}</p>
