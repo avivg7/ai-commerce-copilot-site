@@ -403,4 +403,7 @@ EOF
   else t_bad "throwaway mysqld did not start" "$(tail -3 "$M/run.out" | tr '\n' '|')"; fi
 else t_skip "apply / rollback against a throwaway database" "Local's mysql 8.4 binaries or jq not found"; fi
 
+# real-host regression (first real promotion, 2026-10-24): the quiesce step stops PHP-FPM and the edge preflight needs its socket, so install_edge must start the pool before the preflight
+t_ok "install_edge starts php8.3-fpm BEFORE the edge preflight (the preflight requires the FPM socket)" bash -c "awk '/^install_edge\\(\\)/{f=1} f&&/systemctl start php8.3-fpm/{a=NR} f&&/\\\$PREFLIGHT_CMD\" \\\"\\\$\\{flags/{b=NR} END{exit !(a&&b&&a<b)}' '$REPO/infra/provision/promote-to-production.sh'"
+
 t_summary

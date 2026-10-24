@@ -345,6 +345,9 @@ install_edge() { # install_edge dark|final <caddyfile>
   [ -n "$AICC_PREFIX" ] || systemctl daemon-reload
   # certificate-expiry timer: OFF while the edge serves the 12-hour internal certificate, ON with the public one
   if [ "$kind" = dark ]; then svc disable --now aicc-cert-expiry.timer 2>/dev/null || true; else svc enable --now aicc-cert-expiry.timer || true; fi
+  # the preflight REQUIRES the PHP-FPM socket (every WordPress route would answer the branded 502 without it) but the quiesce step stopped FPM: bring the pool up first
+  # (found on the first REAL promotion, 2026-10-24: the prefix harness stubs the preflight, so the sequence never met this). FPM serves nothing publicly: the edge is NOT started.
+  [ -n "$AICC_PREFIX" ] || systemctl start php8.3-fpm || fail "could not start php8.3-fpm for the edge preflight"
   if [ -x "$PREFLIGHT_CMD" ] || [ -x "$(P "$PREFLIGHT_CMD")" ]; then
     local flags=(--mode production --caddyfile "$(P "$EDGE_DIR/Caddyfile")" --env-file "$(P "$EDGE_DIR/edge.env")" --quiet)
     [ -z "$AICC_PREFIX" ] && flags+=(--caddy /usr/local/bin/caddy)
