@@ -360,6 +360,15 @@ SID="0123456789abcdef0123456789abcdef"
 if [ -f "$REPO/out/index.html" ] && ! grep -rqs --include='*.txt' --include='*.html' "www\.copilt\.org" "$REPO/out/__next._head.txt" "$REPO/out/index.html"; then EXPORT="$REPO/out"; else EXPORT="$TMP/mini-export"; mkdir -p "$EXPORT/_next/static" "$EXPORT/404"; for p in index.html 404.html 404/index.html; do printf '<!doctype html><html><head><title>x</title></head><body>p</body></html>' > "$EXPORT/$p"; done; printf 'User-agent: *\nAllow: /\n' > "$EXPORT/robots.txt"; echo c > "$EXPORT/_next/static/c.js"; fi
 t_ok "stage build succeeds" bash "$REL/build-site-release.sh" --target stage --stage-id "$SID" --export-dir "$EXPORT" --out-dir "$TMP/site-stage"
 t_ok "production build succeeds" bash "$REL/build-site-release.sh" --target production --export-dir "$EXPORT" --out-dir "$TMP/site-prod"
+# --public-truth (pre-commercial truth round): the production release is REFUSED when the tree shows anything internal, staged or untrue. Fixture trees carry a canonical so the clean one passes.
+PTC='<!doctype html><html lang="en" dir="ltr"><head><meta charset="utf-8"><title>AI Commerce Copilot</title><meta name="description" content="Recommendations for WooCommerce."><link rel="canonical" href="https://www.copilt.org/"></head><body><main><h1>AICC</h1><p>Purchases open soon.</p>%s</main></body></html>'
+mkdir -p "$TMP/pt-clean/404" "$TMP/pt-bad/404"; printf "$PTC" "" > "$TMP/pt-clean/index.html"; printf "$PTC" "<p>Operated by (pending)</p>" > "$TMP/pt-bad/index.html"
+for d in pt-clean pt-bad; do printf '<!doctype html><html><head><title>404</title></head><body>Not found</body></html>' > "$TMP/$d/404.html"; cp "$TMP/$d/404.html" "$TMP/$d/404/index.html"; done
+t_ok "production build with --public-truth accepts a clean export" bash "$REL/build-site-release.sh" --target production --public-truth --export-dir "$TMP/pt-clean" --out-dir "$TMP/pt-out-clean"
+t_fail "production build with --public-truth REFUSES an export that shows (pending)" bash "$REL/build-site-release.sh" --target production --public-truth --export-dir "$TMP/pt-bad" --out-dir "$TMP/pt-out-bad"
+t_contains "...and says which gate refused it" "$(bash "$REL/build-site-release.sh" --target production --public-truth --export-dir "$TMP/pt-bad" --out-dir "$TMP/pt-out-bad2" 2>&1)" "PUBLIC-TRUTH GATE"
+t_eq "...and packed nothing" "$(ls "$TMP"/pt-out-bad 2>/dev/null | wc -l | tr -d ' ')" "0"
+t_rc "--public-truth with --target stage is a usage error (a stage tree is noindex by design)" 2 bash "$REL/build-site-release.sh" --target stage --stage-id "$SID" --public-truth --export-dir "$TMP/pt-clean" --out-dir "$TMP/pt-out-stage"
 SS="$(ls "$TMP"/site-stage/site-*.tar.gz | head -1)"; SP="$(ls "$TMP"/site-prod/site-*.tar.gz | head -1)"
 mkdir -p "$TMP/u-stage" "$TMP/u-prod"; "${TOOL[@]}" unpack --tarball "$SS" --dest "$TMP/u-stage/t" >/dev/null; "${TOOL[@]}" unpack --tarball "$SP" --dest "$TMP/u-prod/t" >/dev/null
 t_ok "stage tree carries /.well-known/aicc-stage-identity with the stage id" grep -q "\"id\":\"$SID\"" "$TMP/u-stage/t/.well-known/aicc-stage-identity"

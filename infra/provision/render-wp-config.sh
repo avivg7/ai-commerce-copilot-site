@@ -101,6 +101,11 @@ if [ -e "$OWNERF" ] || [ -L "$OWNERF" ]; then
   ofout="$(python3 -I "$SELF/lib/owner_facts.py" check --file "$OWNERF" --env "$ENVN" 2>&1)" || die "REFUSED: $OWNERF: ${ofout#REFUSED: }"
   NFACTS="$(printf '%s' "$ofout" | sed -n 's/^ok: \([0-9][0-9]*\) value.*/\1/p')"
 fi
+# AICC_COMMERCE_OPEN (pre-commercial truth round): commerce opens only with a working account flow, and every account e-mail (password link, receipt) needs the mail layer. Production without a safe smtp.env sends NO mail, so
+# a facts file that opens commerce cannot be rendered into it. (The Control Plane launch gate checks the mail transport too; this is the lock at the door that cannot be forgotten.)
+if [ "$ENVN" = production ] && [ "$NFACTS" -gt 0 ] && python3 -I "$SELF/lib/owner_facts.py" list --file "$OWNERF" --env "$ENVN" 2>/dev/null | grep -q '^AICC_COMMERCE_OPEN='; then
+  [ "$MAIL" = 1 ] || die "REFUSED: $OWNERF sets AICC_COMMERCE_OPEN but the mail layer is not enabled (no safe /etc/aicc-mail/smtp.env): customers could not receive their password link or receipt. Place the SMTP credentials first, or \`aicc-owner-facts unset AICC_COMMERCE_OPEN\`."
+fi
 if is_dry; then would "render $OUT from $TEMPLATE using secrets in $SECRETS (mode 0640 $OWNER); mail layer $([ "$MAIL" = 1 ] && echo ENABLED || echo "not enabled"); owner facts: ${NFACTS} value(s) from $OWNERF; nothing printed"; exit 0; fi
 if [ "$ENVN" = production ]; then
   for f in entitlement-webhook.secret activation-proof.secret; do

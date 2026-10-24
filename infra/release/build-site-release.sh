@@ -4,6 +4,9 @@
 #   infra/release/build-site-release.sh --target stage --stage-id <32 hex> [--site-repo PATH] [--out-dir DIR] [--stage-host stage.copilt.org]
 #   infra/release/build-site-release.sh --target production [--site-repo PATH] [--out-dir DIR]
 #   add  --export-dir DIR  to package an existing export (skips `npm run build`; this is how the tests run)
+#   add  --public-truth  (production target only): after the tree is assembled, run `node scripts/public-truth-gate.mjs --out <tree>` and REFUSE the release on any finding: "(pending)", TODO / TBD, placeholders,
+#        test sentinels, stage / loopback / apex URLs, noindex, a wrong canonical, source maps, free-trial / Shopify / WordPress.org / conversion-percentage claims ... (docs/cutover/pre-commercial.md). Recommended for every production
+#        release; off by default only so that the builder's own fixture trees (which are not real exports) keep working. Needs node on the Mac.
 #   add  --cp-worktree PATH  (the Control Plane worktree this release will be paired with): BEFORE building, `node scripts/sync-brand-kit.mjs --verify --strict` runs against the theme
 #        COMMITTED in that worktree (git archive HEAD) and the build FAILS on any drift from this Site repo's brand kit. A production build without --cp-worktree prints a loud warning.
 #
@@ -21,16 +24,17 @@ set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/release-common.sh
 . "$HERE/lib/release-common.sh"
-SITE_REPO="$(cd "$HERE/../.." && pwd)"; OUT="./release-out"; TARGET=""; STAGE_ID=""; STAGE_HOST="stage.copilt.org"; EXPORT=""; EPOCH=""; DRY=0; CPW=""
+SITE_REPO="$(cd "$HERE/../.." && pwd)"; OUT="./release-out"; TARGET=""; STAGE_ID=""; STAGE_HOST="stage.copilt.org"; EXPORT=""; EPOCH=""; DRY=0; CPW=""; PUBTRUTH=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --target) TARGET="${2:-}"; shift 2 ;; --stage-id) STAGE_ID="${2:-}"; shift 2 ;; --stage-host) STAGE_HOST="${2:-}"; shift 2 ;;
-    --site-repo) SITE_REPO="${2:-}"; shift 2 ;; --out-dir) OUT="${2:-}"; shift 2 ;; --export-dir) EXPORT="${2:-}"; shift 2 ;; --cp-worktree) CPW="${2:-}"; shift 2 ;; --epoch) EPOCH="${2:-}"; shift 2 ;; --dry-run) DRY=1; shift ;;
+    --site-repo) SITE_REPO="${2:-}"; shift 2 ;; --out-dir) OUT="${2:-}"; shift 2 ;; --export-dir) EXPORT="${2:-}"; shift 2 ;; --cp-worktree) CPW="${2:-}"; shift 2 ;; --epoch) EPOCH="${2:-}"; shift 2 ;; --dry-run) DRY=1; shift ;; --public-truth) PUBTRUTH=1; shift ;;
     -h|--help) sed -n 2,25p "${BASH_SOURCE[0]}"; exit 0 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
 done
 case "$TARGET" in stage|production) ;; *) echo "--target must be stage or production" >&2; exit 2 ;; esac
+[ "$PUBTRUTH" = 0 ] || [ "$TARGET" = production ] || { echo "--public-truth applies to --target production only (a stage tree is noindex by design)" >&2; exit 2; }
 if [ "$TARGET" = stage ]; then
   [[ "$STAGE_ID" =~ ^[0-9a-f]{32}$ ]] || { echo "--target stage needs --stage-id <32 lowercase hex> (from the host's /etc/aicc-stage-identity)" >&2; exit 2; }
   [[ "$STAGE_HOST" =~ ^stage[a-z0-9-]*\.copilt\.org$ ]] || { echo "REFUSED: --stage-host must be a stage*.copilt.org name" >&2; exit 3; }
@@ -71,6 +75,12 @@ if [ "$TARGET" = stage ]; then
   python3 -I "$HERE/lib/release_tool.py" site-check --tree "$TREE" --target stage --stage-id "$STAGE_ID"
 else
   python3 -I "$HERE/lib/release_tool.py" site-check --tree "$TREE" --target production
+  if [ "$PUBTRUTH" = 1 ]; then
+    command -v node >/dev/null 2>&1 || rl_die "--public-truth needs node on the Mac (the builder runs there)" 1
+    [ -f "$SITE_REPO/scripts/public-truth-gate.mjs" ] || rl_die "--public-truth: $SITE_REPO/scripts/public-truth-gate.mjs not found" 1
+    node "$SITE_REPO/scripts/public-truth-gate.mjs" --out "$TREE" >"$WORK/public-truth.out" 2>&1 || { cat "$WORK/public-truth.out" >&2; rl_die "PUBLIC-TRUTH GATE: the production tree shows something internal, staged or untrue (see above). Fix the source or the owner facts and rebuild; nothing was packed" 1; }
+    rl_log "public-truth gate: $(head -1 "$WORK/public-truth.out")"
+  fi
 fi
 python3 -I "$HERE/lib/release_tool.py" scan --tree "$TREE" --kind site
 SHA="$(git -C "$SITE_REPO" rev-parse --short HEAD 2>/dev/null || echo unknown)"
