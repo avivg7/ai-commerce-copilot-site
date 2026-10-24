@@ -250,7 +250,15 @@ step_wpcli() {
 #!/usr/bin/env bash
 # Run WP-CLI as the Control Plane PHP user against the active release (never as root: root-owned files under uploads would break PHP).
 set -euo pipefail
-exec sudo -u aicc-cp -H -- env WP_CLI_CACHE_DIR=/var/lib/aicc-cp/wp-cli /usr/bin/php -d memory_limit=192M /usr/local/bin/wp --path=/srv/aicc/cp/current "$@"
+# sudo resets the environment, so `sudo env AICC_PRODUCTION=1 aicc-wp eval-file check-launch-blockers.php` (and the seed scripts' *_APPLY switches, and promote-to-production.sh final-edge's launch gate) reached WP-CLI WITHOUT the variable: the gate silently ran
+# in report-only mode and the seeds silently dry-ran (found on the first real promotion, 2026-10-24). A closed allow-list of switches is forwarded explicitly; nothing else crosses.
+fwd=()
+for n in AICC_PRODUCTION AICC_LAUNCH_ATTEST AICC_BOOTSTRAP_APPLY AICC_ACCOUNT_POLICY_APPLY AICC_LEGAL_SEED_APPLY; do
+  if [ -n "${!n:-}" ]; then
+    case "${!n}" in 1|true|yes) fwd+=("$n=${!n}") ;; *) echo "aicc-wp: $n must be 1, true or yes" >&2; exit 2 ;; esac
+  fi
+done
+exec sudo -u aicc-cp -H -- env WP_CLI_CACHE_DIR=/var/lib/aicc-cp/wp-cli ${fwd[@]+"${fwd[@]}"} /usr/bin/php -d memory_limit=192M /usr/local/bin/wp --path=/srv/aicc/cp/current "$@"
 EOF
 }
 

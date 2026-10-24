@@ -839,4 +839,19 @@ t_ok "every Mac-side tool sources the shared check (one implementation, not five
 echo "== fail2ban filters (regexes executed with Python re against the REAL Caddy 2.11.7 log format) =="
 t_ok "filter regexes vs. real access-log lines (ground truth from JSON parsing)" python3 "$HERE/test_fail2ban_regex.py"
 
+
+echo "== aicc-wp wrapper forwards ONLY its switch allow-list across sudo (found on the first real promotion: the launch gate and the seeds ran without their variables) =="
+WRAPD="$(mktemp -d "${TMPDIR:-/tmp}/aiccwp.XXXX")"
+awk '/install_text "\$SBIN\/aicc-wp" 0755 root:root <<.EOF./{f=1;next} f&&/^EOF$/{exit} f{print}' "$INFRA/provision/install-stack.sh" > "$WRAPD/aicc-wp"; chmod +x "$WRAPD/aicc-wp"
+mkdir -p "$WRAPD/bin"; printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$@"\n' > "$WRAPD/bin/sudo"; chmod +x "$WRAPD/bin/sudo"
+OUT="$(env PATH="$WRAPD/bin:$PATH" AICC_PRODUCTION=1 AICC_LEGAL_SEED_APPLY=yes AICC_EVIL=1 SECRET_TOKEN=x "$WRAPD/aicc-wp" eval-file x.php 2>&1)"
+t_contains "aicc-wp forwards AICC_PRODUCTION" "$OUT" "AICC_PRODUCTION=1"
+t_contains "aicc-wp forwards AICC_LEGAL_SEED_APPLY" "$OUT" "AICC_LEGAL_SEED_APPLY=yes"
+t_not_contains "aicc-wp does NOT forward an arbitrary AICC_ variable" "$OUT" "AICC_EVIL"
+t_not_contains "aicc-wp does NOT forward other environment" "$OUT" "SECRET_TOKEN"
+t_rc "aicc-wp refuses a switch value other than 1/true/yes" 2 env PATH="$WRAPD/bin:$PATH" AICC_PRODUCTION=maybe "$WRAPD/aicc-wp" eval-file x.php
+OUT2="$(env PATH="$WRAPD/bin:$PATH" "$WRAPD/aicc-wp" core version 2>&1)"
+t_contains "aicc-wp with no switches still passes its arguments (empty-array safe)" "$OUT2" "core"
+rm -rf "$WRAPD"
+
 t_summary
