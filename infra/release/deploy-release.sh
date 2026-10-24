@@ -97,7 +97,8 @@ if [ "$KIND" = site ] && [ "$ENVN" = stage ]; then
 fi
 if [ "$KIND" = site ] && [ "$ENVN" = production ]; then
   [ ! -e "$WORK/tree/.well-known/aicc-stage-identity" ] || refuse "a production site must not carry the staging identity route"
-  if grep -rqi 'noindex' "$WORK/tree" --include='*.html' --exclude='404.html' --exclude='50x.html' 2>/dev/null; then refuse "the production site tree contains a noindex robots meta outside the error pages"; fi
+  # error pages are noindex by design: the edge's 404.html / 50x.html AND Next's own not-found routes (_not-found/index.html, 404/index.html: found on the first real production deploy)
+  if find "$WORK/tree" -type f -name '*.html' ! -name '404.html' ! -name '50x.html' ! -path '*/_not-found/index.html' ! -path '*/404/index.html' -exec grep -qi 'noindex' {} + 2>/dev/null; then refuse "the production site tree contains a noindex robots meta outside the error pages"; fi
   if [ -f "$WORK/tree/robots.txt" ] && grep -qiE '^Disallow:[[:space:]]*/[[:space:]]*$' "$WORK/tree/robots.txt"; then refuse "robots.txt blocks everything: this looks like a stage build"; fi
 fi
 echo "artifact OK: $KIND $ID ($(jq -r '.file_count' "$MAN") files, tarball sha256 $(jq -r '.tarball.sha256' "$MAN" | cut -c1-16)...)"

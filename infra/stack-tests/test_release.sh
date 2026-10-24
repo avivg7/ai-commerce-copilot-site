@@ -405,6 +405,15 @@ t_fail "site-check detects an identity file inside a production tree" "${TOOL[@]
 cp -R "$TMP/u-prod/t" "$TMP/poison2"; sed -i.bak 's#<head>#<head><meta name="robots" content="noindex"/>#' "$TMP/poison2/index.html" 2>/dev/null; rm -f "$TMP/poison2/index.html.bak"
 if grep -q 'noindex' "$TMP/poison2/index.html"; then t_fail "site-check detects noindex on a production content page" "${TOOL[@]}" site-check --tree "$TMP/poison2" --target production; else t_skip "noindex poison" "index.html has no plain <head> tag"; fi
 
+# the deploy-time noindex guard must let Next's own not-found routes through (first real production deploy, 2026-10-24) but still catch a content page
+NI="$TMP/ni-tree"; mkdir -p "$NI/_not-found" "$NI/404" "$NI/pricing"; for f in index.html 404.html 50x.html _not-found/index.html 404/index.html pricing/index.html; do echo '<html><head><title>x</title></head></html>' > "$NI/$f"; done
+for f in 404.html 50x.html _not-found/index.html 404/index.html; do sed -i.bak 's#<head>#<head><meta name="robots" content="noindex"/>#' "$NI/$f"; rm -f "$NI/$f.bak"; done
+NIFIND() { find "$1" -type f -name '*.html' ! -name '404.html' ! -name '50x.html' ! -path '*/_not-found/index.html' ! -path '*/404/index.html' -exec grep -qi 'noindex' {} + 2>/dev/null; }
+t_eq "deploy noindex guard: noindex only on the error/not-found routes is accepted" "$(NIFIND "$NI" && echo found || echo clean)" "clean"
+sed -i.bak 's#<head>#<head><meta name="robots" content="noindex"/>#' "$NI/pricing/index.html"; rm -f "$NI/pricing/index.html.bak"
+t_eq "deploy noindex guard: noindex on a content page is still caught" "$(NIFIND "$NI" && echo found || echo clean)" "found"
+grep -q "! -path '\*/_not-found/index.html'" "$REL/deploy-release.sh" && t_ok "deploy-release.sh uses the same exclusions" true || t_bad "deploy-release.sh exclusions differ from the tested expression" ""
+
 echo "== deploy-release.sh guards (ssh/rsync are stubs; nothing leaves this machine) =="
 STUB="$TMP/stubbin"; mkdir -p "$STUB"; CALLS="$TMP/calls.log"
 cat > "$STUB/ssh" <<EOS
