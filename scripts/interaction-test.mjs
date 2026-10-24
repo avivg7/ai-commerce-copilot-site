@@ -1273,7 +1273,11 @@ for (const w of [1280, 390, 320]) {
         if (plan || finder) { plans.push(search); if (!/^\?plan=(solo|studio|agency)$/.test(search)) bad.push(`${r || "home"}: plan button ${path}${search}`); } else if (search) bad.push(`${r || "home"}: unexpected query ${path}${search}`);
       }
     }
-    check(`account links (${l}): all ${n} links go to ${pref(l)}/my-account/ (plan buttons with ?plan=solo|studio|agency: ${plans.length})`, n >= 20 && bad.length === 0 && plans.length >= 3, bad.slice(0, 5).join("; "));
+    // Open build: the plan buttons choose a plan (?plan=...). Closed build (the default, "Purchases open soon"): NO plan link exists anywhere, and the plan cards carry the closed statement instead.
+    await p.goto(urlFor(l, "pricing"));
+    const closedCards = await p.evaluate(() => document.querySelectorAll("article.aicc-plan [data-commerce='closed']").length);
+    check(`account links (${l}): all ${n} links go to ${pref(l)}/my-account/ (plan buttons with ?plan=solo|studio|agency: ${plans.length}; ${closedCards ? "checkout CLOSED: " + closedCards + " plan statements" : "checkout open"})`,
+      n >= 20 && bad.length === 0 && (closedCards ? plans.length === 0 && closedCards === 3 : plans.length >= 3), bad.slice(0, 5).join("; "));
   }
   await ctx.close();
 }
