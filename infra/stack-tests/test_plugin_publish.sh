@@ -97,6 +97,26 @@ t_rc "production: a confirmation for another version is REFUSED" 3 PV --confirm-
 t_rc "production: --point-at needs its own confirmation" 3 P --point-at 1.1.0 --confirm-production $V --apply
 t_eq "none of the refusals made an ssh or rsync call" "$(wc -l < "$CALLS" | tr -d ' ')" "0"
 
+echo "== production never carries a pre-release (the Plugin head is 1.1.0-dev.N; the first customer version is the owner's decision) =="
+python3 - "$TMP" <<'PY'
+import hashlib, json, os, sys, zipfile
+t = sys.argv[1]; v = "1.2.0-dev.1"
+d = os.path.join(t, "prerel"); os.makedirs(d, exist_ok=True)
+zp = os.path.join(d, "ai-commerce-copilot-%s.zip" % v)
+with zipfile.ZipFile(zp, "w") as z:
+    z.writestr("ai-commerce-copilot/ai-commerce-copilot.php", "<?php\n/*\n * Version: %s\n */\n" % v)
+data = open(zp, "rb").read(); h = hashlib.sha256(data).hexdigest()
+m = json.load(open(os.path.join(t, "dist", "ai-commerce-copilot-1.2.0.manifest.json"))); m["version"] = v; m["filename"] = os.path.basename(zp); m["sha256"] = h; m["size"] = len(data)
+json.dump(m, open(zp[:-4] + ".manifest.json", "w")); open(zp + ".sha256", "w").write("%s  %s\n" % (h, os.path.basename(zp)))
+PY
+PR=(--zip "$TMP/prerel/ai-commerce-copilot-1.2.0-dev.1.zip" --manifest "$TMP/prerel/ai-commerce-copilot-1.2.0-dev.1.manifest.json" --sha256-file "$TMP/prerel/ai-commerce-copilot-1.2.0-dev.1.zip.sha256")
+t_rc "production: a pre-release version (1.2.0-dev.1) is REFUSED (dry run)" 3 P --confirm-production 1.2.0-dev.1 "${PR[@]}"
+t_contains "...and the refusal says why" "$(P --confirm-production 1.2.0-dev.1 "${PR[@]}" 2>&1)" "pre-release/development version"
+t_rc "production: a pre-release version is REFUSED with --apply too" 3 P --confirm-production 1.2.0-dev.1 --apply "${PR[@]}"
+t_rc "production: --point-at a pre-release version is REFUSED" 3 P --point-at 1.2.0-dev.1 --confirm-production 1.2.0-dev.1 --apply
+t_ok "staging still accepts a pre-release (dry run; QA builds are 1.x.y-dev.N)" S --dry-run --allow-unsigned "${PR[@]}"
+t_eq "...none of these refusals made a network call" "$(wc -l < "$CALLS" | tr -d ' ')" "0"
+
 echo "== dry runs send nothing =="
 t_ok "stage --dry-run prints the plan" S --dry-run "${ZM[@]}"
 t_contains "...the plan names the installer hash, the --expect-sha256 and the store" "$(S --dry-run --set-current "${ZM[@]}")" "--expect-sha256 $SHA --set-current"

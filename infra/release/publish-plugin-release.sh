@@ -120,6 +120,13 @@ PY
   [ -n "$SHAF" ] || echo "NOTE: no --sha256-file given: the expected hash is taken from the manifest, which travels with the ZIP. Pass the build machine's .sha256 file so a swapped ZIP+manifest pair is caught." >&2
   WANTV="$VERSION"
 fi
+# ---- production never carries a pre-release (launch-prep, round 3): the Plugin head is a development version (1.1.0-dev.N). The first customer version is the owner's decision (recommended 1.1.0);
+#      no other tool refuses a -dev/-rc/-beta version, so the production publish does, for a new release and for --point-at alike.
+if [ "$ENVN" = production ]; then
+  case "${POINT:-$VERSION}" in
+    *-*) refuse "production publishes only release versions (X.Y.Z): '${POINT:-$VERSION}' is a pre-release/development version. Choose the first customer version (owner decision, recommended 1.1.0), bump the Plugin, rebuild and sign." ;;
+  esac
+fi
 # ---- the owner's signature (A-02): present, sane, named for this version, verified against the owner's public key list where possible ----------------
 SIGFILE=""; SIGNAME=""; SIGVERIFIED=0; SIGNOTE=""
 if [ -z "$POINT" ]; then
