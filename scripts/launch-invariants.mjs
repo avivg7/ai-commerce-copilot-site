@@ -1,4 +1,4 @@
-// npm run test:launch-invariants -- [--cp-theme <dir>] [--site-url http://127.0.0.1:3011] [--cp-url http://127.0.0.1:NNNN]
+// npm run test:launch-invariants -- [--cp-theme <dir>] [--site-url http://127.0.0.1:3011] [--cp-url http://127.0.0.1:NNNN] [--public-truth] [--public-url <site url>] [--public-out <built export dir>]
 //
 // The MERGE-ORDER check: run it AFTER every launch-branch merge and sync, on the FINAL integrated heads (the shopper demo was once reported as intact after a merge, then judged on a stale
 // surface). It compares the integrated tree to the OWNER-APPROVED shopper-demo invariants:
@@ -7,6 +7,8 @@
 //   3. the standalone "Surfaces" proof section does not exist (component, import, built page);
 //   4. with --cp-theme: the theme carries the kit byte-for-byte (sync --verify --strict) and no NEW kit/theme class collision exists;
 //   5. with --site-url / --cp-url: the LIVE rendering passes scripts/shopper-demo-guard.mjs (semantic + layout + approved snapshots) on each surface.
+//   6. PUBLIC TRUTH (optional, round 3): with --public-out <dir> / --public-url <site url> (and, with --public-truth, --cp-url): scripts/public-truth-gate.mjs finds nothing internal-looking, staged or untrue
+//      on the public pages in all four locales (no "(pending)", TODO / TBD, placeholders, test sentinels, free-trial / Shopify / WordPress.org / conversion-percentage claims, noindex, stage URLs, wrong canonical ...).
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
@@ -72,6 +74,17 @@ for (const [surface, flag] of [["site", "site-url"], ["cp", "cp-url"]]) {
   if (!url) continue;
   const g = spawnSync(process.execPath, [path.join(ROOT, "scripts", "shopper-demo-guard.mjs"), "--url", url, "--surface", surface], { encoding: "utf8" });
   check(`live ${surface} surface (${url}) passes the shopper-demo guard (semantic + layout + approved snapshots)`, g.status === 0, (g.stdout + g.stderr).split("\n").filter((l) => /FAIL|failed|Refus/.test(l)).slice(0, 6).join(" || "));
+}
+// 6. public truth
+{
+  const gate = (label, args) => {
+    const g = spawnSync(process.execPath, [path.join(ROOT, "scripts", "public-truth-gate.mjs"), ...args], { encoding: "utf8" });
+    check(`public truth: ${label} (scripts/public-truth-gate.mjs)`, g.status === 0, (g.stdout + g.stderr).split("\n").filter((l) => /^public-truth gate|^  \/|^     - /.test(l)).slice(0, 8).join(" || "));
+  };
+  const pOut = arg("public-out"), pUrl = arg("public-url"), cpUrl = arg("cp-url");
+  if (pOut) gate(`built export ${pOut}`, ["--out", pOut]);
+  if (pUrl) gate(`site ${pUrl}`, ["--url", pUrl, "--preset", "site"]);
+  if (argv.includes("--public-truth") && cpUrl) gate(`Control Plane ${cpUrl}`, ["--url", cpUrl, "--preset", "cp"]);
 }
 console.log(`\nlaunch-invariants: ${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

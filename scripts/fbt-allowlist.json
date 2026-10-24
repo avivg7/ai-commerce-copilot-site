@@ -143,6 +143,14 @@
     "scripts/shopper-demo-guard.mjs": {
       "max": 2,
       "reason": "test or tooling text about the widget heading and the demo"
+    },
+    "scripts/lib/public-truth.mjs": {
+      "max": 9,
+      "reason": "the public-truth gate names the phrase in order to FORBID it as AICC's identity (rules, mutation samples and clean samples); it is a guard, not copy"
+    },
+    "scripts/public-truth-gate.mjs": {
+      "max": 1,
+      "reason": "the public-truth gate names the phrase in order to FORBID it as AICC's identity (rules, mutation samples and clean samples); it is a guard, not copy"
     }
   }
 }

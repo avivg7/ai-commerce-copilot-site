@@ -159,7 +159,7 @@ Gaps worth owner attention: no license-lifecycle email exists for expiry reminde
 
 | Item | Current | Where |
 |---|---|---|
-| `AICC_LEGAL_SUPPORT_EMAIL` | unset -> UI shows "the support address" / "Support details will be published before launch"; legal docs contain "(pending)" | `class-aicc-lm-legal-config.php`, `check-launch-blockers.php` (flags unset and fake addresses) |
+| `AICC_LEGAL_SUPPORT_EMAIL` | unset -> UI shows "the support address" / "Support details will be confirmed before purchases open."; legal docs contain "(to be confirmed before purchases open)" (formerly "(pending)") | `class-aicc-lm-legal-config.php`, `check-launch-blockers.php` (flags unset and fake addresses) |
 | `woocommerce_email_from_address` / `admin_email` | `owner@aicc-qa.example` (QA) | **NOT checked by `check-launch-blockers.php`** (it checks only the support address); add to the launch gate or set manually |
 | WC store address, footer text | empty address | WooCommerce settings |
 | Support address in static-site copy | `support@example.test` is a sentinel the site `launch:check` rejects; real value comes from `NEXT_PUBLIC_AICC_SUPPORT_EMAIL` | runbook section 7 |

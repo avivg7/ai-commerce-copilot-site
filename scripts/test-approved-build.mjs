@@ -24,6 +24,7 @@ const env = {
   AICC_BASE_PATH: "",
   AICC_PRODUCTION: "1",
   NEXT_PUBLIC_LEGAL_REVIEW_APPROVED: "true",
+  NEXT_PUBLIC_AICC_COMMERCE_OPEN: "true", // the approved build is the COMMERCIAL state: every fact supplied, review approved, checkout open
   NEXT_PUBLIC_AICC_LEGAL_NAME: "Example Ltd",
   NEXT_PUBLIC_AICC_ADDRESS: "1 Example Street, Example City",
   NEXT_PUBLIC_AICC_SUPPORT_EMAIL: "support@example.test",
@@ -61,7 +62,7 @@ for (const r of ["privacy", "terms", "refund-policy", "data-and-trust", "accessi
   if (fs.readFileSync(path.join(OUT, r, "index.html"), "utf8").includes('data-translation-draft="true"')) errors.push(`${r}: the English page carries the machine-translation disclosure`);
 }
 if (!/legal pages ship with the machine-translation disclosure/.test(l.stdout)) errors.push("launch:check did not report that the translations ship with the machine-translation disclosure");
-// Every owner value is supplied on this build: the Data and trust page must stop saying that those details "will be published before launch".
+// Every owner value is supplied on this build: the Data and trust page must stop saying that those details "will be confirmed before purchases open".
 for (const loc of ["", "he/", "es/", "ru/"]) if (fs.readFileSync(path.join(OUT, loc, "data-and-trust/index.html"), "utf8").includes('id="dataTrust-pending"')) errors.push(`${loc || "en/"}data-and-trust: still carries the "What we haven't finalized" section although every owner value is supplied`);
 const priv = fs.readFileSync(path.join(OUT, "privacy/index.html"), "utf8");
 if (!priv.includes("support@example.test")) errors.push("support email value not rendered");
@@ -69,6 +70,10 @@ const home = fs.readFileSync(path.join(OUT, "index.html"), "utf8");
 for (const a of ['data-demo-video="/demo/aicc-demo.mp4"', 'data-demo-poster="/demo/aicc-demo-poster.jpg"', 'data-demo-captions="/demo/aicc-demo.vtt"', 'data-demo-captions-lang="en"'])
   if (!home.includes(a)) errors.push(`Watch demo trigger lacks ${a} (video support enabled by env)`);
 if (home.includes('data-demo-video=""')) errors.push("Watch demo trigger still has an empty video with the env set");
+// The approved build is the COMMERCIAL state (NEXT_PUBLIC_AICC_COMMERCE_OPEN=true): the plan buttons choose a plan, and nothing says "Purchases open soon".
+if (!/href="[^"]*\/my-account\/\?plan=solo"/.test(home)) errors.push("open build: the Solo plan button does not lead to the account area with ?plan=solo");
+if (home.includes('data-commerce="closed"') || home.includes("Purchases open soon")) errors.push("open build: the closed-state 'Purchases open soon' statement is published although checkout is open");
+if (!/NEXT_PUBLIC_AICC_COMMERCE_OPEN\): OPEN/.test(l.stdout)) errors.push("launch:check did not report the commercial checkout switch as OPEN");
 console.log(`approved build (throwaway ${DIST}/, removed afterwards; out/ untouched): ${pending} pending lines, ${drafts} draft notices, FAQPage answers ${faq.length}`);
 if (errors.length) { console.error("FAIL\n  " + errors.join("\n  ")); process.exit(1); }
 console.log("PASS: with every value supplied and legal review approved, nothing pending or drafted is published.");

@@ -510,6 +510,30 @@ if [ -x "$LOCALMY/mysqld" ]; then
     t_eq "PINNED (with owner facts): the constants that differ from the stage render are the environment ones plus EXACTLY the thirteen owner-fact constants" "$DIFFO" '["AICC_ACTIVATION_PROOF_KID","AICC_ACTIVATION_PROOF_SECRET","AICC_ENTITLEMENT_WEBHOOK_SECRET","AICC_ENTITLEMENT_WEBHOOK_URL","AICC_LAUNCH_REAL_GATEWAYS","AICC_LEGAL_ENTITY_ADDRESS","AICC_LEGAL_ENTITY_NAME","AICC_LEGAL_GOVERNING_LAW","AICC_LEGAL_JURISDICTION","AICC_LEGAL_PAYMENT_PROCESSOR","AICC_LEGAL_REVIEW_APPROVED","AICC_LEGAL_SUBPROCESSORS_VERIFIED","AICC_LEGAL_SUPPORT_EMAIL","AICC_LEGAL_VAT_DETAILS","AICC_LM_PAID_GATEWAYS","AICC_STRUCTURED_DATA_OFFERS","WP_ACCESSIBLE_HOSTS","WP_ENVIRONMENT_TYPE","WP_HOME","WP_SITEURL"]'
     t_contains "dry run reports the number of values and prints none" "$(OFR --dry-run 2>&1)" "owner facts: 14 value(s)"
     t_not_contains "...nor any value" "$(OFR --dry-run 2>&1)" "Example Studio"
+    # --- AICC_COMMERCE_OPEN: the ONE fail-closed switch for "commercial checkout is open" (pre-commercial truth round). Unset = CLOSED = the golden render; only `true`; production only; never without every launch fact.
+    t_ok "production \`keys\` lists AICC_COMMERCE_OPEN" bash -c "env AICC_TEST_HARNESS=1 bash '$PROV/owner-facts.sh' --file '$OFF' --env production keys | grep -q '^AICC_COMMERCE_OPEN$'"
+    t_fail "...and stage \`keys\` does not (commerce opens on production only)" bash -c "env AICC_TEST_HARNESS=1 bash '$PROV/owner-facts.sh' --file '$OFF' --env stage keys | grep -q COMMERCE_OPEN"
+    t_rc "stage REFUSES AICC_COMMERCE_OPEN" 1 env AICC_TEST_HARNESS=1 bash "$PROV/owner-facts.sh" --file "$OFD/stage-only.env" --env stage set AICC_COMMERCE_OPEN true
+    for v in yes 1 TRUE True false on open; do t_rc "REFUSED: AICC_COMMERCE_OPEN=$v (only the exact value true)" 1 OFT set AICC_COMMERCE_OPEN "$v"; done
+    t_eq "...the refused values wrote nothing" "$(OFT list | grep -c '^AICC_COMMERCE_OPEN=' || true)" "0"
+    OFSAVE="$(cat "$OFF")"; OFEMPTY="$OFD/empty-facts.env"
+    t_rc "REFUSED on a file that lacks the launch facts (a lone key id): the gate would block, so the switch cannot be set" 1 env AICC_TEST_HARNESS=1 bash "$PROV/owner-facts.sh" --file "$OFEMPTY" --env production set AICC_COMMERCE_OPEN true
+    printf 'AICC_ACTIVATION_PROOF_KID=k1\n' > "$OFEMPTY"; chmod 600 "$OFEMPTY"
+    t_contains "...and the refusal names what is missing and says there is no override" "$(env AICC_TEST_HARNESS=1 bash "$PROV/owner-facts.sh" --file "$OFEMPTY" --env production set AICC_COMMERCE_OPEN true 2>&1)" "There is no override"
+    t_contains "...it names the legal facts, the payment gateways and the review approval" "$(env AICC_TEST_HARNESS=1 bash "$PROV/owner-facts.sh" --file "$OFEMPTY" --env production set AICC_COMMERCE_OPEN true 2>&1)" "AICC_LEGAL_ENTITY_NAME"
+    t_eq "...and wrote nothing" "$(cat "$OFEMPTY")" "AICC_ACTIVATION_PROOF_KID=k1"
+    t_ok "with every launch fact present the switch can be set (last)" OFT set AICC_COMMERCE_OPEN true
+    t_eq "...list shows it" "$(OFT list | grep -c '^AICC_COMMERCE_OPEN=true$')" "1"
+    for k in AICC_LEGAL_SUPPORT_EMAIL AICC_LEGAL_REVIEW_APPROVED AICC_LAUNCH_REAL_GATEWAYS AICC_LM_PAID_GATEWAYS AICC_ACTIVATION_PROOF_KID AICC_LEGAL_PAYMENT_PROCESSOR; do t_rc "while it is set, unsetting $k is REFUSED (unset AICC_COMMERCE_OPEN first)" 1 OFT unset $k; done
+    t_rc "...the render is REFUSED while the mail layer is not enabled (no mail provider: nobody could receive a password link)" 1 OFR
+    t_contains "...and says why" "$(OFR 2>&1)" "mail layer"
+    mkdir -p "$OFD/mail"; chmod 750 "$OFD/mail"; printf 'AICC_MAIL_SMTP_USER=%s\nAICC_MAIL_SMTP_PASS=%s\n' "brevo-login@example.org" "xsmtpsib-0123456789abcdefABCDEF0123456789" > "$OFD/mail/smtp.env"; chmod 640 "$OFD/mail/smtp.env"
+    t_ok "with a safe smtp.env the production render succeeds" OFR --mail-dir "$OFD/mail"
+    t_eq "...and defines AICC_COMMERCE_OPEN as the boolean true" "$(cst "$OFD/prod.php" AICC_COMMERCE_OPEN | jq -c .AICC_COMMERCE_OPEN)" "true"
+    t_eq "...exactly once, on one line" "$(grep -c "^define( 'AICC_COMMERCE_OPEN', true );$" "$OFD/prod.php")" "1"
+    t_ok "unset AICC_COMMERCE_OPEN" OFT unset AICC_COMMERCE_OPEN
+    t_ok "...the render is no longer refused and defines nothing (closed again)" bash -c "cd '$TMP' && env AICC_TEST_HARNESS=1 bash '$PROV/render-wp-config.sh' --env production --confirm-production --out '$OFD/prod.php' --secrets-dir '$OFSEC' --mail-dir '$OFD/nomail' --plugin-release-dir '$OFD/rel' --owner '$OFU' >/dev/null 2>&1 && ! grep -q \"define( 'AICC_COMMERCE_OPEN'\" '$OFD/prod.php'"
+    t_eq "...the facts file is back to what it was before the switch" "$(cat "$OFF")" "$OFSAVE"
     # --- a re-render never loses an owner-set value
     P0="$(hexnorm "$OFD/prod.php" | grep -v '^define( .\(AUTH\|SECURE\|LOGGED\|NONCE\)' | shasum -a 256)"
     OFR >/dev/null 2>&1; OFR --force-salts >/dev/null 2>&1; OFR >/dev/null 2>&1

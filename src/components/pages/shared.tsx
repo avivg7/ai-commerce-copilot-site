@@ -8,6 +8,8 @@ import { Container } from "@/components/ui/Primitives";
 import { FAQ_RETIRED, faqSelection, faqText, type FaqPageKey } from "@/data/faq";
 import { FaqHash } from "@/components/ui/FaqHash";
 import { ldScript } from "@/lib/jsonld";
+import { COMMERCE_OPEN } from "@/lib/site";
+import { txProps } from "@/i18n";
 
 export function JsonLd({ data }: { data: unknown }) {
   if (!data) return null;
@@ -84,9 +86,14 @@ export function Faq({ locale, t, page, ids, idPrefix = "" }: { locale: Locale; t
       ),
     };
   });
+  // While purchases are not open, the plans-and-refunds answers describe how plans WILL work: one calm line says so on the pages that carry them (Pricing, and the top of Questions: once per page).
+  const note = !COMMERCE_OPEN && (page === "pricing" || (page === "questions" && idPrefix === "top-")) ? (
+    <p className="aicc-muted aicc-small" data-commerce="closed" {...(({ lang, dir }) => ({ lang, dir }))(txProps(locale, "common.soon.faqNote"))} style={{ marginBlockEnd: "1rem" }}>{t.common.soon.faqNote}</p>
+  ) : null;
   return (
     <>
       <FaqHash />
+      {note}
       <Accordion items={items} />
     </>
   );

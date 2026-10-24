@@ -4,7 +4,8 @@ import type { Dictionary } from "@/i18n";
 import { fbProps, txProps } from "@/i18n";
 import { Lb, Rich, type RichCtx } from "@/lib/rich";
 import { PLANS } from "@/data/plans";
-import { getStartedUrl } from "@/lib/site";
+import { COMMERCE_OPEN, getStartedUrl } from "@/lib/site";
+import { SoonBandActions } from "@/components/ui/Soon";
 import { localePath } from "@/lib/routes";
 import { Button } from "@/components/ui/Button";
 import { Container, Section, SectionHeading } from "@/components/ui/Primitives";
@@ -235,6 +236,7 @@ export function HomePage({ locale, t }: { locale: Locale; t: Dictionary }) {
                 featuredLabel={p.featured ? t.common.plan.recommended : undefined}
                 features={[]}
                 cta={t.common.plan.choose.replace("{plan}", t.pricing.plans[p.id].name)}
+                soon={t.common.soon.label}
                 compact
               />
             ))}
@@ -267,17 +269,21 @@ export function HomePage({ locale, t }: { locale: Locale; t: Dictionary }) {
           <div className="aicc-final">
             <div className="aicc-stack aicc-stack--lg">
               <h2 id="final-title" className="aicc-h2">{h.final.title}</h2>
-              <p className="aicc-lead">{h.final.body}</p>
+              {COMMERCE_OPEN ? <p className="aicc-lead">{h.final.body}</p> : <p className="aicc-lead" {...tx("common.soon.band")}>{t.common.soon.band}</p>}
               <p className="aicc-lead aicc-lead--sub">{R(h.final.guarantee)}</p>
-              <div className="aicc-hero-actions">
-                <Button href={getStartedUrl(locale)} variant="primary" size="lg" {...tx("common.getStarted")}>
-                  {t.common.getStarted}
-                  {arrow}
-                </Button>
-                <Button href={localePath(locale, "pricing")} variant="ghost" size="lg" {...tx("common.seePricing")}>
-                  {t.common.seePricing}
-                </Button>
-              </div>
+              {COMMERCE_OPEN ? (
+                <div className="aicc-hero-actions">
+                  <Button href={getStartedUrl(locale)} variant="primary" size="lg" {...tx("common.getStarted")}>
+                    {t.common.getStarted}
+                    {arrow}
+                  </Button>
+                  <Button href={localePath(locale, "pricing")} variant="ghost" size="lg" {...tx("common.seePricing")}>
+                    {t.common.seePricing}
+                  </Button>
+                </div>
+              ) : (
+                <SoonBandActions locale={locale} t={t} />
+              )}
             </div>
           </div>
         </Container>

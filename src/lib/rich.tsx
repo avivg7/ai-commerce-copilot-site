@@ -3,7 +3,7 @@ import Link from "next/link";
 import { LOCALE_META, type Locale } from "@/i18n/config";
 import { txProps, type Dictionary } from "@/i18n";
 import { currencySuffix, formatPrice, planById } from "@/data/plans";
-import { COMPANY, type CompanyKey } from "@/lib/site";
+import { COMPANY, PRE_COMMERCIAL_CONTACT, type CompanyKey } from "@/lib/site";
 import { localePath, isRouteId } from "@/lib/routes";
 import { formatDate, formatYear } from "@/lib/format";
 import { ACCESSIBILITY_REVIEWED_ON } from "@/lib/site";
@@ -30,6 +30,7 @@ function resolveToken(name: string, ctx: RichCtx, currencyNote = true): Resolved
   if (storesMatch) return { text: String(planById(storesMatch[1].toLowerCase() as "solo").stores) };
   if (name === "year") return { text: formatYear(locale) };
   if (name === "date") return { text: formatDate(ACCESSIBILITY_REVIEWED_ON, locale) };
+  if (name === "contactEmail") return { text: PRE_COMMERCIAL_CONTACT, href: `mailto:${PRE_COMMERCIAL_CONTACT}` };
   if (name === "companyDetails") {
     // Both name and address, or neither: half a company identity is worse than the plain pending line.
     if (COMPANY.legalName && COMPANY.address) return { text: `${COMPANY.legalName}, ${COMPANY.address}` };

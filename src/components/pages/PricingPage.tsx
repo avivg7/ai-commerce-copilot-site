@@ -4,7 +4,8 @@ import type { Dictionary } from "@/i18n";
 import { fbProps, txProps } from "@/i18n";
 import { Rich, type RichCtx } from "@/lib/rich";
 import { PLANS } from "@/data/plans";
-import { getStartedUrl } from "@/lib/site";
+import { COMMERCE_OPEN, getStartedUrl } from "@/lib/site";
+import { SoonBandActions } from "@/components/ui/Soon";
 import { Container, Section, SectionHeading } from "@/components/ui/Primitives";
 import { PricingCard } from "@/components/ui/PricingCard";
 import { LocaleLink } from "@/components/ui/LocaleLink";
@@ -68,6 +69,7 @@ export function PricingPage({ locale, t }: { locale: Locale; t: Dictionary }) {
                 features={shared}
                 featurePaths={sharedPaths}
                 cta={t.common.plan.choose.replace("{plan}", p.plans[pl.id].name)}
+                soon={t.common.soon.label}
                 headingLevel={3}
               />
             ))}
@@ -106,6 +108,7 @@ export function PricingPage({ locale, t }: { locale: Locale; t: Dictionary }) {
               results: { solo: p.finder.resultSolo, studio: p.finder.resultStudio, agency: p.finder.resultAgency },
               names,
               choose: t.common.plan.choose,
+              soon: t.common.soon.label,
             }}
           />
         </Container>
@@ -161,12 +164,16 @@ export function PricingPage({ locale, t }: { locale: Locale; t: Dictionary }) {
           <div className="aicc-final">
             <div className="aicc-stack aicc-stack--lg">
               <h2 id="pricing-final" className="aicc-h2">{p.final.title}</h2>
-              <p className="aicc-lead">{p.final.body}</p>
-              <div className="aicc-hero-actions">
-                <Button href={getStartedUrl(locale)} variant="primary" size="lg" {...tx("common.getStarted")} icon={<ArrowRight size={16} className="aicc-flip" aria-hidden="true" />}>
-                  {t.common.getStarted}
-                </Button>
-              </div>
+              {COMMERCE_OPEN ? <p className="aicc-lead">{p.final.body}</p> : <p className="aicc-lead" {...tx("common.soon.band")}>{t.common.soon.band}</p>}
+              {COMMERCE_OPEN ? (
+                <div className="aicc-hero-actions">
+                  <Button href={getStartedUrl(locale)} variant="primary" size="lg" {...tx("common.getStarted")} icon={<ArrowRight size={16} className="aicc-flip" aria-hidden="true" />}>
+                    {t.common.getStarted}
+                  </Button>
+                </div>
+              ) : (
+                <SoonBandActions locale={locale} t={t} to="questions" />
+              )}
             </div>
           </div>
         </Container>

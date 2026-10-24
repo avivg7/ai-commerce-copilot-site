@@ -115,7 +115,7 @@ define( 'AICC_ENTITLEMENT_WEBHOOK_SECRET', '@@AICC_ENTITLEMENT_WEBHOOK_SECRET@@'
 // @@OWNER_FACTS_BEGIN@@
 // OWNER FACTS (non-secret): rendered ONLY from the root-only host file /etc/aicc/owner-facts.env by render-wp-config.sh, which validates every value and escapes it as a PHP literal; when the file is absent or empty this whole
 // region (including these lines) is removed and the rendered configuration is exactly what it was before the region existed. Possible keys: AICC_ACTIVATION_PROOF_KID (must equal the Backend's ACTIVATION_PROOF_KID_CURRENT), AICC_LEGAL_ENTITY_NAME,
-// _ENTITY_ADDRESS, _SUPPORT_EMAIL, _GOVERNING_LAW, _JURISDICTION, _PAYMENT_PROCESSOR, _VAT_DETAILS, AICC_LEGAL_REVIEW_APPROVED, AICC_LEGAL_SUBPROCESSORS_VERIFIED, AICC_STRUCTURED_DATA_OFFERS, AICC_LM_PAID_GATEWAYS (the runtime payment
+// _ENTITY_ADDRESS, _SUPPORT_EMAIL, _GOVERNING_LAW, _JURISDICTION, _PAYMENT_PROCESSOR, _VAT_DETAILS, AICC_LEGAL_REVIEW_APPROVED, AICC_LEGAL_SUBPROCESSORS_VERIFIED, AICC_STRUCTURED_DATA_OFFERS, AICC_COMMERCE_OPEN (the ONE fail-closed switch for "commercial checkout is open": only the value true is accepted, unset = closed, refused unless every launch fact is present; see docs/cutover/pre-commercial.md), AICC_LM_PAID_GATEWAYS (the runtime payment
 // gate: exact gateway ids), AICC_LAUNCH_REAL_GATEWAYS (the launch gate), AICC_LM_PLUGIN_SIGNING_PUBKEYS (PUBLIC Ed25519 update-signing keys, primary + standby: the Control Plane re-verifies each Plugin release when serving it). An owner-set extra outbound host for a payment gateway is appended to WP_ACCESSIBLE_HOSTS above by the renderer, never here. Nothing in this region is a secret.
 @@OWNER_FACTS@@
 // @@OWNER_FACTS_END@@

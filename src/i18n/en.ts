@@ -40,12 +40,12 @@ export const en = {
           "The store and order data AICC uses, the cookies it can set, how stores are kept apart, and how long data may be kept.",
       },
       privacy: {
-        title: "Privacy policy (draft)",
-        description: "How AICC handles website, account and connected-store information. Draft pending legal review.",
+        title: "Privacy policy",
+        description: "How AICC handles website, account and connected-store information.",
       },
       terms: {
-        title: "Terms of service (draft)",
-        description: "The terms for using AICC plans and connecting stores. Draft pending legal review.",
+        title: "Terms of service",
+        description: "The terms for using AICC plans and connecting stores.",
       },
       refund: {
         title: "Refund policy: 14-day money-back guarantee",
@@ -71,8 +71,8 @@ export const en = {
 
   // Shown (one muted plain line, no pills) in place of owner values that are not supplied yet.
   pending: {
-    line: "Support details will be published before launch.",
-    detail: "This detail will be published before launch.",
+    line: "To be confirmed before purchases open.",
+    detail: "To be confirmed before purchases open.",
   },
 
   common: {
@@ -141,10 +141,18 @@ export const en = {
     },
     breadcrumbs: { label: "Breadcrumb" },
     draft: {
-      badge: "Draft: pending legal review",
-      text: "This wording is a draft. It has not been reviewed by a lawyer or by a person with legal authority, and it may change before it is final.",
+      badge: "Being finalized",
+      text: "This page is being finalized and may change before purchases open. Details marked “to be confirmed” will be added then; none is filled in with a guess.",
       translation:
         "Hebrew, Spanish and Russian texts have not yet been reviewed by native speakers. This translation is a draft and also needs a native-speaking legal reviewer. If it differs from the English text, the English text prevails.",
+    },
+    // Pre-commercial truth (round 3): shown instead of any purchase CTA while NEXT_PUBLIC_AICC_COMMERCE_OPEN is not "true".
+    soon: {
+      label: "Purchases open soon",
+      note: "Plans and prices are final, but purchases and new accounts are not open yet.",
+      contact: "Questions in the meantime? Write to {contactEmail}.",
+      band: "Plans and prices are final. Purchases and new accounts open soon.",
+      faqNote: "Plans and prices are final, but purchases are not open yet. The answers below describe how plans work once they are.",
     },
     plan: {
       perYear: "per year",
@@ -161,9 +169,9 @@ export const en = {
     },
     toc: "On this page",
     lastReviewed: "Last reviewed",
-    draftUpdated: "Draft last updated",
+    draftUpdated: "Last updated",
     version: "Status",
-    versionDraft: "Draft",
+    versionDraft: "Being finalized",
     fallbackTag: "EN",
   },
 
@@ -1284,7 +1292,7 @@ export const en = {
         },
         pending: {
           h: "What we haven't finalized",
-          a: "Some details are not yet published: the company details, support address, governing law, payment processor and hosting region. They will be published before launch.",
+          a: "Some details are not final yet: the company details, support address, governing law, payment processor and hosting region. They will be confirmed before purchases open.",
         },
       },
     },

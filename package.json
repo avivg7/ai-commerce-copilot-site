@@ -63,7 +63,8 @@
     "sentinel:test": "cd infra/sentinel && python3.12 -W error::ResourceWarning -m unittest discover -s tests -t . -v",
     "test:shopper-demo": "node scripts/shopper-demo-guard.mjs",
     "test:launch-invariants": "node scripts/launch-invariants.mjs",
-    "test:brand-collisions": "node scripts/check-brand-collisions.mjs"
+    "test:brand-collisions": "node scripts/check-brand-collisions.mjs",
+    "test:public-truth": "node scripts/public-truth-gate.mjs"
   },
   "dependencies": {
     "clsx": "^2.1.1",

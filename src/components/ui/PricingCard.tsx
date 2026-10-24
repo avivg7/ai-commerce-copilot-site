@@ -4,7 +4,7 @@ import { Badge } from "./Primitives";
 import { Button } from "./Button";
 import { cn } from "@/lib/cn";
 import { currencySuffix, formatPrice } from "@/data/plans";
-import { planUrl, type PlanId } from "@/lib/site";
+import { COMMERCE_OPEN, planUrl, type PlanId } from "@/lib/site";
 import { txProps } from "@/i18n";
 import type { Locale } from "@/i18n/config";
 
@@ -20,6 +20,8 @@ export interface PricingCardProps {
   /** Per-feature i18n paths (so each feature carries its own language), same order as `features`. */
   featurePaths?: string[];
   cta: string;
+  /** "Purchases open soon": shown instead of the button while commercial checkout is closed (the default). Required, so a new caller cannot forget it and publish a purchase button by accident. */
+  soon: string;
   compact?: boolean;
   locale: string;
   headingLevel?: 2 | 3;
@@ -61,9 +63,13 @@ export function PricingCard(p: PricingCardProps) {
         </ul>
       ) : null}
       {p.extra}
-      <Button href={planUrl(p.id, loc)} variant={p.featuredLabel ? "primary" : "outline"} block size="lg" {...A("common.plan.choose")}>
-        {p.cta}
-      </Button>
+      {COMMERCE_OPEN ? (
+        <Button href={planUrl(p.id, loc)} variant={p.featuredLabel ? "primary" : "outline"} block size="lg" {...A("common.plan.choose")}>
+          {p.cta}
+        </Button>
+      ) : (
+        <p className="aicc-btn aicc-btn--lg aicc-btn--block aicc-btn--soon" data-commerce="closed" {...A("common.soon.label")}>{p.soon}</p>
+      )}
     </article>
   );
 }

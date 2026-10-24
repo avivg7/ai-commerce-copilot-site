@@ -26,7 +26,7 @@ ORDER = [
     "AICC_ACTIVATION_PROOF_KID",
     "AICC_LEGAL_ENTITY_NAME", "AICC_LEGAL_ENTITY_ADDRESS", "AICC_LEGAL_SUPPORT_EMAIL", "AICC_LEGAL_GOVERNING_LAW", "AICC_LEGAL_JURISDICTION",
     "AICC_LEGAL_PAYMENT_PROCESSOR", "AICC_LEGAL_VAT_DETAILS",
-    "AICC_LEGAL_REVIEW_APPROVED", "AICC_LEGAL_SUBPROCESSORS_VERIFIED", "AICC_STRUCTURED_DATA_OFFERS",
+    "AICC_LEGAL_REVIEW_APPROVED", "AICC_LEGAL_SUBPROCESSORS_VERIFIED", "AICC_STRUCTURED_DATA_OFFERS", "AICC_COMMERCE_OPEN",
     "AICC_LM_PAID_GATEWAYS", "AICC_LAUNCH_REAL_GATEWAYS", "AICC_LM_PAYMENT_GATE_STRICT",
     "AICC_EXTRA_ACCESSIBLE_HOSTS",
     "AICC_LM_PLUGIN_SIGNING_PUBKEYS",
@@ -35,7 +35,14 @@ FREE_TEXT = {  # key -> maximum length in characters
     "AICC_LEGAL_ENTITY_NAME": 200, "AICC_LEGAL_ENTITY_ADDRESS": 300, "AICC_LEGAL_GOVERNING_LAW": 300, "AICC_LEGAL_JURISDICTION": 300,
     "AICC_LEGAL_PAYMENT_PROCESSOR": 80, "AICC_LEGAL_VAT_DETAILS": 300,
 }
-TRUE_ONLY = ("AICC_LEGAL_REVIEW_APPROVED", "AICC_STRUCTURED_DATA_OFFERS", "AICC_LM_PAYMENT_GATE_STRICT")
+TRUE_ONLY = ("AICC_LEGAL_REVIEW_APPROVED", "AICC_STRUCTURED_DATA_OFFERS", "AICC_LM_PAYMENT_GATE_STRICT", "AICC_COMMERCE_OPEN")
+# AICC_COMMERCE_OPEN is the ONE switch for "commercial checkout is open" (pre-commercial truth round, docs/cutover/pre-commercial.md): production only, exactly `true`, UNSET = CLOSED. The public website is live
+# before checkout opens, so unset is the normal state and the file never has to mention it. It can be set only when every launch fact the Control Plane launch gate (scripts/check-launch-blockers.php) demands from
+# THIS file is present; the gate itself is the real lock (the Control Plane also needs WooCommerce "Coming soon" off AND a clean attested gate run before it treats commerce as open), and there is NO override.
+COMMERCE_OPEN_REQUIRES = [
+    "AICC_LEGAL_ENTITY_NAME", "AICC_LEGAL_ENTITY_ADDRESS", "AICC_LEGAL_SUPPORT_EMAIL", "AICC_LEGAL_GOVERNING_LAW", "AICC_LEGAL_JURISDICTION", "AICC_LEGAL_PAYMENT_PROCESSOR",
+    "AICC_LEGAL_REVIEW_APPROVED", "AICC_LEGAL_SUBPROCESSORS_VERIFIED", "AICC_ACTIVATION_PROOF_KID", "AICC_LM_PAID_GATEWAYS", "AICC_LAUNCH_REAL_GATEWAYS",
+]
 # Production derives strictness from its host name (www.copilt.org) or WP_ENVIRONMENT_TYPE=production (set by the production template), so it never needs (and may not set) AICC_LM_PAYMENT_GATE_STRICT; staging rehearses a payment sandbox with it.
 # Staging never carries legal facts, launch switches or the launch allowlist: those describe the public launch.
 KEYS_FOR = {
@@ -240,6 +247,10 @@ def validate_value(key, value, env):
 def validate_all(facts, env):
     """facts: {key: raw value}. Returns the normalised dict; checks the cross-key rules."""
     out = {k: validate_value(k, v, env) for k, v in facts.items()}
+    if "AICC_COMMERCE_OPEN" in out:
+        missing = [k for k in COMMERCE_OPEN_REQUIRES if k not in out]
+        if missing:
+            raise OwnerFactsError("AICC_COMMERCE_OPEN=true is refused while these owner facts are missing (the launch gate would report each as a blocker, and a clean gate run is what lets commerce open): %s. Set them first and set AICC_COMMERCE_OPEN last; to close commerce again, `unset AICC_COMMERCE_OPEN`. There is no override." % ", ".join(missing))
     if "AICC_LAUNCH_REAL_GATEWAYS" in out:
         paid = {g for g, _ in parse_paid_gateways("AICC_LM_PAID_GATEWAYS", out["AICC_LM_PAID_GATEWAYS"])} if "AICC_LM_PAID_GATEWAYS" in out else set()
         for g in parse_gateway_list("AICC_LAUNCH_REAL_GATEWAYS", out["AICC_LAUNCH_REAL_GATEWAYS"]):
