@@ -182,9 +182,29 @@ PY
       if [ "$ENVN" = production ]; then
         refuse "the signature cannot be verified locally (needs --plugin-dir with bin/sign-release.php and release/endpoints.conf UPDATE_PUBLIC_KEYS - or --pubkeys - and php with sodium). Production never publishes a release it could not verify."
       fi
-      SIGNOTE="signature present and well-formed; NOT verified locally (no public key list / Plugin tool here: the host installer verifies it against the key the ZIP carries)"
+      SIGNOTE="signature present and well-formed; NOT verified locally (no Plugin tool / php here: the host installer verifies it against the public key list passed to it)"
       echo "NOTE: $SIGNOTE" >&2
     fi
+  fi
+fi
+# ---- the trust anchor for the HOST installer (production 8) ----------------------------------------------------------------------------------------
+# The host installer verifies the signature (on a new install and on --point-at) against the keys handed to it HERE, never against the keys inside the ZIP (a ZIP would be vouching for
+# itself). They are the owner's PUBLIC list: --pubkeys, else release/endpoints.conf UPDATE_PUBLIC_KEYS of --plugin-dir, i.e. the same list the local verification above used.
+if [ -z "${KEYS:-}" ]; then
+  KEYS="$PUBKEYS"
+  if [ -z "$KEYS" ] && [ -n "$PLUGDIR" ] && [ -f "$PLUGDIR/release/endpoints.conf" ]; then
+    KEYS="$(sed -n 's/^UPDATE_PUBLIC_KEYS=//p' "$PLUGDIR/release/endpoints.conf" | head -1 | tr -d ' \r')"
+  fi
+fi
+if [ -n "$KEYS" ]; then
+  [[ "$KEYS" =~ ^[A-Za-z0-9+/]{43}=(,[A-Za-z0-9+/]{43}=)?$ ]] || refuse "the public key list is malformed (one or two base64 keys of 32 bytes, comma separated)"
+fi
+if [ -n "$SIGNAME" ] || [ -n "$POINT" ]; then
+  if [ -z "$KEYS" ]; then
+    if [ "$ENVN" = production ] || [ -n "$SIGNAME" ]; then
+      refuse "no trusted public key list for the host installer: pass --pubkeys <primary,standby> or --plugin-dir <Plugin build dir with release/endpoints.conf>. The host installer no longer trusts the keys inside the ZIP, so it could not verify the signature (a point-at re-verifies the installed signature the same way)."
+    fi
+    echo "NOTE: no public key list given: the host installer will refuse --point-at for a release that has a signature installed." >&2
   fi
 fi
 if [ "$ENVN" = production ]; then
@@ -204,6 +224,8 @@ else
   INSTALL_ARGS="$INSTALL_ARGS --zip ~$USER_NAME/$INC/$ZIPNAME --manifest ~$USER_NAME/$INC/manifest.json --expect-sha256 $SHA$SCFLAG"
   if [ -n "$SIGNAME" ]; then INSTALL_ARGS="$INSTALL_ARGS --signature ~$USER_NAME/$INC/$SIGNAME"; fi
 fi
+# the owner's PUBLIC key list is the host installer's trust anchor for the signature it verifies (a new install and a --point-at alike)
+if [ -n "$KEYS" ] && { [ -n "$POINT" ] || [ -n "$SIGNAME" ]; }; then INSTALL_ARGS="$INSTALL_ARGS --pubkeys $KEYS"; fi
 if [ "$DRY" = 1 ]; then
   cat <<EOT
 DRY-RUN plan ($ENVN; local verification passed; nothing sent):

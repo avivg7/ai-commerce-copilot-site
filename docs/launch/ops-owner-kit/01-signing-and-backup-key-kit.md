@@ -55,16 +55,16 @@ Then `hdiutil detach /Volumes/AICCKEYS-PRIMARY` and `hdiutil detach /Volumes/AIC
 
 ### A4. Put the PUBLIC keys in the Plugin repo (2 min, the only thing that goes into git)
 
-File: `release/endpoints.conf` in the Plugin repo (verified on the integration head: the line `UPDATE_PUBLIC_KEYS=` is empty today).
+File: `release/endpoints.conf` in the Plugin repo (the line `UPDATE_PUBLIC_KEYS=` is empty on the integration head ded0fb4; the 1.1.0 release-preparation branch carries your two PUBLIC keys, primary first).
 ```
 UPDATE_PUBLIC_KEYS=<primary public key>,<standby public key>
 ```
 Primary FIRST. Commit that file (a release is built only from a clean commit). Also before the first release (not part of this kit, Claude can do it on request): the first version is 1.1.0 (chosen by the owner; a `-dev`/`-rc` version must NOT ship, and the production publisher AND `first-signed-release.sh` stage 0 refuse one), bump the Version header, `AICC_VERSION` and the readme Stable tag, add `release/notes/1.1.0.md`.
 
-Where else the public keys go (all optional or later; none is secret):
+Where else the public keys go (the Control Plane production wp-config line below is MANDATORY before the release is made current; none of them is secret):
 | Place | What | When |
 |---|---|---|
-| Control Plane production `wp-config.php` | **on the host: `sudo aicc-owner-facts set AICC_LM_PLUGIN_SIGNING_PUBKEYS '<primary>,<standby>'`, then `sudo aicc-render-wp-config --env production --confirm-production` and `sudo systemctl reload php8.3-fpm`** (public keys only, validated: 32-byte Ed25519, at most 2). Do NOT hand-edit the rendered wp-config: the next render erases it. The Control Plane then re-verifies each release when serving it (defence in depth). Without it the launch gate prints a NOTE, not a blocker. If set, it must contain a key the shipped build carries. Afterwards run `sudo aicc-owner-facts export > owner-facts.env` and keep that file with your records (the facts file is not in any backup). | at promotion |
+| Control Plane production `wp-config.php` | **on the host: `sudo aicc-owner-facts set AICC_LM_PLUGIN_SIGNING_PUBKEYS '<primary>,<standby>'`, then `sudo aicc-render-wp-config --env production --confirm-production` and `sudo systemctl reload php8.3-fpm`** (public keys only, validated: 32-byte Ed25519, at most 2). Do NOT hand-edit the rendered wp-config: the next render erases it. This is the HOST'S TRUST ANCHOR: the keys a ZIP bakes into itself prove nothing about who signed it, so the Control Plane judges every release against this list. A production host serves nothing while it is unset and the launch gate BLOCKS on it (it used to be a note). It must contain a key the shipped build carries. Afterwards run `sudo aicc-owner-facts export > owner-facts.env` and keep that file with your records (the facts file is not in any backup). | before the release is made current (first-signed-release.sh stage 6) |
 | The website / README | the two FINGERPRINTS, so merchants can compare them with the one shown on their account page | after step A5; tell Claude the fingerprints |
 | A store's `wp-config.php` (`AICC_UPDATE_PUBLIC_KEYS`) | emergency/rotation only | never in normal operation |
 

@@ -33,7 +33,7 @@ PKEY="${PKEY:-$HOME/.ssh/aicc_cp_prod_operator}"; KNOWN="${KNOWN:-$HOME/.ssh/kno
 INSTALLER="${CPW:-}/scripts/plugin-release/install-plugin-release.sh"
 publish() { # publish <extra args...>: production, fully pinned
   bash "$SITE/infra/release/publish-plugin-release.sh" --env production --installer "$INSTALLER" --stage-host www.copilt.org --stage-ip "$HOSTIP" --stage-id "$NEWID" \
-    --key "$PKEY" --known-hosts "$KNOWN" --confirm-production "$VERSION" "$@"
+    --key "$PKEY" --known-hosts "$KNOWN" --confirm-production "$VERSION" --pubkeys "$PRIMARY_PUB,$STANDBY_PUB" "$@"
 }
 case "$STAGE" in
 0) need PLUG CPW VERSION PRIMARY_PUB STANDBY_PUB PRIMARY_FP
@@ -93,20 +93,22 @@ m = json.load(open(sys.argv[1])); m["size"] = int(m["size"]) + 1; json.dump(m, o
 PY
    if ( cd "$PLUG" && php bin/sign-release.php verify --manifest "$t/m.json" --sig "$SIG" --pubkeys "$PRIMARY_PUB,$STANDBY_PUB" >/dev/null 2>&1 ); then rm -rf "$t"; die "a TAMPERED manifest verified: stop and investigate"; fi; rm -rf "$t"
    echo "stage 3 OK: the signature verifies with the owner's primary key; a tampered copy is rejected" ;;
-4) need PLUG CPW VERSION HOSTIP NEWID
+4) need PLUG CPW VERSION HOSTIP NEWID PRIMARY_PUB STANDBY_PUB
    echo "-- publish DRY RUN (no network; local verification + the plan; --env production without --apply is a dry run) --"
    publish --zip "$ZIP" --manifest "$MAN" --sha256-file "$SHAF" --signature "$SIG" --plugin-dir "$PLUG" | tee "$OUT/publish-dry-run.txt"
    grep -q "signature verified locally" "$OUT/publish-dry-run.txt" || die "the dry run did not verify the signature locally"
    stop "Show the owner the dry-run plan above (version $VERSION, sha256 $(cut -d' ' -f1 "$SHAF"), signature verified locally, target www.copilt.org). Stages 5 and 6 change the PRODUCTION host: continue only with the owner's explicit go for production-promotion.md 6.10." ;;
-5) need PLUG CPW VERSION HOSTIP NEWID; live_gate
+5) need PLUG CPW VERSION HOSTIP NEWID PRIMARY_PUB STANDBY_PUB; live_gate
    echo "-- LIVE: upload the signed release into the production store (installed, NOT current) --"
    publish --apply --zip "$ZIP" --manifest "$MAN" --sha256-file "$SHAF" --signature "$SIG" --plugin-dir "$PLUG" | tee "$OUT/publish-apply.txt"
-   stop "$VERSION is INSTALLED in the production store but NOT current: customers and stores still receive nothing. Check the host-side lines above (signature verified by the installer, immutable directory). Continue to stage 6 only on the owner's go." ;;
-6) need CPW VERSION HOSTIP NEWID; live_gate
+   stop "$VERSION is INSTALLED in the production store but NOT current: customers and stores still receive nothing. Check the host-side lines above (signature verified by the installer against the owner's key list, immutable directory). BEFORE stage 6 set the host's trust anchor (sudo aicc-owner-facts set AICC_LM_PLUGIN_SIGNING_PUBKEYS '<primary>,<standby>', re-render, reload PHP-FPM; see stage 6). Continue to stage 6 only on the owner's go." ;;
+6) need PLUG CPW VERSION HOSTIP NEWID PRIMARY_PUB STANDBY_PUB; live_gate
    echo "-- LIVE: move the current pointer (roll back later with: publish --point-at <previous> --apply, or this stage with the previous version) --"
-   publish --apply --point-at "$VERSION" | tee "$OUT/publish-set-current.txt"
-   echo "stage 6 done. Now: stage 7 (verify-live), then on the host: sudo aicc-owner-facts set AICC_LM_PLUGIN_SIGNING_PUBKEYS '<primary>,<standby>'; sudo aicc-render-wp-config --env production --confirm-production; sudo systemctl reload php8.3-fpm; sudo aicc-owner-facts export > owner-facts-\$(date +%F).env" ;;
-7) need HOSTIP NEWID
+   echo "   PRECONDITION (production 8): the host's trust anchor is set BEFORE this stage: sudo aicc-owner-facts set AICC_LM_PLUGIN_SIGNING_PUBKEYS '<primary>,<standby>' (the owner's PUBLIC keys, from the owner's own records); sudo aicc-render-wp-config --env production --confirm-production; sudo systemctl reload php8.3-fpm; sudo aicc-owner-facts export > owner-facts-\$(date +%F).env. The launch gate (stage 7) blocks while it is unset."
+   # the key list the installer re-verifies the installed signature against: the same release/endpoints.conf list the signature was checked against at stage 4/5
+   publish --apply --point-at "$VERSION" --plugin-dir "$PLUG" | tee "$OUT/publish-set-current.txt"
+   echo "stage 6 done. Now: stage 7 (verify-live). Stage 7 must show no AICC_LM_PLUGIN_SIGNING_PUBKEYS blocker: the host's trust anchor was a precondition of this stage (a production host serves nothing without it)." ;;
+7) need HOSTIP NEWID PRIMARY_FP
    PSSH="ssh -i $PKEY -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$KNOWN aicc@$HOSTIP"
    echo "-- read-only: the launch gate's Plugin lines (5h download available, 5h-1 signed) --"
    $PSSH 'sudo env AICC_PRODUCTION=1 aicc-wp eval-file /var/lib/aicc-cp/seed/check-launch-blockers.php' | grep -i -E 'plugin (download|release)|update-signing|signature|release store' || echo "(no Plugin line printed: read the whole gate output)"

@@ -62,8 +62,12 @@ else
 fi
 INST="$TMP/install-plugin-release.sh"; printf '#!/usr/bin/env bash\n# Install one AICC Plugin release into the Control Plane'"'"'s PRIVATE release store (docs/plugin-delivery.md).\necho fake\n' > "$INST"
 PUBL() { env PATH="$STUB:$PATH" bash "$PUB" --installer "$INST" --stage-id "$SID" "$@"; }
-S() { PUBL --stage-host stage.copilt.org --stage-ip 203.0.113.9 --key "$KEY" "$@"; }
-P() { PUBL --env production --stage-host www.copilt.org --stage-ip 203.0.113.9 --key "$PKEY" --known-hosts "$KH" "$@"; }
+# production 8: the host installer verifies against the owner's PUBLIC list handed over by the publisher (never the ZIP's own keys), so a signed publish or a --point-at needs one. The wrappers
+# add a well-formed list unless the call names its own (--pubkeys / --plugin-dir) or sets NOKEY=1.
+WKEY="${PUBKEY:-$(python3 -I -c 'import base64; print(base64.b64encode(bytes(range(32))).decode())')}"
+KA() { case " $* " in *" --pubkeys "*|*" --plugin-dir "*) ;; *) [ "${NOKEY:-0}" = 1 ] || echo "--pubkeys $WKEY";; esac; }
+S() { PUBL --stage-host stage.copilt.org --stage-ip 203.0.113.9 --key "$KEY" $(KA "$@") "$@"; }
+P() { PUBL --env production --stage-host www.copilt.org --stage-ip 203.0.113.9 --key "$PKEY" --known-hosts "$KH" $(KA "$@") "$@"; }
 PV() { P --plugin-dir "$PDIR" "$@"; }       # production with the Plugin build dir (its release/endpoints.conf holds the public key the signature is verified against)
 ZM=(--zip "$ZIP" --manifest "$MAN" --sha256-file "$SHAF")
 
@@ -221,6 +225,21 @@ t_contains "the dry-run plan lists the signature" "$(S --dry-run "${ZM[@]}" 2>&1
 t_rc "--point-at with --signature is REFUSED (the installer re-verifies the installed signature itself)" 3 S --point-at 1.1.0 --signature "$SIG"
 t_rc "--point-at with --allow-unsigned is REFUSED" 3 S --point-at 1.1.0 --allow-unsigned
 
+echo "== the trust anchor handed to the host installer (production 8) =="
+: > "$CALLS"
+t_contains "a signed publish passes the owner's public key list to the host installer (--pubkeys), not left to the ZIP" "$(S --dry-run "${ZM[@]}" 2>&1)" "--pubkeys $WKEY"
+if [ "$HAVE_SIGN" = 1 ]; then
+  t_contains "...with --plugin-dir the list comes from the build dir's release/endpoints.conf" "$(S --dry-run --plugin-dir "$PDIR" "${ZM[@]}" 2>&1)" "--pubkeys $PUBKEY"
+fi
+NOKEY=1 t_rc "a signed publish with NO key list anywhere is REFUSED before any network access (staging too)" 3 S --dry-run "${ZM[@]}"
+NOKEY=1 t_contains "...and says why" "$(NOKEY=1 S --dry-run "${ZM[@]}" 2>&1)" "no trusted public key list"
+NOKEY=1 t_rc "production: a signed publish with no key list is REFUSED" 3 P --confirm-production $V "${ZM[@]}"
+NOKEY=1 t_rc "production: --point-at with no key list is REFUSED (the installer re-verifies the installed signature against it)" 3 P --point-at 1.1.0 --confirm-production 1.1.0
+t_contains "production: --point-at passes the key list to the installer" "$(P --point-at 1.1.0 --confirm-production 1.1.0 2>&1)" "--pubkeys $WKEY"
+t_rc "a malformed key list (three keys) is REFUSED" 3 S --dry-run --pubkeys "$WKEY,$WKEY,$WKEY" "${ZM[@]}"
+t_rc "a malformed key list (not base64) is REFUSED" 3 S --dry-run --pubkeys "not-a-key" "${ZM[@]}"
+t_not_contains "an --allow-unsigned staging publish passes no key list (nothing to verify)" "$(S --allow-unsigned --dry-run "${ZN0[@]}" 2>&1)" "--pubkeys"
+
 echo "== stage publish (stubs) =="
 : > "$CALLS"
 t_ok "publish without --set-current succeeds" S "${ZM[@]}"
@@ -261,15 +280,18 @@ t_eq "every production ssh call pins the host key (StrictHostKeyChecking=yes + t
 STUB_ENV=production STUB_HOSTNAME=www.copilt.org STUB_CURRENT=1.1.0 t_ok "production rollback: --point-at 1.1.0 --confirm-production 1.1.0 --apply" P --point-at 1.1.0 --confirm-production 1.1.0 --apply
 t_contains "...pointer move only" "$(cat "$CALLS")" "--point-at 1.1.0"
 echo "== compatibility with the REAL host-side installer of the Control Plane (the launch-secfix worktree is the contract; run locally against a temp release dir; skipped when absent) =="
-CPI="${AICC_CP_INSTALLER:-/Users/avivgerman/Local Sites/woo-recommendation-qa/aicc-control-plane-worktrees/launch-secfix/scripts/plugin-release/install-plugin-release.sh}"
+CPI="${AICC_CP_INSTALLER:-/Users/avivgerman/Local Sites/woo-recommendation-qa/aicc-control-plane-worktrees/release-1.1.0-prep-docs/scripts/plugin-release/install-plugin-release.sh}"
 if [ -f "$CPI" ]; then
+  # production 8: only an installer that takes its trust anchor from the operator (--pubkeys-file) is the contract; an older one would make the checks below pass or fail for the wrong reason
+  t_ok "the Control Plane installer at $CPI takes its trust anchor from the operator (--pubkeys-file); an older one makes the checks below meaningless: set AICC_CP_INSTALLER to the release-preparation worktree's scripts/plugin-release/install-plugin-release.sh" grep -q -e '--pubkeys-file)' "$CPI"
   RD="$TMP/store"; mkdir -p "$RD"; chmod 750 "$RD"; GRP="$(id -gn)"
-  t_ok "the publisher's installer-header check accepts the real script" env PATH="$STUB:$PATH" bash "$PUB" --installer "$CPI" --stage-id "$SID" --stage-host stage.copilt.org --stage-ip 203.0.113.9 --key "$KEY" --dry-run "${ZM[@]}"
+  t_ok "the publisher's installer-header check accepts the real script" env PATH="$STUB:$PATH" bash "$PUB" --installer "$CPI" --stage-id "$SID" --stage-host stage.copilt.org --stage-ip 203.0.113.9 --key "$KEY" --dry-run --pubkeys "$WKEY" "${ZM[@]}"
   if grep -q -e '--signature)' "$CPI"; then
     if [ "$HAVE_SIGN" = 1 ]; then
       # the exact argument list the publisher sends for a signed release (see the stub run above), against the real installer
-      SENT="$(env PATH="$STUB:$PATH" bash "$PUB" --installer "$CPI" --stage-id "$SID" --stage-host stage.copilt.org --stage-ip 203.0.113.9 --key "$KEY" --dry-run --set-current "${ZM[@]}" | sed -n 's|.*install-plugin-release.sh \(--release-dir.*\)$|\1|p')"
+      SENT="$(env PATH="$STUB:$PATH" bash "$PUB" --installer "$CPI" --stage-id "$SID" --stage-host stage.copilt.org --stage-ip 203.0.113.9 --key "$KEY" --dry-run --set-current --plugin-dir "$PDIR" "${ZM[@]}" | sed -n 's|.*install-plugin-release.sh \(--release-dir.*\)$|\1|p')"
       t_contains "the publisher's plan passes --signature" "$SENT" "--signature ~aicc/plugin-incoming/$V/$SIGN"
+      t_contains "the publisher's plan passes the owner's key list" "$SENT" "--pubkeys $PUBKEY"
       mkdir -p "$TMP/inc"; cp "$ZIP" "$TMP/inc/$ZN"; cp "$MAN" "$TMP/inc/manifest.json"; cp "$SIG" "$TMP/inc/$SIGN"
       ARGS="$(printf '%s' "$SENT" | sed -e "s|--release-dir [^ ]*|--release-dir $RD|" -e "s|--group [^ ]*|--group $GRP|" -e "s|~aicc/plugin-incoming/$V|$TMP/inc|g")"
       ARGV=(); read -r -a ARGV <<< "$ARGS"
@@ -277,7 +299,8 @@ if [ -f "$CPI" ]; then
       t_eq "...current points at the version" "$(tr -d ' \n' < "$RD/current")" "$V"
       t_eq "...the signature is stored next to the manifest" "$(cmp -s "$SIG" "$RD/$V/$SIGN" && echo same || echo different)" "same"
       t_ok "...re-running with the same bytes and signature is a no-op" bash "$CPI" "${ARGV[@]}"
-      t_ok "...the arguments of a rollback (--point-at) re-verify the installed signature" bash "$CPI" --release-dir "$RD" --group "$GRP" --point-at "$V"
+      t_ok "...the arguments of a rollback (--point-at) re-verify the installed signature against the owner's list" bash "$CPI" --release-dir "$RD" --group "$GRP" --point-at "$V" --pubkeys "$PUBKEY"
+      t_fail "...a rollback with NO key list is refused by the real installer (it will not fall back to the ZIP's own keys)" bash "$CPI" --release-dir "$RD" --group "$GRP" --point-at "$V"
       # a tampered signature that PASSES every local sanity check is still refused by the host (second line of defence)
       python3 - "$SIG" "$TMP/inc/tampered.sig" <<'PY'
 import base64, json, sys
@@ -285,8 +308,9 @@ d = json.load(open(sys.argv[1])); raw = bytearray(base64.b64decode(d["signature"
 json.dump(d, open(sys.argv[2], "w"))
 PY
       RD2="$TMP/store2"; mkdir -p "$RD2"; chmod 750 "$RD2"
-      t_fail "the REAL installer refuses a tampered signature and installs nothing" bash "$CPI" --release-dir "$RD2" --group "$GRP" --zip "$ZIP" --manifest "$MAN" --expect-sha256 "$SHA" --signature "$TMP/inc/tampered.sig" --set-current
+      t_fail "the REAL installer refuses a tampered signature and installs nothing" bash "$CPI" --release-dir "$RD2" --group "$GRP" --zip "$ZIP" --manifest "$MAN" --expect-sha256 "$SHA" --signature "$TMP/inc/tampered.sig" --pubkeys "$PUBKEY" --set-current
       t_eq "...the store stayed empty" "$(find "$RD2" -mindepth 1 -maxdepth 1 ! -name '.*' | wc -l | tr -d ' ')" "0"
+      t_fail "the REAL installer refuses a genuine signature when no key list is given (the ZIP is not its own trust anchor)" bash "$CPI" --release-dir "$RD2" --group "$GRP" --zip "$ZIP" --manifest "$MAN" --expect-sha256 "$SHA" --signature "$SIG"
       t_ok "control: an UNSIGNED install still works on the host (what --allow-unsigned staging does) and is flagged" bash "$CPI" --release-dir "$RD2" --group "$GRP" --zip "$ZIP" --manifest "$MAN" --expect-sha256 "$SHA"
     else t_skip "real installer with --signature" "needs php with sodium and the Plugin worktree (signing tool) to make a genuine signature"; fi
   else
