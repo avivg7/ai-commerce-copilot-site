@@ -46,7 +46,7 @@ Properties: the file is `/etc/aicc-ops/secrets.env`, mode `0640 root:aicc-ops`, 
 
 ### 1a. The rules re-verified against the CURRENT measurements (read-only, loopback UI export, 2026-10-22; no PII)
 
-Source: `http://127.0.0.1:9190/export.json` on the host (24 h at 60 s resolution, 7 d at 10 min; the 7 d window includes the Phase 2B load/capacity campaigns of 2026-10-21, so its maxima are test peaks, not normal operation). Evidence: `~/Downloads/AICC-launch-evidence/infra/alert-measurements.md`.
+Source: `http://127.0.0.1:9190/export.json` on the host (24 h at 60 s resolution, 7 d at 10 min; the 7 d window includes the Phase 2B load/capacity campaigns of 2026-10-21, so its maxima are test peaks, not normal operation). Evidence: `~/aviv_files/AICC/commerce_copilot_images/AICC-launch-evidence/infra/alert-measurements.md`.
 
 | Rule (default) | 24 h idle | 7 d incl. load tests | Verdict |
 |---|---|---|---|

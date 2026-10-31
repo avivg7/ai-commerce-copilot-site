@@ -35,7 +35,7 @@ Same for STICK-2 with `AICCKEYS-STANDBY` / `aicc-keys-standby.dmg` / a different
 
 ### A2. Generate the keys straight onto the vaults (3 min)
 ```bash
-PLUG=~/Projects/ai-commerce-copilot-worktrees/launch-integration
+PLUG=~/Projects/ai-commerce-copilot-worktrees/release-1.1.0-prep     # the worktree that holds the approved 1.1.0 release commit (until it is landed on launch/integration)
 umask 077
 php "$PLUG/bin/sign-release.php" keygen --secret-out /Volumes/AICCKEYS-PRIMARY/aicc-release-primary.key
 php "$PLUG/bin/sign-release.php" keygen --secret-out /Volumes/AICCKEYS-STANDBY/aicc-release-standby.key
@@ -59,7 +59,7 @@ File: `release/endpoints.conf` in the Plugin repo (verified on the integration h
 ```
 UPDATE_PUBLIC_KEYS=<primary public key>,<standby public key>
 ```
-Primary FIRST. Commit that file (a release is built only from a clean commit). Also before the first release (not part of this kit, Claude can do it on request): decide the first version (recommended 1.1.0; the head is `1.1.0-dev.5`, which must NOT ship: choosing the first customer version is an owner gate, and no tool refuses to sign or publish a `-dev` version, so the production publish step carries its own guard), bump the Version header, `AICC_VERSION` and the readme Stable tag, add `release/notes/1.1.0.md`.
+Primary FIRST. Commit that file (a release is built only from a clean commit). Also before the first release (not part of this kit, Claude can do it on request): the first version is 1.1.0 (chosen by the owner; a `-dev`/`-rc` version must NOT ship, and the production publisher AND `first-signed-release.sh` stage 0 refuse one), bump the Version header, `AICC_VERSION` and the readme Stable tag, add `release/notes/1.1.0.md`.
 
 Where else the public keys go (all optional or later; none is secret):
 | Place | What | When |
@@ -76,7 +76,7 @@ SCR=~/aicc-sign-scratch
 git -C "$PLUG" worktree add --detach "$SCR" HEAD      # HEAD = the commit with UPDATE_PUBLIC_KEYS committed (A4)
 cd "$SCR"
 bin/build-release.sh --out ~/aicc-sign-test            # ZIP + .sha256 + manifest.json; prints a loud WARNING if no key is baked
-hdiutil attach /Volumes/<STICK-1>/aicc-keys-primary.dmg
+hdiutil attach /Volumes/<STICK-1>/aicc-keys-primary.dmg     # until the USB copy is verified (A3) attach the Mac copy of the vault image instead (its location is in your private key notes)
 MAN=~/aicc-sign-test/ai-commerce-copilot-<version>.manifest.json; ZIP=${MAN%.manifest.json}.zip; SIG=${MAN%.json}.sig
 AICC_RELEASE_SIGNING_KEY_FILE=/Volumes/AICCKEYS-PRIMARY/aicc-release-primary.key php bin/sign-release.php sign --manifest "$MAN"
 hdiutil detach /Volumes/AICCKEYS-PRIMARY

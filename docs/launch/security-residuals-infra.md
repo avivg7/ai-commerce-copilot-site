@@ -1,6 +1,6 @@
 # Infrastructure security residuals and accepted risks (independent security review B, 2026-10-23)
 
-Scope: the Site repository's host and tooling (`infra/`, `docs/cutover/`, `scripts/ops/`). Every item states what is fixed, what is accepted and who decides. Finding numbers are those of `~/Downloads/AICC-launch-evidence/security/reviewerB-findings.md`. Nothing here was executed on the live host.
+Scope: the Site repository's host and tooling (`infra/`, `docs/cutover/`, `scripts/ops/`). Every item states what is fixed, what is accepted and who decides. Finding numbers are those of `~/aviv_files/AICC/commerce_copilot_images/AICC-launch-evidence/security/reviewerB-findings.md`. Nothing here was executed on the live host.
 
 ## Fixed in this change
 

@@ -64,16 +64,17 @@ assert k == p + "," + s, "the baked key list is '%s'" % k
 print("build check OK: dirty:false, baked keys = primary,standby, version %s, sha256 %s" % (m["version"], m["sha256"]))
 PY
    ( cd "$OUT" && shasum -a 256 -c "$(basename "$SHAF")" )
-   stop "The release is BUILT (not signed). Give the owner, over TWO channels, the manifest file and its SHA-256:
+   stop "The release is BUILT (not signed). Give the owner, over TWO channels, the manifest AND the ZIP (the signer refuses a manifest without the ZIP next to it) and the ZIP's SHA-256:
    $MAN
+   $ZIP
    sha256 of the ZIP: $(cut -d' ' -f1 "$SHAF")
 The owner signs OFFLINE (stage 2 prints the exact commands). Do not continue until the .manifest.sig is back in $OUT." ;;
 2) need PLUG VERSION PRIMARY_FP
    cat <<EOF
 OWNER'S COMMANDS (offline, on the owner's Mac, with the primary vault attached; the lead never sees the private key):
-  hdiutil attach /Volumes/<STICK-1>/aicc-keys-primary.dmg
+  hdiutil attach <the PRIMARY vault image: the verified USB copy /Volumes/<STICK-1>/aicc-keys-primary.dmg, or until it exists the Mac copy (its location is in the owner's private key notes)>
   cd <a Plugin checkout at the same commit: git -C "$PLUG" rev-parse HEAD = $(git -C "$PLUG" rev-parse HEAD 2>/dev/null)>
-  AICC_RELEASE_SIGNING_KEY_FILE=/Volumes/AICCKEYS-PRIMARY/aicc-release-primary.key php bin/sign-release.php sign --manifest <path to ${MAN##*/}>
+  AICC_RELEASE_SIGNING_KEY_FILE=/Volumes/AICCKEYS-PRIMARY/aicc-release-primary.key php bin/sign-release.php sign --manifest <path to ${MAN##*/}> --zip <path to ${ZIP##*/}>   # (or keep both files in one folder)
   hdiutil detach /Volumes/AICCKEYS-PRIMARY
   -> it prints the key fingerprint: it must equal $PRIMARY_FP
 Then copy ONLY ${SIG##*/} back to $OUT (the signature is not secret).
@@ -83,6 +84,8 @@ EOF
    [ -f "$SIG" ] && [ ! -L "$SIG" ] || die "no signature file $SIG"
    ( cd "$PLUG" && php bin/sign-release.php verify --manifest "$MAN" --sig "$SIG" --zip "$ZIP" --pubkeys "$PRIMARY_PUB,$STANDBY_PUB" ) | tee "$OUT/verify.txt"
    grep -q "$PRIMARY_FP" "$OUT/verify.txt" || die "verified, but not by the primary key $PRIMARY_FP (signed with the standby? that is only for an emergency)"
+   # the key_id printed above is a hint taken from the .sig file: prove the PRIMARY public key itself verifies it
+   ( cd "$PLUG" && php bin/sign-release.php verify --manifest "$MAN" --sig "$SIG" --zip "$ZIP" --pubkeys "$PRIMARY_PUB" >/dev/null ) || die "the signature does NOT verify with the primary public key alone (signed with the standby, or the key_id was edited)"
    # tamper control: a flipped bit in a COPY of the manifest must NOT verify
    t="$(mktemp -d)"; python3 -I - "$MAN" "$t/m.json" <<'PY'
 import json, sys

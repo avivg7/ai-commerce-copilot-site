@@ -50,7 +50,7 @@ Create these four policies, each scoped to the single Droplet `aicc-cp-stage` (t
 | `aicc-prod-disk` | Disk Utilization Percent | is above | 75 | 10 min |
 | `aicc-prod-load5` | 5 Minute Load Average | is above | 3 | 30 min |
 
-(Measured basis: CPU 24 h average 5.9 %, memory used 38 %, disk 12 %, load5 max 2.9 in the load campaign: `~/Downloads/AICC-launch-evidence/infra/alert-measurements.md`. Optional fifth, skip if the unit is unclear: Public Outbound Bandwidth, 30 min; the form shows the unit.)
+(Measured basis: CPU 24 h average 5.9 %, memory used 38 %, disk 12 %, load5 max 2.9 in the load campaign: `~/aviv_files/AICC/commerce_copilot_images/AICC-launch-evidence/infra/alert-measurements.md`. Optional fifth, skip if the unit is unclear: Public Outbound Bandwidth, 30 min; the form shows the unit.)
 
 Prove delivery (10-20 minutes, then delete):
 1. Create a TEMPORARY fifth policy `aicc-test-disk`: Disk Utilization Percent, is above **5**, **5 min**, same Droplet, Email. The disk is at ~12 %, so it must fire. If the form refuses 5, use any value below the percentage on the Droplet's Graphs tab.

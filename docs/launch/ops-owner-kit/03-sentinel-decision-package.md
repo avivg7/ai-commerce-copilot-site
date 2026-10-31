@@ -48,7 +48,7 @@ Prerequisites: a Telegram bot for the sentinel (package 2, BotFather) and your c
 ```bash
 SITE=~/self_projects/ai_copilot_site-worktrees/launch-integration      # until launch/integration is landed
 cd "$SITE"
-bash "$SITE/infra/sentinel/github/prepare-sentinel-repo.sh" --out ~/aicc-sentinel-repo          # local only; or copy the pre-staged ~/Downloads/AICC-launch-evidence/owner-kit/A-ops/sentinel-repo-staged
+bash "$SITE/infra/sentinel/github/prepare-sentinel-repo.sh" --out ~/aicc-sentinel-repo          # local only; or copy the pre-staged ~/aviv_files/AICC/commerce_copilot_images/AICC-launch-evidence/owner-kit/A-ops/sentinel-repo-staged
 bash "$SITE/docs/launch/ops-owner-kit/scripts/sentinel-phase.sh" --repo ~/aicc-sentinel-repo --phase stage    # watch stage.copilt.org until promotion
 cd ~/aicc-sentinel-repo && git init -b main && git add -A && git commit -m "AICC external sentinel"
 # STOP: next line creates a PUBLIC repository under your account (your decision, your name)

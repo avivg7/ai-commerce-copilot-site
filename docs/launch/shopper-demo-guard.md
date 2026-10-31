@@ -2,7 +2,7 @@
 
 The approved demo is ONE interactive demo with three controls (Product page | Cart, WooCommerce | With AICC, What shoppers see | What you see and control). It lives in the shared brand kit (`brand/js/fbt-demo.js`, `product-art.js`, `aicc-brand.css`) that the Site renders and the Control Plane theme copies byte-for-byte. Approved reference commit: `972202e`.
 
-## What went wrong once (2026-10-24, see ~/Downloads/AICC-launch-evidence/regression/FORENSIC-RECORD.md)
+## What went wrong once (2026-10-24, see ~/aviv_files/AICC/commerce_copilot_images/AICC-launch-evidence/regression/FORENSIC-RECORD.md)
 No commit reverted the demo in the Site. Three other things made the owner see a non-approved demo: (1) the QA Control Plane on 8982 serves a stale theme (symlink to an old release worktree); (2) the demo introduced the kit classes `.aicc-store` / `__name` that the Control Plane theme already styled for its Plans & Stores rows, so the demo collapsed there (fixed: kit-owned `aicc-fbt-*` names for every demo class); (3) no test rendered the integrated Control Plane head or pinned the approved states.
 
 ## The guards (all must pass on the FINAL integrated heads, after the last merge and sync)

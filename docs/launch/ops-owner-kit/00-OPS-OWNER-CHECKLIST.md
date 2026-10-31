@@ -42,4 +42,4 @@ Hard dependencies only: 4 before 5 and 8; 1 before 2 and 3; everything else is i
 - [ ] Sentinel: `[TEST]` received from GitHub Actions, scheduled runs green, day-45 reminder set (or the written decision to run Mac-only).
 
 ## What stays open after this kit (not in this checklist)
-A second always-on backup copy (the Mac copy is only as available as the Mac), real SMTP/SPF/DKIM, payments, DNS, Backend/Neon cutover gates G0-G12, production promotion approval: see `~/Downloads/AICC-launch-evidence/integration/LAUNCH-READINESS-2026-10-23.md`.
+A second always-on backup copy (the Mac copy is only as available as the Mac), real SMTP/SPF/DKIM, payments, DNS, Backend/Neon cutover gates G0-G12, production promotion approval: see `~/aviv_files/AICC/commerce_copilot_images/AICC-launch-evidence/integration/LAUNCH-READINESS-2026-10-23.md`.
