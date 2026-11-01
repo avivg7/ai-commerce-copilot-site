@@ -66,7 +66,9 @@ PUBL() { env PATH="$STUB:$PATH" bash "$PUB" --installer "$INST" --stage-id "$SID
 # add a well-formed list unless the call names its own (--pubkeys / --plugin-dir) or sets NOKEY=1.
 WKEY="${PUBKEY:-$(python3 -I -c 'import base64; print(base64.b64encode(bytes(range(32))).decode())')}"
 KA() { case " $* " in *" --pubkeys "*|*" --plugin-dir "*) ;; *) [ "${NOKEY:-0}" = 1 ] || echo "--pubkeys $WKEY";; esac; }
+# shellcheck disable=SC2046  # $(KA ...) must word-split into "--pubkeys <key>" (or nothing)
 S() { PUBL --stage-host stage.copilt.org --stage-ip 203.0.113.9 --key "$KEY" $(KA "$@") "$@"; }
+# shellcheck disable=SC2046
 P() { PUBL --env production --stage-host www.copilt.org --stage-ip 203.0.113.9 --key "$PKEY" --known-hosts "$KH" $(KA "$@") "$@"; }
 PV() { P --plugin-dir "$PDIR" "$@"; }       # production with the Plugin build dir (its release/endpoints.conf holds the public key the signature is verified against)
 ZM=(--zip "$ZIP" --manifest "$MAN" --sha256-file "$SHAF")
