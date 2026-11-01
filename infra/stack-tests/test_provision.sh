@@ -522,6 +522,7 @@ if [ -x "$LOCALMY/mysqld" ]; then
     t_contains "...and the refusal names what is missing and says there is no override" "$(env AICC_TEST_HARNESS=1 bash "$PROV/owner-facts.sh" --file "$OFEMPTY" --env production set AICC_COMMERCE_OPEN true 2>&1)" "There is no override"
     t_contains "...it names the legal facts, the payment gateways and the review approval" "$(env AICC_TEST_HARNESS=1 bash "$PROV/owner-facts.sh" --file "$OFEMPTY" --env production set AICC_COMMERCE_OPEN true 2>&1)" "AICC_LEGAL_ENTITY_NAME"
     t_eq "...and wrote nothing" "$(cat "$OFEMPTY")" "AICC_ACTIVATION_PROOF_KID=k1"
+    t_ok "COM-GATE-01: the evidence provider is a launch fact too (set before the switch)" OFT set AICC_LM_PAYMENT_EVIDENCE_PROVIDER payplus
     t_ok "with every launch fact present the switch can be set (last)" OFT set AICC_COMMERCE_OPEN true
     t_eq "...list shows it" "$(OFT list | grep -c '^AICC_COMMERCE_OPEN=true$')" "1"
     for k in AICC_LEGAL_SUPPORT_EMAIL AICC_LEGAL_REVIEW_APPROVED AICC_LAUNCH_REAL_GATEWAYS AICC_LM_PAID_GATEWAYS AICC_ACTIVATION_PROOF_KID AICC_LEGAL_PAYMENT_PROCESSOR; do t_rc "while it is set, unsetting $k is REFUSED (unset AICC_COMMERCE_OPEN first)" 1 OFT unset $k; done
@@ -532,6 +533,7 @@ if [ -x "$LOCALMY/mysqld" ]; then
     t_eq "...and defines AICC_COMMERCE_OPEN as the boolean true" "$(cst "$OFD/prod.php" AICC_COMMERCE_OPEN | jq -c .AICC_COMMERCE_OPEN)" "true"
     t_eq "...exactly once, on one line" "$(grep -c "^define( 'AICC_COMMERCE_OPEN', true );$" "$OFD/prod.php")" "1"
     t_ok "unset AICC_COMMERCE_OPEN" OFT unset AICC_COMMERCE_OPEN
+    t_ok "...and the evidence provider fact is removed again (the file is back to what it was)" OFT unset AICC_LM_PAYMENT_EVIDENCE_PROVIDER
     t_ok "...the render is no longer refused and defines nothing (closed again)" bash -c "cd '$TMP' && env AICC_TEST_HARNESS=1 bash '$PROV/render-wp-config.sh' --env production --confirm-production --out '$OFD/prod.php' --secrets-dir '$OFSEC' --mail-dir '$OFD/nomail' --plugin-release-dir '$OFD/rel' --owner '$OFU' >/dev/null 2>&1 && ! grep -q \"define( 'AICC_COMMERCE_OPEN'\" '$OFD/prod.php'"
     t_eq "...the facts file is back to what it was before the switch" "$(cat "$OFF")" "$OFSAVE"
     # --- a re-render never loses an owner-set value
@@ -644,6 +646,46 @@ if [ -x "$LOCALMY/mysqld" ]; then
     t_ok "...and the stage render still passes php -l" php -l "$OFD/stage.php"
     cp "$OFF" "$OFD/stage-facts.env"; printf 'AICC_LEGAL_ENTITY_NAME=x\n' > "$OFF"; chmod 600 "$OFF"
     t_rc "a production-only key planted in the stage facts file makes the STAGE renderer refuse" 1 OFS
+    rm -f "$OFF"; OFS >/dev/null 2>&1; t_ok "stage with no facts file is the golden again" bash -c "diff <(sed -E 's/[0-9a-f]{64}/HEX64/g' '$OFD/stage.php') '$HERE/golden/wp-config.stage.no-owner-facts.php'"
+    echo "== owner facts, COM-GATE-01 (Production 14): the evidence provider flags EVERY payment path; production can only render 'live' =="
+    rm -f "$OFF"
+    GWV='payplus-payment-gateway:payplus_transaction_uid,payplus-payment-gateway-applepay:payplus_transaction_uid'
+    OFT set AICC_ACTIVATION_PROOF_KID prod-1 >/dev/null; OFT set AICC_LM_PAID_GATEWAYS "$GWV" >/dev/null
+    OFR >/dev/null 2>&1; EV0="$(cst "$OFD/prod.php" AICC_LM_PAID_GATEWAYS AICC_LM_PAYMENT_EVIDENCE_PROVIDER)"
+    t_eq "without the provider fact the gateway entries are exactly what they always were (no evidence keys)" "$(echo "$EV0" | jq -c '.AICC_LM_PAID_GATEWAYS|map(keys)')" '[["proof_meta","require_transaction_id"],["proof_meta","require_transaction_id"]]'
+    t_eq "...and the provider constant is not defined" "$(echo "$EV0" | jq -r .AICC_LM_PAYMENT_EVIDENCE_PROVIDER)" "null"
+    t_ok "set the evidence provider tag" OFT set AICC_LM_PAYMENT_EVIDENCE_PROVIDER payplus
+    t_eq "list shows it" "$(OFT list | grep -c '^AICC_LM_PAYMENT_EVIDENCE_PROVIDER=payplus$')" "1"
+    OFR >/dev/null 2>&1; t_ok "...the production render passes php -l" php -l "$OFD/prod.php"
+    EV1="$(cst "$OFD/prod.php" AICC_LM_PAID_GATEWAYS AICC_LM_PAYMENT_EVIDENCE_PROVIDER)"
+    t_eq "EVERY gateway id (the card gateway AND the wallet id) requires provider evidence, names the provider and is LIVE" "$(echo "$EV1" | jq -c '.AICC_LM_PAID_GATEWAYS|map([.require_provider_evidence,.evidence_provider,.evidence_environment,.require_transaction_id])')" '[[true,"payplus","live",true],[true,"payplus","live",true]]'
+    t_eq "proof meta is kept next to the evidence keys" "$(echo "$EV1" | jq -c '.AICC_LM_PAID_GATEWAYS|map(.proof_meta)')" '[["payplus_transaction_uid"],["payplus_transaction_uid"]]'
+    t_eq "the provider tag constant is rendered" "$(echo "$EV1" | jq -r .AICC_LM_PAYMENT_EVIDENCE_PROVIDER)" "payplus"
+    t_eq "no production render can contain the word sandbox (the environment is fixed by the renderer, not by a fact)" "$(grep -c "sandbox" "$OFD/prod.php" || true)" "0"
+    t_rc "there is no owner fact that could select a sandbox environment for production" 1 OFT set AICC_LM_PAYMENT_EVIDENCE_ENVIRONMENT sandbox
+    t_rc "an evidence-environment key is not accepted as an inline option either" 1 OFT set AICC_LM_PAID_GATEWAYS "payplus-payment-gateway:payplus_transaction_uid:evidence_environment=sandbox"
+    ebad() { local n="$1" v="$2"; t_rc "$n" 1 OFT set AICC_LM_PAYMENT_EVIDENCE_PROVIDER "$v"; }
+    ebad "a provider tag in upper case is refused" PayPlus
+    ebad "a provider tag with a space is refused" "pay plus"
+    ebad "a provider tag with a quote is refused" "x'y"
+    ebad "a provider tag with a comma (a list) is refused" "payplus,other"
+    ebad "an over-long provider tag is refused" "$(printf 'a%.0s' $(seq 1 41))"
+    ebad "an empty provider tag is refused" ""
+    t_ok "the render is reproducible and the facts file untouched by the renderer" bash -c "a=\$(shasum -a 256 '$OFF'); '$PROV/render-wp-config.sh' --help >/dev/null 2>&1 || true; [ \"\$a\" = \"\$(shasum -a 256 '$OFF')\" ]"
+    # commerce can be opened only with the provider fact (the gate would block it anyway; the file refuses early)
+    OFT unset AICC_LM_PAYMENT_EVIDENCE_PROVIDER >/dev/null
+    t_ok "set every other fact commerce needs" bash -c "set -e; T() { env AICC_TEST_HARNESS=1 bash '$PROV/owner-facts.sh' --file '$OFF' --env production \"\$@\" >/dev/null; }; T set AICC_LEGAL_ENTITY_NAME 'Example Studio Ltd'; T set AICC_LEGAL_ENTITY_ADDRESS '1 Example Street, Example City'; T set AICC_LEGAL_SUPPORT_EMAIL support@copilt.org; T set AICC_LEGAL_GOVERNING_LAW 'Law of Example'; T set AICC_LEGAL_JURISDICTION 'Courts of Example'; T set AICC_LEGAL_PAYMENT_PROCESSOR 'PayPlus Ltd'; T set AICC_LEGAL_REVIEW_APPROVED true; T set AICC_LEGAL_SUBPROCESSORS_VERIFIED 2026-10-23; T set AICC_LAUNCH_REAL_GATEWAYS payplus-payment-gateway"
+    EVOUT="$(OFT set AICC_COMMERCE_OPEN true 2>&1)"; evrc=$?
+    t_eq "AICC_COMMERCE_OPEN=true is REFUSED while the evidence provider is not set" "$evrc" "1"
+    t_contains "...and the refusal names the missing fact" "$EVOUT" "AICC_LM_PAYMENT_EVIDENCE_PROVIDER"
+    t_ok "set the evidence provider, then the switch is accepted" bash -c "set -e; T() { env AICC_TEST_HARNESS=1 bash '$PROV/owner-facts.sh' --file '$OFF' --env production \"\$@\" >/dev/null; }; T set AICC_LM_PAYMENT_EVIDENCE_PROVIDER payplus; T set AICC_COMMERCE_OPEN true"
+    t_rc "the evidence provider cannot be unset while commerce is open (close commerce first)" 1 OFT unset AICC_LM_PAYMENT_EVIDENCE_PROVIDER
+    # staging: the same fact renders the SANDBOX environment
+    rm -f "$OFF"
+    OFTS set AICC_ACTIVATION_PROOF_KID stage-1 >/dev/null; OFTS set AICC_LM_PAID_GATEWAYS "$GWV" >/dev/null
+    t_ok "stage accepts the evidence provider" OFTS set AICC_LM_PAYMENT_EVIDENCE_PROVIDER payplus
+    OFS >/dev/null 2>&1; t_ok "...the stage render passes php -l" php -l "$OFD/stage.php"
+    t_eq "STAGE renders every path with evidence_environment sandbox (a payment sandbox rehearsal), never live" "$(cst "$OFD/stage.php" AICC_LM_PAID_GATEWAYS | jq -c '.AICC_LM_PAID_GATEWAYS|map([.require_provider_evidence,.evidence_provider,.evidence_environment])')" '[[true,"payplus","sandbox"],[true,"payplus","sandbox"]]'
     rm -f "$OFF"; OFS >/dev/null 2>&1; t_ok "stage with no facts file is the golden again" bash -c "diff <(sed -E 's/[0-9a-f]{64}/HEX64/g' '$OFD/stage.php') '$HERE/golden/wp-config.stage.no-owner-facts.php'"
     echo "== owner facts, fixB: signing public keys (M6), ASCII dates + literal values after KEY (secR2-9), export/import for disaster recovery =="
     rm -f "$OFF"

@@ -27,7 +27,7 @@ ORDER = [
     "AICC_LEGAL_ENTITY_NAME", "AICC_LEGAL_ENTITY_ADDRESS", "AICC_LEGAL_SUPPORT_EMAIL", "AICC_LEGAL_GOVERNING_LAW", "AICC_LEGAL_JURISDICTION",
     "AICC_LEGAL_PAYMENT_PROCESSOR", "AICC_LEGAL_VAT_DETAILS",
     "AICC_LEGAL_REVIEW_APPROVED", "AICC_LEGAL_SUBPROCESSORS_VERIFIED", "AICC_STRUCTURED_DATA_OFFERS", "AICC_COMMERCE_OPEN",
-    "AICC_LM_PAID_GATEWAYS", "AICC_LAUNCH_REAL_GATEWAYS", "AICC_LM_PAYMENT_GATE_STRICT",
+    "AICC_LM_PAID_GATEWAYS", "AICC_LM_PAYMENT_EVIDENCE_PROVIDER", "AICC_LAUNCH_REAL_GATEWAYS", "AICC_LM_PAYMENT_GATE_STRICT",
     "AICC_EXTRA_ACCESSIBLE_HOSTS",
     "AICC_LM_PLUGIN_SIGNING_PUBKEYS",
 ]
@@ -41,13 +41,17 @@ TRUE_ONLY = ("AICC_LEGAL_REVIEW_APPROVED", "AICC_STRUCTURED_DATA_OFFERS", "AICC_
 # THIS file is present; the gate itself is the real lock (the Control Plane also needs WooCommerce "Coming soon" off AND a clean attested gate run before it treats commerce as open), and there is NO override.
 COMMERCE_OPEN_REQUIRES = [
     "AICC_LEGAL_ENTITY_NAME", "AICC_LEGAL_ENTITY_ADDRESS", "AICC_LEGAL_SUPPORT_EMAIL", "AICC_LEGAL_GOVERNING_LAW", "AICC_LEGAL_JURISDICTION", "AICC_LEGAL_PAYMENT_PROCESSOR",
-    "AICC_LEGAL_REVIEW_APPROVED", "AICC_LEGAL_SUBPROCESSORS_VERIFIED", "AICC_ACTIVATION_PROOF_KID", "AICC_LM_PAID_GATEWAYS", "AICC_LAUNCH_REAL_GATEWAYS",
+    "AICC_LEGAL_REVIEW_APPROVED", "AICC_LEGAL_SUBPROCESSORS_VERIFIED", "AICC_ACTIVATION_PROOF_KID", "AICC_LM_PAID_GATEWAYS", "AICC_LM_PAYMENT_EVIDENCE_PROVIDER", "AICC_LAUNCH_REAL_GATEWAYS",
 ]
+# COM-GATE-01 (Production 14, owner decision OD-1): provider-side captured-payment verification is REQUIRED before commerce opens. AICC_LM_PAYMENT_EVIDENCE_PROVIDER names the provider tag (e.g. payplus);
+# when it is set, EVERY id in AICC_LM_PAID_GATEWAYS is rendered with require_provider_evidence, that provider tag and an evidence environment that the RENDERER (never the owner) fixes: "live" for production,
+# "sandbox" for the staging host. So a production file can neither leave a wallet id unflagged nor accept sandbox evidence. The Control Plane (AICC_LM_Payment_Readiness) refuses to open commerce without it, and
+# without a registered adapter and an attested provider sandbox run; this fact alone enables nothing. No credential is ever an owner fact.
 # Production derives strictness from its host name (www.copilt.org) or WP_ENVIRONMENT_TYPE=production (set by the production template), so it never needs (and may not set) AICC_LM_PAYMENT_GATE_STRICT; staging rehearses a payment sandbox with it.
 # Staging never carries legal facts, launch switches or the launch allowlist: those describe the public launch.
 KEYS_FOR = {
     "production": [k for k in ORDER if k != "AICC_LM_PAYMENT_GATE_STRICT"],  # includes AICC_LM_PLUGIN_SIGNING_PUBKEYS (public keys only; production serves the signed Plugin releases)
-    "stage": ["AICC_ACTIVATION_PROOF_KID", "AICC_LM_PAID_GATEWAYS", "AICC_LM_PAYMENT_GATE_STRICT", "AICC_EXTRA_ACCESSIBLE_HOSTS"],
+    "stage": ["AICC_ACTIVATION_PROOF_KID", "AICC_LM_PAID_GATEWAYS", "AICC_LM_PAYMENT_EVIDENCE_PROVIDER", "AICC_LM_PAYMENT_GATE_STRICT", "AICC_EXTRA_ACCESSIBLE_HOSTS"],
 }
 BASE_HOST = {"production": "api.copilt.org", "stage": "stage.copilt.org"}
 MAX_FILE_BYTES = 16384
@@ -168,6 +172,15 @@ def parse_paid_gateways(key, v):
     return out
 
 
+PROVIDER_TAG = re.compile(r"[a-z0-9_-]{1,40}")
+
+
+def _provider(key, v):
+    if not PROVIDER_TAG.fullmatch(v):
+        raise OwnerFactsError("%s: the provider tag '%s' must be lower case [a-z0-9_-], 1-40 characters (for example payplus); it is a name, never a credential" % (key, v[:60]))
+    return v
+
+
 def parse_gateway_list(key, v):
     out, seen = [], set()
     for raw in v.split(","):
@@ -235,6 +248,8 @@ def validate_value(key, value, env):
         return _date(key, v)
     if key == "AICC_LM_PAID_GATEWAYS":
         return ",".join(g + "".join(":" + m for m in metas) for g, metas in parse_paid_gateways(key, v))
+    if key == "AICC_LM_PAYMENT_EVIDENCE_PROVIDER":
+        return _provider(key, v)
     if key == "AICC_LAUNCH_REAL_GATEWAYS":
         return ",".join(parse_gateway_list(key, v))
     if key == "AICC_EXTRA_ACCESSIBLE_HOSTS":
@@ -331,10 +346,14 @@ def render(facts, env):
             out.append("define( '%s', true );" % k)
         elif k == "AICC_LM_PAID_GATEWAYS":
             ents = []
+            prov = facts.get("AICC_LM_PAYMENT_EVIDENCE_PROVIDER")
             for gid, metas in parse_paid_gateways(k, v):
                 inner = "'require_transaction_id' => true"
                 if metas:
                     inner += ", 'proof_meta' => array( %s )" % ", ".join(php_str(m) for m in metas)
+                if prov:
+                    # every id (wallet ids included) requires provider-side evidence; the environment comes from the render target, never from a fact
+                    inner += ", 'require_provider_evidence' => true, 'evidence_provider' => %s, 'evidence_environment' => %s" % (php_str(prov), php_str("live" if env == "production" else "sandbox"))
                 ents.append("%s => array( %s )" % (php_str(gid), inner))
             out.append("define( '%s', array( %s ) );" % (k, ", ".join(ents)))
         elif k == "AICC_LAUNCH_REAL_GATEWAYS":
