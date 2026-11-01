@@ -671,7 +671,9 @@ if [ -x "$LOCALMY/mysqld" ]; then
     ebad "a provider tag with a comma (a list) is refused" "payplus,other"
     ebad "an over-long provider tag is refused" "$(printf 'a%.0s' $(seq 1 41))"
     ebad "an empty provider tag is refused" ""
-    t_ok "the render is reproducible and the facts file untouched by the renderer" bash -c "a=\$(shasum -a 256 '$OFF'); '$PROV/render-wp-config.sh' --help >/dev/null 2>&1 || true; [ \"\$a\" = \"\$(shasum -a 256 '$OFF')\" ]"
+    OFSUM2="$(sha "$OFF")"; OFR >/dev/null 2>&1; H1="$(hexnorm "$OFD/prod.php" | shasum -a 256 | cut -d' ' -f1)"; OFR >/dev/null 2>&1; H2="$(hexnorm "$OFD/prod.php" | shasum -a 256 | cut -d' ' -f1)"
+    t_eq "rendering twice gives the identical production file (reproducible)" "$H1" "$H2"
+    t_eq "...and the renderer did not touch the facts file" "$(sha "$OFF")" "$OFSUM2"
     # commerce can be opened only with the provider fact (the gate would block it anyway; the file refuses early)
     OFT unset AICC_LM_PAYMENT_EVIDENCE_PROVIDER >/dev/null
     t_ok "set every other fact commerce needs" bash -c "set -e; T() { env AICC_TEST_HARNESS=1 bash '$PROV/owner-facts.sh' --file '$OFF' --env production \"\$@\" >/dev/null; }; T set AICC_LEGAL_ENTITY_NAME 'Example Studio Ltd'; T set AICC_LEGAL_ENTITY_ADDRESS '1 Example Street, Example City'; T set AICC_LEGAL_SUPPORT_EMAIL support@copilt.org; T set AICC_LEGAL_GOVERNING_LAW 'Law of Example'; T set AICC_LEGAL_JURISDICTION 'Courts of Example'; T set AICC_LEGAL_PAYMENT_PROCESSOR 'PayPlus Ltd'; T set AICC_LEGAL_REVIEW_APPROVED true; T set AICC_LEGAL_SUBPROCESSORS_VERIFIED 2026-10-23; T set AICC_LAUNCH_REAL_GATEWAYS payplus-payment-gateway"
