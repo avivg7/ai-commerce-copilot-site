@@ -185,7 +185,7 @@ Every line must say PASS. Preview the whole conversion: same command with `apply
 
 ### 6.4 Apply (dark production)
 
-**First clear the stage-only owner facts (H3).** `sudo aicc-owner-facts list` on the host, then `unset` every stage-only or sandbox fact (`AICC_LM_PAYMENT_GATE_STRICT`, a sandbox `AICC_EXTRA_ACCESSIBLE_HOSTS`, a staging `AICC_LM_PAID_GATEWAYS` / key id): the file survives the promotion and is rendered into the production wp-config. The gate (`check`, also the first step of `apply`) validates it for production and prints what would be carried over; re-run `check` until the NOTE list is exactly what production should carry.
+**First clear the stage-only owner facts (H3).** `sudo aicc-owner-facts list` on the host, then `unset` every stage-only or sandbox fact (`AICC_LM_PAYMENT_GATE_STRICT`, a sandbox `AICC_EXTRA_ACCESSIBLE_HOSTS`, a staging `AICC_LM_PAID_GATEWAYS` / key id; since Production 17 a production render refuses a gateway list that has no `AICC_LM_PAYMENT_EVIDENCE_PROVIDER`, so unset the two together): the file survives the promotion and is rendered into the production wp-config. The gate (`check`, also the first step of `apply`) validates it for production and prints what would be carried over; re-run `check` until the NOTE list is exactly what production should carry.
 
 ```bash
 ~/aicc-rehearsal/bin/stage-ssh -t "cd ~/aicc-infra-bundle && sudo infra/provision/promote-to-production.sh apply --confirm-production --expect-stage-id $OLDID --caddyfile ~/aicc-infra-bundle/Caddyfile.pre --ops-config ~/aicc-infra-bundle/infra/aicc-ops/config/aicc-ops.production.toml"
