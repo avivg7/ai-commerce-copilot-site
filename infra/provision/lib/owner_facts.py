@@ -335,8 +335,18 @@ def php_str(v):
     return "'" + v.replace("\\", "\\\\").replace("'", "\\'") + "'"
 
 
+def require_render_ready(facts, env):
+    """Cross-key rules that decide whether a file may be RENDERED (not whether it may be edited: the keys can be set in any order). Production 17 (COM-GATE-01 / residual R-3):
+    a production render that lists paid gateways but names no evidence provider would produce gateways without `require_provider_evidence`, i.e. the payment gate would accept a
+    completed order on the strength of a transaction id alone. That is the unverified path COM-GATE-01 forbids, so the render (and `check`, which the renderer and the promotion
+    preflight both run first) refuses it. Dark production (no gateways listed) stays renderable."""
+    if env == "production" and "AICC_LM_PAID_GATEWAYS" in facts and "AICC_LM_PAYMENT_EVIDENCE_PROVIDER" not in facts:
+        raise OwnerFactsError("AICC_LM_PAID_GATEWAYS is set but AICC_LM_PAYMENT_EVIDENCE_PROVIDER is not: a production render would accept a paid order on a transaction id alone, with no provider-side verification (COM-GATE-01). Set the provider (e.g. `set AICC_LM_PAYMENT_EVIDENCE_PROVIDER <tag>`) or `unset AICC_LM_PAID_GATEWAYS`. There is no override.")
+
+
 def render(facts, env):
     """facts: validated dict. Returns (region_lines, extra_hosts): the PHP define() lines (each on ONE line) and the validated extra host list."""
+    require_render_ready(facts, env)
     out = []
     for k in ORDER:
         if k not in facts or k == "AICC_EXTRA_ACCESSIBLE_HOSTS":
@@ -385,6 +395,7 @@ def main(argv):
                     print("%s=%s" % (k, facts[k]))
             return 0
         if a.cmd == "check":
+            require_render_ready(facts, a.env)
             print("ok: %d value(s) valid for %s" % (len(facts), a.env))
             return 0
         if a.cmd == "export":

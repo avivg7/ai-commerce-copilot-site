@@ -485,6 +485,12 @@ if [ -x "$LOCALMY/mysqld" ]; then
     t_ok "set the two launch switches and the date" bash -c "set -e; T() { env AICC_TEST_HARNESS=1 bash '$PROV/owner-facts.sh' --file '$OFF' --env production \"\$@\" >/dev/null; }; T set AICC_LEGAL_REVIEW_APPROVED true; T set AICC_LEGAL_SUBPROCESSORS_VERIFIED 2026-10-23; T set AICC_STRUCTURED_DATA_OFFERS true"
     t_ok "set the payment gateway family (card + wallets, exact ids) and the launch list" bash -c "set -e; T() { env AICC_TEST_HARNESS=1 bash '$PROV/owner-facts.sh' --file '$OFF' --env production \"\$@\" >/dev/null; }; T set AICC_LM_PAID_GATEWAYS 'payplus-payment-gateway:payplus_transaction_uid, payplus-payment-gateway-applepay:payplus_transaction_uid,payplus-payment-gateway-googlepay:payplus_transaction_uid'; T set AICC_LAUNCH_REAL_GATEWAYS payplus-payment-gateway"
     t_ok "set an extra outbound host for the payment gateway" OFT set AICC_EXTRA_ACCESSIBLE_HOSTS restapi.payplus.co.il
+    # Production 17 (COM-GATE-01 / R-3): a PRODUCTION render that lists paid gateways but names no evidence provider is refused (it would accept a paid order on a transaction id alone); editing stays order-free
+    t_rc "production render is REFUSED: paid gateways listed, no evidence provider" 1 OFR
+    t_contains "...and says why, naming COM-GATE-01 and that there is no override" "$(OFR 2>&1)" "COM-GATE-01"
+    t_rc "...\`check\` (the renderer's and the promotion preflight's validator) refuses the same file" 1 env AICC_TEST_HARNESS=1 bash "$PROV/owner-facts.sh" --file "$OFF" --env production check
+    t_ok "...but the keys can be edited in any order (set the provider afterwards)" OFT set AICC_LM_PAYMENT_EVIDENCE_PROVIDER payplus
+    t_ok "...and then the same file passes \`check\`" env AICC_TEST_HARNESS=1 bash "$PROV/owner-facts.sh" --file "$OFF" --env production check
     t_eq "the file still has mode 0600 after every write" "$(mode "$OFF")" "600"
     t_eq "list shows the key" "$(OFT list | grep -c '^AICC_ACTIVATION_PROOF_KID=prod-2026-10$')" "1"
     # --- set values are rendered, exactly
@@ -500,15 +506,15 @@ if [ -x "$LOCALMY/mysqld" ]; then
     t_eq "proof key id rendered" "$(echo "$FC" | jq -r .AICC_ACTIVATION_PROOF_KID)" "prod-2026-10"
     t_eq "the seven legal facts rendered verbatim" "$(echo "$FC" | jq -c '[.AICC_LEGAL_ENTITY_NAME,.AICC_LEGAL_ENTITY_ADDRESS,.AICC_LEGAL_SUPPORT_EMAIL,.AICC_LEGAL_GOVERNING_LAW,.AICC_LEGAL_JURISDICTION,.AICC_LEGAL_PAYMENT_PROCESSOR,.AICC_LEGAL_VAT_DETAILS]')" '["Example Studio Ltd","1 Example Street, Example City","support@copilt.org","the laws of Example","the courts of Example City","PayPlus","VAT exempt"]'
     t_eq "the switches are real booleans / the date is the string the gate expects" "$(echo "$FC" | jq -c '[.AICC_LEGAL_REVIEW_APPROVED,.AICC_STRUCTURED_DATA_OFFERS,.AICC_LEGAL_SUBPROCESSORS_VERIFIED]')" '[true,true,"2026-10-23"]'
-    t_eq "AICC_LM_PAID_GATEWAYS: exactly the three listed ids, strict (transaction id required), proof meta kept" "$(echo "$FC" | jq -c '.AICC_LM_PAID_GATEWAYS')" '{"payplus-payment-gateway":{"require_transaction_id":true,"proof_meta":["payplus_transaction_uid"]},"payplus-payment-gateway-applepay":{"require_transaction_id":true,"proof_meta":["payplus_transaction_uid"]},"payplus-payment-gateway-googlepay":{"require_transaction_id":true,"proof_meta":["payplus_transaction_uid"]}}'
+    t_eq "AICC_LM_PAID_GATEWAYS: exactly the three listed ids, strict (transaction id required), proof meta kept, provider evidence required (live)" "$(echo "$FC" | jq -c '.AICC_LM_PAID_GATEWAYS')" '{"payplus-payment-gateway":{"require_transaction_id":true,"proof_meta":["payplus_transaction_uid"],"require_provider_evidence":true,"evidence_provider":"payplus","evidence_environment":"live"},"payplus-payment-gateway-applepay":{"require_transaction_id":true,"proof_meta":["payplus_transaction_uid"],"require_provider_evidence":true,"evidence_provider":"payplus","evidence_environment":"live"},"payplus-payment-gateway-googlepay":{"require_transaction_id":true,"proof_meta":["payplus_transaction_uid"],"require_provider_evidence":true,"evidence_provider":"payplus","evidence_environment":"live"}}'
     t_eq "AICC_LAUNCH_REAL_GATEWAYS: the one enabled card gateway (a subset of the runtime list)" "$(echo "$FC" | jq -c .AICC_LAUNCH_REAL_GATEWAYS)" '["payplus-payment-gateway"]'
     t_eq "WP_ACCESSIBLE_HOSTS: the API host plus exactly the owner's gateway host; outbound stays blocked" "$(echo "$FC" | jq -r '[.WP_ACCESSIBLE_HOSTS,.WP_HTTP_BLOCK_EXTERNAL]|join(" ")')" "api.copilt.org,restapi.payplus.co.il true"
     t_eq "AICC_LM_PAYMENT_GATE_STRICT is NOT defined by a production render (production is strict by its host name)" "$(echo "$FC" | jq -r .AICC_LM_PAYMENT_GATE_STRICT)" "null"
     t_ok "the facts are in ONE region: every owner-fact define is a single line" bash -c "[ \"\$(grep -c \"^define( 'AICC_\(ACTIVATION_PROOF_KID\|LEGAL_\|STRUCTURED\|LM_PAID_GATEWAYS\|LAUNCH_REAL\)\" '$OFD/prod.php')\" = 13 ]"
     t_not_contains "the render output names no value (nothing from the facts file is printed)" "$OUTF" "Example Studio"
     DIFFO="$(php -r '$dump=function($f){ $code=file_get_contents($f); preg_match_all("/define\(\s*\x27([A-Z_]+)\x27,\s*(.*?)\s*\);/", $code, $m, PREG_SET_ORDER); $o=[]; foreach($m as $x){ if(preg_match("/^(AUTH|SECURE_AUTH|LOGGED_IN|NONCE)_(KEY|SALT)$/",$x[1])) continue; $o[$x[1]]=$x[2]; } return $o; }; $s=$dump($argv[1]); $p=$dump($argv[2]); $d=[]; foreach(array_unique(array_merge(array_keys($s),array_keys($p))) as $k){ if(($s[$k]??null)!==($p[$k]??null)) $d[]=$k; } sort($d); echo json_encode($d);' "$OFD/stage.php" "$OFD/prod.php")"
-    t_eq "PINNED (with owner facts): the constants that differ from the stage render are the environment ones plus EXACTLY the thirteen owner-fact constants" "$DIFFO" '["AICC_ACTIVATION_PROOF_KID","AICC_ACTIVATION_PROOF_SECRET","AICC_ENTITLEMENT_WEBHOOK_SECRET","AICC_ENTITLEMENT_WEBHOOK_URL","AICC_LAUNCH_REAL_GATEWAYS","AICC_LEGAL_ENTITY_ADDRESS","AICC_LEGAL_ENTITY_NAME","AICC_LEGAL_GOVERNING_LAW","AICC_LEGAL_JURISDICTION","AICC_LEGAL_PAYMENT_PROCESSOR","AICC_LEGAL_REVIEW_APPROVED","AICC_LEGAL_SUBPROCESSORS_VERIFIED","AICC_LEGAL_SUPPORT_EMAIL","AICC_LEGAL_VAT_DETAILS","AICC_LM_PAID_GATEWAYS","AICC_STRUCTURED_DATA_OFFERS","WP_ACCESSIBLE_HOSTS","WP_ENVIRONMENT_TYPE","WP_HOME","WP_SITEURL"]'
-    t_contains "dry run reports the number of values and prints none" "$(OFR --dry-run 2>&1)" "owner facts: 14 value(s)"
+    t_eq "PINNED (with owner facts): the constants that differ from the stage render are the environment ones plus EXACTLY the fourteen owner-fact constants" "$DIFFO" '["AICC_ACTIVATION_PROOF_KID","AICC_ACTIVATION_PROOF_SECRET","AICC_ENTITLEMENT_WEBHOOK_SECRET","AICC_ENTITLEMENT_WEBHOOK_URL","AICC_LAUNCH_REAL_GATEWAYS","AICC_LEGAL_ENTITY_ADDRESS","AICC_LEGAL_ENTITY_NAME","AICC_LEGAL_GOVERNING_LAW","AICC_LEGAL_JURISDICTION","AICC_LEGAL_PAYMENT_PROCESSOR","AICC_LEGAL_REVIEW_APPROVED","AICC_LEGAL_SUBPROCESSORS_VERIFIED","AICC_LEGAL_SUPPORT_EMAIL","AICC_LEGAL_VAT_DETAILS","AICC_LM_PAID_GATEWAYS","AICC_LM_PAYMENT_EVIDENCE_PROVIDER","AICC_STRUCTURED_DATA_OFFERS","WP_ACCESSIBLE_HOSTS","WP_ENVIRONMENT_TYPE","WP_HOME","WP_SITEURL"]'
+    t_contains "dry run reports the number of values and prints none" "$(OFR --dry-run 2>&1)" "owner facts: 15 value(s)"
     t_not_contains "...nor any value" "$(OFR --dry-run 2>&1)" "Example Studio"
     # --- AICC_COMMERCE_OPEN: the ONE fail-closed switch for "commercial checkout is open" (pre-commercial truth round). Unset = CLOSED = the golden render; only `true`; production only; never without every launch fact.
     t_ok "production \`keys\` lists AICC_COMMERCE_OPEN" bash -c "env AICC_TEST_HARNESS=1 bash '$PROV/owner-facts.sh' --file '$OFF' --env production keys | grep -q '^AICC_COMMERCE_OPEN$'"
@@ -533,7 +539,6 @@ if [ -x "$LOCALMY/mysqld" ]; then
     t_eq "...and defines AICC_COMMERCE_OPEN as the boolean true" "$(cst "$OFD/prod.php" AICC_COMMERCE_OPEN | jq -c .AICC_COMMERCE_OPEN)" "true"
     t_eq "...exactly once, on one line" "$(grep -c "^define( 'AICC_COMMERCE_OPEN', true );$" "$OFD/prod.php")" "1"
     t_ok "unset AICC_COMMERCE_OPEN" OFT unset AICC_COMMERCE_OPEN
-    t_ok "...and the evidence provider fact is removed again (the file is back to what it was)" OFT unset AICC_LM_PAYMENT_EVIDENCE_PROVIDER
     t_ok "...the render is no longer refused and defines nothing (closed again)" bash -c "cd '$TMP' && env AICC_TEST_HARNESS=1 bash '$PROV/render-wp-config.sh' --env production --confirm-production --out '$OFD/prod.php' --secrets-dir '$OFSEC' --mail-dir '$OFD/nomail' --plugin-release-dir '$OFD/rel' --owner '$OFU' >/dev/null 2>&1 && ! grep -q \"define( 'AICC_COMMERCE_OPEN'\" '$OFD/prod.php'"
     t_eq "...the facts file is back to what it was before the switch" "$(cat "$OFF")" "$OFSAVE"
     # --- a re-render never loses an owner-set value
@@ -550,10 +555,10 @@ if [ -x "$LOCALMY/mysqld" ]; then
     t_ok "...and so does the owner-facts command" env AICC_TEST_HARNESS=1 bash "$TMP/aicc-owner-facts" --file "$OFF" --env production list
     # --- unset restores the golden render; the other values stay
     t_ok "unset one value" OFT unset AICC_LEGAL_VAT_DETAILS
-    t_eq "...it is gone from the file, the rest stays (13)" "$(OFT list | wc -l | tr -d ' ')" "13"
+    t_eq "...it is gone from the file, the rest stays (14)" "$(OFT list | wc -l | tr -d ' ')" "14"
     t_contains "unsetting a value that is not set says so and changes nothing" "$(OFT unset AICC_LEGAL_VAT_DETAILS 2>&1)" "was not set"
     t_rc "unsetting the paid-gateway list while the launch list still names its gateway is refused (order matters)" 1 OFT unset AICC_LM_PAID_GATEWAYS
-    for k in AICC_LAUNCH_REAL_GATEWAYS AICC_LM_PAID_GATEWAYS AICC_ACTIVATION_PROOF_KID AICC_LEGAL_ENTITY_NAME AICC_LEGAL_ENTITY_ADDRESS AICC_LEGAL_SUPPORT_EMAIL AICC_LEGAL_GOVERNING_LAW AICC_LEGAL_JURISDICTION AICC_LEGAL_PAYMENT_PROCESSOR AICC_LEGAL_REVIEW_APPROVED AICC_LEGAL_SUBPROCESSORS_VERIFIED AICC_STRUCTURED_DATA_OFFERS AICC_EXTRA_ACCESSIBLE_HOSTS; do OFT unset $k >/dev/null 2>&1; done
+    for k in AICC_LAUNCH_REAL_GATEWAYS AICC_LM_PAID_GATEWAYS AICC_ACTIVATION_PROOF_KID AICC_LEGAL_ENTITY_NAME AICC_LEGAL_ENTITY_ADDRESS AICC_LEGAL_SUPPORT_EMAIL AICC_LEGAL_GOVERNING_LAW AICC_LEGAL_JURISDICTION AICC_LEGAL_PAYMENT_PROCESSOR AICC_LEGAL_REVIEW_APPROVED AICC_LEGAL_SUBPROCESSORS_VERIFIED AICC_STRUCTURED_DATA_OFFERS AICC_EXTRA_ACCESSIBLE_HOSTS AICC_LM_PAYMENT_EVIDENCE_PROVIDER; do OFT unset $k >/dev/null 2>&1; done
     t_eq "after unsetting everything the file lists nothing" "$(OFT list | wc -l | tr -d ' ')" "0"
     OFR >/dev/null 2>&1; t_ok "...and the production render is the golden file again, byte for byte" bash -c "diff <(sed -E 's/[0-9a-f]{64}/HEX64/g' '$OFD/prod.php') '$HERE/golden/wp-config.production.no-owner-facts.php'"
     # --- validation: nothing invalid is accepted, nothing partial is written
@@ -651,9 +656,8 @@ if [ -x "$LOCALMY/mysqld" ]; then
     rm -f "$OFF"
     GWV='payplus-payment-gateway:payplus_transaction_uid,payplus-payment-gateway-applepay:payplus_transaction_uid'
     OFT set AICC_ACTIVATION_PROOF_KID prod-1 >/dev/null; OFT set AICC_LM_PAID_GATEWAYS "$GWV" >/dev/null
-    OFR >/dev/null 2>&1; EV0="$(cst "$OFD/prod.php" AICC_LM_PAID_GATEWAYS AICC_LM_PAYMENT_EVIDENCE_PROVIDER)"
-    t_eq "without the provider fact the gateway entries are exactly what they always were (no evidence keys)" "$(echo "$EV0" | jq -c '.AICC_LM_PAID_GATEWAYS|map(keys)')" '[["proof_meta","require_transaction_id"],["proof_meta","require_transaction_id"]]'
-    t_eq "...and the provider constant is not defined" "$(echo "$EV0" | jq -r .AICC_LM_PAYMENT_EVIDENCE_PROVIDER)" "null"
+    t_rc "without the provider fact the production render is REFUSED (Production 17: no unverified paid path can be rendered)" 1 OFR
+    t_contains "...the refusal names AICC_LM_PAYMENT_EVIDENCE_PROVIDER" "$(OFR 2>&1)" "AICC_LM_PAYMENT_EVIDENCE_PROVIDER"
     t_ok "set the evidence provider tag" OFT set AICC_LM_PAYMENT_EVIDENCE_PROVIDER payplus
     t_eq "list shows it" "$(OFT list | grep -c '^AICC_LM_PAYMENT_EVIDENCE_PROVIDER=payplus$')" "1"
     OFR >/dev/null 2>&1; t_ok "...the production render passes php -l" php -l "$OFD/prod.php"
