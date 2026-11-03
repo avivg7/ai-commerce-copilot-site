@@ -200,7 +200,7 @@ cap_check() { # cap_check <name> <declared bytes>
   [ "$MAXTOTAL_MB" -gt 0 ] || return 0
   [ -z "$ENC" ] || store="$1.cms"
   [ ! -f "$DEST/$store" ] || return 0                       # already stored: adds nothing
-  [[ "$eb" =~ ^[0-9]{1,12}$ ]] || eb=268435456
+  [[ "$eb" =~ ^(0|[1-9][0-9]{0,11})$ ]] || eb=268435456   # no leading zeros: bash 3.2 reads 08/0512 as octal inside $(( ))
   case "$name" in aicc_cp-*) p1='aicc_cp-*.sql.gz'; p2='aicc_cp-*.sql.gz.cms' ;; *) p1='aicc-files-*.tar.gz'; p2='aicc-files-*.tar.gz.cms' ;; esac
   cur="$(kind_bytes "$p1" "$p2")"
   if [ $(( cur + eb )) -gt $(( MAXTOTAL_MB * 1024 * 1024 )) ]; then
@@ -254,7 +254,7 @@ if [ "$WITH_FILES" = 1 ]; then [[ "$farc" =~ ^aicc-files-[0-9]{8}T[0-9]{6}Z-(sch
 # EVERY server-derived value is validated against a strict pattern BEFORE it is used in arithmetic, a path, a comparison or a remote command (bash evaluates the
 # value of a variable inside $(( )) as an expression, so an unvalidated string from the server would be code execution on this Mac).
 fin="$(echo "$status" | jq -r '.last_success.finished_epoch | tostring')"
-[[ "$fin" =~ ^[0-9]{9,11}$ ]] || { say "FAILURE bad finished_epoch from the server"; exit 1; }
+[[ "$fin" =~ ^[1-9][0-9]{8,10}$ ]] || { say "FAILURE bad finished_epoch from the server"; exit 1; }
 now_e="$(date -u +%s)"; age=$(( now_e - fin ))
 [ "$fin" -le $(( now_e + 86400 )) ] || { say "FAILURE the server's backup time is in the future"; exit 1; }
 say "server's latest good backup is ${age}s old ($dump)"
@@ -282,7 +282,7 @@ if [ "$WITH_FILES" = 1 ]; then cap_check "$farc" "$fbytes"; fi
 PULLED_SHA=""
 pull_one() { # pull_one <name> <sha-from-status> <bytes-from-status>; sets PULLED_SHA = the PLAINTEXT sha256 of what is stored
   local name="$1" want="$2" tmp="$DEST/$1.partial" side got sc store="$1" csha xrc decl="${3:-}" eb fk need_kb lim="$MAX_BYTES" l2
-  [[ "$decl" =~ ^[0-9]{1,12}$ ]] || decl=""
+  [[ "$decl" =~ ^(0|[1-9][0-9]{0,11})$ ]] || decl=""      # plain decimal only: a host-declared "09" would be octal (an arithmetic error that bash 3.2 turns into a silent skip)
   eb="${decl:-268435456}"      # the host's declared size is untrusted text: only plain digits are used, else 256 MiB is assumed for the space estimate
   [ -z "$ENC" ] || store="$1.cms"
   if [ -z "$ENC" ]; then

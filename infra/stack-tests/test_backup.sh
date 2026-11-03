@@ -252,6 +252,12 @@ jq --arg c "\$(touch $PWNED2)" '.db_dump.bytes = $c' "$REMOTE/status.json" > "$R
 t_ok "a declared size that is not a plain number is ignored (a fixed assumption is used) and the pull still works" PULL --stage-ip 203.0.113.9 --min-free-mb 1
 t_fail "...and the text from the host was never evaluated" test -e "$PWNED2"
 t_ok "...the set arrived" test -f "$TMP/dest/aicc_cp-20261102T010000Z-scheduled.sql.gz"
+# a host-declared size with a leading zero and an 8 or 9 is octal in bash 3.2 $(( )): it must be ignored like any non-number and the pull must still take the set
+mkset 20261102T020500Z
+jq '.db_dump.bytes = "09" | .files_archive.bytes = "0512"' "$REMOTE/status.json" > "$REMOTE/status.json.n" && mv "$REMOTE/status.json.n" "$REMOTE/status.json"
+t_ok "a host-declared size \"09\" / \"0512\" (octal in bash 3.2) is ignored and the pull still succeeds" PULL --stage-ip 203.0.113.9 --min-free-mb 1
+t_ok "...and the set arrived" test -f "$TMP/dest/aicc_cp-20261102T020500Z-scheduled.sql.gz"
+t_eq "...with no arithmetic error in the log" "$(grep -ci 'value too great\|syntax error in expression' "$TMP/dest/pull.log" || true)" "0"
 t_ok "the default floor and cap are documented in the pull script header" bash -c "grep -q 'default 3072, env AICC_PULL_MIN_FREE_MB' '$BKP/pull-offhost.sh' && grep -q 'default 3072, env AICC_PULL_MAX_TOTAL_MB' '$BKP/pull-offhost.sh'"
 # strict numbers: bash 3.2 (the launchd interpreter) reads 08 / 0512 as octal inside $(( )); they are refused up front instead
 t_rc "--min-free-mb 08 (leading zero) is a usage error, not a silently disabled guard" 2 PULL --stage-ip 203.0.113.9 --min-free-mb 08
