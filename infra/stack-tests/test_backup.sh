@@ -86,7 +86,8 @@ mkset() { # mkset <ts> -> creates a dump + archive set on the fake remote, write
   printf 'CREATE TABLE t (id int);\n-- Dump completed on %s\n' "$ts" | gzip -c > "$REMOTE/$d"; tar czf "$REMOTE/$f" -C "$TMP" fake-up 2>/dev/null
   echo "$(shasum -a 256 "$REMOTE/$d" | cut -d' ' -f1)  $d" > "$REMOTE/$d.sha256"; echo "$(shasum -a 256 "$REMOTE/$f" | cut -d' ' -f1)  $f" > "$REMOTE/$f.sha256"
   jq -n --arg d "$d" --arg f "$f" --arg ds "$(shasum -a 256 "$REMOTE/$d" | cut -d' ' -f1)" --arg fs "$(shasum -a 256 "$REMOTE/$f" | cut -d' ' -f1)" --argjson e "$(date -u +%s)" \
-    '{schema:1,status:"ok",reason:"",finished_epoch:$e,db_dump:{file:$d,sha256:$ds},files_archive:{file:$f,sha256:$fs},last_success:{finished_epoch:$e,db_dump_file:$d,files_archive_file:$f}}' > "$REMOTE/status.json"
+    --argjson db "$(wc -c < "$REMOTE/$d" | tr -d ' ')" --argjson fb "$(wc -c < "$REMOTE/$f" | tr -d ' ')" \
+    '{schema:1,status:"ok",reason:"",finished_epoch:$e,db_dump:{file:$d,bytes:$db,sha256:$ds},files_archive:{file:$f,bytes:$fb,sha256:$fs},last_success:{finished_epoch:$e,db_dump_file:$d,files_archive_file:$f}}' > "$REMOTE/status.json"
 }
 mkdir -p "$TMP/fake-up"; echo img > "$TMP/fake-up/a.jpg"
 printf 'AICC_ENV=staging\nAICC_HOSTNAME=stage.copilt.org\n' > "$TMP/ident"
@@ -252,43 +253,101 @@ t_ok "a declared size that is not a plain number is ignored (a fixed assumption 
 t_fail "...and the text from the host was never evaluated" test -e "$PWNED2"
 t_ok "...the set arrived" test -f "$TMP/dest/aicc_cp-20261102T010000Z-scheduled.sql.gz"
 t_ok "the default floor and cap are documented in the pull script header" bash -c "grep -q 'default 3072, env AICC_PULL_MIN_FREE_MB' '$BKP/pull-offhost.sh' && grep -q 'default 3072, env AICC_PULL_MAX_TOTAL_MB' '$BKP/pull-offhost.sh'"
-# hard cap: ten 1 MiB hourly dumps and archives, cap 4 MiB per kind
-rm -rf "$TMP/dest3"; mkdir -p "$TMP/dest3"; chmod 700 "$TMP/dest3"
-python3 - "$TMP/dest3" <<'PY'
+# strict numbers: bash 3.2 (the launchd interpreter) reads 08 / 0512 as octal inside $(( )); they are refused up front instead
+t_rc "--min-free-mb 08 (leading zero) is a usage error, not a silently disabled guard" 2 PULL --stage-ip 203.0.113.9 --min-free-mb 08
+t_rc "--min-free-mb 0512 is refused (it would be read as octal)" 2 PULL --stage-ip 203.0.113.9 --min-free-mb 0512
+t_rc "--max-total-mb 09 is a usage error" 2 PULL --stage-ip 203.0.113.9 --max-total-mb 09
+t_rc "AICC_PULL_MIN_FREE_MB=08 (environment) is refused too" 2 env AICC_PULL_MIN_FREE_MB=08 HOME="$TMP/home" PATH="$STUB:$PATH" bash "$BKP/pull-offhost.sh" --key "$FAKEKEY" --dest "$TMP/dest" --stage-ip 203.0.113.9
+t_rc "--min-free-mb with no value is a usage error (2)" 2 PULL --stage-ip 203.0.113.9 --min-free-mb
+t_ok "--min-free-mb 0 (guard off) and --max-total-mb 0 (gate off) are accepted" PULL --stage-ip 203.0.113.9 --dry-run --min-free-mb 0 --max-total-mb 0
+# a FIRST run on a full volume: the folder does not exist yet; the guard answers 5 before mkdir (it used to die in mkdir with 1)
+t_rc "first run on a volume below the floor (folder not created yet) exits 5, not 1" 5 PULL --dest "$TMP/newdir/sub" --stage-ip 203.0.113.9 --min-free-mb 999999999
+t_fail "...and it did not create the folder" test -e "$TMP/newdir"
+
+# a host that declares little and sends more is cut off with a clear error (bounded by declared size + 10% + 1 MiB)
+mkset 20261102T020000Z
+head -c 3000000 /dev/urandom | gzip -c > "$REMOTE/aicc_cp-20261102T020000Z-scheduled.sql.gz"
+HB="$(shasum -a 256 "$REMOTE/aicc_cp-20261102T020000Z-scheduled.sql.gz" | cut -d' ' -f1)"; echo "$HB  aicc_cp-20261102T020000Z-scheduled.sql.gz" > "$REMOTE/aicc_cp-20261102T020000Z-scheduled.sql.gz.sha256"
+jq --arg h "$HB" '.db_dump.sha256 = $h | .db_dump.bytes = 100' "$REMOTE/status.json" > "$REMOTE/status.json.n" && mv "$REMOTE/status.json.n" "$REMOTE/status.json"
+t_rc "transfer bound: a dump declared as 100 bytes that sends 3 MB is refused (exit 1)" 1 PULL --stage-ip 203.0.113.9 --min-free-mb 1
+t_contains "...the log names the size limit" "$(tail -3 "$TMP/dest/pull.log")" "size limit"
+t_fail "...nothing is kept and no .partial is left" bash -c "ls '$TMP'/dest/aicc_cp-20261102T020000Z* '$TMP'/dest/*.partial 2>/dev/null | grep -q ."
+t_eq "...and the ack does not name that set" "$(jq -r .set_ts "$REMOTE/offhost-ack.json" | grep -c 20261102T020000Z || true)" "0"
+
+# the destination path may contain glob characters: retention must still prune
+GD="$TMP/glob [x] dir"
+for ts in 20261001T010000Z 20261002T010000Z 20261003T010000Z; do mkset "$ts"; PULL --dest "$GD" --stage-ip 203.0.113.9 --min-free-mb 1 --keep 2 >/dev/null 2>&1; done
+t_eq "a --dest containing [ ] still gets its retention (--keep 2 leaves 2 dumps)" "$(ls "$GD"/aicc_cp-*.sql.gz | wc -l | tr -d ' ')" "2"
+
+# HARD CAP = INGEST GATE: it must NEVER delete history that the tier retention keeps (Production 19 security review S1). Small-scale reproduction of the reviewer's scenario:
+# 12 good daily sets (1 MiB each, 2..13 days old: all kept by the tiers) and then well-formed but huge sets from the host.
+CD="$TMP/dest3"; rm -rf "$CD"; mkdir -p "$CD"; chmod 700 "$CD"
+python3 - "$CD" <<'PY'
 import os, sys, time
 d = sys.argv[1]; now = int(time.time())
-for h in range(2, 12):
-    t = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime(now - h * 3600))
+for day in range(2, 14):
+    t = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime(now - day * 86400))
     for n in ("aicc_cp-%s-scheduled.sql.gz" % t, "aicc-files-%s-scheduled.tar.gz" % t):
         open(os.path.join(d, n), "wb").write(b"\0" * 1048576); open(os.path.join(d, n + ".sha256"), "w").write("x")
 PY
+mkbig() { # mkbig <ts> <bytes>: a well-formed set whose dump really is that big, and says so in status.json
+  mkset "$1"; local d="aicc_cp-$1-scheduled.sql.gz" h
+  head -c "$2" /dev/urandom | gzip -c > "$REMOTE/$d"; h="$(shasum -a 256 "$REMOTE/$d" | cut -d' ' -f1)"; echo "$h  $d" > "$REMOTE/$d.sha256"
+  jq --arg h "$h" --argjson b "$(wc -c < "$REMOTE/$d" | tr -d ' ')" '.db_dump.sha256 = $h | .db_dump.bytes = $b' "$REMOTE/status.json" > "$REMOTE/status.json.n" && mv "$REMOTE/status.json.n" "$REMOTE/status.json"
+}
+NH="$(ls "$CD"/aicc_cp-*.sql.gz | wc -l | tr -d ' ')"
+t_eq "(precondition) 12 good daily dumps in the folder" "$NH" "12"
+mkbig "$(date -u +%Y%m%dT%H%M%SZ)" 6000000
+: > "$CALLS"; ACK0="$(cat "$REMOTE/offhost-ack.json")"
+t_rc "hard cap: a huge well-formed set that would push the dumps over the cap is REFUSED (exit 6)" 6 PULL --dest "$CD" --stage-ip 203.0.113.9 --min-free-mb 1 --max-total-mb 14
+t_eq "...NOTHING was deleted: all 12 good daily dumps are still there" "$(ls "$CD"/aicc_cp-*.sql.gz | wc -l | tr -d ' ')" "12"
+t_eq "...and all 12 files archives" "$(ls "$CD"/aicc-files-*.tar.gz | wc -l | tr -d ' ')" "12"
+t_eq "...the huge set was never transferred" "$(grep -c "get aicc_cp-" "$CALLS" || true)" "0"
+t_contains "...pull.log says the cap was reached and nothing deleted" "$(tail -2 "$CD/pull.log")" "nothing was deleted"
+t_eq "...and the host was not told a copy exists (the ack file is unchanged)" "$(cat "$REMOTE/offhost-ack.json")" "$ACK0"
+for i in 1 2 3; do mkbig "$(date -u +%Y%m%dT%H%M%SZ)" 6000000; sleep 1; PULL --dest "$CD" --stage-ip 203.0.113.9 --min-free-mb 1 --max-total-mb 14 >/dev/null 2>&1 || true; done
+t_eq "three more hostile hourly sets in a row: still all 12 good dumps (a runaway host cannot purge the history)" "$(ls "$CD"/aicc_cp-*.sql.gz | wc -l | tr -d ' ')" "12"
 mkset "$(date -u +%Y%m%dT%H%M%SZ)"
-t_ok "hard cap: a pull with --max-total-mb 4 succeeds" PULL --dest "$TMP/dest3" --stage-ip 203.0.113.9 --min-free-mb 1 --max-total-mb 4
-NC="$(ls "$TMP"/dest3/aicc_cp-*.sql.gz | wc -l | tr -d ' ')"
-t_eq "hard cap: the 10 MiB of dumps shrank to about the cap (3 to 6 sets)" "$([ "$NC" -ge 3 ] && [ "$NC" -le 6 ] && echo yes || echo "no ($NC)")" "yes"
-t_eq "...the same for the files archives" "$([ "$(ls "$TMP"/dest3/aicc-files-*.tar.gz | wc -l | tr -d ' ')" -le 6 ] && echo yes || echo no)" "yes"
-t_eq "...the newest (just pulled) set is among the kept" "$(ls "$TMP"/dest3/aicc_cp-*.sql.gz | sort | tail -1 | xargs basename)" "$(jq -r .last_success.db_dump_file "$REMOTE/status.json")"
-t_eq "...pruned sets lose their sidecars too" "$(ls "$TMP"/dest3/aicc_cp-*.sql.gz.sha256 | wc -l | tr -d ' ')" "$NC"
-mkset "$(date -u +%Y%m%dT%H%M%SZ)"
-t_ok "hard cap: even a cap far below one set never drops below the newest 3" PULL --dest "$TMP/dest3" --stage-ip 203.0.113.9 --min-free-mb 1 --max-total-mb 1
-t_eq "...exactly 3 dumps remain" "$(ls "$TMP"/dest3/aicc_cp-*.sql.gz | wc -l | tr -d ' ')" "3"
+t_rc "history already over a (too low) cap: the set is refused and still nothing is deleted" 6 PULL --dest "$CD" --stage-ip 203.0.113.9 --min-free-mb 1 --max-total-mb 4
+t_eq "...12 dumps remain" "$(ls "$CD"/aicc_cp-*.sql.gz | wc -l | tr -d ' ')" "12"
+t_ok "an ordinary small set is still taken under the same cap (the gate judges size, not time)" PULL --dest "$CD" --stage-ip 203.0.113.9 --min-free-mb 1 --max-total-mb 14
+t_eq "...and the history is intact (12 good + the new one)" "$(ls "$CD"/aicc_cp-*.sql.gz | wc -l | tr -d ' ')" "13"
+mkbig "$(date -u +%Y%m%dT%H%M%SZ)" 6000000
+t_ok "raising the cap on purpose lets the large set in" PULL --dest "$CD" --stage-ip 203.0.113.9 --min-free-mb 1 --max-total-mb 64
+t_ok "--max-total-mb 0 turns the gate off" bash -c "env HOME='$TMP/home' PATH='$STUB:$PATH' bash '$BKP/pull-offhost.sh' --key '$FAKEKEY' --dest '$CD' --stage-ip 203.0.113.9 --min-free-mb 1 --max-total-mb 0"
 
-echo "== offhost-pull-runner.sh: a full Mac disk is notified at once, and a full volume does not silence the runner =="
-RN="$TMP/runner"; mkdir -p "$RN/bin" "$RN/dest"
+echo "== offhost-pull-runner.sh: a full Mac disk or a refused set is notified at once, rate-limited even when state files cannot be written =="
+RN="$TMP/runner"; mkdir -p "$RN/bin" "$RN/dest" "$RN/tmp"
 printf '#!/bin/sh\necho "$*" >> "%s/osa.log"\n' "$RN" > "$RN/bin/osascript"; chmod +x "$RN/bin/osascript"
-printf '#!/usr/bin/env bash\nexit "${STUB_PULL_RC:-1}"\n' > "$RN/pull.sh"
-RUN() { env PATH="$RN/bin:$PATH" STUB_PULL_RC="$1" bash "$BKP/macos/offhost-pull-runner.sh" --pull-script "$RN/pull.sh" --stage-ip 203.0.113.9 --stage-host stage.copilt.org --key "$FAKEKEY" --dest "$RN/dest"; }
+printf '#!/usr/bin/env bash\necho ran >> "%s/pull.calls"\n[ -z "${STUB_PULL_LOCK:-}" ] || chmod 500 "$STUB_PULL_LOCK"\nexit "${STUB_PULL_RC:-1}"\n' "$RN" > "$RN/pull.sh"
+RUN() { env PATH="$RN/bin:$PATH" TMPDIR="$RN/tmp" STUB_PULL_RC="$1" bash "$BKP/macos/offhost-pull-runner.sh" --pull-script "$RN/pull.sh" --stage-ip 203.0.113.9 --stage-host stage.copilt.org --key "$FAKEKEY" --dest "${2:-$RN/dest}"; }
 nots() { if [ -f "$RN/osa.log" ]; then wc -l < "$RN/osa.log" | tr -d ' '; else echo 0; fi; }
 t_rc "runner: one ordinary failure (exit 1) is counted and not notified" 1 RUN 1
 t_eq "...no notification yet" "$(nots)" "0"
 t_rc "runner: exit 5 (Mac volume too full) still returns 1" 1 RUN 5
 t_eq "...and notifies at once, without waiting for 3 failures and 26 h" "$(nots)" "1"
-t_contains "...the text names the disk" "$(cat "$RN/osa.log")" "disk is almost full"
+t_contains "...the text names the disk" "$(cat "$RN/osa.log")" "too full"
 t_rc "runner: a second exit 5 within 12 h" 1 RUN 5
 t_eq "...is not notified again" "$(nots)" "1"
-rm -f "$RN/dest/.last-notified"; rm -rf "$RN/dest/.consecutive-failures"; mkdir -p "$RN/dest/.consecutive-failures"    # a state file that cannot be written, as on a full volume
-t_rc "runner: unwritable state files (full volume) do not abort it" 1 RUN 5
-t_eq "...the notification was still shown" "$(nots)" "2"
+touch -t 197001020000 "$RN/dest/.last-notified" "$RN/tmp"/aicc-offhost-pull-notified.*
+t_rc "runner: exit 6 (hard cap reached / unusually large set)" 1 RUN 6
+t_eq "...notifies once the 12 h limit has passed" "$(nots)" "2"
+t_contains "...the text says nothing was deleted" "$(tail -1 "$RN/osa.log")" "Nothing was deleted"
+# state files that cannot be WRITTEN (as on a full volume): the 12 h limit lives in file times, which can still be updated
+rm -rf "$RN/dest/.consecutive-failures"; mkdir -p "$RN/dest/.consecutive-failures"
+touch -t 197001020000 "$RN/dest/.last-notified" "$RN/tmp"/aicc-offhost-pull-notified.*
+t_rc "runner: unwritable counter file does not abort it" 1 RUN 5
+t_eq "...the notification was still shown" "$(nots)" "3"
+t_rc "runner: and it is STILL rate limited when the counter cannot be written" 1 RUN 5
+t_eq "...no second notification within 12 h" "$(nots)" "3"
+# a folder that cannot even be created (first run on a full volume): the runner must still call the pull, notify once, and use the fallback stamp
+mkdir -p "$RN/ro"; chmod 500 "$RN/ro"; : > "$RN/pull.calls"
+t_rc "runner: --dest that cannot be created: the pull is still called and its exit 5 is reported" 1 RUN 5 "$RN/ro/dest"
+t_eq "...the pull was called" "$(wc -l < "$RN/pull.calls" | tr -d ' ')" "1"
+t_eq "...one notification" "$(nots)" "4"
+t_rc "runner: again, with no stamp possible in the folder" 1 RUN 5 "$RN/ro/dest"
+t_eq "...the fallback stamp in TMPDIR keeps it to one per 12 h" "$(nots)" "4"
+chmod 700 "$RN/ro"
 rm -rf "$RN/dest/.consecutive-failures"
 t_rc "runner: a pull that succeeds returns 0" 0 RUN 0
 
