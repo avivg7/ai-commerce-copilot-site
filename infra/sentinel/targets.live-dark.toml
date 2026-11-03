@@ -1,0 +1,66 @@
+# AICC Sentinel targets for the LIVE-DARK phase (Production 19, 2026-11-03): www.copilt.org and the apex already point at the Droplet (DNS cutover done, Let's Encrypt certificates), COMMERCE IS CLOSED,
+# and the production Backend (api.copilt.org) is still the pre-entitlement release. This is the phase between targets.dark.toml (www still on GitHub Pages) and targets.production.toml (after the Backend
+# cutover and the opening of commerce). Install it as the Mac LaunchAgent's targets.toml (copy; keep a backup of the previous file) and replace it by targets.production.toml when the Backend
+# reports "entitlement_mode":"enforced" (docs/cutover/production-promotion.md section 10, Backend cutover G9-G11).
+#
+# What it adds over the dark file: the public site (edge, application page, static home) with the Reserved IP pinned, and an assertion that COMMERCE IS STILL CLOSED ("Purchases open soon" on /pricing/:
+# if the pricing page ever stops saying so, or the CP stops answering, this pages). The Backend target does NOT require "entitlement_mode":"enforced" yet (before the Backend cutover "shadow" or no field is the
+# expected state and must never page); it asserts the health JSON says ok and the database is connected.
+#
+# NEVER add /wp-login.php, /wp-admin/, /wp-cron.php, /my-account/, /cart/, /checkout/ or any URL with side effects. A Mac that sleeps or is offline is blind: this file does not make the Mac a 24/7
+# observer (the independent option is the GitHub Actions variant, infra/sentinel/github/). No secrets here: Telegram credentials live in the secrets file only.
+
+[sentinel]
+interval_s = 120
+fail_n = 3                 # DOWN when 3 of the last 5 checks failed: one blip never pages
+window_m = 5
+recover_k = 2
+cooldown_s = 1800
+remind_s = 21600
+stale_after_s = 1800
+control_host = "api.telegram.org"
+secrets_file = "~/.config/aicc-sentinel/secrets.env"
+host_label = "mac-launchd"
+
+# Answered by Caddy itself: proves DNS (pinned to the Droplet's Reserved IPv4) + firewall + TLS certificate + the edge.
+[[target]]
+name = "www-edge"
+url = "https://www.copilt.org/healthz"
+interval_s = 120
+expect_status = 200
+expect_body = "ok"
+expect_ip = "206.189.248.204"
+latency_ms = 2000
+tls_warn_days = 14
+
+# WordPress-rendered public page (Caddy -> PHP-FPM -> WordPress -> MySQL) AND the commerce-closed assertion.
+[[target]]
+name = "www-pricing-closed"
+url = "https://www.copilt.org/pricing/"
+interval_s = 300
+expect_status = 200
+expect_body = "Purchases open soon"
+latency_ms = 6000
+timeout_s = 15
+tls_warn_days = 14
+
+# The static home page, served by Caddy from disk (does not touch PHP).
+[[target]]
+name = "www-home"
+url = "https://www.copilt.org/"
+interval_s = 300
+expect_status = 200
+expect_body = "<title"
+latency_ms = 3000
+
+# (The apex -> www redirect is not probed: the sentinel refuses off-target redirects by design, so a 301 target can only fail. It is checked by hand in the smoke list.)
+
+# Production API, WATCH ONLY: read-only GET /health.
+[[target]]
+name = "api-health"
+url = "https://api.copilt.org/health"
+interval_s = 300
+expect_status = 200
+expect_body = ['"status":"ok"', '"database":"connected"']
+latency_ms = 3000
+tls_warn_days = 14

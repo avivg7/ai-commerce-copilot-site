@@ -460,6 +460,31 @@ class ProductionAndGithubPack(unittest.TestCase):
         self.assertEqual([t["name"] for t in cfg["targets"]], ["api-health"])
         self.assertNotIn("stage.copilt.org", rd(self.DARK).replace("stage.copilt.org no longer answers", ""))
 
+    LIVE = os.path.join(ROOT, "targets.live-dark.toml")
+
+    def test_live_dark_targets_cover_the_public_site_and_assert_commerce_is_still_closed(self):
+        by = {t["name"]: t for t in S.load_config(self.LIVE)["targets"]}
+        self.assertEqual(set(by), {"www-edge", "www-pricing-closed", "www-home", "api-health"})
+        self.assertEqual(by["www-edge"]["expect_ip"], "206.189.248.204")
+        self.assertEqual(by["www-pricing-closed"]["url"], "https://www.copilt.org/pricing/")
+        self.assertEqual(S.as_list(by["www-pricing-closed"]["expect_body"]), ["Purchases open soon"])   # pages when the pricing page stops saying commerce is closed
+        for t in by.values():
+            self.assertEqual(t["method"], "GET")
+            for forbidden in ("wp-login", "wp-admin", "wp-cron", "my-account", "cart", "checkout", "xmlrpc"):
+                self.assertNotIn(forbidden, t["url"])
+        self.assertNotIn("stage.copilt.org", rd(self.LIVE))
+
+    def test_live_dark_api_health_does_not_demand_enforcement_before_the_backend_cutover(self):
+        by = {t["name"]: t for t in S.load_config(self.LIVE)["targets"]}
+        self.assertEqual(by["api-health"]["url"], "https://api.copilt.org/health")
+        self.assertNotIn("entitlement_mode", " ".join(S.as_list(by["api-health"]["expect_body"])))
+        self.assertEqual(S.as_list(by["api-health"]["expect_body"]), ['"status":"ok"', '"database":"connected"'])
+
+    def test_live_dark_file_holds_no_credential(self):
+        text = rd(self.LIVE)
+        self.assertIsNone(re.search(r"\b\d{6,}:[A-Za-z0-9_-]{20,}\b", text))
+        self.assertNotRegex(text.lower(), r"(bot_?token|api[_-]?key|password)\s*=\s*[\"']?[a-z0-9]")
+
     def test_github_targets_probe_exactly_one_public_url(self):
         cfg = S.load_config(os.path.join(self.GH, "targets.github.toml"))
         self.assertEqual(len(cfg["targets"]), 1)
