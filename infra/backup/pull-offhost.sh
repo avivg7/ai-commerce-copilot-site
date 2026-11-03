@@ -5,7 +5,7 @@
 # credentials for the Mac and a compromised server cannot delete the Mac's copies.
 #
 #   infra/backup/pull-offhost.sh --stage-ip <IPV4> [--stage-host stage.copilt.org] [--key ~/.ssh/aicc_cp_stage_offhost] [--user aicc-offhost]
-#                                [--dest ~/aicc-offhost-backups-stage] [--keep N] [--no-files-archive] [--no-ack] [--dry-run]
+#                                [--dest ~/aicc-offhost-backups-stage] [--keep N] [--no-files-archive] [--no-ack] [--dry-run] [--min-free-mb N] [--max-total-mb N]
 #   PRODUCTION (the staging Droplet promoted in place, docs/cutover/production-promotion.md; nothing is defaulted, every name below is different from the staging one on purpose):
 #   infra/backup/pull-offhost.sh --env production --stage-ip <IPV4> --stage-host www.copilt.org --expect-id <32 hex> [--key ~/.ssh/aicc_cp_prod_offhost]
 #                                [--dest ~/aicc-offhost-backups-production] [--known-hosts ~/.ssh/known_hosts_aicc_prod_cp] ...
@@ -33,12 +33,17 @@
 #     folder on an encrypted disk (FileVault). --no-files-archive pulls the database dump only.
 # Output files in --dest: aicc_cp-<UTC>-<label>.sql.gz(+.sha256), aicc-files-<UTC>-<label>.tar.gz(+.sha256), pull.log.
 # Schedule it yourself if you want (launchd/cron); this script does not install anything.
-# Exit codes: 0 ok, 1 pull/verification failed, 2 usage, 3 refused by a safety rule, 4 another pull is running (skipped).
+# FREE-SPACE GUARD (Production 19 finding): the pull refuses (exit 5, nothing transferred, nothing acknowledged) when the volume holding --dest has less than --min-free-mb free
+#   (default 3072, env AICC_PULL_MIN_FREE_MB; 0 turns the guard off) and, before each real transfer, when the free space would not cover 3x the size the host declares for that file
+#   (plaintext temp + ciphertext + margin) on top of that floor. --max-total-mb N (default 3072, env AICC_PULL_MAX_TOTAL_MB; 0 = off) is a HARD CAP applied per kind of file
+#   (dumps, files archives) after the tiered retention: the oldest kept sets are dropped until the kind fits, never below the newest 3 sets.
+# Exit codes: 0 ok, 1 pull/verification failed, 2 usage, 3 refused by a safety rule, 4 another pull is running (skipped), 5 the Mac's volume is too full (free-space guard).
 set -euo pipefail
 umask 077
 
 STAGE_IP=""; STAGE_HOST=""; KEY=""; USER_NAME="aicc-offhost"; DEST=""; KEEP=""; ENVN="stage"; EXPECT_ID=""; KNOWN_HOSTS=""
 WITH_FILES=1; DRY=0; ACK=1; ENC=""
+MINFREE_MB="${AICC_PULL_MIN_FREE_MB:-3072}"; MAXTOTAL_MB="${AICC_PULL_MAX_TOTAL_MB:-3072}"
 DENY_IPS="139.59.157.231 185.199.108.153 185.199.109.153 185.199.110.153 185.199.111.153"
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../provision/lib/ip-guard.sh"   # strict address check (security review L5)
 while [ $# -gt 0 ]; do
@@ -55,6 +60,8 @@ while [ $# -gt 0 ]; do
     --no-files-archive) WITH_FILES=0; shift ;;
     --no-ack) ACK=0; shift ;;
     --encrypt-to) ENC="${2:-}"; shift 2 ;;
+    --min-free-mb) MINFREE_MB="${2:-}"; shift 2 ;;
+    --max-total-mb) MAXTOTAL_MB="${2:-}"; shift 2 ;;
     --dry-run) DRY=1; shift ;;
     -h|--help) sed -n 2,27p "$0"; exit 0 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
@@ -103,6 +110,8 @@ if [ -n "$ENC" ]; then
   case "$ENC" in /*) ;; *) refuse "--encrypt-to must be an absolute path" ;; esac
 fi
 [ -z "$KEEP" ] || { [[ "$KEEP" =~ ^[0-9]+$ ]] && [ "$KEEP" -ge 2 ]; } || { echo "--keep must be a number >= 2" >&2; exit 2; }
+[[ "$MINFREE_MB" =~ ^[0-9]{1,9}$ ]] || { echo "--min-free-mb must be a number (MiB; 0 = guard off)" >&2; exit 2; }
+[[ "$MAXTOTAL_MB" =~ ^[0-9]{1,9}$ ]] || { echo "--max-total-mb must be a number (MiB; 0 = no cap)" >&2; exit 2; }
 [[ "$DEST" == /* ]] || { echo "--dest must be an absolute path" >&2; exit 2; }
 
 if [ "$ENVN" = production ]; then KH="$KNOWN_HOSTS"; SHK=yes; else KH="$HOME/.ssh/known_hosts_aicc_stage"; SHK=accept-new; fi
@@ -124,6 +133,15 @@ if [ "$DRY" = 1 ]; then
   exit 0
 fi
 mkdir -p "$DEST"; chmod 700 "$DEST"; : >> "$LOG"; chmod 600 "$LOG"
+# free space on the volume that holds --dest (KiB; empty when df cannot tell, in which case the guard stays silent rather than blocking every pull)
+free_kb() { df -Pk "$DEST" 2>/dev/null | awk 'NR==2 && $4 ~ /^[0-9]+$/ {print $4}'; }
+if [ "$MINFREE_MB" -gt 0 ]; then   # checked BEFORE the lock and before ssh: on a 100% full volume even the lock directory cannot be created
+  fk="$(free_kb)"
+  if [ -n "$fk" ] && [ "$fk" -lt $(( MINFREE_MB * 1024 )) ]; then
+    m="FAILURE the Mac volume holding $DEST has $(( fk / 1024 )) MiB free, below the floor of $MINFREE_MB MiB: nothing was pulled and nothing acknowledged (free space, then re-run)"
+    echo "$(ts)  $m" >&2; { echo "$(ts)  $m" >> "$LOG"; } 2>/dev/null || true; exit 5
+  fi
+fi
 # one run at a time (launchd may start a run while a slow one is still going); a stale lock of a dead pid is taken over
 LOCK="$DEST/.pull.lock"
 if ! mkdir "$LOCK" 2>/dev/null; then
@@ -173,15 +191,22 @@ want_farc="$(echo "$status" | jq -r --arg f "$farc" 'if .files_archive.file == $
 [[ -z "$want_dump" || "$want_dump" =~ ^[0-9a-f]{64}$ ]] || { say "FAILURE bad dump hash in status.json"; exit 1; }
 [[ -z "$want_farc" || "$want_farc" =~ ^[0-9a-f]{64}$ ]] || { say "FAILURE bad archive hash in status.json"; exit 1; }
 
+dbytes="$(echo "$status" | jq -r --arg f "$dump" 'if .db_dump.file == $f then (.db_dump.bytes | tostring) else empty end')"
+fbytes="$(echo "$status" | jq -r --arg f "$farc" 'if .files_archive.file == $f then (.files_archive.bytes | tostring) else empty end')"
 PULLED_SHA=""
-pull_one() { # pull_one <name> <sha-from-status>; sets PULLED_SHA = the PLAINTEXT sha256 of what is stored
-  local name="$1" want="$2" tmp="$DEST/$1.partial" side got sc store="$1" csha
+pull_one() { # pull_one <name> <sha-from-status> <bytes-from-status>; sets PULLED_SHA = the PLAINTEXT sha256 of what is stored
+  local name="$1" want="$2" tmp="$DEST/$1.partial" side got sc store="$1" csha eb="${3:-}" fk need_kb
   [ -z "$ENC" ] || store="$1.cms"
   if [ -z "$ENC" ]; then
     if [ -f "$DEST/$name" ] && [ -f "$DEST/$name.sha256" ] && [ "$(sha_of "$DEST/$name")" = "$want" ]; then PULLED_SHA="$want"; say "already have $name (checksum verified)"; return 0; fi
   else
     if [ -f "$DEST/$store" ] && [ -f "$DEST/$store.sha256" ] && [ -f "$DEST/$store.csha256" ] && [ -n "$want" ] && [ "$(awk '{print $1}' "$DEST/$store.sha256")" = "$want" ] \
        && [ "$(sha_of "$DEST/$store")" = "$(awk '{print $1}' "$DEST/$store.csha256")" ]; then PULLED_SHA="$want"; say "already have $name (encrypted copy, ciphertext checksum verified)"; return 0; fi
+  fi
+  if [ "$MINFREE_MB" -gt 0 ]; then   # the host's declared size is untrusted text: only a plain number is used, otherwise 256 MiB is assumed
+    [[ "$eb" =~ ^[0-9]{1,12}$ ]] || eb=268435456
+    need_kb=$(( MINFREE_MB * 1024 + 3 * (eb / 1024 + 1) )); fk="$(free_kb)"
+    if [ -n "$fk" ] && [ "$fk" -lt "$need_kb" ]; then say "FAILURE not enough free space for $name: $(( fk / 1024 )) MiB free, need $(( need_kb / 1024 )) MiB (floor $MINFREE_MB MiB + 3x the declared size); nothing transferred"; exit 5; fi
   fi
   bounded "${SSH[@]}" "get $name" > "$tmp" || { rm -f "$tmp"; say "FAILURE transfer of $name"; return 1; }
   if [ "$(wc -c < "$tmp" | tr -d ' ')" -ge "$MAX_BYTES" ]; then rm -f "$tmp"; say "FAILURE $name reached the size ceiling"; return 1; fi
@@ -207,8 +232,8 @@ pull_one() { # pull_one <name> <sha-from-status>; sets PULLED_SHA = the PLAINTEX
   sc="$(wc -c < "$DEST/$store" | tr -d ' ')"
   say "SUCCESS pulled $name ($sc bytes$([ -n "$ENC" ] && echo ', stored encrypted')), checksum verified"
 }
-pull_one "$dump" "$want_dump" || exit 1; DSHA_P="$PULLED_SHA"
-if [ "$WITH_FILES" = 1 ]; then pull_one "$farc" "$want_farc" || exit 1; FSHA_P="$PULLED_SHA"; fi
+pull_one "$dump" "$want_dump" "$dbytes" || exit 1; DSHA_P="$PULLED_SHA"
+if [ "$WITH_FILES" = 1 ]; then pull_one "$farc" "$want_farc" "$fbytes" || exit 1; FSHA_P="$PULLED_SHA"; fi
 
 # Tell the host a verified copy now exists off-host (AICC Ops alerts when this ack goes stale). The host re-checks the hashes against its own sidecars.
 set_ts="$(echo "$dump" | sed -n 's/^aicc_cp-\([0-9]\{8\}T[0-9]\{6\}Z\)-.*/\1/p')"
@@ -221,9 +246,9 @@ date -u +%s > "$DEST/.last-ok"; chmod 600 "$DEST/.last-ok"
 
 # retention. Default (tiered, matches an HOURLY backup): every set of the last 24 h, the newest set of each UTC day for 14 days, the newest of each ISO week for 8 weeks, and
 # never fewer than the newest 3. `--keep N` = simply the newest N of each kind. Only files matching our name patterns are touched; the timestamp in the name decides.
-python3 -I - "$DEST" "$KEEP" > "$DEST/.prune.list" <<'PY'
+python3 -I - "$DEST" "$KEEP" "$MAXTOTAL_MB" > "$DEST/.prune.list" <<'PY'
 import datetime, glob, os, re, sys, time
-d, keep = sys.argv[1], sys.argv[2]
+d, keep, cap_mb = sys.argv[1], sys.argv[2], int(sys.argv[3])
 now = datetime.datetime.now(datetime.timezone.utc)
 rx = re.compile(r"-(\d{8}T\d{6}Z)-")
 for pat in ("aicc_cp-*.sql.gz", "aicc_cp-*.sql.gz.cms", "aicc-files-*.tar.gz", "aicc-files-*.tar.gz.cms"):
@@ -250,6 +275,13 @@ for pat in ("aicc_cp-*.sql.gz", "aicc_cp-*.sql.gz.cms", "aicc-files-*.tar.gz", "
                 days.add(day); keepset.add(f)
             if age <= datetime.timedelta(weeks=8) and wk not in weeks:
                 weeks.add(wk); keepset.add(f)
+    if cap_mb:   # HARD CAP per kind of file: drop the oldest kept sets until it fits, never below the newest 3
+        kept = [f for f, _ in items if f in keepset]          # newest first
+        total = sum(os.path.getsize(f) for f in kept)
+        for f in reversed(kept[3:]):
+            if total <= cap_mb * 1024 * 1024:
+                break
+            total -= os.path.getsize(f); keepset.discard(f)
     for f, _ in items:
         if f not in keepset:
             print(f)

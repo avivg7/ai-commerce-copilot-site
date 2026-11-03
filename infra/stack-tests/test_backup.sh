@@ -110,6 +110,8 @@ FAKEKEY="$TMP/fake_stage_key"; printf -- '-----BEGIN %s-----\nDUMMY-NOT-A-KEY\n-
 PRODKEY="$TMP/aicc_digitalocean_prod"; cp "$FAKEKEY" "$PRODKEY"
 PULL() { env HOME="$TMP/home" PATH="$STUB:$PATH" bash "$BKP/pull-offhost.sh" --key "$FAKEKEY" --dest "$TMP/dest" "$@"; }
 mkdir -p "$TMP/home/.ssh"
+# the pull refuses on a nearly full Mac volume (free-space guard, tested below): the other tests must not depend on how full the developer disk is
+export AICC_PULL_MIN_FREE_MB=1 AICC_PULL_MAX_TOTAL_MB=0
 mkset 20261021T033012Z
 t_rc "no --stage-ip: usage error (the host is never guessed)" 2 PULL
 t_rc "production API IP 139.59.157.231 is REFUSED" 3 PULL --stage-ip 139.59.157.231
@@ -226,6 +228,69 @@ for l in sys.stdin:
     ts=l.strip().split("-")[-2]; ep=time.mktime(time.strptime(ts,"%Y%m%dT%H%M%SZ"))-time.timezone
     n+= (time.time()-ep)<=86400
 print("yes" if n>=22 else "no (%d)"%n)')" "yes"
+
+echo "== pull-offhost.sh: free-space guard, hard cap, and the runner's disk-full notification (Production 19) =="
+mkset 20261102T010000Z
+: > "$CALLS"
+t_rc "free-space guard: a floor above what the volume has is REFUSED with exit 5" 5 PULL --stage-ip 203.0.113.9 --min-free-mb 999999999
+t_eq "...before any ssh call (nothing asked of the host, nothing acknowledged)" "$(wc -l < "$CALLS" | tr -d ' ')" "0"
+t_contains "...pull.log says why" "$(tail -2 "$TMP/dest/pull.log")" "below the floor"
+t_fail "...the new set was not pulled" test -f "$TMP/dest/aicc_cp-20261102T010000Z-scheduled.sql.gz"
+t_rc "--min-free-mb abc is a usage error" 2 PULL --stage-ip 203.0.113.9 --min-free-mb abc
+t_rc "--max-total-mb -1 is a usage error" 2 PULL --stage-ip 203.0.113.9 --max-total-mb -1
+jq '.db_dump.bytes = 900000000000' "$REMOTE/status.json" > "$REMOTE/status.json.n" && mv "$REMOTE/status.json.n" "$REMOTE/status.json"
+: > "$CALLS"
+t_rc "free-space guard: a declared size that cannot fit is REFUSED before the transfer (exit 5)" 5 PULL --stage-ip 203.0.113.9 --min-free-mb 1
+t_eq "...no 'get <dump>' transfer call was made" "$(grep -c "get aicc_cp-20261102T010000Z-scheduled.sql.gz\$" "$CALLS" || true)" "0"
+t_fail "...nothing of the set is kept" test -f "$TMP/dest/aicc_cp-20261102T010000Z-scheduled.sql.gz"
+t_contains "...pull.log names the shortfall" "$(tail -2 "$TMP/dest/pull.log")" "not enough free space"
+t_eq "...and the host was not told a copy exists (the ack does not name this set)" "$(jq -r .set_ts "$REMOTE/offhost-ack.json" | grep -c 20261102T010000Z || true)" "0"
+t_eq "...no lock directory is left behind" "$(ls -d "$TMP"/dest/.pull.lock 2>/dev/null | wc -l | tr -d ' ')" "0"
+PWNED2="$TMP/pwned2.flag"; rm -f "$PWNED2"
+jq --arg c "\$(touch $PWNED2)" '.db_dump.bytes = $c' "$REMOTE/status.json" > "$REMOTE/status.json.n" && mv "$REMOTE/status.json.n" "$REMOTE/status.json"
+t_ok "a declared size that is not a plain number is ignored (a fixed assumption is used) and the pull still works" PULL --stage-ip 203.0.113.9 --min-free-mb 1
+t_fail "...and the text from the host was never evaluated" test -e "$PWNED2"
+t_ok "...the set arrived" test -f "$TMP/dest/aicc_cp-20261102T010000Z-scheduled.sql.gz"
+t_ok "the default floor and cap are documented in the pull script header" bash -c "grep -q 'default 3072, env AICC_PULL_MIN_FREE_MB' '$BKP/pull-offhost.sh' && grep -q 'default 3072, env AICC_PULL_MAX_TOTAL_MB' '$BKP/pull-offhost.sh'"
+# hard cap: ten 1 MiB hourly dumps and archives, cap 4 MiB per kind
+rm -rf "$TMP/dest3"; mkdir -p "$TMP/dest3"; chmod 700 "$TMP/dest3"
+python3 - "$TMP/dest3" <<'PY'
+import os, sys, time
+d = sys.argv[1]; now = int(time.time())
+for h in range(2, 12):
+    t = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime(now - h * 3600))
+    for n in ("aicc_cp-%s-scheduled.sql.gz" % t, "aicc-files-%s-scheduled.tar.gz" % t):
+        open(os.path.join(d, n), "wb").write(b"\0" * 1048576); open(os.path.join(d, n + ".sha256"), "w").write("x")
+PY
+mkset "$(date -u +%Y%m%dT%H%M%SZ)"
+t_ok "hard cap: a pull with --max-total-mb 4 succeeds" PULL --dest "$TMP/dest3" --stage-ip 203.0.113.9 --min-free-mb 1 --max-total-mb 4
+NC="$(ls "$TMP"/dest3/aicc_cp-*.sql.gz | wc -l | tr -d ' ')"
+t_eq "hard cap: the 10 MiB of dumps shrank to about the cap (3 to 6 sets)" "$([ "$NC" -ge 3 ] && [ "$NC" -le 6 ] && echo yes || echo "no ($NC)")" "yes"
+t_eq "...the same for the files archives" "$([ "$(ls "$TMP"/dest3/aicc-files-*.tar.gz | wc -l | tr -d ' ')" -le 6 ] && echo yes || echo no)" "yes"
+t_eq "...the newest (just pulled) set is among the kept" "$(ls "$TMP"/dest3/aicc_cp-*.sql.gz | sort | tail -1 | xargs basename)" "$(jq -r .last_success.db_dump_file "$REMOTE/status.json")"
+t_eq "...pruned sets lose their sidecars too" "$(ls "$TMP"/dest3/aicc_cp-*.sql.gz.sha256 | wc -l | tr -d ' ')" "$NC"
+mkset "$(date -u +%Y%m%dT%H%M%SZ)"
+t_ok "hard cap: even a cap far below one set never drops below the newest 3" PULL --dest "$TMP/dest3" --stage-ip 203.0.113.9 --min-free-mb 1 --max-total-mb 1
+t_eq "...exactly 3 dumps remain" "$(ls "$TMP"/dest3/aicc_cp-*.sql.gz | wc -l | tr -d ' ')" "3"
+
+echo "== offhost-pull-runner.sh: a full Mac disk is notified at once, and a full volume does not silence the runner =="
+RN="$TMP/runner"; mkdir -p "$RN/bin" "$RN/dest"
+printf '#!/bin/sh\necho "$*" >> "%s/osa.log"\n' "$RN" > "$RN/bin/osascript"; chmod +x "$RN/bin/osascript"
+printf '#!/usr/bin/env bash\nexit "${STUB_PULL_RC:-1}"\n' > "$RN/pull.sh"
+RUN() { env PATH="$RN/bin:$PATH" STUB_PULL_RC="$1" bash "$BKP/macos/offhost-pull-runner.sh" --pull-script "$RN/pull.sh" --stage-ip 203.0.113.9 --stage-host stage.copilt.org --key "$FAKEKEY" --dest "$RN/dest"; }
+nots() { if [ -f "$RN/osa.log" ]; then wc -l < "$RN/osa.log" | tr -d ' '; else echo 0; fi; }
+t_rc "runner: one ordinary failure (exit 1) is counted and not notified" 1 RUN 1
+t_eq "...no notification yet" "$(nots)" "0"
+t_rc "runner: exit 5 (Mac volume too full) still returns 1" 1 RUN 5
+t_eq "...and notifies at once, without waiting for 3 failures and 26 h" "$(nots)" "1"
+t_contains "...the text names the disk" "$(cat "$RN/osa.log")" "disk is almost full"
+t_rc "runner: a second exit 5 within 12 h" 1 RUN 5
+t_eq "...is not notified again" "$(nots)" "1"
+rm -f "$RN/dest/.last-notified"; rm -rf "$RN/dest/.consecutive-failures"; mkdir -p "$RN/dest/.consecutive-failures"    # a state file that cannot be written, as on a full volume
+t_rc "runner: unwritable state files (full volume) do not abort it" 1 RUN 5
+t_eq "...the notification was still shown" "$(nots)" "2"
+rm -rf "$RN/dest/.consecutive-failures"
+t_rc "runner: a pull that succeeds returns 0" 0 RUN 0
 
 echo "== aicc-offhost-serve.sh: what the restricted pull key may and may not do =="
 SV() { env AICC_TEST_HARNESS=1 AICC_BACKUP_DIR="$REMOTE" AICC_IDENTITY_FILE="$TMP/ident" bash "$BKP/aicc-offhost-serve.sh" "$@"; }

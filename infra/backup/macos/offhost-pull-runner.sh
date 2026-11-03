@@ -19,16 +19,23 @@ FAILS="$DEST/.consecutive-failures"; NOTIFIED="$DEST/.last-notified"; LASTOK="$D
 now="$(date -u +%s)"
 EXTRA=(); [ "$ENVN" = production ] && EXTRA=(--env production --expect-id "$EXPECT_ID" --known-hosts "$KNOWN_HOSTS")
 [ -z "$ENC" ] || EXTRA+=(--encrypt-to "$ENC")
-if bash "$PULL" --stage-ip "$IP" --stage-host "$HOST" --key "$KEY" --dest "$DEST" ${EXTRA[@]+"${EXTRA[@]}"}; then
+rc=0
+bash "$PULL" --stage-ip "$IP" --stage-host "$HOST" --key "$KEY" --dest "$DEST" ${EXTRA[@]+"${EXTRA[@]}"} || rc=$?
+if [ "$rc" -eq 0 ]; then
   rm -f "$FAILS"; exit 0
 fi
-n=$(( $(cat "$FAILS" 2>/dev/null || echo 0) + 1 )); echo "$n" > "$FAILS"
+# on a full volume these small state files cannot be written: that must not stop the notification below (set -e), so every write here is best effort
+n=$(( $(cat "$FAILS" 2>/dev/null || echo 0) + 1 )); { echo "$n" > "$FAILS"; } 2>/dev/null || true
 last_ok="$(cat "$LASTOK" 2>/dev/null || echo 0)"; age_h=$(( (now - last_ok) / 3600 ))
 last_n="$(cat "$NOTIFIED" 2>/dev/null || echo 0)"
-if [ "$n" -ge 3 ] && [ "$age_h" -ge "$AFTER_H" ] && [ $(( now - last_n )) -ge 43200 ]; then
-  echo "$now" > "$NOTIFIED"
+msg=""
+# exit 5 = the pull's free-space guard: a full Mac disk is a local problem the owner can fix at once, so it is not held back for 26 h or 3 failures
+if [ "$rc" -eq 5 ]; then msg="The Mac disk is almost full: backups are NOT being copied. Free space now."
+elif [ "$n" -ge 3 ] && [ "$age_h" -ge "$AFTER_H" ]; then msg="No verified off-host backup pull for over a day. Check network, key and the host."; fi
+if [ -n "$msg" ] && [ $(( now - last_n )) -ge 43200 ]; then
+  { echo "$now" > "$NOTIFIED"; } 2>/dev/null || true
   if command -v osascript >/dev/null 2>&1; then
-    osascript -e 'display notification "No verified off-host backup pull for over a day. Check network, key and the host." with title "AICC backup pull"' >/dev/null 2>&1 || true
+    osascript -e "display notification \"$msg\" with title \"AICC backup pull\"" >/dev/null 2>&1 || true
   fi
 fi
 exit 1
