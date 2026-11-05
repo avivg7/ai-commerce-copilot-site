@@ -2,7 +2,7 @@ import { ArrowRight, CalendarCheck, Check, Rocket, Sparkles } from "lucide-react
 import type { Locale } from "@/i18n/config";
 import type { Dictionary } from "@/i18n";
 import { txProps } from "@/i18n";
-import { EA_ON, EA_OPEN, EA_CUTOFF_ISO_UTC, eaUrl } from "@/lib/earlyAccess";
+import { EA_ON, EA_OPEN, EA_EXTENDED, EA_END_ISO_UTC, eaUrl } from "@/lib/earlyAccess";
 import { localePath } from "@/lib/routes";
 import { Button } from "@/components/ui/Button";
 import { Container, Section, SectionHeading } from "@/components/ui/Primitives";
@@ -27,7 +27,7 @@ export function EaBar({ locale, t }: { locale: Locale; t: Dictionary }) {
       <Container>
         <p className="aicc-eabar__text">
           <Sparkles size={16} aria-hidden="true" />
-          <span {...A(locale, "ea.bar")}>{EA_OPEN ? e.live : e.announce}</span>
+          <span {...A(locale, EA_OPEN && EA_EXTENDED ? "ea.extended" : "ea.bar")}>{EA_OPEN ? (EA_EXTENDED ? t.ea.extended.bar : e.live) : e.announce}</span>
           <LocaleLink locale={locale} route="pricing" hash="early-access" className="aicc-eabar__link">
             <span {...A(locale, "ea.bar")}>{e.link}</span>
           </LocaleLink>
@@ -90,10 +90,11 @@ export function EaSection({ locale, t }: { locale: Locale; t: Dictionary }) {
   if (!EA_ON) return null;
   const s = t.ea.section;
   const steps = [s.steps.request, s.steps.use, s.steps.decide];
-  const faq = (["free", "end", "auto", "continue", "guarantee", "plugin"] as const).map((k) => ({ id: `ea-faq-${k}`, question: s.faq[k].q, answer: <p>{s.faq[k].a}</p> }));
+  const ctx = { locale, t };
+  const faq = (["free", "end", "auto", "continue", "change", "extension", "guarantee", "plugin"] as const).map((k) => ({ id: `ea-faq-${k}`, question: s.faq[k].q, answer: <p><Rich text={s.faq[k].a} ctx={ctx} /></p> }));
   const icons = [<Rocket key="r" size={20} aria-hidden="true" />, <Check key="c" size={20} aria-hidden="true" />, <CalendarCheck key="k" size={20} aria-hidden="true" />];
   return (
-    <div data-ea-live data-ea-cutoff={EA_CUTOFF_ISO_UTC} {...A(locale, "ea.section")}>
+    <div data-ea-live data-ea-cutoff={EA_END_ISO_UTC} {...A(locale, "ea.section")}>
       <Section id="early-access" tone="surface" labelledBy="ea-title" className="aicc-easection">
         <Container>
           <div className="aicc-easection__head">
@@ -102,6 +103,12 @@ export function EaSection({ locale, t }: { locale: Locale; t: Dictionary }) {
               <RecoImage pose="celebrate" sizes="(min-width: 62rem) 200px, 36vw" displayWidth={160} />
             </div>
           </div>
+          {EA_EXTENDED ? (
+            <p className="aicc-ealead aicc-eaextended" data-ea-extended-note {...A(locale, "ea.extended")}>
+              <Sparkles size={18} aria-hidden="true" />
+              <span>{t.ea.extended.note}</span>
+            </p>
+          ) : null}
           <ol className="aicc-eatimeline" aria-label={s.stepsLabel}>
             {steps.map((st, i) => (
               <li key={st.title}>
@@ -125,7 +132,7 @@ export function EaSection({ locale, t }: { locale: Locale; t: Dictionary }) {
               </ul>
             </div>
           </div>
-          <p className="aicc-muted aicc-small" style={{ marginBlockStart: "1.5rem", maxInlineSize: "52rem" }}><Rich text={s.terms} ctx={{ locale, t }} /></p>
+          <p className="aicc-muted aicc-small" style={{ marginBlockStart: "1.5rem", maxInlineSize: "52rem" }}><Rich text={s.terms} ctx={ctx} />{" "}<Rich text={s.reservation} ctx={ctx} /></p>
           <h3 className="aicc-eah3" style={{ marginBlockStart: "2rem" }}>{s.faqTitle}</h3>
           <Accordion items={faq} />
         </Container>

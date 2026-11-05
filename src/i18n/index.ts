@@ -4,6 +4,8 @@ import { he } from "./he";
 import { es } from "./es";
 import { ru } from "./ru";
 import { mergeOverEnglish, unitOf, type DeepPartial } from "./merge";
+import { resolveEaDict, type EaStepIndex } from "./eaTokens";
+import { EA_EXTENSION_STEP } from "@/lib/earlyAccess";
 
 export type { Dictionary };
 
@@ -12,9 +14,22 @@ const MERGED = Object.fromEntries(
   (Object.keys(PARTIALS) as Locale[]).map((l) => [l, l === "en" ? { dict: en, fallback: new Set<string>(), units: [] as string[] } : mergeOverEnglish(en, PARTIALS[l])]),
 ) as Record<Locale, { dict: Dictionary; fallback: Set<string>; units: string[] }>;
 
-/** Server-side dictionary lookup (English fills every string a locale has not translated yet). */
+/**
+ * The campaign dictionary (`ea`) of a locale with its date tokens resolved for an extension step (0 = the initial end). A string of an untranslated unit is English text
+ * and gets the English dates. Used by tests to read the copy of any step; the site itself renders the step of THIS build (EA_EXTENSION_STEP, src/lib/earlyAccess.ts).
+ */
+export function getEaDictionary(locale: Locale, step: EaStepIndex): Dictionary["ea"] {
+  const m = MERGED[locale];
+  return resolveEaDict(m.dict.ea, (path) => (m.fallback.has(unitOf(`ea.${path}`)) ? "en" : locale), step);
+}
+
+const RESOLVED = Object.fromEntries(
+  (Object.keys(MERGED) as Locale[]).map((l) => [l, { ...MERGED[l].dict, ea: getEaDictionary(l, EA_EXTENSION_STEP) }]),
+) as Record<Locale, Dictionary>;
+
+/** Server-side dictionary lookup (English fills every string a locale has not translated yet; the Early Access dates are those of this build's end). */
 export function getDictionary(locale: Locale): Dictionary {
-  return MERGED[locale].dict;
+  return RESOLVED[locale];
 }
 
 /** True when the string at `path` (or its whole unit) is showing English text on a non-English page. */
