@@ -1266,6 +1266,22 @@ html[data-ea-mode]:not([data-ea-over]) [data-ea-hide-live] { display: none !impo
 .aicc-eabar { position: relative; z-index: 1; margin-block-start: var(--aicc-header-h); padding-block: 0.5rem; display: block; background: linear-gradient(90deg, var(--aicc-navy-950), var(--aicc-navy-900) 55%, #0b3b35); color: var(--aicc-text-inverse); }
 html[data-ea-mode]:not([data-ea-over]) .aicc-hero { padding-block-start: calc(9rem - var(--aicc-header-h)); }
 @media (max-width: 30rem) { html[data-ea-mode]:not([data-ea-over]) .aicc-hero { padding-block-start: calc(5.75rem - var(--aicc-header-h)); } }
+/* P21: in the two-column hero the longest headline word ("recommendations.", "Recomendaciones", "рекомендации") must fit the column at every width, or it breaks in the middle of the
+ * word (it did at 1024 px): the size follows the viewport between 1024 and about 1200 px and is the brand's 3.75rem above that. */
+@media (min-width: 64rem) { .aicc-hero-title { font-size: min(3.75rem, calc((100vw - 7.5rem) / 18)); } }
+/* P21: the headline is two sentences: the accent (the second one) starts its own line, so a line never ends on "More" with its noun on the next. fit-content keeps the gradient the width of the text. */
+.aicc-hero-title .aicc-text-gradient { display: block; inline-size: fit-content; max-inline-size: 100%; }
+/* P21: above the fold of an Early Access build. The global bar already says the offer once; on a desktop or laptop screen of ordinary height (up to 56rem = 896 px) the hero is
+ * compacted while the offer is live so the whole headline, the primary action and the fine print are on the first screen (1280 x 720). The category line is dropped (the pill
+ * above the headline already says what the product is for) and the headline is set at 3rem instead of 3.75rem. Only while the campaign is live: the ended view and every normal build keep the standard hero. */
+@media (min-width: 40rem) and (max-height: 56rem) {
+  html[data-ea-mode]:not([data-ea-over]) .aicc-hero { padding-block: 2rem 3rem; }
+  html[data-ea-mode]:not([data-ea-over]) .aicc-hero__category { display: none; }
+  html[data-ea-mode]:not([data-ea-over]) .aicc-hero-title { margin-block-start: 1rem; font-size: 3rem; }
+  html[data-ea-mode]:not([data-ea-over]) .aicc-hero-lead { margin-block-start: 1rem; }
+  html[data-ea-mode]:not([data-ea-over]) .aicc-hero-actions { margin-block-start: 1.5rem; }
+  html[data-ea-mode]:not([data-ea-over]) .aicc-eanote { margin-block-start: 0.75rem; }
+}
 html[data-ea-mode]:not([data-ea-over]) .aicc-pagehead { padding-block-start: clamp(1.5rem, 1rem + 2vw, 3rem); }
 .aicc-eabar__text { display: block; margin: 0; font-size: 0.8125rem; line-height: 1.35; font-weight: 600; text-align: center; }
 .aicc-eabar__text > * + * { margin-inline-start: 0.5em; }
