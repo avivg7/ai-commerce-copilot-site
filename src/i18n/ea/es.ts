@@ -52,8 +52,8 @@ export const eaEs: DeepPartial<EaDict> = {
     who: {
       a: "Tiendas WooCommerce que pueden conectarse a AICC (WordPress 6.0, WooCommerce 7.0 y PHP 7.4 o posterior).",
       b: "Todas las tiendas aprobadas terminan en el mismo momento, a las 00:00 del 1 de enero de 2027, hora de Israel, sea cual sea el día en que empezaron.",
-      c: "Un Acceso anticipado por tienda y por cuenta. El número de tiendas depende del plan que solicite: Solo 1 tienda, Studio hasta 3, Agency hasta 10. Pida el plan que querría conservar: continuar es más sencillo con el mismo plan.",
-      d: "Revisamos cada solicitud y no todas se aprobarán. El Acceso anticipado puede cerrarse a nuevas solicitudes en cualquier momento.",
+      c: "Un Acceso anticipado por cuenta, y comprobamos que una tienda no lo reciba dos veces. El número de tiendas depende del plan que solicite: Solo 1 tienda, Studio hasta 3, Agency hasta 10. Pida el plan que querría conservar: continuar es más sencillo con el mismo plan.",
+      d: "Revisamos cada solicitud y no todas se aprobarán. El Acceso anticipado puede cerrarse a nuevas solicitudes en cualquier momento, y no se concede en las últimas 24 horas antes de que termine.",
     },
     endTitle: "Qué ocurre el 1 de enero de 2027",
     end: {
