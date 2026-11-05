@@ -59,8 +59,8 @@ export const eaEn = {
     who: {
       a: "WooCommerce stores that can connect to AICC (WordPress 6.0, WooCommerce 7.0 and PHP 7.4 or newer).",
       b: "Every approved store ends at the same moment, 00:00 on January 1, 2027, Israel time, whatever day it joined.",
-      c: "One Early Access per store and per account. Store limits follow the plan you ask for: Solo 1 store, Studio up to 3, Agency up to 10. Ask for the plan you would want to keep: continuing is simplest on the same plan.",
-      d: "We review each request and not every request will be approved. Early Access can close to new requests at any time.",
+      c: "One Early Access per account, and we check that a store does not receive it twice. Store limits follow the plan you ask for: Solo 1 store, Studio up to 3, Agency up to 10. Ask for the plan you would want to keep: continuing is simplest on the same plan.",
+      d: "We review each request and not every request will be approved. Early Access can close to new requests at any time, and it is not granted in the final 24 hours before it ends.",
     },
     endTitle: "What happens on January 1, 2027",
     end: {
