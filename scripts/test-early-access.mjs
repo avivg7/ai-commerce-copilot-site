@@ -175,7 +175,7 @@ for (const { key: mode0, mode, step } of VARIANTS) {
     await ctx.close();
   }
   // the headline word fits the column at every desktop width (it broke in the middle of "recommendations." at 1024 px before Production 21), in every language
-  for (const loc of ["en", "he", "es", "ru"]) for (const [w, h] of QUICK ? [[1024, 768]] : [[1024, 768], [1100, 800], [1180, 820], [1280, 720], [1440, 900]]) {
+  for (const loc of ["en", "he", "es", "ru"]) for (const [w, h] of QUICK ? [[1024, 1000]] : [[1024, 768], [1024, 1000], [1100, 800], [1100, 1000], [1180, 820], [1280, 720], [1440, 900]]) {
     const prefix = loc === "en" ? "" : `/${loc}`;
     const { ctx, p } = await view(mode0, `${prefix}/`, "UTC", E - 86400e3, w, loc, h);
     const m = await p.evaluate(() => { const h1 = document.querySelector("h1"); const probe = document.createElement("span"); probe.style.cssText = "position:absolute;visibility:hidden;white-space:nowrap"; const cs = getComputedStyle(h1); probe.style.font = cs.font; probe.style.letterSpacing = cs.letterSpacing; document.body.appendChild(probe); let longest = 0; for (const word of h1.textContent.trim().split(/\s+/)) { probe.textContent = word; longest = Math.max(longest, probe.getBoundingClientRect().width); } probe.remove(); return { longest, w: h1.clientWidth }; });
@@ -190,6 +190,15 @@ for (const { key: mode0, mode, step } of VARIANTS) {
     check(o.sw <= o.iw, `${tag} ${route} at ${w}px: no horizontal scroll (${o.sw} <= ${o.iw})`);
     await ctx.close();
   }
+}
+
+console.log("\n== the headline word fits its column in the NORMAL build too (every language, desktop widths)");
+for (const loc of ["en", "he", "es", "ru"]) for (const [w, h] of QUICK ? [[1024, 768]] : [[1024, 768], [1100, 800], [1180, 820], [1280, 720], [1440, 900]]) {
+  const prefix = loc === "en" ? "" : `/${loc}`;
+  const { ctx, p } = await view("off", `${prefix}/`, "UTC", C - 86400e3, w, loc, h);
+  const m = await p.evaluate(() => { const h1 = document.querySelector("h1"); const probe = document.createElement("span"); probe.style.cssText = "position:absolute;visibility:hidden;white-space:nowrap"; const cs = getComputedStyle(h1); probe.style.font = cs.font; probe.style.letterSpacing = cs.letterSpacing; document.body.appendChild(probe); let longest = 0; for (const word of h1.textContent.trim().split(/\s+/)) { probe.textContent = word; longest = Math.max(longest, probe.getBoundingClientRect().width); } probe.remove(); return { longest, w: h1.clientWidth }; });
+  check(m.longest <= m.w + 0.5, `normal build ${loc} @${w}: the longest headline word fits its column (${Math.round(m.longest)}px in ${m.w}px)`);
+  await ctx.close();
 }
 
 console.log("\n== the ended view elsewhere");

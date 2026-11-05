@@ -46,7 +46,7 @@ const derive = `const [y,mo,d]=process.argv.slice(1).map(Number);const fmt=new I
 const TZS = ["UTC", "America/Los_Angeles", "Asia/Jerusalem", "Pacific/Kiritimati", "Pacific/Pago_Pago", "Australia/Lord_Howe", "Asia/Kolkata"];
 // The earlyAccess module loaded in a child process with a given environment (the build-time switches are read once, at import).
 function loadWith(env) {
-  const r = spawnSync(process.execPath, ["--input-type=module", "-e", `import { loadTs } from "${path.join(ROOT, "scripts/lib/load.mjs")}"; const m = await loadTs("src/lib/earlyAccess.ts"); console.log(JSON.stringify({ mode: m.EA_MODE, requested: m.EA_REQUESTED, expired: m.EA_EXPIRED_REQUEST, step: m.EA_EXTENSION_STEP, end: m.EA_END_UTC_MS, endIso: m.EA_END_ISO_UTC, script: m.EA_HEAD_SCRIPT, extReq: m.EA_EXTENSION_REQUESTED, extRej: m.EA_EXTENSION_REJECTED }))`], { env: { ...process.env, NEXT_PUBLIC_AICC_EARLY_ACCESS: "", NEXT_PUBLIC_AICC_EA_EXTENSION_STEP: "", NEXT_PUBLIC_AICC_EA_EXTENSION_REF: "", AICC_BUILD_NOW_MS: "", AICC_EA_TEST_SEAM: "", ...env }, encoding: "utf8", cwd: ROOT });
+  const r = spawnSync(process.execPath, ["--input-type=module", "-e", `import { loadTs } from "${path.join(ROOT, "scripts/lib/load.mjs")}"; const m = await loadTs("src/lib/earlyAccess.ts"); console.log(JSON.stringify({ mode: m.EA_MODE, requested: m.EA_REQUESTED, expired: m.EA_EXPIRED_REQUEST, step: m.EA_EXTENSION_STEP, end: m.EA_END_UTC_MS, endIso: m.EA_END_ISO_UTC, script: m.EA_HEAD_SCRIPT, extReq: m.EA_EXTENSION_REQUESTED, extRej: m.EA_EXTENSION_REJECTED, defaults: [m.eaIsOver(m.EA_CUTOFF_UTC_MS + 1), m.eaIsOver(m.EA_END_UTC_MS - 1), m.eaIsOver(m.EA_END_UTC_MS), m.eaModeAt("open", m.EA_CUTOFF_UTC_MS + 1), m.eaModeAt("open", m.EA_END_UTC_MS)] }))`], { env: { ...process.env, NEXT_PUBLIC_AICC_EARLY_ACCESS: "", NEXT_PUBLIC_AICC_EA_EXTENSION_STEP: "", NEXT_PUBLIC_AICC_EA_EXTENSION_REF: "", AICC_BUILD_NOW_MS: "", AICC_EA_TEST_SEAM: "", ...env }, encoding: "utf8", cwd: ROOT });
   if (r.status !== 0) throw new Error(`child failed: ${r.stderr}`);
   return JSON.parse(r.stdout);
 }
@@ -150,6 +150,11 @@ check(ea.EA_STEP_ISO_UTC.every((iso, i) => Date.parse(iso) === [C, S1, S2][i]) &
     check(early.mode === mode && early.step === 0 && early.end === C && early.extRej !== "", `${mode}: step 1 without a reference, built BEFORE the initial cutoff, is a normal step-0 build (and the rejected request is reported)`);
     const wrong = ext("3", "DEC-0001", C - 1000, mode);
     check(wrong.step === 0 && wrong.end === C, `${mode}: step "3" is step 0`);
+  }
+  // the DEFAULT end of eaIsOver / eaModeAt is the end of the build's own step (not the initial cutoff)
+  for (const [n, st, ref, E2] of [[1, "1", "DEC-0001", S1], [2, "2", "DEC-0002", S2]]) {
+    const d = run({ NEXT_PUBLIC_AICC_EARLY_ACCESS: "open", NEXT_PUBLIC_AICC_EA_EXTENSION_STEP: st, NEXT_PUBLIC_AICC_EA_EXTENSION_REF: ref, ...t(C - 1000) }).defaults;
+    check(d[0] === false && d[1] === false && d[2] === true && d[3] === "open" && d[4] === "off", `step ${n}: eaIsOver and eaModeAt without an explicit end use the end of the step (live after the initial cutoff, over at ${E2})`);
   }
   const offWithStep = run({ NEXT_PUBLIC_AICC_EA_EXTENSION_STEP: "1", NEXT_PUBLIC_AICC_EA_EXTENSION_REF: "DEC-0001", ...t(C - 1000) });
   check(offWithStep.mode === "off", "an extension step with the switch OFF changes nothing: the build is OFF");
@@ -283,6 +288,7 @@ if (out) {
     const pr = html("pricing/index.html");
     if (args.includes("--strike")) check(/<s>/.test(pr) && /Regular price, not charged during Early Access:/.test(pr), "pricing: strike-through ON: the plan price is struck through and labelled");
     else check(!/<s>|<del>/.test(pr.slice(pr.indexOf("<main"), pr.indexOf("</main>"))) && /Planned price when purchases open:/.test(pr), "pricing: strike-through OFF (default): no struck-through price; the price is labelled 'Planned price when purchases open:'");
+    check(pr.includes(`data-ea-cutoff="${ea.EA_STEP_ISO_UTC[step]}"`), `pricing: the explanation is marked with the end of step ${step} (data-ea-cutoff="${ea.EA_STEP_ISO_UTC[step]}")`);
     check(pr.includes(`Free until ${REQUIRED_DATES.en[step].last}`) && pr.includes(REQUIRED_DATES.en[step].end), `pricing: 'Free until ${REQUIRED_DATES.en[step].last}' and the end date '${REQUIRED_DATES.en[step].end}' are stated`);
     check(!/(<meta[^>]*(description|og:)[^>]*Early Access)/i.test(html("index.html")), "the meta description and Open Graph text do not mention the campaign (they would go stale after the end date)");
     check(!/application\/ld\+json[^<]*Early Access/i.test(html("pricing/index.html")), "no JSON-LD mentions the campaign");
