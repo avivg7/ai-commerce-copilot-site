@@ -46,7 +46,7 @@ async function view(mode, route, tz, nowMs, width = 1280, locale) {
 const vis = async (p, sel) => (await p.locator(sel).count()) > 0 && (await p.locator(sel).first().isVisible());
 const text = async (p, sel) => ((await p.locator(sel).allInnerTexts()).join(" | ")).replace(/\s+/g, " ");
 
-for (const mode of ["open", "announce"]) {
+for (const mode of args.includes("--only-open") ? ["open"] : ["open", "announce"]) {
   console.log(`\n== mode ${mode}: time matrix x visitor time zones (pricing page)`);
   for (const [label, t, live] of TIMES) {
     const states = [];
