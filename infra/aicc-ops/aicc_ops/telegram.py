@@ -219,7 +219,7 @@ class TelegramAdapter:
         return True
 
     def submit(self, note) -> bool:
-        return self.submit_text(render(note, self.host), DeliveryTag(note.key, note.rule, note.kind))
+        return self.submit_text(render(note, self.host), note.tag())
 
     def metrics(self) -> dict:
         """Counters since this process started plus the times of the last delivery / failure (omitted until they exist), under the names the store and export use."""
@@ -239,7 +239,7 @@ class TelegramAdapter:
         else:
             self.last_fail_ts = now
         try:
-            key, rule, kind = tag if tag is not None else (None, "text", "TEXT")
+            key, rule, kind = tuple(tag)[:3] if tag is not None else (None, "text", "TEXT")
         except (TypeError, ValueError):
             tag, rule, kind = None, "text", "TEXT"
         rule = rule if isinstance(rule, str) and RULE_ID_RE.match(rule) else "other"

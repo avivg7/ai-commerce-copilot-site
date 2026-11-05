@@ -19,12 +19,12 @@ FIRING, RECOVERED, ESCALATED, FLAPPING, REMINDER = "FIRING", "RECOVERED", "ESCAL
 DELIVERED, FAILED, DROPPED_RATE_LIMIT, DROPPED_QUEUE_FULL = "delivered", "failed", "dropped_rate_limit", "dropped_queue_full"
 NOT_DELIVERED = (FAILED, DROPPED_RATE_LIMIT, DROPPED_QUEUE_FULL)
 # The identity of one outbound message: the state key ("rule:scope"), the rule id and the notification kind. Fixed-enum material only (no scope text, no title).
-DeliveryTag = namedtuple("DeliveryTag", "key rule kind")
+# `seq` is the engine's per-key sequence number of the notice (0 = unknown): a result is compared with the NEWEST delivered notice by the order the notices were queued.
+DeliveryTag = namedtuple("DeliveryTag", "key rule kind seq", defaults=(0,))
 # Delivery retry defaults (see AlertEngine): first retry 5 min after the failure is read, x3 each time, never slower than 6 h, 12 attempts in all.
 DELIVERY_RETRY_S, DELIVERY_RETRY_MAX_S, DELIVERY_RETRY_MAX_ATTEMPTS = 300, 21600, 12
 DELIVERY_INFLIGHT_S = 600       # a retry handed to the sender whose result never comes back counts as a failed attempt after this long (and at once after a restart)
-# Which notice supersedes which within one episode: a delivered higher-ranked notice makes an older, lower-ranked failure moot.
-KIND_RANK = {FIRING: 0, ESCALATED: 1, REMINDER: 2, RECOVERED: 3}
+DELIVERY_REARM_MAX = 3          # lifetime cap (per alert episode) on re-arms of an abandoned notice by "some other message got through"
 
 
 @dataclass
@@ -48,13 +48,14 @@ class Notification:
     text: str
     ts: float
     since: float | None = None
+    seq: int = 0        # set by the engine when the notice is queued (per-key, increasing)
 
     @property
     def key(self) -> str:
         return f"{self.rule}:{self.scope}"
 
     def tag(self) -> DeliveryTag:
-        return DeliveryTag(self.key, self.rule, self.kind)
+        return DeliveryTag(self.key, self.rule, self.kind, self.seq)
 
 
 @dataclass
@@ -588,7 +589,7 @@ def build_rules(cfg: dict) -> list:
 def _new_state():
     return {"status": "ok", "breach": 0, "crit": 0, "clear": 0, "severity": WARNING, "since": None, "notified": False,
             "last_fire_notice": 0.0, "last_notice": 0.0, "transitions": [], "flapping": False, "text": "", "last_seen": 0.0,
-            "delivery": None, "rec_text": "", "deliv_rank": -1}
+            "delivery": None, "rec_text": "", "seq": 0, "deliv_seq": 0, "rearms": 0}
 
 
 class AlertEngine:
@@ -610,6 +611,7 @@ class AlertEngine:
         self.enabled = enabled
         self.delivery_retry_s, self.delivery_retry_max_s, self.delivery_retry_max_attempts = delivery_retry_s, delivery_retry_max_s, delivery_retry_max_attempts
         self.delivery_inflight_s = DELIVERY_INFLIGHT_S
+        self.delivery_rearm_max = DELIVERY_REARM_MAX
         self._results: deque = deque(maxlen=2000)     # (DeliveryTag, outcome) appended by the Telegram thread, drained by process() on the evaluating thread
         self.state: dict = {}
         if store is not None:
@@ -676,20 +678,22 @@ class AlertEngine:
         """A retry was handed to the sender: its result is awaited. If none comes back within delivery_inflight_s (daemon stopped, sender died, adapter disabled) it counts as a failed attempt."""
         slot["at"], slot["sent_at"] = None, now
 
-    def _register_failure(self, key: str, kind: str, outcome: str, now: float) -> None:
+    def _register_failure(self, key: str, kind: str, outcome: str, now: float, seq: int = 0) -> None:
         st = self.state.get(key)
         if st is None or kind not in (FIRING, ESCALATED, REMINDER, RECOVERED):
             return                             # FLAPPING (and anything unknown) is not retried
         rule, _, scope = key.partition(":")
-        if kind in KIND_RANK and st.get("deliv_rank", -1) > KIND_RANK[kind]:
-            return                             # a LATER notice of this episode already arrived (e.g. a delivered ESCALATED after a failed FIRING): the owner has the state
+        if seq and seq < st.get("deliv_seq", 0):
+            return                             # a notice queued LATER already arrived (e.g. a delivered ESCALATED after a failed FIRING): the owner has the state
         d = st.get("delivery") or {}
         fails = int(d.get("fails", 0)) + 1
         what = f"{kind} notice not delivered ({outcome})"
         if fails >= self.delivery_retry_max_attempts:
-            st["delivery"] = {"kind": kind, "fails": fails, "at": None, "gave_up": True}
+            st["delivery"] = {"kind": kind, "fails": fails, "at": None, "gave_up": True, "seq": seq}
+            again = ("until a later message gets through" if st.get("rearms", 0) < self.delivery_rearm_max
+                     else "for the rest of this alert episode (re-arm allowance used up)")
             self._record(now, key, rule, scope, st["severity"], "DELIVERY_ABANDONED",
-                         f"{what}; {fails} attempts failed, no further automatic retries until a later message gets through (the alert itself is unchanged)")
+                         f"{what}; {fails} attempts failed, no further automatic retries {again} (the alert itself is unchanged)")
             self._dirty.add(key)
             return
         live = (st["status"] == "firing") if kind != RECOVERED else (st["status"] == "ok")
@@ -698,7 +702,7 @@ class AlertEngine:
                 st["delivery"] = None          # the situation moved on (recovered, or fired again): a late copy of the old notice would only mislead
                 self._dirty.add(key)
             return
-        st["delivery"] = {"kind": kind, "fails": fails, "at": now + self._retry_delay(fails), "gave_up": False}
+        st["delivery"] = {"kind": kind, "fails": fails, "at": now + self._retry_delay(fails), "gave_up": False, "seq": seq}
         if kind in (FIRING, ESCALATED):
             st["notified"] = False
         self._record(now, key, rule, scope, st["severity"], "DELIVERY_FAILED",
@@ -717,16 +721,16 @@ class AlertEngine:
                 continue
             if outcome == DELIVERED:
                 delivered_any = True
-                if tag.kind in KIND_RANK:
-                    st["deliv_rank"] = max(st.get("deliv_rank", -1), KIND_RANK[tag.kind])
+                if tag.kind in (FIRING, ESCALATED, REMINDER, RECOVERED):
+                    st["deliv_seq"] = max(st.get("deliv_seq", 0), tag.seq)
                     d = st.get("delivery")
-                    if d and not (d.get("kind") in KIND_RANK and KIND_RANK[d["kind"]] > KIND_RANK[tag.kind]):
+                    if d and (not tag.seq or not d.get("seq") or d["seq"] <= tag.seq):
                         st["delivery"] = None               # this notice (or a later one) carries the state the pending one was meant to carry
                         if tag.kind != RECOVERED and st["status"] == "firing":
                             st["notified"] = True
                     self._dirty.add(tag.key)
                 continue
-            self._register_failure(tag.key, tag.kind, outcome, now)
+            self._register_failure(tag.key, tag.kind, outcome, now, tag.seq)
         if delivered_any:
             self._rearm_abandoned(now)
 
@@ -735,11 +739,15 @@ class AlertEngine:
         for key, st in self.state.items():
             d = st.get("delivery")
             if d and d.get("gave_up") and (st["status"] == "firing" or d.get("kind") == RECOVERED and st["status"] == "ok"):
+                if st.get("rearms", 0) >= self.delivery_rearm_max:
+                    continue                   # the chat keeps rejecting this one: it stays abandoned (and counted) until the alert recovers and fires again
+                st["rearms"] = st.get("rearms", 0) + 1
                 st["delivery"] = {"kind": d["kind"], "fails": 0, "at": now, "gave_up": False}
                 if d["kind"] in (FIRING, ESCALATED):
                     st["notified"] = False
                 rule, _, scope = key.partition(":")
-                self._record(now, key, rule, scope, st["severity"], "DELIVERY_RETRY", "a later message was delivered; the abandoned notice is tried again")
+                self._record(now, key, rule, scope, st["severity"], "DELIVERY_RETRY",
+                             f"a later message was delivered; the abandoned notice is tried again (re-arm {st['rearms']} of {self.delivery_rearm_max})")
                 self._dirty.add(key)
 
     def _expire_inflight(self, now: float) -> None:
@@ -750,7 +758,7 @@ class AlertEngine:
                 continue
             sent = d.get("sent_at")
             if sent is None or sent > now or now - sent > self.delivery_inflight_s:
-                self._register_failure(key, d.get("kind", FIRING), "no_result", now)
+                self._register_failure(key, d.get("kind", FIRING), "no_result", now, int(d.get("seq") or 0))
                 if st.get("delivery") is d:                      # not replaced (stale kind): drop the dead marker
                     st["delivery"] = None
                     self._dirty.add(key)
@@ -792,7 +800,8 @@ class AlertEngine:
                 and d.get("at") is not None and now >= d["at"]):
             self._mark_sent(d, now)
             text = st.get("rec_text") or "condition is clear"
-            notes.append(Notification(RECOVERED, st["severity"], spec.id, spec.title, o.scope, text, now, st.get("since")))
+            st["seq"] = st.get("seq", 0) + 1
+            notes.append(Notification(RECOVERED, st["severity"], spec.id, spec.title, o.scope, text, now, st.get("since"), st["seq"]))
             st["last_notice"], st["rec_text"] = now, text
         return notes
 
@@ -801,7 +810,8 @@ class AlertEngine:
         crit_needed = spec.crit_samples if spec.crit_samples is not None else spec.for_samples
 
         def note(kind, sev, text):
-            notes.append(Notification(kind, sev, spec.id, spec.title, o.scope, text, now, st.get("since")))
+            st["seq"] = st.get("seq", 0) + 1
+            notes.append(Notification(kind, sev, spec.id, spec.title, o.scope, text, now, st.get("since"), st["seq"]))
             st["last_notice"] = now
             if kind == RECOVERED:
                 st["rec_text"] = text          # kept so a 'recovered' notice that did not arrive can be sent again with the same words
@@ -833,7 +843,7 @@ class AlertEngine:
                 if st["breach"] >= spec.for_samples:
                     st["status"], st["severity"], st["since"], st["notified"] = "firing", sev, now, False
                     st["delivery"] = pending = None            # a new episode: a stale retry of an earlier notice is moot
-                    st["deliv_rank"] = -1
+                    st["rearms"] = 0                           # a fresh allowance for re-arming an abandoned notice
                     self._transition(st, now)
                     self._record(now, key, spec.id, o.scope, sev, FIRING, o.text)
             else:

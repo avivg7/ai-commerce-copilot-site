@@ -441,14 +441,50 @@ class DeliveryRound2(TmpCase):
     # m-3
     def test_a_stale_firing_failure_after_a_delivered_escalation_does_not_resend_a_firing(self):
         e = AlertEngine([spec(for_samples=1, crit_samples=2, cooldown_s=3600)])
-        self.assertEqual(self.breach(e, T), [FIRING])
+        n1 = e.process([Obs("r", "s", True, False, WARNING, "txt")], T)
+        self.assertEqual([n.kind for n in n1], [FIRING])
         self.assertEqual(self.breach(e, T + 30, CRITICAL), [])
-        self.assertEqual(self.breach(e, T + 60, CRITICAL), [ESCALATED])
-        e.report_delivery(tag(FIRING), "failed")               # both results are read in one batch, in this order
-        e.report_delivery(tag(ESCALATED), "delivered")
+        n2 = e.process([Obs("r", "s", True, False, CRITICAL, "txt")], T + 60)
+        self.assertEqual([n.kind for n in n2], [ESCALATED])
+        e.report_delivery(n1[0].tag(), "failed")               # both results are read in one batch, in this order
+        e.report_delivery(n2[0].tag(), "delivered")
         got = [k for dt in range(30, 2 * 86400, 30) for k in self.breach(e, T + 60 + dt, WARNING)]
         self.assertNotIn(FIRING, got)                          # CRITICAL reminders (6 h) go on as before; no second FIRING
         self.assertTrue(e.state["r:s"]["notified"])
+
+    # R2-2: superseding is by the time (sequence) the notices were QUEUED, not by their kind
+    def test_a_failed_escalation_queued_after_a_delivered_reminder_is_still_retried(self):
+        e = AlertEngine([spec(for_samples=1, crit_samples=3, cooldown_s=3600, renotify_s=600)])
+        f = e.process([Obs("r", "s", True, False, WARNING, "txt")], T)
+        e.report_delivery(f[0].tag(), "delivered")
+        rem = e.process([Obs("r", "s", True, False, WARNING, "txt")], T + 600)
+        self.assertEqual([n.kind for n in rem], [REMINDER])
+        self.assertEqual(self.breach(e, T + 630, CRITICAL), [])
+        self.assertEqual(self.breach(e, T + 660, CRITICAL), [])
+        esc = e.process([Obs("r", "s", True, False, CRITICAL, "txt")], T + 690)
+        self.assertEqual([n.kind for n in esc], [ESCALATED])            # queued AFTER the reminder
+        e.report_delivery(rem[0].tag(), "delivered")                    # the results arrive in the other order
+        e.report_delivery(esc[0].tag(), "failed")
+        got = None
+        for dt in range(30, 1000, 30):
+            ns = e.process([Obs("r", "s", True, False, CRITICAL, "txt")], T + 690 + dt)
+            if [n.kind for n in ns if n.kind == ESCALATED]:
+                got = dt
+                break
+        self.assertEqual(got, 330)                                      # the escalation is not dropped silently
+
+    def test_a_failed_escalation_older_than_a_delivered_reminder_is_moot(self):
+        e = AlertEngine([spec(for_samples=1, crit_samples=2, cooldown_s=3600, renotify_s=600)])
+        f = e.process([Obs("r", "s", True, False, WARNING, "txt")], T)
+        e.report_delivery(f[0].tag(), "delivered")
+        self.assertEqual(self.breach(e, T + 30, CRITICAL), [])
+        esc = e.process([Obs("r", "s", True, False, CRITICAL, "txt")], T + 60)
+        rem = e.process([Obs("r", "s", True, False, CRITICAL, "txt")], T + 700)
+        self.assertEqual([n.kind for n in esc + rem], [ESCALATED, REMINDER])
+        e.report_delivery(esc[0].tag(), "failed")
+        e.report_delivery(rem[0].tag(), "delivered")                    # the later [CRITICAL] reminder carries the state
+        self.assertTrue(e.state["r:s"]["notified"])
+        self.assertIsNone(e.state["r:s"].get("delivery"))
 
     # m-4
     def test_a_recovery_retry_falling_due_in_the_cycle_the_alert_fires_again_is_not_sent(self):
@@ -481,6 +517,32 @@ class DeliveryRound2(TmpCase):
             got += [(k, n.scope, n.kind) for n in e.process([Obs("r", "a", True, False, WARNING, "txt"), Obs("r", "b", True, False, WARNING, "txt")], t + k)]
         self.assertEqual([g[1:] for g in got], [("a", FIRING)])
         self.assertEqual(e.abandoned_count(), 0)
+
+    def test_re_arming_an_abandoned_notice_has_a_lifetime_cap_until_the_alert_fires_again(self):
+        e = self.eng(delivery_retry_max_attempts=1)             # every failure abandons at once
+        self.assertEqual(self.breach(e, T, scope="a"), [FIRING])
+        e.report_delivery(tag(key="r:a"), "failed")
+        a_notices, t = 1, T
+        for i in range(12):                                     # other alerts keep getting through; the chat always rejects "a"
+            t += 30
+            e.report_delivery(tag(key="r:b"), "delivered") if "r:b" in e.state else None
+            ns = e.process([Obs("r", "a", True, False, WARNING, "txt"), Obs("r", "b", True, False, WARNING, "txt")], t)
+            for n in ns:
+                if n.scope == "a":
+                    a_notices += 1
+                    e.report_delivery(n.tag(), "failed")
+                if n.scope == "b":
+                    e.report_delivery(n.tag(), "delivered")
+        self.assertEqual(a_notices, 1 + e.delivery_rearm_max)  # the original plus 3 re-arms, then it stays abandoned
+        self.assertEqual(e.delivery_rearm_max, 3)
+        self.assertEqual(e.abandoned_count(), 1)               # and it is still counted
+        # it fires again after recovering: a fresh episode, a fresh allowance
+        for k in range(2):
+            e.process([Obs("r", "a", False, True, WARNING)], t + 30 + k * 30)
+        self.assertEqual(e.abandoned_count(), 0)
+        self.assertEqual(e.state["r:a"]["rearms"], 3)
+        ns = e.process([Obs("r", "a", True, False, WARNING, "txt")], t + 400)
+        self.assertEqual(e.state["r:a"]["rearms"], 0)
 
     def test_nothing_is_re_armed_without_a_delivery(self):
         e = self.eng(delivery_retry_max_attempts=1)

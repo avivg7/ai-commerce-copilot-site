@@ -244,7 +244,7 @@ class AdapterTests(TmpCase):
     # -- Production 20 (R3 M8): every message ends in exactly one reported outcome, with exactly one non-sensitive journal line --------------------
     def results(self, a):
         got = []
-        a.on_result = lambda tag, outcome: got.append((tuple(tag), outcome))
+        a.on_result = lambda tag, outcome: got.append((tuple(tag)[:3], outcome))
         return got
 
     def test_a_delivered_message_is_reported_and_leaves_one_journal_line(self):
