@@ -78,7 +78,7 @@ export const eaEn = {
     },
     terms: "Early Access is the same product as the paid plans. The end date, the absence of automatic charges and the data handling described on this page are part of this offer; the Terms, Privacy and Refund pages describe the rest. Questions? Write to {contactEmail}.",
     // Permanent, in EVERY build (the initial terms already say an extension is possible, so an extension is never a silent change): same text in the terms line and in the questions.
-    reservation: "If we extend Early Access, we do it for every Early Access store at once, we say so on this page and by e-mail before the end date, and an extension never starts a charge. We cannot extend a single store's access.",
+    reservation: "If we extend Early Access, we do it for every Early Access store at once and we say so on this page before the end date; where we can, we also tell you by e-mail. An extension never starts a charge. We cannot extend a single store's access.",
     faqTitle: "Early Access questions",
     faq: {
       free: { q: "Is Early Access really free?", a: "Yes, for approved stores until {lastDay}. We do not ask for payment details, and nothing is charged." },
@@ -86,7 +86,7 @@ export const eaEn = {
       auto: { q: "Will I be charged automatically?", a: "No. There is no card on file, no automatic renewal and no automatic switch to a paid plan." },
       continue: { q: "How do I continue after Early Access?", a: "You buy the plan your store holds at that time, once purchases open. Your connected store picks up the new end date. To hold a different plan, ask us before Early Access ends (see \"Can I change my plan?\")." },
       change: { q: "Can I change my plan?", a: "Yes, before Early Access ends. Write to {contactEmail} from your account's e-mail address and we change the plan of your Early Access store at no charge. The end date stays the same. Store limits follow the plan, so a smaller plan needs fewer connected stores. To continue after Early Access you buy the plan your store holds at that time, once purchases open." },
-      extension: { q: "Could Early Access be extended?", a: "If we extend Early Access, we do it for every Early Access store at once, we say so on this page and by e-mail before the end date, and an extension never starts a charge. We cannot extend a single store's access." },
+      extension: { q: "Could Early Access be extended?", a: "If we extend Early Access, we do it for every Early Access store at once and we say so on this page before the end date; where we can, we also tell you by e-mail. An extension never starts a charge. We cannot extend a single store's access." },
       guarantee: { q: "Does the money-back guarantee apply to Early Access?", a: "No. The 14-day money-back guarantee applies to eligible paid purchases, as set out in the [Refund Policy](route:refund-policy), not to free Early Access. No payment is taken during Early Access, so there is nothing to refund. When purchases open, the [Refund Policy](route:refund-policy) applies to eligible paid purchases." },
       plugin: { q: "What will I see in the plugin when Early Access ends?", a: "At 00:00 on {endDate} (Israel time) the plugin shows that your plan has expired, with a \"Renew plan\" button, and AICC stops showing on your storefront. Your store keeps selling as usual. The plugin does not warn you beforehand, so note the date; your account page shows it too." },
     },

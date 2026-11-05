@@ -63,14 +63,14 @@ export const REQUIRED_DATES = {
 };
 
 /**
- * Facts every locale must state in EVERY step (Production 21): the permanent extension reservation (terms line and questions), the plan-change answer, the guarantee answer (paid purchases only)
+ * Facts every locale must state in EVERY step (Production 21): the permanent extension reservation (terms line and questions; it promises the notice ON THE PAGE before the end date, and e-mail only "where we can": the Control Plane has no working e-mail sender yet, so no required token may demand e-mail), the plan-change answer, the guarantee answer (paid purchases only)
  * and, in an extended build, the extended bar and note. Written as that language writes them; a rewrite that drops one fails `ea:check`.
  */
 export const REQUIRED_FACTS = {
-  en: { renew: "Renew plan", every: "every Early Access store", noCharge: "never starts a charge", email: "by e-mail before the end date", single: "single store's access", changeBefore: "before Early Access ends", changeFree: "at no charge", sameEnd: "The end date stays the same", paidPurchases: "eligible paid purchases", noteEvery: "every Early Access store", extEvery: "every store", extPay: "no payment is taken", extAuto: "automatically", extZone: "Israel time" },
-  he: { renew: "חידוש התוכנית", every: "לכל חנויות הגישה המוקדמת בבת אחת", noCharge: "לעולם לא מתחילה חיוב", email: "ובדוא״ל לפני תאריך הסיום", single: "של חנות בודדת", changeBefore: "לפני שהגישה המוקדמת מסתיימת", changeFree: "ללא תשלום", sameEnd: "תאריך הסיום נשאר אותו תאריך", paidPurchases: "רכישות בתשלום הזכאיות לכך", noteEvery: "לכל חנות בגישה מוקדמת", extEvery: "לכל החנויות", extPay: "לא נגבה תשלום", extAuto: "אוטומטית", extZone: "שעון ישראל" },
-  es: { renew: "Renew plan", every: "todas las tiendas del Acceso anticipado a la vez", noCharge: "nunca inicia un cobro", email: "por correo electrónico antes de la fecha de fin", single: "de una sola tienda", changeBefore: "antes de que termine el Acceso anticipado", changeFree: "sin ningún coste", sameEnd: "La fecha de fin no cambia", paidPurchases: "compras de pago que cumplan los requisitos", noteEvery: "todas las tiendas del Acceso anticipado", extEvery: "todas las tiendas", extPay: "no se toma ningún pago", extAuto: "automáticamente", extZone: "hora de Israel" },
-  ru: { renew: "Renew plan", every: "для всех магазинов раннего доступа", noCharge: "никогда не запускает списание", email: "по электронной почте до", single: "отдельного магазина", changeBefore: "до окончания раннего доступа", changeFree: "бесплатно", sameEnd: "Дата окончания останется прежней", paidPurchases: "платные покупки, которые под неё подпадают", noteEvery: "всех магазинов раннего доступа", extEvery: "всех магазинов", extPay: "платёж не взимается", extAuto: "автоматически", extZone: "по израильскому времени" },
+  en: { soft: "where we can", renew: "Renew plan", every: "every Early Access store", noCharge: "never starts a charge", before: "on this page before the end date", single: "single store's access", changeBefore: "before Early Access ends", changeFree: "at no charge", sameEnd: "The end date stays the same", paidPurchases: "eligible paid purchases", noteEvery: "every Early Access store", extEvery: "every store", extPay: "no payment is taken", extAuto: "automatically", extZone: "Israel time" },
+  he: { soft: "במקום שנוכל", renew: "חידוש התוכנית", every: "לכל חנויות הגישה המוקדמת בבת אחת", noCharge: "לעולם לא מתחילה חיוב", before: "בעמוד הזה לפני תאריך הסיום", single: "של חנות בודדת", changeBefore: "לפני שהגישה המוקדמת מסתיימת", changeFree: "ללא תשלום", sameEnd: "תאריך הסיום נשאר אותו תאריך", paidPurchases: "רכישות בתשלום הזכאיות לכך", noteEvery: "לכל חנות בגישה מוקדמת", extEvery: "לכל החנויות", extPay: "לא נגבה תשלום", extAuto: "אוטומטית", extZone: "שעון ישראל" },
+  es: { soft: "cuando podemos", renew: "Renew plan", every: "todas las tiendas del Acceso anticipado a la vez", noCharge: "nunca inicia un cobro", before: "en esta página antes de la fecha de fin", single: "de una sola tienda", changeBefore: "antes de que termine el Acceso anticipado", changeFree: "sin ningún coste", sameEnd: "La fecha de fin no cambia", paidPurchases: "compras de pago que cumplan los requisitos", noteEvery: "todas las tiendas del Acceso anticipado", extEvery: "todas las tiendas", extPay: "no se toma ningún pago", extAuto: "automáticamente", extZone: "hora de Israel" },
+  ru: { soft: "где можем", renew: "Renew plan", every: "для всех магазинов раннего доступа", noCharge: "никогда не запускает списание", before: "на этой странице до даты окончания", single: "отдельного магазина", changeBefore: "до окончания раннего доступа", changeFree: "бесплатно", sameEnd: "Дата окончания останется прежней", paidPurchases: "платные покупки, которые под неё подпадают", noteEvery: "всех магазинов раннего доступа", extEvery: "всех магазинов", extPay: "платёж не взимается", extAuto: "автоматически", extZone: "по израильскому времени" },
 };
 
 /** What the P20 guarantee and plugin answers said and the Plugin no longer says on a free grant: it must not come back (the Plugin is corrected in `feat/p21-guarantee-fix`). */
@@ -128,14 +128,19 @@ export function eaDisclosureProblems(locale, ea, step = 0) {
     // the UTC line of the plan card names the UTC day of the step ("22:00 UTC on January 31")
     ["plan.ends", need.utc],
     // Production 21: the extension reservation is permanent (terms line and questions), the plan change is answered, the guarantee is for paid purchases only
-    ["section.reservation", facts.every], ["section.reservation", facts.noCharge], ["section.reservation", facts.email], ["section.reservation", facts.single],
-    ["section.faq.extension.a", facts.every], ["section.faq.extension.a", facts.noCharge], ["section.faq.extension.a", facts.email], ["section.faq.extension.a", facts.single],
+    ["section.reservation", facts.every], ["section.reservation", facts.noCharge], ["section.reservation", facts.before], ["section.reservation", facts.single],
+    ["section.faq.extension.a", facts.every], ["section.faq.extension.a", facts.noCharge], ["section.faq.extension.a", facts.before], ["section.faq.extension.a", facts.single],
     ["section.faq.change.a", facts.changeBefore], ["section.faq.change.a", facts.changeFree], ["section.faq.change.a", facts.sameEnd], ["section.faq.change.a", "{contactEmail}"],
     ["section.faq.plugin.a", facts.renew], ["section.faq.guarantee.a", facts.paidPurchases], ["section.faq.guarantee.a", "route:refund-policy"],
     // the extended variant (rendered only by an extended build, checked in every step): the clock, no payment, nothing automatic, every store
     ["extended.bar", facts.extEvery], ["extended.bar", facts.extZone], ["extended.bar", need.last],
     ["extended.note", facts.noteEvery], ["extended.note", facts.extPay], ["extended.note", facts.extAuto],
   ]) if (!has(path, tok)) problems.push(`${locale}: ea.${path} must contain "${tok}"`);
+  // e-mail may be mentioned only as a best effort: the Control Plane has no working e-mail sender, so a promise of e-mail without "where we can" is false
+  for (const p of ["section.reservation", "section.faq.extension.a"]) {
+    const v = nb(p.split(".").reduce((a, k) => a?.[k], ea) || "");
+    if (/e-?mail|דוא״ל|correo|почт/i.test(v) && !v.includes(nb(facts.soft))) problems.push(`${locale}: ea.${p} promises e-mail without "${facts.soft}" (no e-mail sender exists yet)`);
+  }
   for (const bad of FORBIDDEN_SENTENCES[locale]) for (const [p, v] of walk(ea, "", [])) if (v.includes(bad)) problems.push(`${locale}: ea.${p} must not say "${bad}" (the Plugin no longer shows a money-back message on a free grant)`);
   // no date token may be left unresolved in a resolved dictionary
   for (const [p, v] of walk(ea, "", [])) if (/\{(lastDay|lastDayShort|endDate|firstLastDay)\}/.test(v)) problems.push(`${locale}: ea.${p} still contains an unresolved date token`);
