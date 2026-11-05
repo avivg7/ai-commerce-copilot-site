@@ -69,7 +69,7 @@ export const eaEn = {
       free: { q: "Is Early Access really free?", a: "Yes, until December 31, 2026. We do not ask for payment details, and nothing is charged." },
       end: { q: "What happens on January 1, 2027?", a: "Access ends for every Early Access store at the same time. AICC stops showing on your storefront and your store keeps working as usual. To continue, you choose and buy a plan." },
       auto: { q: "Will I be charged automatically?", a: "No. There is no card on file, no automatic renewal and no automatic switch to a paid plan." },
-      continue: { q: "How do I continue after Early Access?", a: "You choose a plan and buy it when purchases are open. We explain the steps before you buy, including what happens to your connected store." },
+      continue: { q: "How do I continue after Early Access?", a: "You choose a plan and buy it once purchases open. We explain the steps before you buy, including what happens to your connected store." },
     },
   },
 };

@@ -1,4 +1,4 @@
-import { ArrowRight, Check, Coffee } from "lucide-react";
+import { ArrowRight, Check, Coffee, Compass, ShieldCheck, SlidersHorizontal } from "lucide-react";
 import type { Locale } from "@/i18n/config";
 import type { Dictionary } from "@/i18n";
 import { fbProps, txProps } from "@/i18n";
@@ -74,9 +74,10 @@ export function HomePage({ locale, t }: { locale: Locale; t: Dictionary }) {
       <section className="aicc-pillars" aria-label={h.pillars.label} {...fb("home.pillars")}>
         <Container>
           <ul className="aicc-pillars__list">
-            {([["a", "#demo"], ["b", "#workspace"], ["c", "#demo"]] as const).map(([k, href], i) => (
+            {([["a", "#demo", Compass], ["b", "#workspace", SlidersHorizontal], ["c", "#demo", ShieldCheck]] as const).map(([k, href, Icon]) => (
               <li key={k}>
-                <span className="aicc-pillars__n" aria-hidden="true">{i + 1}</span>
+                {/* the three outcomes are not a sequence, so they carry an icon each, not 1-2-3 */}
+                <span className="aicc-pillars__n" aria-hidden="true"><Icon size={18} /></span>
                 <div>
                   <h2 className="aicc-pillars__title">{h.pillars[k].title}</h2>
                   <p>{h.pillars[k].body}</p>

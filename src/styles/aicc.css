@@ -1188,7 +1188,8 @@ p > .aicc-link:only-child { display: inline-block; min-block-size: 1.5rem; paddi
 .aicc-pillars__list { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); }
 .aicc-pillars__list > li { display: flex; gap: 0.9rem; align-items: flex-start; padding-block: var(--aicc-space-5); min-inline-size: 0; }
 .aicc-pillars__list > li + li { border-block-start: 1px solid var(--aicc-border); }
-.aicc-pillars__n { flex: none; display: inline-grid; place-items: center; inline-size: 2rem; block-size: 2rem; border-radius: 9999px; border: 1.5px solid var(--aicc-primary); color: var(--aicc-primary); font-weight: 700; font-size: var(--aicc-text-sm); }
+.aicc-pillars__n { flex: none; display: inline-grid; place-items: center; inline-size: 2.5rem; block-size: 2.5rem; border-radius: 0.75rem; background: var(--aicc-info-bg); color: var(--aicc-primary-strong); transition: transform var(--aicc-dur, 0.2s) var(--aicc-ease, ease), background-color var(--aicc-dur, 0.2s) var(--aicc-ease, ease); }
+.aicc-pillars__list > li:hover .aicc-pillars__n { transform: translateY(-2px); background: var(--aicc-success-bg); color: var(--aicc-success); }
 .aicc-pillars__title { font-size: var(--aicc-text-lg); font-weight: 700; letter-spacing: -0.01em; line-height: 1.25; }
 .aicc-pillars__list p { margin: 0.25rem 0 0; color: var(--aicc-text-muted); font-size: var(--aicc-text-sm); max-inline-size: 28rem; }
 .aicc-pillars__link { display: inline-flex; align-items: center; min-block-size: 1.5rem; margin-block-start: 0.35rem; font-size: var(--aicc-text-sm); font-weight: 600; }
@@ -1315,3 +1316,9 @@ html[data-ea-mode]:not([data-ea-over]) .aicc-pagehead { padding-block-start: cal
   .aicc-eatimeline li::before { background: CanvasText; }
 }
 :root[data-aicc-contrast="high"] .aicc-ealead { border-color: var(--aicc-success); }
+
+/* Plan cards answer the pointer: a 2px lift and a deeper shadow (hover devices only; the motion tokens collapse under reduced motion). */
+@media (hover: hover) {
+  .aicc-plan { transition: transform var(--aicc-dur, 0.2s) var(--aicc-ease, ease), box-shadow var(--aicc-dur, 0.2s) var(--aicc-ease, ease); }
+  .aicc-plan:hover { transform: translateY(-2px); box-shadow: var(--aicc-shadow-md); }
+}
