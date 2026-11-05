@@ -20,6 +20,9 @@ import urllib.parse
 import urllib.request
 
 API_BASE = "https://api.telegram.org"
+# What a permanent Telegram refusal means in this adapter (fixed enums: nothing from the reply body, which could echo a chat or a message, is ever logged).
+PERMANENT_HINTS = {400: "chat id or message rejected", 401: "token rejected: revoked or wrong", 403: "bot cannot message this chat: not started, blocked or removed",
+                   404: "token or method not found"}
 LOOPBACK_BASE_RE = re.compile(r"^http://127\.0\.0\.1:\d{1,5}$")   # the only non-default base URL any code path accepts (tests only)
 MAX_LEN = 3500
 
@@ -161,6 +164,8 @@ class TelegramAdapter:
             self.enabled = bool(self.token and self.chat_id)
             if not self.enabled and not dry_run:
                 self.log("telegram: disabled (no secrets found); alerts are recorded locally only")
+            elif self.enabled and not dry_run:
+                self.log("telegram: enabled (credentials loaded; nothing is sent at start-up, only on an alert or an explicit telegram-send-test --send)")
         else:
             self.log("telegram: disabled by config")
         self.q: queue.Queue = queue.Queue(maxsize=100)
@@ -261,7 +266,10 @@ class TelegramAdapter:
                     except Exception:  # noqa: BLE001
                         retry_after = delay
                 elif 400 <= e.code < 500:
-                    break  # permanent client error: do not hammer
+                    # permanent client error: do not hammer. It used to leave NO trace at all (only stats["failed"], which nothing reads), so a revoked token (401),
+                    # a bot that cannot reach the chat (403: never started, blocked, removed) or a wrong chat id (400) looked exactly like "no alert fired".
+                    self.log(f"telegram: HTTP {e.code} permanent, not retrying ({PERMANENT_HINTS.get(e.code, 'request rejected')})")
+                    break
                 self.log(f"telegram: HTTP {e.code} (attempt {attempt})")
                 if attempt < self.cfg["retries"]:
                     self.sleep(min(retry_after if retry_after is not None else delay, 60))

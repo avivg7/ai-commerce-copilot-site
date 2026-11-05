@@ -157,6 +157,50 @@ class AdapterTests(TmpCase):
         finally:
             srv.close()
 
+    def test_permanent_4xx_leaves_a_journal_line_with_the_status_and_no_secret(self):
+        """Production 20: a revoked token (401), a bot that cannot reach the chat (403) or a wrong chat id (400) used to fail with NO log line at all."""
+        for code, hint in ((401, "token rejected"), (403, "not started, blocked or removed"), (400, "chat id or message rejected"), (418, "request rejected")):
+            body = b'{"ok":false,"error_code":%d,"description":"Forbidden: bot was blocked by the user (chat 4242424242, secret-detail)"}' % code
+            srv = BodyServer(body, status=code)
+            try:
+                a = self.adapter(srv)
+                a.submit(NOTE); a.flush(5)
+                self.assertEqual(len(srv.requests), 1, code)
+                self.assertEqual(a.stats["failed"], 1, code)
+                lines = [l for l in a.logs if f"HTTP {code}" in l]
+                self.assertEqual(len(lines), 1, (code, a.logs))
+                self.assertIn("permanent, not retrying", lines[0])
+                self.assertIn(hint, lines[0])
+                joined = "\n".join(a.logs)
+                for secret in (TOKEN, CHAT, "4242424242", "secret-detail", "bot was blocked"):
+                    self.assertNotIn(secret, joined, (code, secret))   # fixed enums only: never the reply body, the chat or the token
+            finally:
+                srv.close()
+
+    def test_transient_5xx_still_logs_each_attempt(self):
+        srv = BodyServer(b"err", status=503)
+        try:
+            a = self.adapter(srv)
+            a.sleep = lambda s: None
+            a.submit(NOTE); a.flush(5)
+            self.assertEqual(len(srv.requests), 3)
+            self.assertEqual(len([l for l in a.logs if "HTTP 503 (attempt" in l]), 3)
+            self.assertFalse([l for l in a.logs if "permanent" in l])
+        finally:
+            srv.close()
+
+    def test_enabled_adapter_says_so_once_and_sends_nothing_at_start(self):
+        srv = BodyServer(b"{}")
+        try:
+            a = self.adapter(srv)
+            self.assertEqual(len([l for l in a.logs if l.startswith("telegram: enabled")]), 1)
+            self.assertIn("nothing is sent at start-up", [l for l in a.logs if l.startswith("telegram: enabled")][0])
+            self.assertFalse([l for l in a.logs if TOKEN in l or CHAT in l])
+            self.assertEqual(srv.requests, [])
+            self.assertEqual(a.stats, {"sent": 0, "failed": 0, "dropped": 0, "rate_limited": 0, "dry_run": 0})
+        finally:
+            srv.close()
+
     def test_429_honours_retry_after(self):
         slept = []
         srv = BodyServer(handler_fn=lambda n, p: (429, b'{"parameters":{"retry_after":7}}') if n == 1 else (200, b"{}"))
