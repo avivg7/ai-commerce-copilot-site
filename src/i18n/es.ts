@@ -1,5 +1,6 @@
 import type { Dictionary } from "./en";
 import type { DeepPartial } from "./merge";
+import { eaEs } from "./ea/es";
 
 /**
  * Spanish dictionary (neutral international Spanish, formal "usted"). A PARTIAL dictionary in shape (see merge.ts), but every unit of en.ts is
@@ -65,6 +66,9 @@ export const es: DeepPartial<Dictionary> = {
     line: "Se confirmará antes de que se abran las compras.",
     detail: "Se confirmará antes de que se abran las compras.",
   },
+  // Early Access campaign copy (Production 20): rendered only by an Early Access build, see src/lib/earlyAccess.ts.
+  ea: eaEs,
+
   common: {
     skip: "Saltar al contenido principal",
     nav: {
@@ -490,9 +494,9 @@ export const es: DeepPartial<Dictionary> = {
     hero: {
       eyebrow: "Disponible para WooCommerce",
       category: "Copiloto de recomendaciones y merchandising",
-      titleLead: "Convierta cada recorrido del comprador en",
-      titleAccent: "una oportunidad de venta más inteligente.",
-      lead: "AI Commerce Copilot convierte los datos de su tienda en recomendaciones relevantes y en un merchandising más inteligente: los compradores descubren más mientras usted gestiona menos y mantiene el control.",
+      titleLead: "Recomendaciones que aprenden de",
+      titleAccent: "sus propios pedidos.",
+      lead: "AICC aprende de los pedidos de su tienda WooCommerce, pone productos relevantes en las páginas de producto y de carrito, y muestra en qué se basa cada recomendación. Usted fija las reglas. Hacer un pedido nunca espera a AICC.",
       ctaDemo: "Véalo en acción",
       ctaPlans: "Ver planes",
     },

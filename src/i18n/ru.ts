@@ -1,5 +1,6 @@
 import type { Dictionary } from "./en";
 import type { DeepPartial } from "./merge";
+import { eaRu } from "./ea/ru";
 
 /**
  * Russian dictionary: a PARTIAL dictionary (same shape as en.ts), complete for the pages of the site (every unit is translated, nothing falls back to English).
@@ -64,6 +65,9 @@ export const ru: DeepPartial<Dictionary> = {
     line: "Будет подтверждено до открытия покупок.",
     detail: "Будет подтверждено до открытия покупок.",
   },
+  // Early Access campaign copy (Production 20): rendered only by an Early Access build, see src/lib/earlyAccess.ts.
+  ea: eaRu,
+
   common: {
     skip: "Перейти к\u00a0основному содержимому",
     nav: {
@@ -484,9 +488,9 @@ export const ru: DeepPartial<Dictionary> = {
     hero: {
       eyebrow: "Доступен для\u00a0WooCommerce",
       category: "Ассистент по\u00a0товарным рекомендациям и\u00a0мерчандайзингу",
-      titleLead: "Превратите каждый путь покупателя в",
-      titleAccent: "более удачную возможность для\u00a0продажи.",
-      lead: "AI Commerce Copilot превращает данные вашего магазина в\u00a0релевантные рекомендации и\u00a0более умный мерчандайзинг: покупатели находят больше, а\u00a0вы тратите меньше усилий на\u00a0управление и\u00a0сохраняете контроль.",
+      titleLead: "Рекомендации, которые учатся",
+      titleAccent: "на\u00a0ваших собственных заказах.",
+      lead: "AICC учится на\u00a0заказах вашего магазина на\u00a0WooCommerce, показывает подходящие товары на\u00a0страницах товара и\u00a0корзины и\u00a0объясняет, на\u00a0чём основана каждая рекомендация. Правила задаёте вы. Оформление заказа никогда не\u00a0ждёт AICC.",
       ctaDemo: "Посмотреть в\u00a0действии",
       ctaPlans: "Посмотреть планы",
     },

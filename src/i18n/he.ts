@@ -1,5 +1,6 @@
 import type { Dictionary } from "./en";
 import type { DeepPartial } from "./merge";
+import { eaHe } from "./ea/he";
 
 /**
  * Hebrew (right-to-left) dictionary. Stage 2: every unit of en.ts is translated, so nothing falls back to English (merge.ts still applies if a unit is ever
@@ -66,6 +67,9 @@ export const he: DeepPartial<Dictionary> = {
     line: "יאושר לפני פתיחת הרכישות.",
     detail: "יאושר לפני פתיחת הרכישות.",
   },
+  // Early Access campaign copy (Production 20): rendered only by an Early Access build, see src/lib/earlyAccess.ts.
+  ea: eaHe,
+
   common: {
     skip: "דילוג לתוכן הראשי",
     nav: {
@@ -484,9 +488,9 @@ export const he: DeepPartial<Dictionary> = {
     hero: {
       eyebrow: "זמין ל־WooCommerce",
       category: "קופיילוט להמלצות מוצרים ולמרצ׳נדייזינג בחנות",
-      titleLead: "הפכו כל מסע של קונה",
-      titleAccent: "להזדמנות מכירה חכמה יותר.",
-      lead: "AI Commerce Copilot הופך את נתוני החנות שלכם להמלצות רלוונטיות ולמרצ׳נדייזינג חכם יותר: הקונים מגלים יותר, ואתם מנהלים פחות ונשארים בשליטה.",
+      titleLead: "המלצות שנלמדות",
+      titleAccent: "מההזמנות שלכם עצמכם.",
+      lead: "AICC לומד מהזמנות ה־WooCommerce שלכם, מציג מוצרים רלוונטיים בדפי המוצר והעגלה, ומראה על מה מבוססת כל המלצה. אתם קובעים את הכללים. ביצוע הזמנה לעולם לא ממתין ל־AICC.",
       ctaDemo: "ראו את זה בפעולה",
       ctaPlans: "לצפייה בתוכניות",
     },
