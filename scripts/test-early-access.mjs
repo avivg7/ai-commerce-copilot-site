@@ -105,8 +105,8 @@ for (const mode of args.includes("--only-open") ? ["open"] : ["open", "announce"
   console.log(`== mode ${mode}: the Home hero in the live view`);
   {
     const { ctx, p } = await view(mode, "/", "Asia/Jerusalem", C - 86400e3);
-    check(/Recommendations learned from your own orders\./.test(await text(p, "h1")), "hero headline");
-    check(/shows in your dashboard what it recommends/.test(await text(p, ".aicc-hero-lead")), "hero lead makes only the approved dashboard claim");
+    check(norm(await text(p, "h1")) === "More relevant recommendations. More opportunities to sell.", "hero headline (Production 21)");
+    check(/shows in your dashboard what it recommends/.test(await text(p, ".aicc-hero-lead")) && !/\b(boost|increase|lift|grow|revenue|conversion|buyers?)\b|%/i.test(await text(p, "h1, .aicc-hero-lead")), "hero lead makes only the approved dashboard claim and no result word (boost, increase, lift, grow, revenue, conversion, buyers, percent)");
     const visActions = (await p.locator(".aicc-hero .aicc-hero-actions .aicc-btn").evaluateAll((els) => els.filter((e) => e.getClientRects().length > 0).map((e) => e.textContent.trim()))).join(" | ");
     check(mode === "open" ? visActions === "Request free Early Access | See it in action" : visActions === "How Early Access works | See it in action", `hero actions while live (${visActions})`);
     check(/No credit card required\. Access ends at 00:00 on January 1, 2027, Israel time, and nothing is charged automatically\./.test(await text(p, ".aicc-eanote")), "hero fine print: no card, the end instant with its time zone, nothing charged automatically");

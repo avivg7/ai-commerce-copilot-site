@@ -23,7 +23,7 @@ const RULES = [
   [/crossed[- ]out|strike-?through price/i, "strike-through price"], [/works with any theme|any theme/i, "any theme claim"],
   [/\bdeleted after\b|deleted when you/i, "deletion promise"], [/is (fully )?(wcag )?compliant/i, "conformance claim"],
   // Hebrew
-  [/חינם|בחינם/, "he: free"], [/ללא כרטיס אשראי/, "he: no credit card"], [/מגמות|מגמה|טרנד/, "he: trends"], [/מנוי/, "he: subscription"],
+  [/חינם|בחינם/, "he: free"], [/ללא כרטיס אשראי/, "he: no credit card"], [/מגמות|מגמה|טרנד/, "he: trends"], [/(?<!הזד)מנוי/, "he: subscription"],
   [/מתחדש\w* אוטומטית/, "he: auto-renew"], [/ביטול בכל עת|בטל בכל עת/, "he: cancel anytime"], [/30 יום/, "he: 30-day"],
   [/הפופולרי ביותר|הנפוץ ביותר/, "he: most popular"], [/תוצאות אמיתיות/, "he: real results"], [/הצטרפו/, "he: join"], [/סומכים עלינו|מהימן על ידי/, "he: trusted by"],
   [/תואם ל?-?GDPR|עומד ב-?GDPR/, "he: GDPR compliant"],
@@ -66,6 +66,13 @@ function stripComments(src) {
   const rule = (t) => RULES.some(([re]) => re.test(t));
   const missed = bad.filter((t) => !rule(t)), wrong = ok.filter((t) => rule(t));
   if (missed.length || wrong.length) { console.error(`FAIL: self-test of the 30-day rules: missed [${missed}] flagged [${wrong}]`); process.exit(1); }
+}
+// Self-test of the Hebrew "subscription" rule (Production 21): the word מנוי is banned, but it is also inside הזדמנויות ("opportunities"), which the hero headline uses.
+{
+  const rule = (t) => RULES.some(([re]) => re.test(t));
+  const bad = ["מנוי חודשי", "המנוי שלכם מתחדש", "מנויים"], ok = ["יותר הזדמנויות למכור.", "הזדמנויות"];
+  const missed = bad.filter((t) => !rule(t)), wrong = ok.filter((t) => rule(t));
+  if (missed.length || wrong.length) { console.error(`FAIL: self-test of the Hebrew subscription rule: missed [${missed}] flagged [${wrong}]`); process.exit(1); }
 }
 // Self-test of the optional-import rules (he, es, ru) and the Studio badge rule: automatic / on-connect import and "recommended for 2 stores" are caught; the opt-in phrasing passes.
 {

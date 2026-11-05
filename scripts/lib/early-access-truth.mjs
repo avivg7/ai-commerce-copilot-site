@@ -27,7 +27,7 @@ export const EA_EXTRA_RULES = [
   [/\b(guarantee[sd]?|results?|increase|boost|grow|revenue|earn|sales|conversion|rated|stars?|reviews|trusted|thousands|hundreds)\b(?!.{0,60}\b(not|never|no|nothing|concerns|refers)\b)/i, "en: no result, rating, social-proof or guarantee claim in campaign copy"],
   [/\$\s?\d|\bUSD\b/, "en: no price in campaign copy (prices come from src/data/plans.ts)"],
   // Hebrew
-  [/תקופת ניסיון|ניסיון חינם|חינם (לתמיד|לנצח|לכל החיים)|לתמיד|לנצח|מנוי|מתחדש|הנחה|חסוך|חיסכון|מבצע|מוגבל|הזדמנות אחרונה|האחרונה|מובטח|ערבות|הגדל|הגדילו|תרוויח|תרוויחו|מכירות|הכנסות|דירוג|כוכבים|ממליצים|מאות|אלפי|נשארו|מקומות|\d\s?%|אחוז|תחייב|תחויב|נחייב|\$/, "he: no trial, forever/lifetime, subscription, renewal, discount, urgency, scarcity, result, rating or price wording"],
+  [/תקופת ניסיון|ניסיון חינם|חינם (לתמיד|לנצח|לכל החיים)|לתמיד|לנצח|(?<!הזד)מנוי|מתחדש|הנחה|חסוך|חיסכון|מבצע|מוגבל|הזדמנות אחרונה|האחרונה|מובטח|ערבות|הגדל|הגדילו|תרוויח|תרוויחו|מכירות|הכנסות|דירוג|כוכבים|ממליצים|מאות|אלפי|נשארו|מקומות|\d\s?%|אחוז|תחייב|תחויב|נחייב|\$/, "he: no trial, forever/lifetime, subscription, renewal, discount, urgency, scarcity, result, rating or price wording"],
   // Spanish
   [/prueba|gratis (para siempre|de por vida)|para siempre|de por vida|suscripci[oó]n|renueva|renovaci[oó]n|descuento|ahorr|oferta limitada|(?<![a-zñáéíóú])limitad|[uú]ltima oportunidad|garantiz|garant[ií]a|resultados|aument|ventas|ingresos|valorad|estrellas|miles|cientos|quedan|plazas|cupos|\d\s?%|por ciento|cobraremos|le cobrar|\$/i, "es: no trial, forever/lifetime, subscription, renewal, discount, urgency, scarcity, result, rating or price wording"],
   // Russian
