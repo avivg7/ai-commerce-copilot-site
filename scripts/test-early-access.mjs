@@ -1,0 +1,147 @@
+// npm run test:early-access: the Early Access presentation in a real browser, before / at / after the end date, in several visitor time zones (Production 20).
+//   node scripts/test-early-access.mjs --open <dir> --announce <dir> --off <dir>     (three exports built with NEXT_PUBLIC_AICC_EARLY_ACCESS=open|announce|unset)
+// It serves each export itself (scripts/serve-out.mjs on free ports), pins the browser clock, and asserts what a visitor SEES: visibility, not just markup.
+//  * time matrix: 40 days before, 1 s before, 1 ms before, AT the cutoff, 1 ms after, 1 s after, 15 days after; each in 6 visitor time zones (UTC, Los Angeles, Jerusalem, Kiritimati +14, Auckland, Pago Pago -11):
+//    the offer is live iff the clock is before the instant, whatever the zone;
+//  * live view: bar, struck regular price with its label, "Free until December 31, 2026", the end date, one primary action per plan, CTA href (open) or "opens soon" (announce);
+//  * ended view: no bar, no offer, no struck price, the ordinary price and "Purchases open soon" are back, the "ended" note is shown;
+//  * a normal build never shows any of it; layout: no horizontal overflow at 320/390/768/1280 in the live view; the bar link is reachable by keyboard; he is right-to-left.
+import { spawn } from "node:child_process";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { launch } from "./lib/browser.mjs";
+
+const here = path.dirname(fileURLToPath(import.meta.url));
+const args = process.argv.slice(2);
+const arg = (n) => { const i = args.indexOf(`--${n}`); return i >= 0 ? path.resolve(args[i + 1]) : undefined; };
+const dirs = { open: arg("open"), announce: arg("announce"), off: arg("off") };
+if (!dirs.open || !dirs.announce || !dirs.off) { console.error("usage: --open <dir> --announce <dir> --off <dir>"); process.exit(2); }
+
+const C = Date.UTC(2026, 11, 31, 22, 0, 0);
+const results = []; let failed = 0;
+const check = (cond, msg) => { results.push(!!cond); if (!cond) { failed++; console.error("  FAIL " + msg); } else console.log("  ok   " + msg); };
+
+const servers = [];
+async function serve(dir, port) {
+  const p = spawn(process.execPath, [path.join(here, "serve-out.mjs"), "--port", String(port), "--dir", dir], { stdio: "ignore" });
+  servers.push(p);
+  for (let i = 0; i < 50; i++) { try { const r = await fetch(`http://localhost:${port}/`); if (r.ok) return `http://localhost:${port}`; } catch {} await new Promise((r) => setTimeout(r, 100)); }
+  throw new Error(`server for ${dir} did not start`);
+}
+const base = { open: await serve(dirs.open, 3151), announce: await serve(dirs.announce, 3152), off: await serve(dirs.off, 3153) };
+
+const browser = await launch();
+const ZONES = ["UTC", "America/Los_Angeles", "Asia/Jerusalem", "Pacific/Kiritimati", "Pacific/Auckland", "Pacific/Pago_Pago"];
+const TIMES = [["40 days before", C - 40 * 86400e3, true], ["1 s before", C - 1000, true], ["1 ms before", C - 1, true], ["AT the cutoff", C, false], ["1 ms after", C + 1, false], ["1 s after", C + 1000, false], ["15 days after", C + 15 * 86400e3, false]];
+
+async function view(mode, route, tz, nowMs, width = 1280, locale) {
+  const ctx = await browser.newContext({ viewport: { width, height: 900 }, timezoneId: tz, locale: locale === "he" ? "he-IL" : "en-US", reducedMotion: "reduce" });
+  await ctx.clock.setFixedTime(new Date(nowMs));
+  const p = await ctx.newPage();
+  await p.goto(`${base[mode]}${route}`, { waitUntil: "load" });
+  await p.waitForTimeout(150);
+  return { ctx, p };
+}
+const vis = async (p, sel) => (await p.locator(sel).count()) > 0 && (await p.locator(sel).first().isVisible());
+const text = async (p, sel) => ((await p.locator(sel).allInnerTexts()).join(" | ")).replace(/\s+/g, " ");
+
+for (const mode of ["open", "announce"]) {
+  console.log(`\n== mode ${mode}: time matrix x visitor time zones (pricing page)`);
+  for (const [label, t, live] of TIMES) {
+    const states = [];
+    for (const tz of ZONES) {
+      const { ctx, p } = await view(mode, "/pricing/", tz, t);
+      const over = await p.evaluate(() => document.documentElement.hasAttribute("data-ea-over"));
+      const bar = await vis(p, ".aicc-eabar");
+      const free = await vis(p, ".aicc-plan__free");
+      const struck = await vis(p, ".aicc-plan__regular s");
+      const ordinary = await vis(p, ".aicc-plan__price");
+      const soon = (await p.locator(".aicc-plan [data-commerce=closed]").evaluateAll((els) => els.filter((e) => e.getClientRects().length > 0).map((e) => e.textContent).join(" "))).includes("Purchases open soon");
+      const ended = await vis(p, ".aicc-eaafter");
+      const ok = live ? (!over && bar && free && struck && !ordinary && !ended && !soon) : (over && !bar && !free && !struck && ordinary && ended && soon);
+      states.push(ok ? "." : `x(${tz}: over=${over} bar=${bar} free=${free} struck=${struck} ordinary=${ordinary} ended=${ended} soon=${soon})`);
+      await ctx.close();
+    }
+    check(states.every((s) => s === "."), `${label} (${new Date(t).toISOString()}): ${live ? "LIVE" : "ENDED"} view in all ${ZONES.length} visitor zones${states.every((s) => s === ".") ? "" : " -> " + states.filter((s) => s !== ".").join("; ")}`);
+  }
+
+  console.log(`== mode ${mode}: the live view`);
+  {
+    const { ctx, p } = await view(mode, "/pricing/", "Asia/Jerusalem", C - 86400e3);
+    const t = await text(p, ".aicc-plan");
+    check((t.match(/Free until December 31, 2026/g) || []).length === 3, "all three plan cards say 'Free until December 31, 2026'");
+    check(/\$99/.test(await text(p, ".aicc-plan__regular")) && /\$199/.test(await text(p, ".aicc-plan__regular")) && /\$499/.test(await text(p, ".aicc-plan__regular")), "the regular prices shown struck through are $99, $199 and $499");
+    check((await p.locator(".aicc-plan__regular s").count()) === 3, "exactly three struck-through prices (one per plan)");
+    check(/Regular price/.test(await text(p, ".aicc-plan__regular-label")), "the struck price carries the visible label 'Regular price'");
+    check((t.match(/Access ends on January 1, 2027/g) || []).length === 3, "every card states 'Access ends on January 1, 2027'");
+    check(/paid plan starts only if you choose to buy one/.test(t), "every card says a paid plan starts only if the merchant chooses to buy");
+    check(!/(subscription|automatically (charged|renew)|trial|discount|% off|limited time|hurry|countdown)/i.test(await text(p, "#early-access, .aicc-plan, .aicc-eabar, .aicc-ealead")), "no trial / subscription / automatic-charge / discount / urgency wording in the campaign blocks");
+    const sect = ((await p.locator("#early-access").textContent()) || "").replace(/\s+/g, " ");
+    check(/No automatic conversion and no automatic charge|no automatic conversion/.test(sect) && /no card on file/.test(sect), "the explanation says: no automatic conversion, no automatic charge, no card on file");
+    const hrefs = await p.locator(".aicc-plan a.aicc-btn").evaluateAll((a) => a.map((x) => x.getAttribute("href")));
+    if (mode === "open") check(hrefs.length === 3 && hrefs.every((h) => /offer=early-access/.test(h) && /plan=(solo|studio|agency)/.test(h)), `open: each plan button leads to Early Access with its plan (${hrefs.join(" ")})`);
+    else { check(hrefs.length === 0, "announce: no plan button leads anywhere (nothing to sign up for yet)"); check((await text(p, ".aicc-plan [data-ea-soon]")).split("|").length === 3, "announce: each card says 'Early Access opens soon'"); }
+    // one primary action per card while live
+    check((await p.locator(".aicc-plan [data-ea-live] a.aicc-btn, .aicc-plan [data-ea-live] p.aicc-btn").count()) === 3, "exactly one action per plan card");
+    await ctx.close();
+  }
+
+  console.log(`== mode ${mode}: the Home hero in the live view`);
+  {
+    const { ctx, p } = await view(mode, "/", "Asia/Jerusalem", C - 86400e3);
+    check(/Recommendations learned from your own orders\./.test(await text(p, "h1")), "hero headline");
+    const actions = await text(p, ".aicc-hero .aicc-hero-actions .aicc-btn");
+    check(mode === "open" ? /^Get free Early Access \| See it in action$/.test(actions) : /^See it in action \| How Early Access works$/.test(actions), `hero actions (${actions})`);
+    check(/No credit card required\. Access ends on January 1, 2027, and nothing is charged automatically\./.test(await text(p, ".aicc-eanote")), "hero fine print: no card, end date, nothing charged automatically");
+    check(await vis(p, ".aicc-eabar"), "the announcement bar is visible");
+    // the bar sits under the header and above the hero (no overlap)
+    const g = await p.evaluate(() => { const r = (s) => document.querySelector(s).getBoundingClientRect(); return { header: r(".aicc-site-header").bottom, barTop: r(".aicc-eabar").top, barBottom: r(".aicc-eabar").bottom, h1: r("h1").top }; });
+    check(g.barTop >= g.header - 0.5 && g.h1 > g.barBottom, `the bar sits below the header (${Math.round(g.header)}px) and above the headline (bar ${Math.round(g.barTop)}-${Math.round(g.barBottom)}px, h1 at ${Math.round(g.h1)}px)`);
+    // keyboard: the bar link is reachable and shows a focus ring
+    await p.keyboard.press("Tab"); let reached = false;
+    for (let i = 0; i < 20 && !reached; i++) { reached = await p.evaluate(() => document.activeElement?.classList.contains("aicc-eabar__link")); if (!reached) await p.keyboard.press("Tab"); }
+    check(reached, "the bar link is reachable with the Tab key");
+    await ctx.close();
+  }
+
+  console.log(`== mode ${mode}: no horizontal overflow (live view)`);
+  for (const w of [320, 390, 768, 1280]) for (const route of ["/", "/pricing/"]) {
+    const { ctx, p } = await view(mode, route, "UTC", C - 86400e3, w);
+    const o = await p.evaluate(() => ({ sw: document.documentElement.scrollWidth, iw: window.innerWidth }));
+    check(o.sw <= o.iw, `${route} at ${w}px: no horizontal scroll (${o.sw} <= ${o.iw})`);
+    await ctx.close();
+  }
+}
+
+console.log("\n== the ended view elsewhere");
+{
+  const { ctx, p } = await view("open", "/", "UTC", C + 5 * 86400e3);
+  check(!(await vis(p, ".aicc-eanote")) && !(await vis(p, ".aicc-eabar")) && !(await vis(p, ".aicc-ealead")), "Home after the end: no campaign text visible");
+  check(/Plans and prices are final\. Purchases and new accounts open soon\./.test(await text(p, "#final-title ~ div [data-ea-after], [data-ea-after] .aicc-lead")), "Home after the end: the ordinary closing band (purchases open soon) is back");
+  const actions = await text(p, ".aicc-hero .aicc-hero-actions .aicc-btn");
+  check(!/Early Access/.test(actions) || !(await vis(p, ".aicc-hero-actions a[href*='offer=early-access']")), "Home after the end: the Early Access button is hidden");
+  await ctx.close();
+}
+
+console.log("\n== a normal build never shows the campaign");
+for (const [route, tz, t] of [["/", "UTC", C - 86400e3], ["/pricing/", "Asia/Jerusalem", C - 86400e3], ["/pricing/", "UTC", C + 86400e3]]) {
+  const { ctx, p } = await view("off", route, tz, t);
+  const html = await p.content();
+  check(!/Early Access|data-ea-|aicc-eabar/.test(html), `off build ${route} (${new Date(t).toISOString().slice(0, 10)}): no trace of the campaign in the rendered page`);
+  check(!(await vis(p, ".aicc-plan__regular s")), `off build ${route}: no struck-through price`);
+  await ctx.close();
+}
+
+console.log("\n== Hebrew (right-to-left), live view");
+{
+  const { ctx, p } = await view("open", "/he/pricing/", "Asia/Jerusalem", C - 86400e3, 390, "he");
+  const m = await p.evaluate(() => ({ dir: document.documentElement.dir, over: document.documentElement.scrollWidth <= window.innerWidth, bar: !!document.querySelector(".aicc-eabar"), free: [...document.querySelectorAll(".aicc-plan__free")].map((e) => e.textContent) }));
+  check(m.dir === "rtl" && m.over && m.bar && m.free.length === 3, `he: rtl, no overflow, bar and three offers present (${m.free[0] || "?"})`);
+  await ctx.close();
+}
+
+await browser.close();
+servers.forEach((s) => s.kill());
+console.log(`\n${results.length - failed}/${results.length} checks passed`);
+if (failed) { console.error(`FAIL test:early-access (${failed})`); process.exit(1); }
+console.log("PASS test:early-access");

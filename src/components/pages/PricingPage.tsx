@@ -5,6 +5,9 @@ import { fbProps, txProps } from "@/i18n";
 import { Rich, type RichCtx } from "@/lib/rich";
 import { PLANS } from "@/data/plans";
 import { COMMERCE_OPEN, getStartedUrl } from "@/lib/site";
+import { EA_ON } from "@/lib/earlyAccess";
+
+import { EaAfterNote, EaCta, EaSection } from "@/components/ea/Ea";
 import { SoonBandActions } from "@/components/ui/Soon";
 import { Container, Section, SectionHeading } from "@/components/ui/Primitives";
 import { PricingCard } from "@/components/ui/PricingCard";
@@ -36,6 +39,8 @@ export function PricingPage({ locale, t }: { locale: Locale; t: Dictionary }) {
       <div>
         <PageHead locale={locale} t={t} pageName={t.common.pageNames.pricing} title={<span {...fb("pricing.hero")}>{p.hero.title}</span>} lead={<span {...fb("pricing.hero")}>{R(p.hero.lead)}</span>} />
       </div>
+
+      <EaAfterNote locale={locale} t={t} />
 
       {/* 2. What every plan includes, before any price */}
       <Section tone="surface" labelledBy="included-title" fb={fb("pricing.included")}>
@@ -71,6 +76,7 @@ export function PricingPage({ locale, t }: { locale: Locale; t: Dictionary }) {
                 cta={t.common.plan.choose.replace("{plan}", p.plans[pl.id].name)}
                 soon={t.common.soon.label}
                 headingLevel={3}
+                ea={t.ea.plan}
               />
             ))}
           </div>
@@ -81,6 +87,9 @@ export function PricingPage({ locale, t }: { locale: Locale; t: Dictionary }) {
           </p>
         </Container>
       </Section>
+
+      {/* 3b. Early Access (Production 20): renders only in an Early Access build */}
+      <EaSection locale={locale} t={t} />
 
       {/* 4. Which plan? */}
       <Section tone="surface" labelledBy="which-title" fb={fb("pricing.which")}>
@@ -164,16 +173,26 @@ export function PricingPage({ locale, t }: { locale: Locale; t: Dictionary }) {
           <div className="aicc-final">
             <div className="aicc-stack aicc-stack--lg">
               <h2 id="pricing-final" className="aicc-h2">{p.final.title}</h2>
-              {COMMERCE_OPEN ? <p className="aicc-lead">{p.final.body}</p> : <p className="aicc-lead" {...tx("common.soon.band")}>{t.common.soon.band}</p>}
-              {COMMERCE_OPEN ? (
-                <div className="aicc-hero-actions">
-                  <Button href={getStartedUrl(locale)} variant="primary" size="lg" {...tx("common.getStarted")} icon={<ArrowRight size={16} className="aicc-flip" aria-hidden="true" />}>
-                    {t.common.getStarted}
-                  </Button>
+              {EA_ON ? (
+                <div className="aicc-stack aicc-stack--lg" data-ea-live>
+                  <p className="aicc-lead" {...tx("ea.section")}>{t.ea.section.homeLead}</p>
+                  <div className="aicc-hero-actions">
+                    <EaCta locale={locale} t={t} variant="primary" />
+                  </div>
                 </div>
-              ) : (
-                <SoonBandActions locale={locale} t={t} to="questions" />
-              )}
+              ) : null}
+              <div className="aicc-stack aicc-stack--lg" {...(EA_ON ? { "data-ea-after": "" } : {})}>
+                {COMMERCE_OPEN ? <p className="aicc-lead">{p.final.body}</p> : <p className="aicc-lead" {...tx("common.soon.band")}>{t.common.soon.band}</p>}
+                {COMMERCE_OPEN ? (
+                  <div className="aicc-hero-actions">
+                    <Button href={getStartedUrl(locale)} variant="primary" size="lg" {...tx("common.getStarted")} icon={<ArrowRight size={16} className="aicc-flip" aria-hidden="true" />}>
+                      {t.common.getStarted}
+                    </Button>
+                  </div>
+                ) : (
+                  <SoonBandActions locale={locale} t={t} to="questions" />
+                )}
+              </div>
             </div>
           </div>
         </Container>

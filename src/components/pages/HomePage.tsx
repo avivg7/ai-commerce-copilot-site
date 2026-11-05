@@ -5,6 +5,8 @@ import { fbProps, txProps } from "@/i18n";
 import { Lb, Rich, type RichCtx } from "@/lib/rich";
 import { PLANS } from "@/data/plans";
 import { COMMERCE_OPEN, getStartedUrl } from "@/lib/site";
+import { EA_ON, EA_OPEN } from "@/lib/earlyAccess";
+import { EaCta, EaHeroNote, EaHomeLead } from "@/components/ea/Ea";
 import { SoonBandActions } from "@/components/ui/Soon";
 import { localePath } from "@/lib/routes";
 import { Button } from "@/components/ui/Button";
@@ -48,9 +50,19 @@ export function HomePage({ locale, t }: { locale: Locale; t: Dictionary }) {
             </h1>
             <p className="aicc-hero-lead aicc-fade-up" style={{ ["--i" as string]: 2 }}>{h.hero.lead}</p>
             <div className="aicc-hero-actions aicc-fade-up" style={{ ["--i" as string]: 3 }}>
-              <WatchDemo locale={locale} t={t} variant="primary" label={h.hero.ctaDemo} labelKey="home.hero.ctaDemo" />
-              <Button href={localePath(locale, "pricing")} variant="secondary" size="lg" {...tx("home.hero.ctaPlans")}>{h.hero.ctaPlans}</Button>
+              {EA_ON && EA_OPEN ? (
+                <>
+                  <EaCta locale={locale} t={t} variant="primary" />
+                  <WatchDemo locale={locale} t={t} variant="secondary" label={h.hero.ctaDemo} labelKey="home.hero.ctaDemo" />
+                </>
+              ) : (
+                <>
+                  <WatchDemo locale={locale} t={t} variant="primary" label={h.hero.ctaDemo} labelKey="home.hero.ctaDemo" />
+                  {EA_ON ? <EaCta locale={locale} t={t} variant="secondary" /> : <Button href={localePath(locale, "pricing")} variant="secondary" size="lg" {...tx("home.hero.ctaPlans")}>{h.hero.ctaPlans}</Button>}
+                </>
+              )}
             </div>
+            <EaHeroNote locale={locale} t={t} />
           </div>
           <div className="aicc-hero__visual">
             <div {...tx("brand.chips")}><RecoHero labels={[t.brand.chips.orders, t.brand.chips.clicks, t.brand.chips.recs, t.brand.chips.insights, t.brand.chips.bundles]} motion={t.brand.motion} /></div>
@@ -222,6 +234,7 @@ export function HomePage({ locale, t }: { locale: Locale; t: Dictionary }) {
       <Section tone="sunken" labelledBy="pricing-title" fb={fb("home.pricing")}>
         <Container>
           <SectionHeading id="pricing-title" title={h.pricing.title} lead={h.pricing.lead} />
+          <EaHomeLead locale={locale} t={t} />
           <div className="aicc-plans">
             {PLANS.map((p) => (
               <PricingCard
@@ -238,6 +251,7 @@ export function HomePage({ locale, t }: { locale: Locale; t: Dictionary }) {
                 cta={t.common.plan.choose.replace("{plan}", t.pricing.plans[p.id].name)}
                 soon={t.common.soon.label}
                 compact
+                ea={t.ea.plan}
               />
             ))}
           </div>
@@ -269,21 +283,32 @@ export function HomePage({ locale, t }: { locale: Locale; t: Dictionary }) {
           <div className="aicc-final">
             <div className="aicc-stack aicc-stack--lg">
               <h2 id="final-title" className="aicc-h2">{h.final.title}</h2>
-              {COMMERCE_OPEN ? <p className="aicc-lead">{h.final.body}</p> : <p className="aicc-lead" {...tx("common.soon.band")}>{t.common.soon.band}</p>}
-              <p className="aicc-lead aicc-lead--sub">{R(h.final.guarantee)}</p>
-              {COMMERCE_OPEN ? (
-                <div className="aicc-hero-actions">
-                  <Button href={getStartedUrl(locale)} variant="primary" size="lg" {...tx("common.getStarted")}>
-                    {t.common.getStarted}
-                    {arrow}
-                  </Button>
-                  <Button href={localePath(locale, "pricing")} variant="ghost" size="lg" {...tx("common.seePricing")}>
-                    {t.common.seePricing}
-                  </Button>
+              {EA_ON ? (
+                <div className="aicc-stack aicc-stack--lg" data-ea-live>
+                  <p className="aicc-lead" {...tx("ea.section")}>{t.ea.section.homeLead}</p>
+                  <div className="aicc-hero-actions">
+                    <EaCta locale={locale} t={t} variant="primary" />
+                    <Button href={localePath(locale, "pricing")} variant="ghost" size="lg" {...tx("common.seePricing")}>{t.common.seePricing}</Button>
+                  </div>
                 </div>
-              ) : (
-                <SoonBandActions locale={locale} t={t} />
-              )}
+              ) : null}
+              <div className="aicc-stack aicc-stack--lg" {...(EA_ON ? { "data-ea-after": "" } : {})}>
+                {COMMERCE_OPEN ? <p className="aicc-lead">{h.final.body}</p> : <p className="aicc-lead" {...tx("common.soon.band")}>{t.common.soon.band}</p>}
+                <p className="aicc-lead aicc-lead--sub">{R(h.final.guarantee)}</p>
+                {COMMERCE_OPEN ? (
+                  <div className="aicc-hero-actions">
+                    <Button href={getStartedUrl(locale)} variant="primary" size="lg" {...tx("common.getStarted")}>
+                      {t.common.getStarted}
+                      {arrow}
+                    </Button>
+                    <Button href={localePath(locale, "pricing")} variant="ghost" size="lg" {...tx("common.seePricing")}>
+                      {t.common.seePricing}
+                    </Button>
+                  </div>
+                ) : (
+                  <SoonBandActions locale={locale} t={t} />
+                )}
+              </div>
             </div>
           </div>
         </Container>

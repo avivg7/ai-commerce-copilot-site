@@ -5,6 +5,7 @@ import { Button } from "./Button";
 import { cn } from "@/lib/cn";
 import { currencySuffix, formatPrice } from "@/data/plans";
 import { COMMERCE_OPEN, planUrl, type PlanId } from "@/lib/site";
+import { EA_ON, EA_OPEN, eaUrl } from "@/lib/earlyAccess";
 import { txProps } from "@/i18n";
 import type { Locale } from "@/i18n/config";
 
@@ -26,6 +27,8 @@ export interface PricingCardProps {
   locale: string;
   headingLevel?: 2 | 3;
   extra?: ReactNode;
+  /** Early Access strings (t.ea.plan). Rendered only by an Early Access build; a normal build ignores them. */
+  ea?: { free: string; regular: string; regularPer: string; regularNote: string; ends: string; ctaOpen: string; ctaAnnounce: string };
 }
 
 /**
@@ -38,6 +41,16 @@ export function PricingCard(p: PricingCardProps) {
   const loc = p.locale as Locale;
   const A = (path: string) => { const { lang, dir } = txProps(loc, path); return { lang, dir }; };
   const storesPath = p.id === "solo" ? "common.plan.oneStore" : "common.plan.upToStores";
+  const ea = EA_ON ? p.ea : undefined;
+  const E = (path: string) => A(path);
+  // The ordinary purchase control (Purchases open soon, or the choose-a-plan button): the only one shown after the Early Access end date.
+  const standardCta = COMMERCE_OPEN ? (
+    <Button href={planUrl(p.id, loc)} variant={p.featuredLabel ? "primary" : "outline"} block size="lg" {...A("common.plan.choose")}>
+      {p.cta}
+    </Button>
+  ) : (
+    <p className="aicc-btn aicc-btn--lg aicc-btn--block aicc-btn--soon" data-commerce="closed" {...A("common.soon.label")}>{p.soon}</p>
+  );
   return (
     <article className={cn("aicc-plan", p.featuredLabel && "aicc-plan--featured", p.compact && "aicc-plan--compact")} aria-labelledby={`plan-${p.id}`}>
       <div>
@@ -47,10 +60,21 @@ export function PricingCard(p: PricingCardProps) {
         </H>
         <p className="aicc-muted aicc-small aicc-plan__fit" style={{ marginBlockStart: 4 }} {...A("pricing.plans")}>{p.fit}</p>
       </div>
-      <p className="aicc-plan__price">
+      <p className="aicc-plan__price" {...(ea ? { "data-ea-hide-live": "" } : {})}>
         <span className="aicc-plan__amount"><bdi>{formatPrice(p.price, p.locale)}</bdi></span>
         <span className="aicc-plan__per" {...A("common.plan.perYear")}>{p.perYear}{currencySuffix(p.locale ?? "en")}</span>
       </p>
+      {ea ? (
+        <div className="aicc-plan__offer" data-ea-live>
+          <p className="aicc-plan__free" {...E("ea.plan")}>{ea.free}</p>
+          <p className="aicc-plan__regular" {...E("ea.plan")}>
+            <span className="aicc-plan__regular-label">{ea.regular}</span>{" "}
+            <s><bdi>{formatPrice(p.price, p.locale)}</bdi></s>
+            <span className="aicc-plan__regular-per"> {ea.regularPer}{currencySuffix(p.locale ?? "en")}</span>
+            <span className="aicc-sr-only"> ({ea.regularNote})</span>
+          </p>
+        </div>
+      ) : null}
       <p className="aicc-plan__stores" {...A(storesPath)}>{p.storesLabel}</p>
       {!p.compact ? (
         <ul className="aicc-plan__list">
@@ -63,13 +87,19 @@ export function PricingCard(p: PricingCardProps) {
         </ul>
       ) : null}
       {p.extra}
-      {COMMERCE_OPEN ? (
-        <Button href={planUrl(p.id, loc)} variant={p.featuredLabel ? "primary" : "outline"} block size="lg" {...A("common.plan.choose")}>
-          {p.cta}
-        </Button>
-      ) : (
-        <p className="aicc-btn aicc-btn--lg aicc-btn--block aicc-btn--soon" data-commerce="closed" {...A("common.soon.label")}>{p.soon}</p>
-      )}
+      {ea ? (
+        <>
+          <p className="aicc-plan__ends aicc-muted aicc-small" data-ea-live {...E("ea.plan")}>{ea.ends}</p>
+          <div data-ea-live>
+            {EA_OPEN ? (
+              <Button href={eaUrl(loc, p.id)} variant={p.featuredLabel ? "primary" : "outline"} block size="lg" {...E("ea.plan")}>{ea.ctaOpen}</Button>
+            ) : (
+              <p className="aicc-btn aicc-btn--lg aicc-btn--block aicc-btn--soon" data-ea-soon {...E("ea.plan")}>{ea.ctaAnnounce}</p>
+            )}
+          </div>
+          <div data-ea-after>{standardCta}</div>
+        </>
+      ) : standardCta}
     </article>
   );
 }

@@ -14,6 +14,8 @@
  * Never translate: AICC, Reco, WooCommerce, WordPress, Solo, Studio, Agency, prices.
  * Every claim here is listed in docs/claims-inventory-content-pass.md with its evidence.
  */
+import { eaEn } from "./ea/en";
+
 export const en = {
   meta: {
     siteName: "AI Commerce Copilot",
@@ -74,6 +76,9 @@ export const en = {
     line: "To be confirmed before purchases open.",
     detail: "To be confirmed before purchases open.",
   },
+
+  // Early Access campaign copy (Production 20): rendered only by an Early Access build, see src/lib/earlyAccess.ts.
+  ea: eaEn,
 
   common: {
     skip: "Skip to main content",
@@ -506,9 +511,9 @@ export const en = {
     hero: {
       eyebrow: "Available for WooCommerce",
       category: "Commerce recommendation and merchandising copilot",
-      titleLead: "Turn every shopper journey into",
-      titleAccent: "a smarter selling opportunity.",
-      lead: "AI Commerce Copilot turns your store data into relevant recommendations and smarter merchandising \u2014 helping shoppers discover more while you manage less and stay in control.",
+      titleLead: "Recommendations learned from",
+      titleAccent: "your own orders.",
+      lead: "AICC learns from your WooCommerce orders, puts relevant products on product and cart pages, and shows what each recommendation is based on. You set the rules. Placing an order never waits on AICC.",
       ctaDemo: "See it in action",
       ctaPlans: "View plans",
     },

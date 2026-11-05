@@ -13,6 +13,8 @@ import { A11yDialog } from "@/components/layout/A11yControl";
 import { withBase } from "@/lib/site";
 import { localePath } from "@/lib/routes";
 import { LanguageSuggestion, type SuggestStrings } from "@/components/layout/LanguageSuggestion";
+import { EA_HEAD_SCRIPT, EA_MODE, EA_ON } from "@/lib/earlyAccess";
+import { EaBar } from "@/components/ea/Ea";
 
 export const dynamicParams = false;
 export function generateStaticParams() {
@@ -45,10 +47,13 @@ export default async function RootLayout({
       lang={meta.htmlLang}
       dir={meta.dir}
       className={`${geistLatin.variable} ${geistExt.variable}`}
+      {...(EA_ON ? { "data-ea-mode": EA_MODE } : {})}
       suppressHydrationWarning
     >
       <head>
         <script dangerouslySetInnerHTML={{ __html: PREFS_SCRIPT }} />
+        {/* Early Access builds only: marks the document when the campaign end date has passed (absolute UTC time, no time zone), so an old page switches to the ended view. */}
+        {EA_ON ? <script dangerouslySetInnerHTML={{ __html: EA_HEAD_SCRIPT }} /> : null}
         {locale === "he" ? (
           <>
             {/* Heebo (SIL OFL, public/fonts/OFL-Heebo.txt), Hebrew subset, only declared and preloaded on Hebrew pages. */}
@@ -66,6 +71,7 @@ export default async function RootLayout({
         <SiteHeader locale={locale} route={route} t={t} />
         <BrandInit />
         <main id="main" tabIndex={-1}>
+          <EaBar locale={locale} t={t} />
           {children}
         </main>
         <Footer locale={locale} route={route} t={t} />
