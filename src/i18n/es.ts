@@ -494,9 +494,9 @@ export const es: DeepPartial<Dictionary> = {
     hero: {
       eyebrow: "Disponible para WooCommerce",
       category: "Copiloto de recomendaciones y merchandising",
-      titleLead: "Recomendaciones que aprenden de",
+      titleLead: "Recomendaciones aprendidas de",
       titleAccent: "sus propios pedidos.",
-      lead: "AICC aprende de los pedidos de su tienda WooCommerce, pone productos relevantes en las páginas de producto y de carrito, y muestra en qué se basa cada recomendación. Usted fija las reglas. Hacer un pedido nunca espera a AICC.",
+      lead: "AICC aprende de los pedidos de su tienda WooCommerce, pone productos relevantes en las páginas de producto y de carrito, y muestra en su panel qué recomienda. Usted fija las reglas. Hacer un pedido nunca espera a AICC.",
       ctaDemo: "Véalo en acción",
       ctaPlans: "Ver planes",
     },
