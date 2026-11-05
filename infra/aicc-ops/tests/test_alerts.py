@@ -1,6 +1,6 @@
 import unittest
 
-from aicc_ops.alerts import (AlertEngine, Obs, RuleSpec, Window, build_rules, default_rules, WARNING, CRITICAL,
+from aicc_ops.alerts import (AlertEngine, DeliveryTag, Obs, RuleSpec, Window, build_rules, default_rules, WARNING, CRITICAL,
                              FIRING, RECOVERED, ESCALATED, FLAPPING, REMINDER)
 from aicc_ops.config import load_config
 from tests.helpers import TmpCase, make_store
@@ -122,6 +122,244 @@ class StateMachine(unittest.TestCase):
     def test_disabled_engine_is_silent(self):
         e = AlertEngine([spec()], enabled=False)
         self.assertEqual(e.evaluate(Window(), 1), [])
+
+
+def tag(kind=FIRING, key="r:s"):
+    return DeliveryTag(key, key.partition(":")[0], kind)
+
+
+class DeliveryRearm(TmpCase):
+    """Production 20 (R3 M8): an alert is 'notified' when Telegram ACCEPTED the message, not when it was queued. A notice that did not arrive is re-armed and
+    tried again after a bounded, escalating delay; cooldown_s, renotify_s and renotify_critical_s keep their meaning for notices that did arrive."""
+
+    def eng(self, store=None, rule=None, **kw):
+        ekw = {k: kw.pop(k) for k in ("delivery_retry_s", "delivery_retry_max_s", "delivery_retry_max_attempts") if k in kw}
+        return AlertEngine([spec(for_samples=1, cooldown_s=3600, **(rule or {}))], store, **ekw)
+
+    def breach(self, e, t, sev=WARNING):
+        return [n.kind for n in e.process([Obs("r", "s", True, False, sev, "txt")], t)]
+
+    def clear(self, e, t):
+        return [n.kind for n in e.process([Obs("r", "s", False, True, WARNING)], t)]
+
+    def first_note_after(self, e, t0, limit=4 * 86400, step=30, sev=WARNING):
+        """Seconds after t0 at which the still-breaching alert next produces a notice (None: not within `limit`)."""
+        for dt in range(step, limit, step):
+            ks = self.breach(e, t0 + dt, sev)
+            if ks:
+                return dt, ks
+        return None
+
+    def test_defaults_are_five_minutes_escalating_to_six_hours_with_a_cap_of_twelve(self):
+        e = AlertEngine([spec()])
+        self.assertEqual((e.delivery_retry_s, e.delivery_retry_max_s, e.delivery_retry_max_attempts), (300, 21600, 12))
+        c = load_config()["alerts"]
+        self.assertEqual((c["delivery_retry_s"], c["delivery_retry_max_s"], c["delivery_retry_max_attempts"]), (300, 21600, 12))
+
+    def test_a_failed_firing_notice_is_sent_again_after_the_retry_delay_even_inside_the_cooldown(self):
+        e = self.eng()
+        self.assertEqual(self.breach(e, T), [FIRING])
+        e.report_delivery(tag(), "failed")
+        dt, ks = self.first_note_after(e, T)          # the failure is read at T+30; the retry falls due 300 s later
+        self.assertEqual(ks, [FIRING])
+        self.assertEqual(dt, 330)
+        self.assertLess(dt, 3600)                     # the 1 h cooldown did not hold it back
+        self.assertTrue(e.state["r:s"]["notified"])   # queued again
+
+    def test_a_delivered_notice_behaves_exactly_as_before(self):
+        e = self.eng()
+        self.assertEqual(self.breach(e, T), [FIRING])
+        e.report_delivery(tag(), "delivered")
+        self.assertIsNone(self.first_note_after(e, T, limit=3 * 86400))     # no repeat for a WARNING, ever
+        self.assertTrue(e.state["r:s"]["notified"])
+        self.assertIsNone(e.state["r:s"]["delivery"])
+
+    def test_cooldown_between_two_episodes_is_unchanged_for_delivered_notices(self):
+        e = self.eng()
+        self.assertEqual(self.breach(e, T), [FIRING])
+        e.report_delivery(tag(), "delivered")
+        self.assertEqual(self.clear(e, T + 30), [])
+        self.assertEqual(self.clear(e, T + 60), [RECOVERED])
+        e.report_delivery(tag(RECOVERED), "delivered")
+        self.assertEqual(self.breach(e, T + 90), [])                          # second episode inside the 1 h cooldown: suppressed, exactly as before
+        self.assertEqual(self.breach(e, T + 3700), [FIRING])                  # and notified when the cooldown ends
+
+    def test_the_delay_escalates_and_is_capped(self):
+        e = self.eng(delivery_retry_s=300, delivery_retry_max_s=1800, delivery_retry_max_attempts=50)
+        t = T
+        self.assertEqual(self.breach(e, t), [FIRING])
+        seen = []
+        for _ in range(5):
+            e.report_delivery(tag(), "failed")
+            dt, ks = self.first_note_after(e, t)
+            self.assertEqual(ks, [FIRING])
+            seen.append(dt)
+            t += dt
+        # the failure is read at +30 s; then 300 s, 900 s, 2700 s capped at 1800 s, 1800 s
+        self.assertEqual(seen, [330, 930, 1830, 1830, 1830])
+
+    def test_a_permanently_dead_token_stops_after_the_cap_and_leaves_a_trace(self):
+        st = make_store(self.tmp)
+        e = self.eng(st, delivery_retry_s=60, delivery_retry_max_s=60, delivery_retry_max_attempts=4)
+        t = T
+        self.assertEqual(self.breach(e, t), [FIRING])
+        sent = 1
+        for _ in range(10):
+            e.report_delivery(tag(), "failed")
+            r = self.first_note_after(e, t, limit=86400 * 3)
+            if r is None:
+                break
+            sent += 1
+            t += r[0]
+        self.assertEqual(sent, 4)                                              # one original + three retries, then nothing
+        self.assertIsNone(self.first_note_after(e, t, limit=86400 * 3))
+        kinds_ = [r[4] for r in st.alert_history(50)]
+        self.assertEqual(kinds_.count("DELIVERY_FAILED"), 3)
+        self.assertEqual(kinds_.count("DELIVERY_ABANDONED"), 1)
+        for r in st.alert_history(50):
+            if r[4].startswith("DELIVERY_"):
+                self.assertNotRegex(r[5], r"[0-9]{6,}:")                       # no token-shaped text in the history
+
+    def test_a_delivery_resets_the_attempt_counter(self):
+        e = self.eng(delivery_retry_max_attempts=2)
+        self.assertEqual(self.breach(e, T), [FIRING])
+        e.report_delivery(tag(), "failed")
+        dt, _ = self.first_note_after(e, T)
+        e.report_delivery(tag(), "delivered")                                  # the 2nd attempt arrived: fine, the cap is not reached
+        self.breach(e, T + dt + 30)
+        self.assertIsNone(e.state["r:s"]["delivery"])
+        self.assertIsNone(self.first_note_after(e, T + dt, limit=86400))
+
+    def test_a_rate_limit_or_queue_full_drop_is_re_armed_like_a_failure(self):
+        for outcome in ("dropped_rate_limit", "dropped_queue_full"):
+            e = self.eng()
+            self.assertEqual(self.breach(e, T), [FIRING])
+            e.report_delivery(tag(), outcome)
+            self.assertEqual(self.first_note_after(e, T), (330, [FIRING]), outcome)
+
+    def test_an_unknown_outcome_is_ignored_and_a_dry_run_style_result_changes_nothing(self):
+        e = self.eng()
+        self.assertEqual(self.breach(e, T), [FIRING])
+        e.report_delivery(tag(), "dry_run")
+        self.assertIsNone(self.first_note_after(e, T, limit=86400))
+
+    def test_a_result_for_a_key_the_engine_does_not_know_is_ignored(self):
+        e = self.eng()
+        e.report_delivery(tag(key="nope:x"), "failed")
+        self.assertEqual(self.breach(e, T), [FIRING])
+
+    def test_an_escalation_that_did_not_arrive_is_sent_again_as_escalated(self):
+        e = AlertEngine([spec(for_samples=1, crit_samples=3, cooldown_s=3600)])
+        self.breach(e, T)
+        e.report_delivery(tag(), "delivered")
+        self.assertEqual(self.breach(e, T + 30, CRITICAL), [])
+        self.assertEqual(self.breach(e, T + 60, CRITICAL), [])
+        self.assertEqual(self.breach(e, T + 90, CRITICAL), [ESCALATED])
+        e.report_delivery(tag(ESCALATED), "failed")
+        dt, ks = self.first_note_after(e, T + 90, sev=CRITICAL)
+        self.assertEqual((dt, ks), (330, [ESCALATED]))
+
+    def test_a_reminder_that_did_not_arrive_is_retried_as_a_reminder(self):
+        e = self.eng(rule=dict(crit_samples=1, renotify_critical_s=3600))
+        self.assertEqual(self.breach(e, T, CRITICAL), [FIRING])
+        e.report_delivery(tag(), "delivered")
+        dt, ks = self.first_note_after(e, T, sev=CRITICAL)
+        self.assertEqual((dt, ks), (3600, [REMINDER]))                         # unchanged: renotify_critical_s
+        e.report_delivery(tag(REMINDER), "failed")
+        dt2, ks2 = self.first_note_after(e, T + dt, sev=CRITICAL)
+        self.assertEqual((dt2, ks2), (330, [REMINDER]))
+        e.report_delivery(tag(REMINDER), "delivered")
+        self.assertEqual(self.first_note_after(e, T + dt + dt2, sev=CRITICAL)[0], 3600)
+
+    def test_a_recovery_notice_that_did_not_arrive_is_sent_again_with_its_text(self):
+        e = self.eng(rule=dict(clear_samples=1))
+        self.assertEqual(self.breach(e, T), [FIRING])
+        e.report_delivery(tag(), "delivered")
+        notes = e.process([Obs("r", "s", False, True, WARNING)], T + 600)
+        self.assertEqual([n.kind for n in notes], [RECOVERED])
+        first_text = notes[0].text
+        e.report_delivery(tag(RECOVERED), "failed")
+        got = None
+        for dt in range(30, 1000, 30):
+            ns = e.process([Obs("r", "s", False, True, WARNING)], T + 600 + dt)
+            if ns:
+                got = (dt, [n.kind for n in ns], ns[0].text)
+                break
+        self.assertEqual(got, (330, [RECOVERED], first_text))
+        e.report_delivery(tag(RECOVERED), "delivered")
+        self.assertEqual([n for dt in range(30, 7200, 30) for n in e.process([Obs("r", "s", False, True, WARNING)], T + 2000 + dt)], [])
+
+    def test_a_pending_recovery_retry_is_dropped_when_the_alert_fires_again(self):
+        e = AlertEngine([spec(for_samples=1, clear_samples=1, cooldown_s=0)], flap_max=99)
+        self.breach(e, T)
+        e.report_delivery(tag(), "delivered")
+        self.assertEqual(self.clear(e, T + 60), [RECOVERED])
+        e.report_delivery(tag(RECOVERED), "failed")
+        self.assertEqual(self.breach(e, T + 90), [FIRING])                    # fires again at once (cooldown 0); the old 'recovered' is obsolete
+        self.assertIsNone(e.state["r:s"]["delivery"])
+        e.report_delivery(tag(), "delivered")
+        for dt in range(120, 2000, 30):
+            self.assertEqual(self.breach(e, T + dt), [])
+
+    def test_a_firing_notice_that_did_not_arrive_for_an_alert_that_has_since_cleared_is_not_resent(self):
+        e = self.eng(rule=dict(clear_samples=1))
+        self.assertEqual(self.breach(e, T), [FIRING])
+        e.report_delivery(tag(), "failed")
+        self.assertEqual(self.clear(e, T + 30), [])                           # never announced, so no 'recovered' either (as before for a suppressed notice)
+        self.assertEqual([n for dt in range(60, 3000, 30) for n in self.clear(e, T + dt)], [])
+        self.assertIsNone(e.state["r:s"]["delivery"])
+
+    def test_a_flapping_notice_that_did_not_arrive_is_not_retried(self):
+        e = AlertEngine([spec(for_samples=1, clear_samples=1, cooldown_s=0)], flap_window_s=1800, flap_max=4)
+        res = feed(e, "bcbcbcbc", step=30)
+        self.assertEqual(kinds(res).count(FLAPPING), 1)
+        e.report_delivery(tag(FLAPPING), "failed")
+        e.process([Obs("r", "s", False, True, WARNING)], T + 8 * 30 + 30)
+        self.assertIsNone(e.state["r:s"].get("delivery"))
+
+    def test_active_alerts_report_an_undelivered_notice(self):
+        e = self.eng()
+        self.breach(e, T)
+        self.assertEqual(e.active()[0]["delivery_fails"], 0)
+        e.report_delivery(tag(), "failed")
+        self.breach(e, T + 30)
+        self.assertEqual(e.active()[0]["delivery_fails"], 1)
+        self.assertFalse(e.active()[0]["notified"])
+
+    def test_the_retry_state_survives_a_restart(self):
+        st = make_store(self.tmp)
+        e1 = self.eng(st)
+        self.assertEqual(self.breach(e1, T), [FIRING])
+        e1.report_delivery(tag(), "failed")
+        self.breach(e1, T + 30)                                                # the failure is read and persisted
+        e2 = self.eng(st)                                                      # "restart"
+        self.assertEqual(self.first_note_after(e2, T + 60), (270, [FIRING]))      # due at T+330, as before the restart
+
+    def test_the_failure_is_visible_in_the_alert_history(self):
+        st = make_store(self.tmp)
+        e = self.eng(st)
+        self.breach(e, T)
+        e.report_delivery(tag(), "dropped_rate_limit")
+        self.breach(e, T + 30)
+        rows = [r for r in st.alert_history(10) if r[4] == "DELIVERY_FAILED"]
+        self.assertEqual(len(rows), 1)
+        self.assertIn("dropped_rate_limit", rows[0][5])
+        self.assertIn("FIRING", rows[0][5])
+
+    def test_results_arriving_from_another_thread_are_safe(self):
+        import threading
+        e = self.eng()
+        self.breach(e, T)
+        ts = [threading.Thread(target=lambda: e.report_delivery(tag(), "failed")) for _ in range(20)]
+        [t.start() for t in ts]; [t.join() for t in ts]
+        self.breach(e, T + 30)                                                 # drained without error
+        self.assertIsNotNone(e.state["r:s"]["delivery"])
+
+    def test_config_validation_rejects_bad_retry_settings(self):
+        from aicc_ops.config import ConfigError
+        for bad in ({"delivery_retry_s": 0}, {"delivery_retry_s": 10, "delivery_retry_max_s": 5}, {"delivery_retry_max_attempts": 0}, {"delivery_retry_max_attempts": 1000}):
+            with self.assertRaises(ConfigError, msg=str(bad)):
+                load_config(None, {"alerts": bad})
 
 
 class Persistence(TmpCase):

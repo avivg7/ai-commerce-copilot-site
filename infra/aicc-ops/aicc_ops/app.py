@@ -45,7 +45,11 @@ class Runtime:
         self.collectors = build_collectors(cfg)
         iv = cfg["general"]["interval_s"]
         self.window = Window(iv, stale=STALE)
-        self.engine = AlertEngine(build_rules(cfg), store, cfg["alerts"]["flap_window_s"], cfg["alerts"]["flap_max_transitions"], cfg["alerts"]["enabled"])
+        a = cfg["alerts"]
+        self.engine = AlertEngine(build_rules(cfg), store, a["flap_window_s"], a["flap_max_transitions"], a["enabled"],
+                                  a["delivery_retry_s"], a["delivery_retry_max_s"], a["delivery_retry_max_attempts"])
+        if telegram is not None:
+            telegram.on_result = self.engine.report_delivery   # every queued message ends in a delivered / failed / dropped report that re-arms an alert that did not arrive
         self._latest: dict = {}
         self._errors: dict = {}
         self._lock = threading.Lock()
@@ -123,6 +127,8 @@ class Runtime:
         merged["ops.rss_bytes"] = self_rss_bytes()
         merged["ops.cycle_ms"] = self._last_cycle_ms
         merged["ops.db_bytes"] = self._db_bytes or float(self.store.db_bytes())
+        if self.telegram is not None:
+            merged.update(self.telegram.metrics())     # sent / failed / dropped / rate_limited counters and the last delivery / failure times (export.json, UI, telegram-status)
         if blocked:
             if not self._blocked_logged:
                 self.log(f"CRITICAL: filesystem free space {free:.1f}% < {self.cfg['storage']['min_free_pct']}%: monitoring writes refused")
@@ -148,7 +154,7 @@ class Runtime:
             notes = []
         if self.telegram:
             for n in notes:
-                self.telegram.submit(n)
+                self.telegram.submit(n)       # the outcome (delivered / failed / dropped) comes back through engine.report_delivery and is read by the next evaluation
         if now - self._last_maint >= self.cfg["storage"]["maintenance_interval_s"]:
             self._last_maint = now
             try:

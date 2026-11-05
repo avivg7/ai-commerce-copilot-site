@@ -9,11 +9,19 @@ to be tuned from staging measurements."""
 from __future__ import annotations
 
 import time
-from collections import deque
+from collections import deque, namedtuple
 from dataclasses import dataclass, field
 
 WARNING, CRITICAL = "WARNING", "CRITICAL"
 FIRING, RECOVERED, ESCALATED, FLAPPING, REMINDER = "FIRING", "RECOVERED", "ESCALATED", "FLAPPING", "REMINDER"
+
+# What the Telegram adapter reports back for every message it was handed (Production 20, R3 M8). "dry_run" and a disabled adapter report nothing.
+DELIVERED, FAILED, DROPPED_RATE_LIMIT, DROPPED_QUEUE_FULL = "delivered", "failed", "dropped_rate_limit", "dropped_queue_full"
+NOT_DELIVERED = (FAILED, DROPPED_RATE_LIMIT, DROPPED_QUEUE_FULL)
+# The identity of one outbound message: the state key ("rule:scope"), the rule id and the notification kind. Fixed-enum material only (no scope text, no title).
+DeliveryTag = namedtuple("DeliveryTag", "key rule kind")
+# Delivery retry defaults (see AlertEngine): first retry 5 min after the failure is read, x3 each time, never slower than 6 h, 12 attempts in all.
+DELIVERY_RETRY_S, DELIVERY_RETRY_MAX_S, DELIVERY_RETRY_MAX_ATTEMPTS = 300, 21600, 12
 
 
 @dataclass
@@ -37,6 +45,13 @@ class Notification:
     text: str
     ts: float
     since: float | None = None
+
+    @property
+    def key(self) -> str:
+        return f"{self.rule}:{self.scope}"
+
+    def tag(self) -> DeliveryTag:
+        return DeliveryTag(self.key, self.rule, self.kind)
 
 
 @dataclass
@@ -569,16 +584,29 @@ def build_rules(cfg: dict) -> list:
 # ---- state machine ----------------------------------------------------------------------------------------------
 def _new_state():
     return {"status": "ok", "breach": 0, "crit": 0, "clear": 0, "severity": WARNING, "since": None, "notified": False,
-            "last_fire_notice": 0.0, "last_notice": 0.0, "transitions": [], "flapping": False, "text": "", "last_seen": 0.0}
+            "last_fire_notice": 0.0, "last_notice": 0.0, "transitions": [], "flapping": False, "text": "", "last_seen": 0.0,
+            "delivery": None, "rec_text": ""}
 
 
 class AlertEngine:
-    def __init__(self, rules, store=None, flap_window_s=1800, flap_max=4, enabled=True):
+    """Delivery feedback (Production 20, R3 M8). `st["notified"]` is set when a notice is QUEUED for Telegram, as before; the adapter then reports what became of it
+    through report_delivery(). A notice that did not arrive (failed, dropped by the hourly rate limit, dropped because the queue was full) is RE-ARMED: the next
+    evaluation after a retry delay sends it again, bypassing cooldown_s (a notice that never arrived is not a notice for cooldown purposes). The delay escalates
+    (delivery_retry_s, x3 each time, never above delivery_retry_max_s) and after delivery_retry_max_attempts failed attempts for one notice the engine stops, records
+    DELIVERY_ABANDONED in the alert history and leaves the alert as it is, so a permanently dead token neither spams nor loops. A delivered notice behaves exactly as
+    before: cooldown_s, renotify_s, renotify_critical_s, dedupe and flap control are untouched. The retry slot lives in the persisted per-key state (st["delivery"]), so
+    a restart keeps it; retries are evaluated when the key is next observed (an alert that stops being observed is not retried). FLAPPING notices are not retried:
+    the stable notice that ends flapping carries the final state."""
+
+    def __init__(self, rules, store=None, flap_window_s=1800, flap_max=4, enabled=True,
+                 delivery_retry_s=DELIVERY_RETRY_S, delivery_retry_max_s=DELIVERY_RETRY_MAX_S, delivery_retry_max_attempts=DELIVERY_RETRY_MAX_ATTEMPTS):
         self.rules = {r.id: r for r in rules}
         self.store = store
         self.flap_window_s = flap_window_s
         self.flap_max = flap_max
         self.enabled = enabled
+        self.delivery_retry_s, self.delivery_retry_max_s, self.delivery_retry_max_attempts = delivery_retry_s, delivery_retry_max_s, delivery_retry_max_attempts
+        self._results: deque = deque(maxlen=2000)     # (DeliveryTag, outcome) appended by the Telegram thread, drained by process() on the evaluating thread
         self.state: dict = {}
         if store is not None:
             try:
@@ -623,7 +651,52 @@ class AlertEngine:
             return []
         return self.process(self.collect_obs(ctx), now)
 
+    def report_delivery(self, tag, outcome: str) -> None:
+        """Called by the Telegram adapter (from its own thread) when a message ended: delivered / failed / dropped_rate_limit / dropped_queue_full. Only queues the
+        result; the state machine reads it on its next evaluation, so no lock is needed."""
+        self._results.append((tag, outcome))
+
+    def _retry_delay(self, fails: int) -> float:
+        return min(self.delivery_retry_s * 3 ** max(fails - 1, 0), self.delivery_retry_max_s)
+
+    def _apply_results(self, now: float) -> None:
+        while self._results:
+            try:
+                tag, outcome = self._results.popleft()
+            except IndexError:
+                return
+            st = self.state.get(tag.key)
+            if st is None or (outcome != DELIVERED and outcome not in NOT_DELIVERED):
+                continue
+            rule, _, scope = tag.key.partition(":")
+            if outcome == DELIVERED:
+                if tag.kind != FLAPPING and st.get("delivery"):
+                    st["delivery"] = None
+                    self._dirty.add(tag.key)
+                continue
+            if tag.kind not in (FIRING, ESCALATED, REMINDER, RECOVERED):
+                continue                       # FLAPPING (and anything unknown) is not retried
+            d = st.get("delivery") or {}
+            fails = int(d.get("fails", 0)) + 1
+            what = f"{tag.kind} notice not delivered ({outcome})"
+            if fails >= self.delivery_retry_max_attempts:
+                st["delivery"] = {"kind": tag.kind, "fails": fails, "at": None, "gave_up": True}
+                self._record(now, tag.key, rule, scope, st["severity"], "DELIVERY_ABANDONED",
+                             f"{what}; {fails} attempts failed, no further automatic retries (the alert itself is unchanged)")
+                self._dirty.add(tag.key)
+                continue
+            live = (st["status"] == "firing") if tag.kind != RECOVERED else (st["status"] == "ok")
+            if not live:
+                continue                       # the situation moved on (recovered, or fired again): a late copy of the old notice would only mislead
+            st["delivery"] = {"kind": tag.kind, "fails": fails, "at": now + self._retry_delay(fails), "gave_up": False}
+            if tag.kind in (FIRING, ESCALATED):
+                st["notified"] = False
+            self._record(now, tag.key, rule, scope, st["severity"], "DELIVERY_FAILED",
+                         f"{what}; failed attempt {fails} of {self.delivery_retry_max_attempts}, next try in {int(self._retry_delay(fails))} s")
+            self._dirty.add(tag.key)
+
     def process(self, observations, now: float) -> list:
+        self._apply_results(now)
         notes = []
         seen = set()
         for o in observations:
@@ -653,6 +726,12 @@ class AlertEngine:
         def note(kind, sev, text):
             notes.append(Notification(kind, sev, spec.id, spec.title, o.scope, text, now, st.get("since")))
             st["last_notice"] = now
+            if kind == RECOVERED:
+                st["rec_text"] = text          # kept so a 'recovered' notice that did not arrive can be sent again with the same words
+
+        d = st.get("delivery")
+        pending = d if d and not d.get("gave_up") else None       # a notice that did not arrive and is waiting for its retry (at=None: the retry is in flight)
+        due = bool(pending and pending.get("at") is not None and now >= pending["at"])
 
         # flap exit check (quiet for a full window)
         if st["flapping"] and not [t for t in st["transitions"] if now - t <= self.flap_window_s]:
@@ -665,6 +744,10 @@ class AlertEngine:
             else:
                 note(RECOVERED, st["severity"], "condition is clear and stable (flapping ended)")
 
+        if pending and pending["kind"] == RECOVERED and st["status"] == "ok" and not st["flapping"] and due and not notes:
+            pending["at"] = None
+            note(RECOVERED, st["severity"], st.get("rec_text") or "condition is clear")
+
         if o.breach is None:
             return notes
         if o.breach:
@@ -676,6 +759,7 @@ class AlertEngine:
             if st["status"] != "firing":
                 if st["breach"] >= spec.for_samples:
                     st["status"], st["severity"], st["since"], st["notified"] = "firing", sev, now, False
+                    st["delivery"] = pending = None            # a new episode: a stale retry of an earlier notice is moot
                     self._transition(st, now)
                     self._record(now, key, spec.id, o.scope, sev, FIRING, o.text)
             else:
@@ -690,16 +774,26 @@ class AlertEngine:
                 self._maybe_flap(spec, key, st, o, now, notes)
                 if not st["flapping"]:
                     if not st["notified"]:
-                        if now - st["last_fire_notice"] >= spec.cooldown_s:
+                        retrying = bool(pending and pending["kind"] in (FIRING, ESCALATED))
+                        # a notice that never arrived is retried on the retry schedule alone: cooldown_s is about notices the owner received
+                        if (due and retrying) or (not retrying and now - st["last_fire_notice"] >= spec.cooldown_s):
                             st["notified"] = True
                             st["last_fire_notice"] = now
-                            note(FIRING, st["severity"], o.text)
+                            if retrying:
+                                pending["at"] = None
+                            note(pending["kind"] if retrying else FIRING, st["severity"], o.text)
+                        elif retrying:
+                            pass
                         elif not st.get("cooldown_logged"):
                             st["cooldown_logged"] = True
                             self._record(now, key, spec.id, o.scope, st["severity"], "SUPPRESSED", f"cooldown ({spec.cooldown_s}s) active; will notify when it ends if still firing")
                     else:
                         rn = spec.renotify_s or (spec.renotify_critical_s if st["severity"] == CRITICAL else 0)
-                        if rn and now - st["last_notice"] >= rn:
+                        if pending and pending["kind"] == REMINDER:
+                            if due:
+                                pending["at"] = None
+                                note(REMINDER, st["severity"], o.text)
+                        elif rn and now - st["last_notice"] >= rn:
                             note(REMINDER, st["severity"], o.text)
         elif o.clear:
             st["clear"] += 1
@@ -717,6 +811,8 @@ class AlertEngine:
                     note(RECOVERED, st["severity"], f"recovered after {int(dur // 60)} min" if dur >= 60 else f"recovered after {int(dur)} s")
                 st["notified"] = False
                 st["since"] = None
+                if st.get("delivery") and st["delivery"].get("kind") != RECOVERED:
+                    st["delivery"] = None                      # a firing notice that never arrived is moot now (it was never announced, so nothing is 'recovered' either)
         else:
             # between breach and clear thresholds: hold, but a pending (not yet firing) breach streak is broken
             if st["status"] != "firing":
@@ -741,5 +837,6 @@ class AlertEngine:
                 rule, _, scope = key.partition(":")
                 spec = self.rules.get(rule)
                 out.append({"rule": rule, "title": spec.title if spec else rule, "scope": scope, "severity": st["severity"],
-                            "since": st["since"], "text": st["text"], "flapping": st["flapping"], "notified": st["notified"]})
+                            "since": st["since"], "text": st["text"], "flapping": st["flapping"], "notified": st["notified"],
+                            "delivery_fails": int((st.get("delivery") or {}).get("fails", 0))})
         return sorted(out, key=lambda a: (a["severity"] != CRITICAL, a["since"] or 0))

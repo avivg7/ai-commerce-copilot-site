@@ -168,6 +168,11 @@ upgrade_load_per_vcpu = 3.0
 enabled = true
 flap_window_s = 1800
 flap_max_transitions = 4
+# A notice Telegram did not accept (failed, hourly rate limit, queue full) is sent again: the first retry this many seconds after the failure is read, then x3 each
+# time up to delivery_retry_max_s, at most delivery_retry_max_attempts attempts for one notice (a dead token cannot spam). cooldown_s and renotify_* keep their meaning.
+delivery_retry_s = 300
+delivery_retry_max_s = 21600
+delivery_retry_max_attempts = 12
 # Per-rule overrides: [alerts.rules.<rule_id>] with enabled, for_samples, clear_samples, crit_samples,
 # cooldown_s, renotify_s, renotify_critical_s, or any threshold name (warn, crit, clear, ...). Examples:
 # [alerts.rules.ram_high]

@@ -141,6 +141,11 @@ DEFAULTS: dict = {
         "enabled": True,
         "flap_window_s": 1800,
         "flap_max_transitions": 4,
+        # A notice Telegram did not accept (failed, hourly rate limit, queue full) is sent again: first retry this many seconds after the failure is read, then x3 each
+        # time, never slower than delivery_retry_max_s, and at most delivery_retry_max_attempts attempts for one notice (a dead token cannot spam). cooldown_s / renotify_* unchanged.
+        "delivery_retry_s": 300,
+        "delivery_retry_max_s": 21600,
+        "delivery_retry_max_attempts": 12,
         # per-rule overrides live under [alerts.rules.<rule_id>] (see alerts.py for ids and defaults)
         "rules": {},
     },
@@ -180,6 +185,13 @@ def validate(cfg: dict) -> None:
         raise ConfigError("server.port out of range")
     if not (1 <= int(s["max_threads"]) <= 64):
         raise ConfigError("server.max_threads must be 1..64")
+    a = cfg["alerts"]
+    if not isinstance(a["delivery_retry_s"], (int, float)) or a["delivery_retry_s"] < 1:
+        raise ConfigError("alerts.delivery_retry_s must be >= 1")
+    if not isinstance(a["delivery_retry_max_s"], (int, float)) or a["delivery_retry_max_s"] < a["delivery_retry_s"]:
+        raise ConfigError("alerts.delivery_retry_max_s must be >= alerts.delivery_retry_s")
+    if not isinstance(a["delivery_retry_max_attempts"], int) or not (1 <= a["delivery_retry_max_attempts"] <= 100):
+        raise ConfigError("alerts.delivery_retry_max_attempts must be 1..100")
     if st["max_db_bytes"] < 5 * MIB:
         raise ConfigError("storage.max_db_bytes must be >= 5 MiB")
     if not (1 <= st["min_free_pct"] <= 50):

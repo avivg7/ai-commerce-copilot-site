@@ -10,7 +10,7 @@ import threading
 from .config import load_config, redact, ConfigError
 from .store import Store
 from .telegram import TelegramAdapter, TEMPLATES, render, sanitize
-from .alerts import Notification
+from .alerts import DeliveryTag, Notification
 from .app import Runtime
 from .ui import make_server, UnsafeBind
 
@@ -113,10 +113,24 @@ def cmd_digest(args) -> int:
         print("aicc-ops: daily digest is disabled (telegram.digest_enabled=false); nothing sent", file=sys.stderr)
         return 0
     store = Store(os.path.join(cfg["general"]["data_dir"], cfg["storage"]["db_file"]), cfg["storage"])
-    tg = TelegramAdapter(cfg["telegram"], cfg["general"]["host_label"], dry_run=args.dry_run)
+    tg = TelegramAdapter(cfg["telegram"], cfg["general"]["host_label"], dry_run=args.dry_run, purpose="digest")
     rt = Runtime(cfg, store, tg)
-    tg.submit_text(rt.digest_text())
-    tg.flush(30)
+    outcomes = []
+    tg.on_result = lambda tag, outcome: outcomes.append(outcome)    # this command sends: it says whether the message arrived (the daemon's engine is not involved)
+    queued = tg.submit_text(rt.digest_text(), DeliveryTag("digest:digest", "digest", "DIGEST"))
+    done = tg.flush(30)
+    if args.dry_run:
+        return 0
+    if not queued and not outcomes:
+        print("aicc-ops: digest NOT sent: Telegram is disabled (no credentials, or telegram.enabled=false)", file=sys.stderr)
+        return 3
+    if not done or not outcomes:
+        print("aicc-ops: digest NOT confirmed: no answer from Telegram within 30 s", file=sys.stderr)
+        return 1
+    if outcomes[-1] != "delivered":
+        print(f"aicc-ops: digest NOT delivered ({outcomes[-1]}); see the telegram: lines above", file=sys.stderr)
+        return 1
+    print("aicc-ops: digest delivered", file=sys.stderr)
     return 0
 
 
@@ -138,7 +152,7 @@ def main(argv=None) -> int:
     c.set_defaults(fn=cmd_check_config)
     t = sub.add_parser("telegram-test", help="print sample alert messages (dry run, no network)")
     t.set_defaults(fn=cmd_telegram_test)
-    ts = sub.add_parser("telegram-status", help="secrets presence/owner/mode, token LENGTH, chat id presence (prints no secret); exit 0 usable, 3 not")
+    ts = sub.add_parser("telegram-status", help="secrets presence/owner/mode, token LENGTH, chat id presence (prints no secret) and the daemon's last delivery/failure (read-only from its database); exit 0 usable, 3 not")
     ts.set_defaults(fn=cmd_telegram_status)
     tc = sub.add_parser("telegram-check", help="Bot API getMe: prints the bot's @username and ok (sends no message)")
     tc.set_defaults(fn=cmd_telegram_check)

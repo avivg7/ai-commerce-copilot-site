@@ -188,6 +188,59 @@ class Routes(Base):
         s.close()
 
 
+class TelegramVisibility(Base):
+    """Production 20 (R3 M8): the adapter counters and the last delivery/failure times are in the UI and in export.json."""
+
+    def seed(self):
+        now = time.time()
+        with self.rt._lock:
+            for k, v in {"ops.telegram_enabled": 1.0, "ops.telegram_sent": 7.0, "ops.telegram_failed": 2.0, "ops.telegram_dropped": 1.0, "ops.telegram_rate_limited": 3.0,
+                         "ops.telegram_last_ok_ts": now - 7200.0, "ops.telegram_last_failure_ts": now - 120.0}.items():
+                self.rt._latest[k] = (v, now)
+        self.st.write_sample(int(now) // 30 * 30, {"ops.telegram_sent": 7.0, "ops.telegram_failed": 2.0, "ops.telegram_dropped": 1.0, "ops.telegram_rate_limited": 3.0,
+                                                    "ops.telegram_last_ok_ts": now - 7200.0, "ops.telegram_last_failure_ts": now - 120.0})
+
+    def test_the_overview_has_a_telegram_card_with_counters_and_ages(self):
+        self.assertNotIn("Telegram alerts", self.get("/")[2].decode())       # no adapter, no card
+        self.seed()
+        body = self.get("/")[2].decode()
+        self.assertIn("Telegram alerts", body)
+        self.assertIn("sent 7", body)
+        self.assertIn("failed 2", body)
+        self.assertIn("dropped 1", body)
+        self.assertIn("rate-limited 3", body)
+        self.assertIn("last delivery 2h 0m ago", body)
+        self.assertIn("last failure 2m ago", body)
+
+    def test_a_disabled_adapter_says_disabled(self):
+        with self.rt._lock:
+            self.rt._latest["ops.telegram_enabled"] = (0.0, time.time())
+            self.rt._latest["ops.telegram_sent"] = (0.0, time.time())
+        self.assertIn("Telegram alerts", self.get("/")[2].decode())
+        self.assertIn("disabled", self.get("/")[2].decode())
+
+    def test_export_json_names_the_telegram_series_by_default(self):
+        self.seed()
+        d = json.loads(self.get("/export.json?range=24h")[2])
+        for n in ("ops.telegram_sent", "ops.telegram_failed", "ops.telegram_dropped", "ops.telegram_rate_limited", "ops.telegram_last_ok_ts", "ops.telegram_last_failure_ts"):
+            self.assertIn(n, d["metrics"], n)
+        d = json.loads(self.get("/export.json?range=24h&metrics=ops.telegram_failed")[2])
+        self.assertEqual(list(d["metrics"]), ["ops.telegram_failed"])
+
+    def test_history_group_has_a_telegram_chart(self):
+        self.seed()
+        self.assertIn("Telegram messages (cumulative since the daemon started)", self.get("/history?group=system&range=24h")[2].decode())
+
+    def test_an_undelivered_alert_is_flagged_in_the_active_alert_table(self):
+        from aicc_ops.alerts import DeliveryTag
+        t = time.time()
+        self.rt.engine.process([Obs("db_down", "mysql", True, False, "CRITICAL", "MySQL is unreachable")], t)
+        self.rt.engine.process([Obs("db_down", "mysql", True, False, "CRITICAL", "MySQL is unreachable")], t + 30)
+        self.rt.engine.report_delivery(DeliveryTag("db_down:mysql", "db_down", "FIRING"), "failed")
+        self.rt.engine.process([Obs("db_down", "mysql", True, False, "CRITICAL", "MySQL is unreachable")], t + 60)
+        self.assertIn("Telegram: not delivered", self.get("/alerts")[2].decode())
+
+
 class Exports(Base):
     def test_json_export(self):
         st, h, body = self.get("/export.json?range=24h&metrics=cpu.used_pct,mem.used_pct")

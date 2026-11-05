@@ -118,6 +118,8 @@ GROUPS = {
         ("AICC Ops memory (RSS)", [("ops.rss_bytes", "RSS", "s1")], "bytes", None),
         ("AICC Ops database size", [("ops.db_bytes", "db + wal", "s1")], "bytes", None),
         ("Collection cycle time (ms)", [("ops.cycle_ms", "cycle", "s1")], "ms", None),
+        ("Telegram messages (cumulative since the daemon started)", [("ops.telegram_sent", "delivered", "s3"), ("ops.telegram_failed", "failed", "s5"),
+                                                                    ("ops.telegram_dropped", "dropped (queue full)", "s2"), ("ops.telegram_rate_limited", "dropped (hourly rate limit)", "s4")], "num", None),
         ("Backup age (s)", [("backup.newest_age_s", "newest dump age", "s1")], "num", None),
         ("Certificate days left", [("cert.days_left", "days", "s3")], "num", None),
     ]),
@@ -204,6 +206,7 @@ class Pages:
         out.append(self.services_table())
         out.append(self.caddy_block())
         out.append(self.app_block())
+        out.append(self.telegram_block(now))
         out.append(self.collectors_table())
         return "".join(out)
 
@@ -220,7 +223,7 @@ class Pages:
         act = self.rt.engine.active() if self.rt.engine else []
         if not act:
             return '<p class="st-ok">No active alerts.</p>'
-        rows = "".join(f'<tr><td class="{"st-crit" if a["severity"] == "CRITICAL" else "st-warn"}"><b>{esc(a["severity"])}</b></td><td>{esc(a["title"])}</td><td>{esc(a["scope"])}</td><td>{esc(a["text"])}</td><td>{esc(iso(a["since"]) if a["since"] else "")}</td><td>{"flapping" if a["flapping"] else ""}</td></tr>' for a in act)
+        rows = "".join(f'<tr><td class="{"st-crit" if a["severity"] == "CRITICAL" else "st-warn"}"><b>{esc(a["severity"])}</b></td><td>{esc(a["title"])}</td><td>{esc(a["scope"])}</td><td>{esc(a["text"])}</td><td>{esc(iso(a["since"]) if a["since"] else "")}</td><td>{"flapping" if a["flapping"] else ("Telegram: not delivered" if a.get("delivery_fails") else "")}</td></tr>' for a in act)
         return f'<div class="wrap"><table><caption class="sr">Active alerts</caption><thead><tr><th scope="col">Severity</th><th scope="col">Alert</th><th scope="col">Scope</th><th scope="col">Detail</th><th scope="col">Since (UTC)</th><th scope="col">Note</th></tr></thead><tbody>{rows}</tbody></table></div>'
 
     def services_table(self):
@@ -282,6 +285,21 @@ class Pages:
                                f"{L('backend.req_rate') or 0:.2f} req/s, 5xx {L('backend.rate_5xx') or 0:.2f}/s, postgres {'up' if L('backend.postgres_up') == 1 else 'DOWN' if L('backend.postgres_up') == 0 else 'n/a'}",
                                "st-ok" if L("backend.up") == 1 else "st-crit"))
         return ('<h2>Application tier</h2><div class="grid">' + "".join(c) + "</div>") if c else ""
+
+    def telegram_block(self, now):
+        """Did the alerts reach Telegram? Counters since the daemon started plus the age of the last delivery and the last failure (Production 20, R3 M8)."""
+        L = self.L
+        if L("ops.telegram_enabled") is None:
+            return ""
+        if L("ops.telegram_enabled") != 1:
+            return '<h2>Telegram</h2><div class="grid">' + self.card("Telegram alerts", "disabled", "no credentials or disabled by config: alerts are recorded locally only", "st-warn") + "</div>"
+        n = lambda k: int(L(k) or 0)  # noqa: E731
+        ok, bad = L("ops.telegram_last_ok_ts"), L("ops.telegram_last_failure_ts")
+        age = lambda ts: "never" if ts is None else f"{fmt_duration(max(now - ts, 0))} ago"  # noqa: E731
+        failing = bad is not None and (ok is None or bad > ok)
+        value = f"sent {n('ops.telegram_sent')}, failed {n('ops.telegram_failed')}, dropped {n('ops.telegram_dropped')}, rate-limited {n('ops.telegram_rate_limited')}"
+        sub = f"last delivery {age(ok)} · last failure {age(bad)} · counters since the daemon started"
+        return '<h2>Telegram</h2><div class="grid">' + self.card("Telegram alerts", esc(value), esc(sub), "st-crit" if failing else "st-ok") + "</div>"
 
     def collectors_table(self):
         lt = self.rt.latest()

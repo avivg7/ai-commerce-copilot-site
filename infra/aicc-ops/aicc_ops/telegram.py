@@ -3,7 +3,9 @@
 Secrets (bot token, chat id) are read ONLY at runtime: from systemd credentials ($CREDENTIALS_DIRECTORY/secrets.env, via
 LoadCredential= so the source file can stay 0600 root:root) or directly from /etc/aicc-ops/secrets.env (0640 root:aicc-ops).
 They never come from the repo or the TOML config. Without secrets the adapter is disabled (logged once).
---dry-run prints exactly what would be sent and never opens a socket. Messages contain no PII by construction
+--dry-run prints exactly what would be sent and never opens a socket. Every queued or dropped message ends in exactly one reported outcome (delivered / failed /
+dropped_rate_limit / dropped_queue_full): one fixed-vocabulary journal line and a callback to the alert engine, which re-arms an alert that did not arrive.
+Messages contain no PII by construction
 (metric values, rule titles, host label, fixed enums) and are additionally scrubbed by sanitize()."""
 from __future__ import annotations
 
@@ -19,12 +21,20 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+from .alerts import DeliveryTag, DELIVERED, FAILED, DROPPED_RATE_LIMIT, DROPPED_QUEUE_FULL
+
 API_BASE = "https://api.telegram.org"
 # What a permanent Telegram refusal means in this adapter (fixed enums: nothing from the reply body, which could echo a chat or a message, is ever logged).
 PERMANENT_HINTS = {400: "chat id or message rejected", 401: "token rejected: revoked or wrong", 403: "bot cannot message this chat: not started, blocked or removed",
                    404: "token or method not found"}
 LOOPBACK_BASE_RE = re.compile(r"^http://127\.0\.0\.1:\d{1,5}$")   # the only non-default base URL any code path accepts (tests only)
 MAX_LEN = 3500
+# Journal vocabulary for the per-message outcome lines (Production 20, R3 M8): rule ids are matched against a plain pattern and kinds against this set, anything else
+# prints as "other", so no scope, title, token, chat id, host label, reply body or URL can ever reach a line.
+LOG_KINDS = frozenset({"FIRING", "RECOVERED", "ESCALATED", "FLAPPING", "REMINDER", "DIGEST", "TEST", "TEXT"})
+RULE_ID_RE = re.compile(r"^[a-z0-9_]{1,64}$")
+OUTCOME_LINES = {DELIVERED: "telegram: delivered {rule} {kind}", FAILED: "telegram: failed {rule} {kind}",
+                 DROPPED_RATE_LIMIT: "telegram: dropped (hourly rate limit) {rule}", DROPPED_QUEUE_FULL: "telegram: dropped (queue full) {rule}"}
 
 # --- PII / secret patterns: used by sanitize() AND by the unit test that scans every template ------------------
 PII_PATTERNS = {
@@ -145,8 +155,11 @@ def load_secrets(path: str, environ=None, partial: bool = False):
 
 class TelegramAdapter:
     def __init__(self, cfg: dict, host_label: str, dry_run: bool = False, out=None, log=None,
-                 test_base_url: str | None = None, environ=None, sleep=time.sleep, clock=time.time):
+                 test_base_url: str | None = None, environ=None, sleep=time.sleep, clock=time.time, on_result=None, purpose: str = "daemon"):
         self.cfg = cfg
+        self.on_result = on_result          # callable(DeliveryTag, outcome) | None: told how every queued message ended (delivered / failed / dropped_*)
+        self.last_ok_ts = None              # clock() of the last delivered message
+        self.last_fail_ts = None            # clock() of the last message that failed or was dropped
         self.host = host_label
         self.dry_run = dry_run
         self.out = out or sys.stdout
@@ -165,7 +178,10 @@ class TelegramAdapter:
             if not self.enabled and not dry_run:
                 self.log("telegram: disabled (no secrets found); alerts are recorded locally only")
             elif self.enabled and not dry_run:
-                self.log("telegram: enabled (credentials loaded; nothing is sent at start-up, only on an alert or an explicit telegram-send-test --send)")
+                if purpose == "digest":
+                    self.log("telegram: enabled (credentials loaded; this command sends one daily-digest message now)")
+                else:
+                    self.log("telegram: enabled (credentials loaded; nothing is sent at start-up, only on an alert or an explicit telegram-send-test --send)")
         else:
             self.log("telegram: disabled by config")
         self.q: queue.Queue = queue.Queue(maxsize=100)
@@ -179,8 +195,9 @@ class TelegramAdapter:
         self._thread = None
 
     # -- public -----------------------------------------------------------------------------------------------
-    def submit_text(self, text: str) -> bool:
-        """Queue a message; NEVER blocks the caller. Returns False if dropped/disabled."""
+    def submit_text(self, text: str, tag=None) -> bool:
+        """Queue a message; NEVER blocks the caller. Returns False if dropped/disabled. `tag` (a DeliveryTag or a 3-tuple key/rule/kind) identifies the message in the
+        outcome report; every message that is queued or dropped here ends in exactly one report (dry-run and a disabled adapter report nothing)."""
         text = sanitize(text)
         if self.dry_run:
             self.stats["dry_run"] += 1
@@ -190,17 +207,51 @@ class TelegramAdapter:
             return False
         try:
             self._idle.clear()
-            self.q.put_nowait(text)
+            self.q.put_nowait((text, tag))
         except queue.Full:
             self.stats["dropped"] += 1
             if self.q.empty():
                 self._idle.set()
+            self._report(tag, DROPPED_QUEUE_FULL)
             return False
         self._ensure_thread()
         return True
 
     def submit(self, note) -> bool:
-        return self.submit_text(render(note, self.host))
+        return self.submit_text(render(note, self.host), DeliveryTag(note.key, note.rule, note.kind))
+
+    def metrics(self) -> dict:
+        """Counters since this process started plus the times of the last delivery / failure (omitted until they exist), under the names the store and export use."""
+        m = {"ops.telegram_enabled": 1.0 if self.enabled else 0.0, "ops.telegram_sent": float(self.stats["sent"]), "ops.telegram_failed": float(self.stats["failed"]),
+             "ops.telegram_dropped": float(self.stats["dropped"]), "ops.telegram_rate_limited": float(self.stats["rate_limited"])}
+        if self.last_ok_ts is not None:
+            m["ops.telegram_last_ok_ts"] = float(self.last_ok_ts)
+        if self.last_fail_ts is not None:
+            m["ops.telegram_last_failure_ts"] = float(self.last_fail_ts)
+        return m
+
+    def _report(self, tag, outcome: str) -> None:
+        """One journal line (fixed vocabulary only), the last-delivery / last-failure time, and the callback. Never raises."""
+        now = self.clock()
+        if outcome == DELIVERED:
+            self.last_ok_ts = now
+        else:
+            self.last_fail_ts = now
+        try:
+            key, rule, kind = tag if tag is not None else (None, "text", "TEXT")
+        except (TypeError, ValueError):
+            tag, rule, kind = None, "text", "TEXT"
+        rule = rule if isinstance(rule, str) and RULE_ID_RE.match(rule) else "other"
+        kind = kind if isinstance(kind, str) and kind in LOG_KINDS else "other"
+        try:
+            self.log(OUTCOME_LINES[outcome].format(rule=rule, kind=kind))
+        except Exception:  # noqa: BLE001 - a broken log sink must not stop delivery
+            pass
+        if self.on_result is not None and tag is not None:
+            try:
+                self.on_result(DeliveryTag(*tag), outcome)
+            except Exception:  # noqa: BLE001 - the engine's bookkeeping must never stop the sender
+                pass
 
     def flush(self, timeout: float = 10.0) -> bool:
         return self._idle.wait(timeout)
@@ -222,7 +273,7 @@ class TelegramAdapter:
     def _run(self):
         while not self._stop.is_set():
             try:
-                text = self.q.get(timeout=0.2)
+                text, tag = self.q.get(timeout=0.2)
             except queue.Empty:
                 self._idle.set()
                 if self._stop.is_set():
@@ -231,6 +282,7 @@ class TelegramAdapter:
             if not self._allowed_now():
                 self.stats["rate_limited"] += 1
                 self._suppressed += 1
+                self._report(tag, DROPPED_RATE_LIMIT)
                 if self.q.empty():
                     self._idle.set()
                 continue
@@ -240,9 +292,10 @@ class TelegramAdapter:
             if self._suppressed:
                 text += f"\n({self._suppressed} earlier notification(s) were suppressed by the hourly rate limit)"
                 self._suppressed = 0
-            self._deliver(text)
+            ok = self._deliver(text)
             self._last_send = self.clock()
             self.sent_times.append(self._last_send)
+            self._report(tag, DELIVERED if ok else FAILED)
             if self.q.empty():
                 self._idle.set()
 

@@ -15,13 +15,16 @@ import json
 import os
 import pwd
 import re
+import sqlite3
 import stat
 import sys
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
 
 from .telegram import API_BASE, LOOPBACK_BASE_RE, load_secrets, parse_env_file, render_test, sanitize
+from .util import fmt_duration
 
 EXIT_OK, EXIT_FAIL, EXIT_UNUSABLE = 0, 1, 3
 CHAT_KEYS = ("message", "edited_message", "channel_post", "edited_channel_post", "my_chat_member", "chat_member", "chat_join_request")
@@ -91,8 +94,44 @@ def inspect_secrets(path: str, environ=None) -> dict:
     return info
 
 
-def cmd_status(cfg: dict, out=None, environ=None) -> int:
+def daemon_delivery(cfg: dict) -> dict:
+    """What the RUNNING daemon recorded about Telegram delivery, read from its own database (read-only; nothing is contacted and nothing is written).
+    Returns {"error": <exception type>} when the database cannot be opened (not the aicc-ops user / root, or the daemon never ran here), else
+    {"newest": ts, "values": {metric: (value, ts)}}."""
+    path = os.path.join(cfg["general"]["data_dir"], cfg["storage"]["db_file"])
+    try:
+        c = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=3)
+        try:
+            c.execute("PRAGMA query_only=1")
+            rows = c.execute("SELECT m.name, r.v, MAX(r.ts) FROM raw r JOIN metrics m ON m.id=r.mid WHERE m.name LIKE 'ops.telegram\\_%' ESCAPE '\\' GROUP BY r.mid").fetchall()
+            newest = c.execute("SELECT MAX(ts) FROM raw").fetchone()[0]
+        finally:
+            c.close()
+    except (sqlite3.Error, OSError) as e:
+        return {"error": type(e).__name__}
+    return {"newest": newest, "values": {n: (v, ts) for n, v, ts in rows}}
+
+
+def _delivery_lines(cfg: dict, now: float) -> list:
+    d = daemon_delivery(cfg)
+    if "error" in d:
+        return [("daemon data", f"not available ({d['error']}): the running daemon's database could not be read here; run as root or as the aicc-ops user, or read the journal")]
+    v = {n: val for n, (val, _) in d["values"].items()}
+    if not v:
+        return [("daemon data", "no telegram metrics recorded yet (the daemon predates them, or has not completed a cycle): see `journalctl -u aicc-ops | grep telegram:`")]
+    age = lambda ts: f"{fmt_duration(max(now - ts, 0))} ago"  # noqa: E731
+    out = [("daemon data", f"newest sample {age(d['newest'])}" + ("" if now - d["newest"] < 600 else " (the daemon is probably not running)"))]
+    ok, bad = v.get("ops.telegram_last_ok_ts"), v.get("ops.telegram_last_failure_ts")
+    out.append(("last delivery", age(ok) if ok else "never (nothing delivered since the daemon first recorded this)"))
+    out.append(("last failure", age(bad) if bad else "never (no failed or dropped message recorded)"))
+    out.append(("since start", f"sent {int(v.get('ops.telegram_sent', 0))}, failed {int(v.get('ops.telegram_failed', 0))}, dropped {int(v.get('ops.telegram_dropped', 0))}, "
+                               f"rate-limited {int(v.get('ops.telegram_rate_limited', 0))} (counters of the current daemon process)"))
+    return out
+
+
+def cmd_status(cfg: dict, out=None, environ=None, now=None) -> int:
     out = out or sys.stdout
+    now = time.time() if now is None else now
     i = inspect_secrets(cfg["telegram"]["secrets_file"], environ)
     p = lambda k, v: print(f"{k:<16}{v}", file=out)  # noqa: E731
     p("enabled(config)", "yes" if cfg["telegram"].get("enabled", True) else "NO (telegram.enabled=false)")
@@ -107,6 +146,8 @@ def cmd_status(cfg: dict, out=None, environ=None) -> int:
     p("usable", "yes" if i["usable"] and cfg["telegram"].get("enabled", True) else "NO")
     if i["detail"]:
         p("note", i["detail"])
+    for k, val in _delivery_lines(cfg, now):
+        p(k, val)
     return EXIT_OK if i["usable"] and cfg["telegram"].get("enabled", True) else EXIT_UNUSABLE
 
 

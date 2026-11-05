@@ -241,6 +241,169 @@ class AdapterTests(TmpCase):
             a.submit_text("x")
         self.assertGreater(a.stats["dropped"], 0)
 
+    # -- Production 20 (R3 M8): every message ends in exactly one reported outcome, with exactly one non-sensitive journal line --------------------
+    def results(self, a):
+        got = []
+        a.on_result = lambda tag, outcome: got.append((tuple(tag), outcome))
+        return got
+
+    def test_a_delivered_message_is_reported_and_leaves_one_journal_line(self):
+        srv = BodyServer(b'{"ok":true}')
+        try:
+            a = self.adapter(srv)
+            got = self.results(a)
+            self.assertTrue(a.submit(NOTE))
+            self.assertTrue(a.flush(5))
+            self.assertEqual(got, [(("ram_high:host", "ram_high", "FIRING"), "delivered")])
+            self.assertEqual([l for l in a.logs if l.startswith("telegram: delivered")], ["telegram: delivered ram_high FIRING"])
+            joined = "\n".join(a.logs)
+            for secret in (TOKEN, CHAT, "aicc-test", "memory used", "/bot", "127.0.0.1"):
+                self.assertNotIn(secret, joined, secret)      # the line names the rule id and the kind, nothing else
+        finally:
+            srv.close()
+
+    def test_a_failed_delivery_is_reported_and_leaves_a_failed_line_next_to_the_permanent_line(self):
+        srv = BodyServer(b'{"ok":false,"description":"Unauthorized (secret-detail)"}', status=401)
+        try:
+            a = self.adapter(srv)
+            got = self.results(a)
+            a.submit(NOTE); a.flush(5)
+            self.assertEqual(got, [(("ram_high:host", "ram_high", "FIRING"), "failed")])
+            self.assertIn("telegram: failed ram_high FIRING", a.logs)
+            self.assertTrue([l for l in a.logs if "HTTP 401 permanent" in l])                   # the existing line is kept
+            self.assertFalse([l for l in a.logs if l.startswith("telegram: delivered")])
+            joined = "\n".join(a.logs)
+            for secret in (TOKEN, CHAT, "secret-detail", "Unauthorized"):
+                self.assertNotIn(secret, joined, secret)
+        finally:
+            srv.close()
+
+    def test_a_delivery_that_succeeds_on_a_retry_is_reported_once_as_delivered(self):
+        srv = BodyServer(handler_fn=lambda n, p: (500, b"err") if n < 3 else (200, b'{"ok":true}'))
+        try:
+            a = self.adapter(srv)
+            a.sleep = lambda s: None
+            got = self.results(a)
+            a.submit(NOTE); a.flush(5)
+            self.assertEqual([o for _, o in got], ["delivered"])
+        finally:
+            srv.close()
+
+    def test_the_hourly_rate_limit_drop_is_reported_and_logged(self):
+        srv = BodyServer(b"{}")
+        try:
+            a = self.adapter(srv, max_per_hour=1)
+            got = self.results(a)
+            for _ in range(3):
+                a.submit(NOTE)
+            self.assertTrue(a.flush(10))
+            self.assertEqual(sorted(o for _, o in got), ["delivered", "dropped_rate_limit", "dropped_rate_limit"])
+            self.assertEqual(len([l for l in a.logs if l == "telegram: dropped (hourly rate limit) ram_high"]), 2)
+            self.assertEqual(len([l for l in a.logs if l == "telegram: delivered ram_high FIRING"]), 1)
+            self.assertEqual(a.stats["rate_limited"], 2)
+        finally:
+            srv.close()
+
+    def test_a_full_queue_drop_is_reported_and_logged_by_the_caller_thread(self):
+        a = self.adapter(BodyServer(b"{}"))
+        a._ensure_thread = lambda: None   # nothing drains the queue
+        got = self.results(a)
+        results = [a.submit(NOTE) for _ in range(130)]
+        self.assertEqual(results.count(False), 30)
+        self.assertEqual([o for _, o in got], ["dropped_queue_full"] * 30)
+        self.assertEqual(len([l for l in a.logs if l == "telegram: dropped (queue full) ram_high"]), 30)
+        self.assertEqual(a.stats["dropped"], 30)
+
+    def test_a_tag_that_is_not_a_plain_rule_id_never_reaches_the_journal(self):
+        srv = BodyServer(b"{}")
+        try:
+            a = self.adapter(srv)
+            a.submit_text("x", tag=("k", "bad rule 203.0.113.9 ops@example.com", "NOT-A-KIND\ninjected"))
+            a.flush(5)
+            self.assertIn("telegram: delivered other other", a.logs)
+            self.assertFalse([l for l in a.logs if "203.0.113.9" in l or "injected" in l or "example.com" in l])
+        finally:
+            srv.close()
+
+    def test_dry_run_and_a_disabled_adapter_report_nothing(self):
+        with NoNetwork():
+            a = self.adapter(dry_run=True, secrets=False)
+            got = self.results(a)
+            self.assertTrue(a.submit(NOTE))
+            b = self.adapter(secrets=False)
+            got_b = self.results(b)
+            self.assertFalse(b.submit(NOTE))
+        self.assertEqual((got, got_b), ([], []))
+        self.assertFalse([l for l in a.logs + b.logs if l.startswith("telegram: delivered") or l.startswith("telegram: dropped")])
+
+    def test_a_raising_result_callback_cannot_stop_the_sender(self):
+        srv = BodyServer(b"{}")
+        try:
+            a = self.adapter(srv)
+            a.on_result = lambda tag, outcome: (_ for _ in ()).throw(RuntimeError("boom"))
+            a.submit(NOTE); a.submit(NOTE)
+            self.assertTrue(a.flush(5))
+            self.assertEqual(len(srv.requests), 2)
+            self.assertEqual(a.stats["sent"], 2)
+        finally:
+            srv.close()
+
+    def test_the_constructor_accepts_the_callback(self):
+        srv = BodyServer(b"{}")
+        try:
+            got = []
+            a = tg.TelegramAdapter(cfg(secrets_file=self.secrets()), "aicc-test", out=io.StringIO(), log=lambda m: None, test_base_url=srv.url, environ={},
+                                   on_result=lambda tag, outcome: got.append(outcome))
+            a.submit(NOTE); a.flush(5)
+            self.assertEqual(got, ["delivered"])
+        finally:
+            srv.close()
+
+    def test_last_delivery_and_last_failure_times_and_the_metrics(self):
+        ok = BodyServer(b"{}")
+        bad = BodyServer(b"{}", status=403)
+        try:
+            a = self.adapter(ok)
+            a.clock = lambda: 1000.5
+            self.assertEqual(a.metrics()["ops.telegram_enabled"], 1.0)
+            self.assertNotIn("ops.telegram_last_ok_ts", a.metrics())                # never delivered: no timestamp, not a zero
+            a.submit(NOTE); a.flush(5)
+            self.assertEqual(a.last_ok_ts, 1000.5)
+            self.assertIsNone(a.last_fail_ts)
+            b = self.adapter(bad)
+            b.clock = lambda: 2000.5
+            b.submit(NOTE); b.flush(5)
+            self.assertEqual(b.last_fail_ts, 2000.5)
+            self.assertEqual(dict(b.metrics()), {"ops.telegram_enabled": 1.0, "ops.telegram_sent": 0.0, "ops.telegram_failed": 1.0, "ops.telegram_dropped": 0.0,
+                                                 "ops.telegram_rate_limited": 0.0, "ops.telegram_last_failure_ts": 2000.5})
+            self.assertEqual(a.metrics()["ops.telegram_last_ok_ts"], 1000.5)
+            self.assertEqual(a.metrics()["ops.telegram_sent"], 1.0)
+        finally:
+            ok.close(); bad.close()
+
+    def test_a_drop_counts_as_a_failure_time(self):
+        a = self.adapter(BodyServer(b"{}"))
+        a._ensure_thread = lambda: None
+        a.clock = lambda: 77.0
+        for _ in range(101):
+            a.submit(NOTE)
+        self.assertEqual(a.last_fail_ts, 77.0)
+        self.assertEqual(a.metrics()["ops.telegram_dropped"], 1.0)
+
+    def test_the_start_up_line_only_claims_nothing_is_sent_for_the_daemon(self):
+        srv = BodyServer(b"{}")
+        try:
+            daemon = self.adapter(srv)
+            self.assertIn("nothing is sent at start-up", [l for l in daemon.logs if l.startswith("telegram: enabled")][0])
+            logs = []
+            digest = tg.TelegramAdapter(cfg(secrets_file=self.secrets()), "aicc-test", out=io.StringIO(), log=logs.append, test_base_url=srv.url, environ={}, purpose="digest")
+            line = [l for l in logs if l.startswith("telegram: enabled")][0]
+            self.assertNotIn("nothing is sent", line)
+            self.assertIn("one daily-digest message", line)
+            self.assertFalse([l for l in logs if TOKEN in l or CHAT in l])
+        finally:
+            srv.close()
+
     def test_base_url_override_only_loopback_http(self):
         for bad in ("https://evil.example", "http://127.0.0.1.evil.example:80", "http://10.0.0.1:80", "http://localhost:80"):
             with self.assertRaises(ValueError):

@@ -103,6 +103,70 @@ class StatusTests(OpsBase):
         self.assertEqual(self.kv(out)["enabled(config)"], "NO (telegram.enabled=false)")
 
 
+class StatusDeliveryTests(OpsBase):
+    """Production 20 (R3 M8): telegram-status also says when the running daemon last delivered / failed (read from its own database; nothing is contacted)."""
+
+    def seed(self, metrics_at):
+        from tests.helpers import make_store
+        data = os.path.join(self.tmp, "data"); os.makedirs(data, exist_ok=True)
+        put(self.cfg_path, f'[general]\ndata_dir = "{data}"\n[telegram]\nsecrets_file = "{self.secrets_path}"\n')
+        from aicc_ops.store import Store
+        from aicc_ops.config import load_config
+        c = load_config(self.cfg_path)
+        st = Store(os.path.join(data, c["storage"]["db_file"]), c["storage"], free_pct_fn=lambda _p: 50.0)
+        for ts, m in metrics_at:
+            st.write_sample(ts, m)
+        st.close()
+
+    def status(self, now):
+        from aicc_ops.config import load_config
+        out = io.StringIO()
+        rc = ops.cmd_status(load_config(self.cfg_path), out=out, environ={}, now=now)
+        return rc, out.getvalue()
+
+    def test_prints_the_ages_of_the_last_delivery_and_failure_and_the_counters(self):
+        self.secrets()
+        now = 1_800_000_000
+        self.seed([(now - 90, {"ops.telegram_enabled": 1.0, "ops.telegram_sent": 3.0, "ops.telegram_failed": 2.0, "ops.telegram_dropped": 1.0, "ops.telegram_rate_limited": 4.0,
+                               "ops.telegram_last_ok_ts": now - 7200.0, "ops.telegram_last_failure_ts": now - 600.0})])
+        rc, out = self.status(now)
+        self.assertEqual(rc, 0, out)
+        kv = self.kv(out)
+        self.assertIn("2h 0m ago", kv["last delivery"])
+        self.assertIn("10m ago", kv["last failure"])
+        self.assertIn("sent 3, failed 2, dropped 1, rate-limited 4", kv["since start"])
+        self.assertNotIn(TOKEN, out)
+
+    def test_says_never_when_nothing_was_delivered_or_failed(self):
+        self.secrets()
+        now = 1_800_000_000
+        self.seed([(now - 30, {"ops.telegram_enabled": 1.0, "ops.telegram_sent": 0.0, "ops.telegram_failed": 0.0, "ops.telegram_dropped": 0.0, "ops.telegram_rate_limited": 0.0})])
+        kv = self.kv(self.status(now)[1])
+        self.assertIn("never", kv["last delivery"])
+        self.assertIn("never", kv["last failure"])
+
+    def test_flags_a_daemon_that_stopped_recording(self):
+        self.secrets()
+        now = 1_800_000_000
+        self.seed([(now - 7200, {"ops.telegram_enabled": 1.0, "ops.telegram_sent": 1.0, "ops.telegram_failed": 0.0, "ops.telegram_dropped": 0.0, "ops.telegram_rate_limited": 0.0,
+                                 "ops.telegram_last_ok_ts": now - 7300.0})])
+        kv = self.kv(self.status(now)[1])
+        self.assertIn("2h 0m ago", kv["daemon data"])          # the newest sample is two hours old: the daemon is probably not running
+
+    def test_unreadable_or_absent_daemon_data_is_stated_and_does_not_change_the_exit_code(self):
+        self.secrets()
+        rc, out = self.status(1_800_000_000)                    # no database at all
+        self.assertEqual(rc, 0)
+        self.assertIn("not available", self.kv(out)["daemon data"])
+        self.assertEqual(self.kv(out)["usable"], "yes")
+
+    def test_a_database_without_the_telegram_metrics_says_the_daemon_predates_them(self):
+        self.secrets()
+        now = 1_800_000_000
+        self.seed([(now - 30, {"cpu.used_pct": 1.0})])
+        self.assertIn("no telegram metrics", self.kv(self.status(now)[1])["daemon data"])
+
+
 class CheckTests(OpsBase):
     def test_getme_ok_prints_username_only_and_sends_nothing(self):
         self.secrets()

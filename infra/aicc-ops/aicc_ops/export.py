@@ -12,7 +12,8 @@ RANGES = {"1h": 3600, "6h": 6 * 3600, "24h": 86400, "7d": 7 * 86400, "30d": 30 *
 MAX_METRICS = 20
 MAX_POINTS_PER_METRIC = 1500
 MAX_TOTAL_ROWS = 30000
-DEFAULT_METRICS = ["cpu.used_pct", "mem.used_pct", "swap.in_pps", "disk.root.used_pct", "load.1", "caddy.req_rate", "caddy.lat_p95_ms", "fpm.active_ratio", "mysql.conn_pressure_pct"]
+DEFAULT_METRICS = ["cpu.used_pct", "mem.used_pct", "swap.in_pps", "disk.root.used_pct", "load.1", "caddy.req_rate", "caddy.lat_p95_ms", "fpm.active_ratio", "mysql.conn_pressure_pct",
+                   "ops.telegram_sent", "ops.telegram_failed", "ops.telegram_dropped", "ops.telegram_rate_limited", "ops.telegram_last_ok_ts", "ops.telegram_last_failure_ts"]
 
 
 class ExportError(ValueError):
