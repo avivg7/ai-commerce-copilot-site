@@ -4,7 +4,7 @@ import { loadTs, loadDictionaries } from "./lib/load.mjs";
 
 const ACCEPTED = { solo: { price: 99, stores: 1 }, studio: { price: 199, stores: 3 }, agency: { price: 499, stores: 10 } };
 const BOOTSTRAP = process.env.AICC_BOOTSTRAP_PHP ||
-  "/Users/avivgerman/Local Sites/woo-recommendation-qa/aicc-control-plane-worktrees/cp2a-14-readiness-independence/scripts/bootstrap-commercial-products.php";
+  "/Users/avivgerman/Local Sites/woo-recommendation-qa/aicc-control-plane-worktrees/launch-integration/scripts/bootstrap-commercial-products.php";
 
 const { PLANS, CURRENCY, TERM_DAYS, GUARANTEE_DAYS } = await loadTs("src/data/plans.ts");
 const errors = [];
