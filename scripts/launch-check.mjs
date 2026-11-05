@@ -87,6 +87,9 @@ if (env.NEXT_PUBLIC_LEGAL_DRAFT_NOTICE === "off" && !approved) problems.push("NE
   if (env.AICC_BUILD_NOW_MS || env.AICC_EA_TEST_SEAM) problems.push("early access: AICC_BUILD_NOW_MS / AICC_EA_TEST_SEAM are set: they pin the build clock for tests and must never exist in a release environment");
   if (ea.EA_ON) problems.push("early access is ON in this build: publishing free access needs the owner's explicit approval, the accountant's written confirmation and counsel's review of the promotional terms (docs/cutover/early-access.md section 6)");
   if (ea.EA_OPEN && !ea.EA_URL_OVERRIDE) problems.push("early access OPEN: NEXT_PUBLIC_AICC_EARLY_ACCESS_URL is not set, so the buttons lead to the plain account page: the Early Access request flow on the Control Plane must exist and be approved first");
+  if (ea.EA_STRIKE) problems.push("early access: NEXT_PUBLIC_AICC_EA_STRIKE=on shows the plan price struck through next to the free offer: counsel must approve that presentation first (no plan has ever been sold at that price)");
+  if (ea.EA_OPEN && ea.EA_URL_OVERRIDE && !/^https:\/\//.test(ea.EA_URL_OVERRIDE)) problems.push(`early access OPEN: NEXT_PUBLIC_AICC_EARLY_ACCESS_URL ("${ea.EA_URL_OVERRIDE}") must be an https address`);
+  if (ea.EA_ON) problems.push("early access: the request flow behind the buttons (a Control Plane intake with operator approval) does not exist yet: the buttons must not be published until it is built and independently reviewed");
   if (ea.EA_OPEN && !commerceOpen) console.log("early access OPEN with checkout CLOSED: a valid state (free access does not need checkout); after the end date the pages return to \"Purchases open soon\"");
 }
 

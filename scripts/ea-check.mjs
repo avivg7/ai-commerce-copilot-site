@@ -167,7 +167,8 @@ if (out) {
   }
   if (expect !== "off") {
     const pr = html("pricing/index.html");
-    check(/<s>/.test(pr) && /Regular price/.test(pr), "pricing: the regular price is struck through and labelled");
+    if (args.includes("--strike")) check(/<s>/.test(pr) && /Regular price, not charged during Early Access:/.test(pr), "pricing: strike-through ON: the plan price is struck through and labelled");
+    else check(!/<s>|<del>/.test(pr.slice(pr.indexOf("<main"), pr.indexOf("</main>"))) && /Planned price when purchases open:/.test(pr), "pricing: strike-through OFF (default): no struck-through price; the price is labelled 'Planned price when purchases open:'");
     check(/Free until December 31, 2026/.test(pr) && /January 1, 2027/.test(pr), "pricing: 'Free until December 31, 2026' and the end date 'January 1, 2027' are stated");
     check(!/(<meta[^>]*(description|og:)[^>]*Early Access)/i.test(html("index.html")), "the meta description and Open Graph text do not mention the campaign (they would go stale after the end date)");
     check(!/application\/ld\+json[^<]*Early Access/i.test(html("pricing/index.html")), "no JSON-LD mentions the campaign");

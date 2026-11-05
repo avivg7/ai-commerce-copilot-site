@@ -63,6 +63,11 @@ export const EA_MODE: EaMode = eaModeAt(EA_REQUESTED, EA_BUILD_MS);
 /** The switch is set but this build is at or past the cutoff: the campaign was NOT published (`launch:check` reports it). */
 export const EA_EXPIRED_REQUEST = EA_REQUESTED !== "off" && EA_MODE === "off";
 export const EA_ON = EA_MODE !== "off";
+/**
+ * Build-time sub-switch NEXT_PUBLIC_AICC_EA_STRIKE=on: show the plan price STRUCK THROUGH next to the free offer. Default OFF: the same price is shown plainly as "Planned price when purchases open".
+ * A strike-through reads as a reduction from an established price, and no plan has ever been sold; turn it on only when counsel has approved it (docs/cutover/early-access.md).
+ */
+export const EA_STRIKE = process.env.NEXT_PUBLIC_AICC_EA_STRIKE === "on";
 export const EA_OPEN = EA_MODE === "open";
 
 /**

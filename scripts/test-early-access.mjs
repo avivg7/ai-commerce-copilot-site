@@ -14,6 +14,7 @@ import { launch } from "./lib/browser.mjs";
 const here = path.dirname(fileURLToPath(import.meta.url));
 const args = process.argv.slice(2);
 const arg = (n) => { const i = args.indexOf(`--${n}`); return i >= 0 ? path.resolve(args[i + 1]) : undefined; };
+const STRIKE = args.includes("--strike"); // the exports were built with NEXT_PUBLIC_AICC_EA_STRIKE=on
 const dirs = { open: arg("open"), announce: arg("announce"), off: arg("off") };
 if (!dirs.open || !dirs.announce || !dirs.off) { console.error("usage: --open <dir> --announce <dir> --off <dir>"); process.exit(2); }
 
@@ -54,7 +55,7 @@ for (const mode of ["open", "announce"]) {
       const over = await p.evaluate(() => document.documentElement.hasAttribute("data-ea-over"));
       const bar = await vis(p, ".aicc-eabar");
       const free = await vis(p, ".aicc-plan__free");
-      const struck = await vis(p, ".aicc-plan__regular s");
+      const struck = await vis(p, ".aicc-plan__regular");
       const ordinary = await vis(p, ".aicc-plan__price");
       const soon = (await p.locator(".aicc-plan [data-commerce=closed]").evaluateAll((els) => els.filter((e) => e.getClientRects().length > 0).map((e) => e.textContent).join(" "))).includes("Purchases open soon");
       const ended = await vis(p, ".aicc-eaafter");
@@ -73,9 +74,14 @@ for (const mode of ["open", "announce"]) {
     const { ctx, p } = await view(mode, "/pricing/", "Asia/Jerusalem", C - 86400e3);
     const t = await text(p, ".aicc-plan");
     check((t.match(/Free until December 31, 2026/g) || []).length === 3, "all three plan cards say 'Free until December 31, 2026'");
-    check(/\$99/.test(await text(p, ".aicc-plan__regular")) && /\$199/.test(await text(p, ".aicc-plan__regular")) && /\$499/.test(await text(p, ".aicc-plan__regular")), "the regular prices shown struck through are $99, $199 and $499");
-    check((await p.locator(".aicc-plan__regular s").count()) === 3, "exactly three struck-through prices (one per plan)");
-    check(/Regular price, not charged during Early Access:/.test(await text(p, ".aicc-plan__regular-label")), "the struck price carries the visible label 'Regular price, not charged during Early Access:'");
+    check(/\$99/.test(await text(p, ".aicc-plan__regular")) && /\$199/.test(await text(p, ".aicc-plan__regular")) && /\$499/.test(await text(p, ".aicc-plan__regular")), "the plan prices shown next to the free offer are $99, $199 and $499 (the real list prices)");
+    if (STRIKE) {
+      check((await p.locator(".aicc-plan__regular s").count()) === 3, "strike-through ON: exactly three struck-through prices (one per plan)");
+      check(/Regular price, not charged during Early Access:/.test(await text(p, ".aicc-plan__regular-label")), "strike-through ON: the label is 'Regular price, not charged during Early Access:'");
+    } else {
+      check((await p.locator(".aicc-plan__regular s, .aicc-plan s, .aicc-plan del").count()) === 0, "strike-through OFF (the default): no struck-through price anywhere on the cards");
+      check((await text(p, ".aicc-plan__regular-label")).split("|").every((x) => /Planned price when purchases open:/.test(x)) && (await p.locator(".aicc-plan__regular-label").count()) === 3, "strike-through OFF: each price is labelled 'Planned price when purchases open:'");
+    }
     check((t.match(/Access ends at 00:00 on January 1, 2027, Israel time \(22:00 UTC on December 31\)/g) || []).length === 3, "every card states the end as an instant: 00:00 January 1, 2027, Israel time (22:00 UTC on December 31)");
     check((t.match(/No credit card required/g) || []).length === 3 && (t.match(/Early Access term: until December 31, 2026, Israel time/g) || []).length === 3, "every card says no credit card is required and states the term with its time zone");
     check(!(await vis(p, ".aicc-plan__list[data-ea-after]")), "the paid-plan bullets (365-day term, 14-day guarantee) are NOT shown next to the free offer");
@@ -83,7 +89,7 @@ for (const mode of ["open", "announce"]) {
     check(!/(subscription|automatically (charged|renew)|trial|discount|% off|limited time|hurry|countdown)/i.test(await text(p, "#early-access, .aicc-plan, .aicc-eabar, .aicc-ealead")), "no trial / subscription / automatic-charge / discount / urgency wording in the campaign blocks");
     const sect = ((await p.locator("#early-access").textContent()) || "").replace(/\s+/g, " ");
     check(/No automatic conversion and no automatic charge|no automatic conversion/.test(sect) && /no card on file/.test(sect), "the explanation says: no automatic conversion, no automatic charge, no card on file");
-    check(/Does the money-back guarantee apply to Early Access\?/.test((await p.locator("#early-access").textContent()) || "") && /What will I see in the plugin when Early Access ends\?/.test((await p.locator("#early-access").textContent()) || ""), "the questions answer the guarantee and the plugin's end-of-period message");
+    check(/does not apply to Early Access/.test((await p.locator("#early-access").textContent()) || "") && /Does the money-back guarantee apply to Early Access\?/.test((await p.locator("#early-access").textContent()) || "") && /What will I see in the plugin when Early Access ends\?/.test((await p.locator("#early-access").textContent()) || ""), "the questions answer the guarantee and the plugin's end-of-period message");
     check(/Israel time \(22:00 UTC on December 31, 2026\)/.test(sect), "the explanation states the instant in Israel time and UTC");
     const hrefs = await p.locator(".aicc-plan a.aicc-btn").evaluateAll((a) => a.map((x) => x.getAttribute("href")));
     if (mode === "open") check(hrefs.length === 3 && hrefs.every((h) => /offer=early-access/.test(h) && /plan=(solo|studio|agency)/.test(h)), `open: each plan button leads to Early Access with its plan (${hrefs.join(" ")})`);
@@ -138,7 +144,7 @@ for (const [route, tz, t] of [["/", "UTC", C - 86400e3], ["/pricing/", "Asia/Jer
   const { ctx, p } = await view("off", route, tz, t);
   const html = await p.content();
   check(!/Early Access|data-ea-|aicc-eabar/.test(html), `off build ${route} (${new Date(t).toISOString().slice(0, 10)}): no trace of the campaign in the rendered page`);
-  check(!(await vis(p, ".aicc-plan__regular s")), `off build ${route}: no struck-through price`);
+  check(!(await vis(p, ".aicc-plan__regular")), `off build ${route}: no struck-through price`);
   await ctx.close();
 }
 
@@ -156,7 +162,7 @@ console.log("\n== every language: the zone is stated, the bar is not clipped, th
     { const { ctx, p } = await view("open", `${prefix}/`, "UTC", C - 86400e3, 1280, loc); const note = (await text(p, ".aicc-eanote")); check(note.includes(zone) && note.toLowerCase().includes(auto.toLowerCase()), `${loc}: the hero fine print states the zone and that nothing is charged automatically`); await ctx.close(); }
     { const { ctx, p } = await view("open", `${prefix}/pricing/`, "Pacific/Kiritimati", C + 1000, 1280, loc);
       const over = await p.evaluate(() => document.documentElement.hasAttribute("data-ea-over"));
-      check(over && !(await vis(p, ".aicc-plan__free")) && !(await vis(p, ".aicc-plan__regular s")) && (await vis(p, ".aicc-plan__price")) && !(await vis(p, "#early-access")) && !(await vis(p, ".aicc-eabar")) && (await vis(p, ".aicc-eaafter")), `${loc}: the ended view after the cutoff (offer, struck price, explanation and bar hidden; ordinary price and the ended note shown)`);
+      check(over && !(await vis(p, ".aicc-plan__free")) && !(await vis(p, ".aicc-plan__regular")) && (await vis(p, ".aicc-plan__price")) && !(await vis(p, "#early-access")) && !(await vis(p, ".aicc-eabar")) && (await vis(p, ".aicc-eaafter")), `${loc}: the ended view after the cutoff (offer, struck price, explanation and bar hidden; ordinary price and the ended note shown)`);
       await ctx.close(); }
   }
 }

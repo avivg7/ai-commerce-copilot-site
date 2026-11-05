@@ -5,7 +5,7 @@ import { Button } from "./Button";
 import { cn } from "@/lib/cn";
 import { currencySuffix, formatPrice } from "@/data/plans";
 import { COMMERCE_OPEN, planUrl, type PlanId } from "@/lib/site";
-import { EA_ON, EA_OPEN, eaUrl } from "@/lib/earlyAccess";
+import { EA_ON, EA_OPEN, EA_STRIKE, eaUrl } from "@/lib/earlyAccess";
 import { txProps } from "@/i18n";
 import type { Locale } from "@/i18n/config";
 
@@ -28,7 +28,7 @@ export interface PricingCardProps {
   headingLevel?: 2 | 3;
   extra?: ReactNode;
   /** Early Access strings (t.ea.plan). Rendered only by an Early Access build; a normal build ignores them. */
-  ea?: { free: string; regular: string; regularPer: string; noCard: string; term: string; ends: string; ctaOpen: string; ctaAnnounce: string };
+  ea?: { free: string; regular: string; planned: string; regularPer: string; noCard: string; term: string; ends: string; ctaOpen: string; ctaAnnounce: string };
 }
 
 /**
@@ -68,8 +68,8 @@ export function PricingCard(p: PricingCardProps) {
         <div className="aicc-plan__offer" data-ea-live>
           <p className="aicc-plan__free" {...E("ea.plan")}>{ea.free}</p>
           <p className="aicc-plan__regular" {...E("ea.plan")}>
-            <span className="aicc-plan__regular-label">{ea.regular}</span>{" "}
-            <s><bdi>{formatPrice(p.price, p.locale)}</bdi></s>
+            <span className="aicc-plan__regular-label">{EA_STRIKE ? ea.regular : ea.planned}</span>{" "}
+            {EA_STRIKE ? <s><bdi>{formatPrice(p.price, p.locale)}</bdi></s> : <bdi>{formatPrice(p.price, p.locale)}</bdi>}
             <span className="aicc-plan__regular-per"> {ea.regularPer}{currencySuffix(p.locale ?? "en")}</span>
           </p>
         </div>
