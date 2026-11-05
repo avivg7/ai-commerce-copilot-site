@@ -58,8 +58,11 @@ for (const mode of ["open", "announce"]) {
       const ordinary = await vis(p, ".aicc-plan__price");
       const soon = (await p.locator(".aicc-plan [data-commerce=closed]").evaluateAll((els) => els.filter((e) => e.getClientRects().length > 0).map((e) => e.textContent).join(" "))).includes("Purchases open soon");
       const ended = await vis(p, ".aicc-eaafter");
-      const ok = live ? (!over && bar && free && struck && !ordinary && !ended && !soon) : (over && !bar && !free && !struck && ordinary && ended && soon);
-      states.push(ok ? "." : `x(${tz}: over=${over} bar=${bar} free=${free} struck=${struck} ordinary=${ordinary} ended=${ended} soon=${soon})`);
+      const section = await vis(p, "#early-access"), heroLine = await vis(p, ".aicc-ealead"), band = await vis(p, "#pricing-final ~ div [data-ea-live]") || (await p.locator("[data-ea-live] .aicc-hero-actions a.aicc-btn, .aicc-section--inverse [data-ea-live] a.aicc-btn").evaluateAll((els) => els.some((e) => e.getClientRects().length > 0)));
+      const features = await vis(p, ".aicc-plan__list[data-ea-after]"), eaFeatures = await vis(p, ".aicc-plan__list[data-ea-live]");
+      const hdr = mode === "open" ? (await vis(p, ".aicc-site-header a[href*='offer=early-access']")) : false;
+      const ok = live ? (!over && bar && free && struck && !ordinary && !ended && !soon && section && heroLine && band && !features && eaFeatures && (mode !== "open" || hdr)) : (over && !bar && !free && !struck && ordinary && ended && soon && !section && !heroLine && !band && features && !eaFeatures && !hdr);
+      states.push(ok ? "." : `x(${tz}: over=${over} bar=${bar} free=${free} struck=${struck} ordinary=${ordinary} ended=${ended} soon=${soon} section=${section} heroLine=${heroLine} band=${band} features=${features} eaFeatures=${eaFeatures} header=${hdr})`);
       await ctx.close();
     }
     check(states.every((s) => s === "."), `${label} (${new Date(t).toISOString()}): ${live ? "LIVE" : "ENDED"} view in all ${ZONES.length} visitor zones${states.every((s) => s === ".") ? "" : " -> " + states.filter((s) => s !== ".").join("; ")}`);
@@ -72,12 +75,16 @@ for (const mode of ["open", "announce"]) {
     check((t.match(/Free until December 31, 2026/g) || []).length === 3, "all three plan cards say 'Free until December 31, 2026'");
     check(/\$99/.test(await text(p, ".aicc-plan__regular")) && /\$199/.test(await text(p, ".aicc-plan__regular")) && /\$499/.test(await text(p, ".aicc-plan__regular")), "the regular prices shown struck through are $99, $199 and $499");
     check((await p.locator(".aicc-plan__regular s").count()) === 3, "exactly three struck-through prices (one per plan)");
-    check(/Regular price/.test(await text(p, ".aicc-plan__regular-label")), "the struck price carries the visible label 'Regular price'");
-    check((t.match(/Access ends on January 1, 2027/g) || []).length === 3, "every card states 'Access ends on January 1, 2027'");
+    check(/Regular price, not charged during Early Access:/.test(await text(p, ".aicc-plan__regular-label")), "the struck price carries the visible label 'Regular price, not charged during Early Access:'");
+    check((t.match(/Access ends at 00:00 on January 1, 2027, Israel time \(22:00 UTC on December 31\)/g) || []).length === 3, "every card states the end as an instant: 00:00 January 1, 2027, Israel time (22:00 UTC on December 31)");
+    check((t.match(/No credit card required/g) || []).length === 3 && (t.match(/Early Access term: until December 31, 2026, Israel time/g) || []).length === 3, "every card says no credit card is required and states the term with its time zone");
+    check(!(await vis(p, ".aicc-plan__list[data-ea-after]")), "the paid-plan bullets (365-day term, 14-day guarantee) are NOT shown next to the free offer");
     check(/paid plan starts only if you choose to buy one/.test(t), "every card says a paid plan starts only if the merchant chooses to buy");
     check(!/(subscription|automatically (charged|renew)|trial|discount|% off|limited time|hurry|countdown)/i.test(await text(p, "#early-access, .aicc-plan, .aicc-eabar, .aicc-ealead")), "no trial / subscription / automatic-charge / discount / urgency wording in the campaign blocks");
     const sect = ((await p.locator("#early-access").textContent()) || "").replace(/\s+/g, " ");
     check(/No automatic conversion and no automatic charge|no automatic conversion/.test(sect) && /no card on file/.test(sect), "the explanation says: no automatic conversion, no automatic charge, no card on file");
+    check(/Does the money-back guarantee apply to Early Access\?/.test((await p.locator("#early-access").textContent()) || "") && /What will I see in the plugin when Early Access ends\?/.test((await p.locator("#early-access").textContent()) || ""), "the questions answer the guarantee and the plugin's end-of-period message");
+    check(/Israel time \(22:00 UTC on December 31, 2026\)/.test(sect), "the explanation states the instant in Israel time and UTC");
     const hrefs = await p.locator(".aicc-plan a.aicc-btn").evaluateAll((a) => a.map((x) => x.getAttribute("href")));
     if (mode === "open") check(hrefs.length === 3 && hrefs.every((h) => /offer=early-access/.test(h) && /plan=(solo|studio|agency)/.test(h)), `open: each plan button leads to Early Access with its plan (${hrefs.join(" ")})`);
     else { check(hrefs.length === 0, "announce: no plan button leads anywhere (nothing to sign up for yet)"); check((await text(p, ".aicc-plan [data-ea-soon]")).split("|").length === 3, "announce: each card says 'Early Access opens soon'"); }
@@ -90,9 +97,12 @@ for (const mode of ["open", "announce"]) {
   {
     const { ctx, p } = await view(mode, "/", "Asia/Jerusalem", C - 86400e3);
     check(/Recommendations learned from your own orders\./.test(await text(p, "h1")), "hero headline");
+    check(/shows in your dashboard what it recommends/.test(await text(p, ".aicc-hero-lead")), "hero lead makes only the approved dashboard claim");
     const actions = await text(p, ".aicc-hero .aicc-hero-actions .aicc-btn");
-    check(mode === "open" ? /^Get free Early Access \| See it in action$/.test(actions) : /^See it in action \| How Early Access works$/.test(actions), `hero actions (${actions})`);
-    check(/No credit card required\. Access ends on January 1, 2027, and nothing is charged automatically\./.test(await text(p, ".aicc-eanote")), "hero fine print: no card, end date, nothing charged automatically");
+    const visActions = (await p.locator(".aicc-hero .aicc-hero-actions .aicc-btn").evaluateAll((els) => els.filter((e) => e.getClientRects().length > 0).map((e) => e.textContent.trim()))).join(" | ");
+    check(mode === "open" ? visActions === "Request free Early Access | See it in action" : visActions === "How Early Access works | See it in action", `hero actions while live (${visActions})`);
+    check(/No credit card required\. Access ends at 00:00 on January 1, 2027, Israel time, and nothing is charged automatically\./.test(await text(p, ".aicc-eanote")), "hero fine print: no card, the end instant with its time zone, nothing charged automatically");
+    if (mode === "open") check(/Request Early Access/.test(await p.locator(".aicc-site-header a[data-ea-live]").first().textContent()), "open: the header button says the same thing as the hero button");
     check(await vis(p, ".aicc-eabar"), "the announcement bar is visible");
     // the bar sits under the header and above the hero (no overlap)
     const g = await p.evaluate(() => { const r = (s) => document.querySelector(s).getBoundingClientRect(); return { header: r(".aicc-site-header").bottom, barTop: r(".aicc-eabar").top, barBottom: r(".aicc-eabar").bottom, h1: r("h1").top }; });
@@ -118,8 +128,8 @@ console.log("\n== the ended view elsewhere");
   const { ctx, p } = await view("open", "/", "UTC", C + 5 * 86400e3);
   check(!(await vis(p, ".aicc-eanote")) && !(await vis(p, ".aicc-eabar")) && !(await vis(p, ".aicc-ealead")), "Home after the end: no campaign text visible");
   check(/Plans and prices are final\. Purchases and new accounts open soon\./.test(await text(p, "#final-title ~ div [data-ea-after], [data-ea-after] .aicc-lead")), "Home after the end: the ordinary closing band (purchases open soon) is back");
-  const actions = await text(p, ".aicc-hero .aicc-hero-actions .aicc-btn");
-  check(!/Early Access/.test(actions) || !(await vis(p, ".aicc-hero-actions a[href*='offer=early-access']")), "Home after the end: the Early Access button is hidden");
+  const endedActions = (await p.locator(".aicc-hero .aicc-hero-actions .aicc-btn").evaluateAll((els) => els.filter((e) => e.getClientRects().length > 0).map((e) => e.textContent.trim()))).join(" | ");
+  check(endedActions === "See it in action | View plans", `Home after the end: the hero offers the demo and the plans, not Early Access (${endedActions})`);
   await ctx.close();
 }
 
@@ -130,6 +140,25 @@ for (const [route, tz, t] of [["/", "UTC", C - 86400e3], ["/pricing/", "Asia/Jer
   check(!/Early Access|data-ea-|aicc-eabar/.test(html), `off build ${route} (${new Date(t).toISOString().slice(0, 10)}): no trace of the campaign in the rendered page`);
   check(!(await vis(p, ".aicc-plan__regular s")), `off build ${route}: no struck-through price`);
   await ctx.close();
+}
+
+console.log("\n== every language: the zone is stated, the bar is not clipped, the ended view works");
+{
+  const TOK = { en: ["Israel time", "automatically"], he: ["שעון ישראל", "אוטומטית"], es: ["hora de Israel", "automáticamente"], ru: ["по израильскому времени", "автоматически"] };
+  for (const [loc, [zone, auto]] of Object.entries(TOK)) {
+    const prefix = loc === "en" ? "" : `/${loc}`;
+    for (const w of [320, 390, 1280]) {
+      const { ctx, p } = await view("open", `${prefix}/pricing/`, "UTC", C - 86400e3, w, loc);
+      const bar = await p.evaluate(() => { const b = document.querySelector(".aicc-eabar"); return { clipped: b.scrollHeight > b.clientHeight + 1, text: b.textContent }; });
+      check(!bar.clipped && bar.text.includes(zone), `${loc} at ${w}px: the bar is not clipped and says the time zone (${zone})`);
+      await ctx.close();
+    }
+    { const { ctx, p } = await view("open", `${prefix}/`, "UTC", C - 86400e3, 1280, loc); const note = (await text(p, ".aicc-eanote")); check(note.includes(zone) && note.toLowerCase().includes(auto.toLowerCase()), `${loc}: the hero fine print states the zone and that nothing is charged automatically`); await ctx.close(); }
+    { const { ctx, p } = await view("open", `${prefix}/pricing/`, "Pacific/Kiritimati", C + 1000, 1280, loc);
+      const over = await p.evaluate(() => document.documentElement.hasAttribute("data-ea-over"));
+      check(over && !(await vis(p, ".aicc-plan__free")) && !(await vis(p, ".aicc-plan__regular s")) && (await vis(p, ".aicc-plan__price")) && !(await vis(p, "#early-access")) && !(await vis(p, ".aicc-eabar")) && (await vis(p, ".aicc-eaafter")), `${loc}: the ended view after the cutoff (offer, struck price, explanation and bar hidden; ordinary price and the ended note shown)`);
+      await ctx.close(); }
+  }
 }
 
 console.log("\n== Hebrew (right-to-left), live view");

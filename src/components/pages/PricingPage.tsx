@@ -7,7 +7,7 @@ import { PLANS } from "@/data/plans";
 import { COMMERCE_OPEN, getStartedUrl } from "@/lib/site";
 import { EA_ON } from "@/lib/earlyAccess";
 
-import { EaAfterNote, EaCta, EaSection } from "@/components/ea/Ea";
+import { EaAfterNote, EaCta, EaPricingLine, EaSection } from "@/components/ea/Ea";
 import { SoonBandActions } from "@/components/ui/Soon";
 import { Container, Section, SectionHeading } from "@/components/ui/Primitives";
 import { PricingCard } from "@/components/ui/PricingCard";
@@ -37,7 +37,7 @@ export function PricingPage({ locale, t }: { locale: Locale; t: Dictionary }) {
 
       {/* 1. Hero */}
       <div>
-        <PageHead locale={locale} t={t} pageName={t.common.pageNames.pricing} title={<span {...fb("pricing.hero")}>{p.hero.title}</span>} lead={<span {...fb("pricing.hero")}>{R(p.hero.lead)}</span>} />
+        <PageHead locale={locale} t={t} pageName={t.common.pageNames.pricing} title={<span {...fb("pricing.hero")}>{p.hero.title}</span>} lead={<span {...fb("pricing.hero")}>{R(p.hero.lead)}</span>}><EaPricingLine locale={locale} t={t} /></PageHead>
       </div>
 
       <EaAfterNote locale={locale} t={t} />

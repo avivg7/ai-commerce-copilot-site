@@ -28,7 +28,7 @@ export interface PricingCardProps {
   headingLevel?: 2 | 3;
   extra?: ReactNode;
   /** Early Access strings (t.ea.plan). Rendered only by an Early Access build; a normal build ignores them. */
-  ea?: { free: string; regular: string; regularPer: string; regularNote: string; ends: string; ctaOpen: string; ctaAnnounce: string };
+  ea?: { free: string; regular: string; regularPer: string; noCard: string; term: string; ends: string; ctaOpen: string; ctaAnnounce: string };
 }
 
 /**
@@ -71,13 +71,18 @@ export function PricingCard(p: PricingCardProps) {
             <span className="aicc-plan__regular-label">{ea.regular}</span>{" "}
             <s><bdi>{formatPrice(p.price, p.locale)}</bdi></s>
             <span className="aicc-plan__regular-per"> {ea.regularPer}{currencySuffix(p.locale ?? "en")}</span>
-            <span className="aicc-sr-only"> ({ea.regularNote})</span>
           </p>
         </div>
       ) : null}
       <p className="aicc-plan__stores" {...A(storesPath)}>{p.storesLabel}</p>
+      {ea ? (
+        <ul className="aicc-plan__list" data-ea-live>
+          <li><Check size={18} aria-hidden="true" /><span {...E("ea.plan")}>{ea.noCard}</span></li>
+          <li><Check size={18} aria-hidden="true" /><span {...E("ea.plan")}>{ea.term}</span></li>
+        </ul>
+      ) : null}
       {!p.compact ? (
-        <ul className="aicc-plan__list">
+        <ul className="aicc-plan__list" {...(ea ? { "data-ea-after": "" } : {})}>
           {p.features.map((f, i) => (
             <li key={f}>
               <Check size={18} aria-hidden="true" />

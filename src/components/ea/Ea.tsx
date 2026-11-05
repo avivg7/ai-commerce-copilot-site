@@ -90,7 +90,7 @@ export function EaSection({ locale, t }: { locale: Locale; t: Dictionary }) {
   if (!EA_ON) return null;
   const s = t.ea.section;
   const steps = [s.steps.request, s.steps.use, s.steps.decide];
-  const faq = (["free", "end", "auto", "continue"] as const).map((k) => ({ id: `ea-faq-${k}`, question: s.faq[k].q, answer: <p>{s.faq[k].a}</p> }));
+  const faq = (["free", "end", "auto", "continue", "guarantee", "plugin"] as const).map((k) => ({ id: `ea-faq-${k}`, question: s.faq[k].q, answer: <p>{s.faq[k].a}</p> }));
   const icons = [<Rocket key="r" size={20} aria-hidden="true" />, <Check key="c" size={20} aria-hidden="true" />, <CalendarCheck key="k" size={20} aria-hidden="true" />];
   return (
     <div data-ea-live data-ea-cutoff={EA_CUTOFF_ISO_UTC} {...A(locale, "ea.section")}>
@@ -131,5 +131,34 @@ export function EaSection({ locale, t }: { locale: Locale; t: Dictionary }) {
         </Container>
       </Section>
     </div>
+  );
+}
+
+/** The header button while the offer is live in OPEN mode: same words and destination as the hero button (the ordinary "Get started" is shown after the end date and in every other mode). */
+export function EaHeaderCta({ locale, t, className }: { locale: Locale; t: Dictionary; className: string }) {
+  if (!EA_OPEN) return null;
+  return <a href={eaUrl(locale)} className={className} data-ea-live {...A(locale, "ea.header")}>{t.ea.header.cta}</a>;
+}
+
+/** One line under the Pricing headline so the offer is on the first screen, not only after the plan cards. */
+export function EaPricingLine({ locale, t }: { locale: Locale; t: Dictionary }) {
+  if (!EA_ON) return null;
+  return (
+    <p className="aicc-ealead" data-ea-live {...A(locale, "ea.section")}>
+      <Sparkles size={18} aria-hidden="true" />
+      <span>{t.ea.section.homeLead}{" "}
+        <LocaleLink locale={locale} route="pricing" hash="early-access" className="aicc-link">{t.ea.section.link}</LocaleLink>
+      </span>
+    </p>
+  );
+}
+
+/** "View plans": hidden while the offer is live, shown after the end date so the ended hero still leads somewhere. */
+export function EaAfterPlans({ locale, label, path }: { locale: Locale; label: string; path: string }) {
+  if (!EA_ON) return null;
+  return (
+    <span data-ea-after style={{ display: "contents" }}>
+      <Button href={localePath(locale, "pricing")} variant="secondary" size="lg" {...A(locale, path)}>{label}</Button>
+    </span>
   );
 }

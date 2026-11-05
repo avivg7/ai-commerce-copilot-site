@@ -513,7 +513,7 @@ export const en = {
       category: "Commerce recommendation and merchandising copilot",
       titleLead: "Recommendations learned from",
       titleAccent: "your own orders.",
-      lead: "AICC learns from your WooCommerce orders, puts relevant products on product and cart pages, and shows what each recommendation is based on. You set the rules. Placing an order never waits on AICC.",
+      lead: "AICC learns from your WooCommerce orders, puts relevant products on product and cart pages, and shows in your dashboard what it recommends. You set the rules. Placing an order never waits on AICC.",
       ctaDemo: "See it in action",
       ctaPlans: "View plans",
     },

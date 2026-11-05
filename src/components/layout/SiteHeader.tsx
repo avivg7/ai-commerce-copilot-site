@@ -7,6 +7,8 @@ import { getStartedUrl } from "@/lib/site";
 import { LangMenu } from "@/components/brand/LangMenu";
 import { A11yTrigger } from "./A11yControl";
 import { kitAsset } from "@/lib/brand";
+import { EA_OPEN } from "@/lib/earlyAccess";
+import { EaHeaderCta } from "@/components/ea/Ea";
 
 /**
  * The legacy copilt.org header: fixed, transparent at the top, a blurred bar after 12px of scroll (or while the mobile menu is open).
@@ -45,7 +47,8 @@ export function SiteHeader({ locale, route, t }: { locale: Locale; route: RouteI
           <LangMenu locale={locale} route={route} label={c.language.label} currentWord={c.language.current} idSuffix="header" />
           <A11yTrigger label={c.a11y.title} iconOnly className="aicc-iconbtn aicc-a11y-trigger" />
           <a href={account} className="aicc-btn aicc-btn--quiet aicc-site-header__desktop-only">{t.brand.signIn}</a>
-          <a href={account} className="aicc-btn aicc-btn--primary aicc-site-header__desktop-only">
+          <EaHeaderCta locale={locale} t={t} className="aicc-btn aicc-btn--primary aicc-site-header__desktop-only" />
+          <a href={account} className="aicc-btn aicc-btn--primary aicc-site-header__desktop-only" {...(EA_OPEN ? { "data-ea-after": "" } : {})}>
             {c.getStarted}
           </a>
           <button type="button" className="aicc-iconbtn aicc-site-header__menu-btn" data-aicc-menu-btn aria-expanded="false" aria-controls="aicc-menu-panel" aria-label={c.nav.menu}>
@@ -62,7 +65,8 @@ export function SiteHeader({ locale, route, t }: { locale: Locale; route: RouteI
           <LangMenu locale={locale} route={route} label={c.language.label} currentWord={c.language.current} idSuffix="mobile" block />
           <div><A11yTrigger label={c.a11y.title} className="aicc-btn aicc-btn--quiet aicc-btn--sm" /></div>
           <a href={account} className="aicc-btn aicc-btn--quiet aicc-btn--block">{t.brand.signIn}</a>
-          <a href={account} className="aicc-btn aicc-btn--primary aicc-btn--lg aicc-btn--block">{c.getStarted}</a>
+          <EaHeaderCta locale={locale} t={t} className="aicc-btn aicc-btn--primary aicc-btn--lg aicc-btn--block" />
+          <a href={account} className="aicc-btn aicc-btn--primary aicc-btn--lg aicc-btn--block" {...(EA_OPEN ? { "data-ea-after": "" } : {})}>{c.getStarted}</a>
         </div>
       </div>
     </header>

@@ -46,10 +46,13 @@ export function eaModeAt(requested: EaMode, nowMs: number): EaMode {
   return eaIsOver(nowMs) ? "off" : requested;
 }
 
-/** Test seam only: AICC_BUILD_NOW_MS pins the build clock (never set in a real build). */
+/**
+ * Test seam: AICC_BUILD_NOW_MS pins the build clock, but ONLY together with AICC_EA_TEST_SEAM=1, so a leftover variable in a release environment can never make a
+ * late build publish an expired campaign. `npm run launch:check` fails if either variable is set.
+ */
 function buildNow(): number {
   const pinned = process.env.AICC_BUILD_NOW_MS;
-  if (pinned && /^\d{10,14}$/.test(pinned)) return Number(pinned);
+  if (process.env.AICC_EA_TEST_SEAM === "1" && pinned && /^\d{10,14}$/.test(pinned)) return Number(pinned);
   return Date.now();
 }
 

@@ -11,65 +11,70 @@
  * Dates are written out in words on purpose: the same instant is 2027-01-01 00:00 in Israel (UTC+2), which is why the last day is 31 December 2026 and access ends 1 January 2027.
  */
 export const eaEn = {
-  // The slim announcement bar above the header, on every page.
+  // The slim announcement bar under the header, on every page.
   bar: {
     label: "Early Access announcement",
-    live: "Early Access: AICC is free until December 31, 2026.",
-    announce: "Early Access is coming: AICC will be free until December 31, 2026.",
+    live: "Early Access: free for approved stores until December 31, 2026, Israel time.",
+    announce: "Early Access is coming: free for approved stores until December 31, 2026, Israel time.",
     link: "How it works",
   },
   // Shown INSTEAD of the offer once the end date has passed (set by the page script; see EA_HEAD_SCRIPT).
   after: {
     title: "Early Access has ended.",
-    body: "Early Access ended on January 1, 2027. To use AICC from here on, you choose a plan. Nothing is charged automatically.",
+    body: "Early Access ended on January 1, 2027, at 00:00 Israel time. To use AICC from here on, you choose a plan. Nothing is charged automatically.",
     cta: "See the plans",
   },
   hero: {
-    ctaOpen: "Get free Early Access",
+    ctaOpen: "Request free Early Access",
     ctaAnnounce: "How Early Access works",
-    note: "No credit card required. Access ends on January 1, 2027, and nothing is charged automatically.",
+    note: "No credit card required. Access ends at 00:00 on January 1, 2027, Israel time, and nothing is charged automatically.",
   },
+  // The header button while the offer is live (the ordinary "Get started" returns after the end date).
+  header: { cta: "Request Early Access" },
   plan: {
     free: "Free until December 31, 2026",
-    regular: "Regular price",
+    regular: "Regular price, not charged during Early Access:",
     regularPer: "a year",
-    regularNote: "not charged during Early Access",
-    ends: "Access ends on January 1, 2027. A paid plan starts only if you choose to buy one.",
-    ctaOpen: "Get free Early Access",
+    noCard: "No credit card required",
+    term: "Early Access term: until December 31, 2026, Israel time",
+    ends: "Access ends at 00:00 on January 1, 2027, Israel time (22:00 UTC on December 31). A paid plan starts only if you choose to buy one.",
+    ctaOpen: "Request free Early Access",
     ctaAnnounce: "Early Access opens soon",
   },
-  // The explanation block on the Pricing page (#early-access) and its short form on Home.
+  // The explanation block on the Pricing page (#early-access) and its short form on Home and in the Pricing hero.
   section: {
     title: "Early Access: free until the end of 2026",
-    lead: "Use the full product on your WooCommerce store at no cost until December 31, 2026. On January 1, 2027 access ends. If you want to continue, you choose a paid plan. Nothing is charged automatically.",
-    homeLead: "Every plan is free until December 31, 2026 during Early Access. Access ends on January 1, 2027, and a paid plan starts only if you choose to buy one.",
+    lead: "Use the full product on your WooCommerce store at no cost until December 31, 2026. Access ends at 00:00 on January 1, 2027, Israel time (22:00 UTC on December 31, 2026). If you want to continue, you choose a paid plan. Nothing is charged automatically.",
+    homeLead: "During Early Access every plan is free for approved stores until December 31, 2026, Israel time. Access ends on January 1, 2027, and a paid plan starts only if you choose to buy one.",
     link: "How Early Access works",
     stepsLabel: "How Early Access works",
     steps: {
-      request: { title: "Request access", body: "Ask for Early Access for your WooCommerce store. No credit card is needed." },
+      request: { title: "Request access", body: "Ask for Early Access for your WooCommerce store. No credit card is needed. We review each request." },
       use: { title: "Use everything", body: "Connect your store and use the full product until December 31, 2026." },
-      decide: { title: "Decide at the end", body: "On January 1, 2027 access ends and your store keeps selling as usual. To continue you choose a plan; if you do not, nothing is charged." },
+      decide: { title: "Decide at the end", body: "At 00:00 on January 1, 2027, Israel time, access ends and your store keeps selling as usual. To continue you buy the same plan you used; if you do not, nothing is charged." },
     },
     whoTitle: "Who it is for",
     who: {
       a: "WooCommerce stores that can connect to AICC (WordPress 6.0, WooCommerce 7.0 and PHP 7.4 or newer).",
-      b: "Every approved store ends on the same day, January 1, 2027, whatever day it joined.",
-      c: "One Early Access per store and per account. Store limits follow the plan you ask for: Solo 1 store, Studio up to 3, Agency up to 10.",
-      d: "We approve each request, and Early Access can close to new requests at any time.",
+      b: "Every approved store ends at the same moment, 00:00 on January 1, 2027, Israel time, whatever day it joined.",
+      c: "One Early Access per store and per account. Store limits follow the plan you ask for: Solo 1 store, Studio up to 3, Agency up to 10. Ask for the plan you would want to keep: continuing is simplest on the same plan.",
+      d: "We review each request and not every request will be approved. Early Access can close to new requests at any time.",
     },
     endTitle: "What happens on January 1, 2027",
     end: {
       a: "AICC stops showing on your storefront. Your store, orders and checkout carry on as usual.",
       b: "Your AICC data is kept under the retention rules on the Data & Trust page, not deleted on that day.",
-      c: "To continue you choose and buy a plan yourself. There is no automatic conversion and no automatic charge.",
+      c: "To continue you buy the same plan you used during Early Access, and your connected store picks up the new end date. A different plan is a separate purchase, and we explain the steps before you buy. There is no automatic conversion and no automatic charge.",
     },
-    terms: "Early Access is the same product as the paid plans. Support is by e-mail at {contactEmail}. The terms, privacy and refund pages apply; the end date, the absence of automatic charges and the data handling above are part of the offer.",
+    terms: "Early Access is the same product as the paid plans. The end date, the absence of automatic charges and the data handling described on this page are the terms of this offer. Questions? Write to {contactEmail}.",
     faqTitle: "Early Access questions",
     faq: {
-      free: { q: "Is Early Access really free?", a: "Yes, until December 31, 2026. We do not ask for payment details, and nothing is charged." },
-      end: { q: "What happens on January 1, 2027?", a: "Access ends for every Early Access store at the same time. AICC stops showing on your storefront and your store keeps working as usual. To continue, you choose and buy a plan." },
+      free: { q: "Is Early Access really free?", a: "Yes, for approved stores until December 31, 2026. We do not ask for payment details, and nothing is charged." },
+      end: { q: "What happens on January 1, 2027?", a: "Access ends for every Early Access store at the same moment, 00:00 Israel time. AICC stops showing on your storefront and your store keeps working as usual. To continue, you buy a plan." },
       auto: { q: "Will I be charged automatically?", a: "No. There is no card on file, no automatic renewal and no automatic switch to a paid plan." },
-      continue: { q: "How do I continue after Early Access?", a: "You choose a plan and buy it once purchases open. We explain the steps before you buy, including what happens to your connected store." },
+      continue: { q: "How do I continue after Early Access?", a: "You buy the same plan you used, once purchases open. Your connected store picks up the new end date. For a different plan we explain the steps before you buy." },
+      guarantee: { q: "Does the money-back guarantee apply to Early Access?", a: "No payment is taken, so there is nothing to refund. The 14-day guarantee in the refund policy concerns paid purchases. The plugin may show a 14-day guarantee message in its first days; it refers to paid purchases." },
+      plugin: { q: "What will I see in the plugin when Early Access ends?", a: "At 00:00 on January 1, 2027 (Israel time) the plugin shows that your plan has expired and AICC stops showing on your storefront. Your store keeps selling as usual. The plugin does not warn you beforehand, so note the date; your account page shows it too." },
     },
   },
 };

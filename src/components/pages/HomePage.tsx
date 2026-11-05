@@ -5,8 +5,8 @@ import { fbProps, txProps } from "@/i18n";
 import { Lb, Rich, type RichCtx } from "@/lib/rich";
 import { PLANS } from "@/data/plans";
 import { COMMERCE_OPEN, getStartedUrl } from "@/lib/site";
-import { EA_ON, EA_OPEN } from "@/lib/earlyAccess";
-import { EaCta, EaHeroNote, EaHomeLead } from "@/components/ea/Ea";
+import { EA_ON } from "@/lib/earlyAccess";
+import { EaAfterPlans, EaCta, EaHeroNote, EaHomeLead } from "@/components/ea/Ea";
 import { SoonBandActions } from "@/components/ui/Soon";
 import { localePath } from "@/lib/routes";
 import { Button } from "@/components/ui/Button";
@@ -50,15 +50,16 @@ export function HomePage({ locale, t }: { locale: Locale; t: Dictionary }) {
             </h1>
             <p className="aicc-hero-lead aicc-fade-up" style={{ ["--i" as string]: 2 }}>{h.hero.lead}</p>
             <div className="aicc-hero-actions aicc-fade-up" style={{ ["--i" as string]: 3 }}>
-              {EA_ON && EA_OPEN ? (
+              {EA_ON ? (
                 <>
                   <EaCta locale={locale} t={t} variant="primary" />
                   <WatchDemo locale={locale} t={t} variant="secondary" label={h.hero.ctaDemo} labelKey="home.hero.ctaDemo" />
+                  <EaAfterPlans locale={locale} label={h.hero.ctaPlans} path="home.hero.ctaPlans" />
                 </>
               ) : (
                 <>
                   <WatchDemo locale={locale} t={t} variant="primary" label={h.hero.ctaDemo} labelKey="home.hero.ctaDemo" />
-                  {EA_ON ? <EaCta locale={locale} t={t} variant="secondary" /> : <Button href={localePath(locale, "pricing")} variant="secondary" size="lg" {...tx("home.hero.ctaPlans")}>{h.hero.ctaPlans}</Button>}
+                  <Button href={localePath(locale, "pricing")} variant="secondary" size="lg" {...tx("home.hero.ctaPlans")}>{h.hero.ctaPlans}</Button>
                 </>
               )}
             </div>

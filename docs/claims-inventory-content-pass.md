@@ -221,3 +221,31 @@ Sources: `positioning-truth.md` (F1-F21) and `positioning-merchant.md` (H1-H3, M
 | Watch demo | video support prepared but NOT enabled (`docs/watch-demo-video.md`); `launch:check` still reports the blocker | owner item: the video | OWNER ITEM |
 
 Not changed on purpose (owner or legal items): the Terms "What AICC is" sentence still says "available for WooCommerce as a plugin with a hosted service" (legal mirror); the hero H1 and the word "better" in the hero sentence (owner positioning); "no code to write" until the release build ships a production endpoint; locale drift items F11 (translator work).
+
+---
+
+## Production 20: the hero and the Early Access campaign (English; he, es and ru are machine drafts of the same sentences)
+
+Every sentence below is rendered only as stated. The campaign rows exist only in a build with `NEXT_PUBLIC_AICC_EARLY_ACCESS=announce|open` (`docs/cutover/early-access.md`); nothing is published. Evidence key as above, plus `CPD` = Control Plane Early Access design (`production20-final/early-access/EARLY-ACCESS-ARCHITECTURE.md`), `PLM` = Plugin fact map (`production20-final/research/PLUGIN-ENTITLEMENT-FACT-MAP.md`).
+
+| Section | Claim as published | Evidence | Status |
+|---|---|---|---|
+| Hero (every build) | Recommendations learned from your own orders | row 29 above; BE `recommendation_engine.py:59-140` (counting, no ML) | SUPPORTED |
+| Hero lead (every build) | AICC learns from your WooCommerce orders, puts relevant products on product and cart pages, and shows in your dashboard what it recommends | learning and placement as rows 25 and 27; the dashboard Recommendation Preview, rows 28 and 65 (the preview, not a per-product "why"; the old "shows what each recommendation is based on" was removed on review: fallbacks and pins show only a price) | SUPPORTED |
+| Hero lead | You set the rules. Placing an order never waits on AICC | rows 28 and 31 | SUPPORTED |
+| Bar, hero, cards | Free for approved stores until December 31, 2026, Israel time | CPD sections 1, 4.2, 4.3 (operator approval, cap, one fixed end) | POLICY (owner decision, Production 20; not legally cleared) |
+| Hero, cards | No card is required (the wording is in the campaign pack); nothing is charged automatically | CPD 4.4 and 4.6: the grant creates no order and holds no card; continuation is the existing manual renewal order | SUPPORTED by design (Control Plane branch, not deployed) |
+| Cards | Regular price, not charged during Early Access: the plan price a year | `src/data/plans.ts` equals the Control Plane `PLAN_PRICES` (`payment-gate.php`) and `pricing:check` | SUPPORTED (the price is real; the strike-through wording is a counsel question) |
+| Cards, section | Access ends at 00:00 on January 1, 2027, Israel time (22:00 UTC on December 31) | the cutoff constant, re-derived from the IANA database by `ea:check`; CPD 4.2 | SUPPORTED |
+| Cards, section | A paid plan starts only if you choose to buy one; to continue you buy the same plan; a different plan is a separate purchase | CPD 4.6; `PLM` 3 and 10 (an expired store cannot connect to a new licence; recovery is a later end date for the same activation) | SUPPORTED by design; the different-plan path is NOT built or tested (owner decision D6) |
+| Section | WooCommerce stores that can connect (WordPress 6.0, WooCommerce 7.0, PHP 7.4 or newer) | row 72 above | SUPPORTED |
+| Section | One Early Access per store and per account | CPD 4.1: unique per customer and campaign; a ledger of hashed store addresses | SUPPORTED by design |
+| Section | We review each request and not every request will be approved; Early Access can close to new requests at any time | CPD 4.3 (operator approval, cap constant default 0) | POLICY |
+| Section | On January 1, 2027 AICC stops showing on your storefront; your store, orders and checkout carry on as usual | `PLM` 1 and 5 (the Plugin closes at the instant; native related products return) and rows 31 and 67 above | SUPPORTED |
+| Section | Your AICC data is kept under the retention rules, not deleted on that day | Privacy retention (target up to 12 months; nothing is deleted automatically today) | SUPPORTED, draft policy |
+| FAQ | The plugin may show a 14-day guarantee message in its first days; it refers to paid purchases | `PLM` 4 (Plugin strings `class-aicc-settings.php:5766-5796`) | SUPPORTED |
+| FAQ | The plugin shows that your plan has expired at the end; it does not warn you beforehand | `PLM` 2.5 and 6 (no ending-soon notice in the Plugin) | SUPPORTED |
+| Section | Your account page shows the date too | CPD 4.9 (the My Account card); Control Plane branch, not deployed | SUPPORTED by design |
+| Section | Questions? Write to {contactEmail} | the pre-commercial contact constant; a mailbox someone reads is an open owner item (L-13) | POLICY, open |
+
+Not claimed anywhere: any percentage, revenue or sales promise (the owner-reported early-test figure could not be verified: see the Production 20 evidence memo), any claim about how many stores use AICC, any logo, rating or customer story, any timer or scarcity number, any guarantee on Early Access.

@@ -72,7 +72,7 @@ check(ea.eaIsOver(NaN) === true, "eaIsOver(NaN) fails closed (over)");
 // The build guard, in real child processes: the build clock is pinned, the switch is set.
 {
   const run = (env) => spawnSync(process.execPath, ["--input-type=module", "-e", `import { loadTs } from "${path.join(ROOT, "scripts/lib/load.mjs")}"; const m = await loadTs("src/lib/earlyAccess.ts"); console.log(JSON.stringify({ mode: m.EA_MODE, requested: m.EA_REQUESTED, expired: m.EA_EXPIRED_REQUEST }))`], { env: { ...process.env, ...env }, encoding: "utf8", cwd: ROOT });
-  const t = (ms) => ({ AICC_BUILD_NOW_MS: String(ms) });
+  const t = (ms) => ({ AICC_BUILD_NOW_MS: String(ms), AICC_EA_TEST_SEAM: "1" });
   const before = JSON.parse(run({ NEXT_PUBLIC_AICC_EARLY_ACCESS: "open", ...t(C - 1) }).stdout);
   const at = JSON.parse(run({ NEXT_PUBLIC_AICC_EARLY_ACCESS: "open", ...t(C) }).stdout);
   const late = JSON.parse(run({ NEXT_PUBLIC_AICC_EARLY_ACCESS: "announce", ...t(C + 86400000 * 30) }).stdout);
@@ -81,9 +81,12 @@ check(ea.eaIsOver(NaN) === true, "eaIsOver(NaN) fails closed (over)");
   check(at.mode === "off" && at.expired, "build AT the cutoff with the switch 'open' -> OFF and flagged as an expired request");
   check(late.mode === "off" && late.expired, "build 30 days after with 'announce' -> OFF (the campaign is NOT published)");
   check(none.mode === "off" && !none.expired, "no switch -> OFF, not flagged");
-  const junk = JSON.parse(run({ NEXT_PUBLIC_AICC_EARLY_ACCESS: "open", AICC_BUILD_NOW_MS: "abc" }).stdout);
+  // The pin works ONLY with the explicit test-seam variable: a leftover AICC_BUILD_NOW_MS in a release environment must not move the build clock.
+  const leftover = JSON.parse(run({ NEXT_PUBLIC_AICC_EARLY_ACCESS: "open", AICC_BUILD_NOW_MS: String(C + 86400000 * 30) }).stdout);
+  check(leftover.mode === "open" && !leftover.expired, "AICC_BUILD_NOW_MS without AICC_EA_TEST_SEAM=1 is ignored (the real clock is used)");
+  const junk = JSON.parse(run({ NEXT_PUBLIC_AICC_EARLY_ACCESS: "open", AICC_BUILD_NOW_MS: "abc", AICC_EA_TEST_SEAM: "1" }).stdout);
   check(junk.mode === "open" && !junk.expired, "a malformed build-clock pin ('abc') is ignored: the real clock (before the cutoff) is used and the campaign stays OPEN");
-  const junk2 = JSON.parse(run({ NEXT_PUBLIC_AICC_EARLY_ACCESS: "open", AICC_BUILD_NOW_MS: "-5" }).stdout);
+  const junk2 = JSON.parse(run({ NEXT_PUBLIC_AICC_EARLY_ACCESS: "open", AICC_BUILD_NOW_MS: "-5", AICC_EA_TEST_SEAM: "1" }).stdout);
   check(junk2.mode === "open", "a negative pin is ignored too");
 }
 
@@ -117,7 +120,7 @@ for (const f of ["src/lib/earlyAccess.ts", "src/components/ea/Ea.tsx", "src/comp
 }
 {
   const strays = [];
-  const walkDir = (d) => { for (const e of fs.readdirSync(d, { withFileTypes: true })) { const p = path.join(d, e.name); if (e.isDirectory()) { if (!["node_modules", ".next", "out", "ea"].includes(e.name)) walkDir(p); } else if (/\.(tsx?|css)$/.test(e.name) && !/earlyAccess\.ts$|components\/ea\/Ea\.tsx$/.test(p) && /EA_|data-ea-|\bea\.(bar|hero|plan|section|after)\b|Early Access/.test(fs.readFileSync(p, "utf8")) && !/PricingCard|HomePage|PricingPage|layout\.tsx|aicc\.css|i18n\/en\.ts|i18n\/(he|es|ru)\.ts$/.test(p)) strays.push(path.relative(ROOT, p)); } };
+  const walkDir = (d) => { for (const e of fs.readdirSync(d, { withFileTypes: true })) { const p = path.join(d, e.name); if (e.isDirectory()) { if (!["node_modules", ".next", "out", "ea"].includes(e.name)) walkDir(p); } else if (/\.(tsx?|css)$/.test(e.name) && !/earlyAccess\.ts$|components\/ea\/Ea\.tsx$/.test(p) && /EA_|data-ea-|\bt\.ea\b|\bea\.(bar|hero|plan|section|after|header)\b|Early Access/.test(fs.readFileSync(p, "utf8")) && !/PricingCard|HomePage|PricingPage|SiteHeader|layout\.tsx|aicc\.css|i18n\/en\.ts|i18n\/(he|es|ru)\.ts$/.test(p)) strays.push(path.relative(ROOT, p)); } };
   walkDir(path.join(ROOT, "src"));
   check(strays.length === 0, `Early Access wiring is confined to the known files${strays.length ? ` (stray: ${strays.join(", ")})` : ""}`);
 }
@@ -169,6 +172,37 @@ if (out) {
     check(!/(<meta[^>]*(description|og:)[^>]*Early Access)/i.test(html("index.html")), "the meta description and Open Graph text do not mention the campaign (they would go stale after the end date)");
     check(!/application\/ld\+json[^<]*Early Access/i.test(html("pricing/index.html")), "no JSON-LD mentions the campaign");
   }
+}
+
+// ── 7. the Control Plane constant ────────────────────────────────────────────────────────────────────────────────────────────────────────
+{
+  const cp = process.env.AICC_CP_DIR || path.join(process.env.HOME || "", "Local Sites/woo-recommendation-qa/aicc-control-plane-worktrees/p20-early-access");
+  const f = path.join(cp, "admin/wp-content/plugins/aicc-license-manager/includes/class-aicc-lm-early-access.php");
+  console.log("7. the Control Plane cutoff constant");
+  if (fs.existsSync(f)) {
+    const m = fs.readFileSync(f, "utf8").match(/CUTOFF_UNIX\s*=\s*(\d+)/);
+    check(m && Number(m[1]) * 1000 === C, `Control Plane CUTOFF_UNIX (${m ? m[1] : "not found"}) equals the Site constant (${C / 1000})`);
+  } else console.log(`  note Control Plane file not found (${f}); set AICC_CP_DIR to compare`);
+}
+
+// ── 8. the head metadata is identical with the campaign ON and OFF (it must never mention the campaign) ────────────────────────────────────
+const off = arg("compare-off");
+if (out && off) {
+  console.log(`8. head metadata: ${out} versus the normal build ${off}`);
+  const headOf = (h) => {
+    const hd = h.slice(h.indexOf("<head"), h.indexOf("</head>"));
+    const tags = [...hd.matchAll(/<(title|meta|link)\b[^>]*>(?:[^<]*<\/title>)?/g)].map((x) => x[0]);
+    const ld = [...h.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g)].map((x) => x[1]);
+    return JSON.stringify({ tags: tags.filter((t) => !/\/_next\/|nonce|preload/.test(t)), ld });
+  };
+  const list = (d) => { const r = []; const w = (x, rel) => { for (const e of fs.readdirSync(x, { withFileTypes: true })) { if (e.isDirectory()) { if (!["_next", "brand-kit", "fonts", "og", "demo"].includes(e.name)) w(path.join(x, e.name), `${rel}${e.name}/`); } else if (e.name === "index.html") r.push(`${rel}index.html`); } }; w(d, ""); return r; };
+  let n = 0, diff = 0;
+  for (const rel of list(path.resolve(out))) {
+    const o = path.join(path.resolve(off), rel); if (!fs.existsSync(o)) { bad(`${rel} missing from the normal build`); continue; }
+    n++;
+    if (headOf(fs.readFileSync(path.join(path.resolve(out), rel), "utf8")) !== headOf(fs.readFileSync(o, "utf8"))) { diff++; bad(`${rel}: title / meta / link / JSON-LD differ between the campaign build and the normal build`); }
+  }
+  check(n > 0 && diff === 0, `${n} pages: title, meta, Open Graph, hreflang, canonical and JSON-LD are byte-identical with the campaign on and off`);
 }
 
 console.log("");
