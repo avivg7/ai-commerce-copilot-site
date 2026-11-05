@@ -349,6 +349,32 @@ if (out && off) {
   check(n > 0 && diff === 0, `${n} pages: title, meta, Open Graph, hreflang, canonical and JSON-LD are byte-identical with the campaign on and off`);
 }
 
+// ── 9. the launch gates (Production 21): the extension reference and the Plugin identity, exercised in real child processes ─────────────────────────────────────
+console.log("9. launch:check gates (extension reference, Plugin release identity)");
+{
+  const SUPERSEDED = "0fee2c9d994cfe554103d78997be3a83a676dae8a9ee88bfd8319fcd9e9b5a83";
+  const GOOD = "a".repeat(64);
+  const lc = (env) => spawnSync(process.execPath, [path.join(ROOT, "scripts/launch-check.mjs")], { env: { PATH: process.env.PATH, HOME: process.env.HOME || "", AICC_OUT_DIR: path.join(ROOT, ".no-such-out"), ...env }, encoding: "utf8", cwd: ROOT }).stdout;
+  const has = (out, re) => re.test(out);
+  const PLUG = /AICC_EA_PLUGIN_RELEASE_SHA256/;
+  for (const mode of ["open", "announce"]) {
+    const M = { NEXT_PUBLIC_AICC_EARLY_ACCESS: mode };
+    check(has(lc(M), PLUG) && has(lc(M), /is not set/), `${mode}: without AICC_EA_PLUGIN_RELEASE_SHA256 launch:check reports a blocker that says what the value is for`);
+    check(has(lc({ ...M, AICC_EA_PLUGIN_RELEASE_SHA256: SUPERSEDED }), /SUPERSEDED candidate/), `${mode}: the superseded candidate hash (0fee2c9d...) is refused`);
+    for (const bad of ["ABC", GOOD.toUpperCase(), "a".repeat(63), "a".repeat(65), `${"a".repeat(63)}g`]) check(has(lc({ ...M, AICC_EA_PLUGIN_RELEASE_SHA256: bad }), /must be 64 lower-case hex/), `${mode}: ${JSON.stringify(bad.length > 20 ? bad.slice(0, 6) + "...(" + bad.length + ")" : bad)} is not a valid release hash`);
+    const good = lc({ ...M, AICC_EA_PLUGIN_RELEASE_SHA256: GOOD });
+    check(!has(good, /AICC_EA_PLUGIN_RELEASE_SHA256 (is not set|must be|is the SUPERSEDED)/) && has(good, /Plugin release identity/), `${mode}: a 64-hex hash that is not the superseded one passes the identity gate`);
+  }
+  check(!has(lc({}), PLUG), "a normal build (switch off) does not need the Plugin release hash");
+  // the extension
+  const X = { NEXT_PUBLIC_AICC_EARLY_ACCESS: "announce", AICC_EA_PLUGIN_RELEASE_SHA256: GOOD };
+  check(has(lc({ ...X, NEXT_PUBLIC_AICC_EA_EXTENSION_STEP: "1" }), /extension was IGNORED \(an extension needs NEXT_PUBLIC_AICC_EA_EXTENSION_REF/), "a step without the decision reference is reported as IGNORED");
+  check(has(lc({ ...X, NEXT_PUBLIC_AICC_EA_EXTENSION_STEP: "3", NEXT_PUBLIC_AICC_EA_EXTENSION_REF: "DEC-0001" }), /extension was IGNORED \(the step must be exactly/), "a step other than 1 or 2 is reported as IGNORED");
+  const ext = lc({ ...X, NEXT_PUBLIC_AICC_EA_EXTENSION_STEP: "2", NEXT_PUBLIC_AICC_EA_EXTENSION_REF: "DEC-0002" });
+  check(has(ext, /EXTENSION STEP 2/) && has(ext, /early access EXTENDED to step 2 \(2027-02-28T22:00:00Z; decision reference DEC-0002\)/) && has(ext, /AFTER the Control Plane/), "an extended build names its step, its end and its reference, and says the Control Plane `extend` must come first");
+  check(has(lc({ NEXT_PUBLIC_AICC_EA_EXTENSION_STEP: "1", NEXT_PUBLIC_AICC_EA_EXTENSION_REF: "DEC-0001" }), /switch is off in this build: the extension changes nothing/), "an extension with the switch off is reported (it changes nothing)");
+}
+
 console.log("");
 if (problems.length) { console.error(`FAIL ea:check (${problems.length})`); process.exit(1); }
 console.log("PASS ea:check");
