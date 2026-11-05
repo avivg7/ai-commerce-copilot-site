@@ -20,6 +20,9 @@ const { LEGAL_DOCS } = await loadTs("src/data/legal.ts");
 const faqMod = await loadTs("src/data/faq.ts");
 const { FAQ } = faqMod;
 
+const eaTokens = await loadTs("src/i18n/eaTokens.ts");
+const { EA_EXTENSION_STEP } = await loadTs("src/lib/earlyAccess.ts");
+const authoredText = (l, k) => (k.startsWith("ea.") && typeof flatP[l][k] === "string" ? eaTokens.resolveEaTokens(flatP[l][k], l, EA_EXTENSION_STEP) : flatP[l][k]);
 const errors = [];
 const partialNotes = [];
 const warnings = [];
@@ -48,9 +51,11 @@ const tokensOf = (s) => (s.match(/\{[A-Za-z0-9_]+\}/g) || []).sort().join("|");
 const linksOf = (s) => (s.match(/\]\((route:[a-z-]+|https?:\/\/[^)]+)\)/g) || []).sort().join("|");
 const boldOf = (s) => (s.match(/\*\*/g) || []).length;
 
+// Plugin labels the Early Access answer about the end of the period quotes in English on purpose (the Plugin's expired page, `Renew plan`, Plugin fact map S:6796-6800); he uses the Plugin's Hebrew label.
+const EXTRA_PLUGIN_LABELS = ["Renew plan"];
 function strippedOfBrands(s) {
   let t = s;
-  for (const b of REPLICA_LABELS) t = t.split(b).join(" "); // real admin labels (English on purpose), before tokens and brands
+  for (const b of [...REPLICA_LABELS, ...EXTRA_PLUGIN_LABELS]) t = t.split(b).join(" "); // real admin labels (English on purpose), before tokens and brands
   t = t.replace(/\{[A-Za-z0-9_]+\}/g, " ").replace(/\]\((route:[a-z-]+|https?:\/\/[^)]+)\)/g, " ");
   for (const b of BRAND) t = t.split(b).join(" ");
   t = t.replace(/[0-9$€%.,:;!?()\-–—/&"'“”’*\[\]+©·#_=]/g, " ");
@@ -82,7 +87,8 @@ for (const l of LOCALES) {
         if (a.lang !== "en" || a.dir !== "ltr") err(l, keys[0], "fallback text must be marked lang=en dir=ltr");
         if (own.length && own.length < keys.length) partialNotes.push(`[${l}] ${u}: ${own.length}/${keys.length} strings kept for Stage 2; the whole unit shows English until complete`);
       } else {
-        for (const k of keys) if (flat[l][k] !== flatP[l][k]) err(l, k, "translated unit must render the locale text");
+        // the Early Access pack carries date tokens ({lastDay} ...): the rendered text is the authored text with the tokens of this build's step resolved (src/i18n/eaTokens.ts)
+        for (const k of keys) if (flat[l][k] !== authoredText(l, k)) err(l, k, "translated unit must render the locale text");
         if (isFallback(l, keys[0]) || Object.keys(fbProps(l, keys[0])).length) err(l, keys[0], "a translated unit must not carry fallback markers");
       }
     }
@@ -94,7 +100,8 @@ for (const l of LOCALES.filter((x) => x !== "en")) {
   for (const k of Object.keys(flatP[l])) {
     if (!(k in flat.en) || k.endsWith("#len")) continue;
     if (fallbacks[l].includes(unitOfKey(k))) continue; // partial units are ignored by the merge; reported above
-    const ev = flat.en[k];
+    // the Early Access pack is compared as authored (date tokens unresolved), so a language that drops or invents a token is caught
+    const ev = k.startsWith("ea.") ? flatP.en[k] : flat.en[k];
     const lv = flatP[l][k];
     if (typeof ev !== typeof lv) { err(l, k, "type differs from English"); continue; }
     if (typeof ev !== "string") continue;

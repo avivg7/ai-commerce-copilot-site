@@ -240,7 +240,7 @@ console.log("\n== no stale or leaked campaign element, in any mode, page, langua
   // The leak probe: elements the campaign marks live must be invisible after the end, elements marked after must be invisible before; counted by what is actually rendered (display:none removes it).
   const leaks = (p, sel) => p.evaluate((q) => [...document.querySelectorAll(q)].filter((e) => e.getClientRects().length > 0).length, sel);
   const ROUTES = QUICK ? ["/", "/pricing/"] : ["/", "/pricing/", "/product/", "/questions/"];
-  for (const { key, mode, step } of VARIANTS) for (const loc of ["en", "he", "es", "ru"]) for (const route of ROUTES) for (const w of [1280, 390]) {
+  for (const { key, step } of VARIANTS) for (const loc of ["en", "he", "es", "ru"]) for (const route of ROUTES) for (const w of [1280, 390]) {
     const prefix = loc === "en" ? "" : `/${loc}`, E = ENDS[step], ead = EAD(loc, step);
     const tg = `${key} ${loc}${route} @${w}`;
     { const { ctx, p } = await view(key, `${prefix}${route}`, "Asia/Jerusalem", E + 1000, w, loc);
