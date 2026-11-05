@@ -36,6 +36,7 @@ npm run serve:out -- --port 3011   # serve out/ locally (add --prefix /ai-commer
 | `NEXT_PUBLIC_AICC_LEGAL_NAME`, `..._ADDRESS`, `..._SUPPORT_EMAIL`, `..._GOVERNING_LAW`, `..._PAYMENT_PROCESSOR`, `..._HOSTING_REGION` | unset | owner values; unset renders one calm "To be confirmed before purchases open." line (pre-commercial truth, `docs/cutover/pre-commercial.md`) |
 | `NEXT_PUBLIC_AICC_COMMERCE_OPEN` | unset (CLOSED) | `true` only when commercial checkout opens (set together with the Control Plane owner fact `AICC_COMMERCE_OPEN`): closed shows "Purchases open soon" instead of every purchase button and band; `launch:check` reports it |
 | `NEXT_PUBLIC_AICC_EARLY_ACCESS`, `NEXT_PUBLIC_AICC_EARLY_ACCESS_URL` | unset (OFF) | Early Access campaign (Production 20), separate from checkout: `announce` or `open` renders the fixed-end offer (ends 2027-01-01 00:00 Asia/Jerusalem = 2026-12-31 22:00 UTC); any other value is OFF; a build at or after the cutoff ignores it. `open` needs the Control Plane request flow (`..._URL`). `docs/cutover/early-access.md` |
+| `NEXT_PUBLIC_AICC_EA_STRIKE` | unset (OFF) | `on` shows each plan price struck through next to the free offer (label "Regular price, not charged during Early Access"); the default shows it plainly as "Planned price when purchases open". Counsel must approve the strike-through first (no plan has been sold at that price); `launch:check` reports it as a blocker |
 
 ## Checks
 

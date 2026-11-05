@@ -152,10 +152,10 @@ console.log("\n== every language: the zone is stated, the bar is not clipped, th
   const TOK = { en: ["Israel time", "automatically"], he: ["שעון ישראל", "אוטומטית"], es: ["hora de Israel", "automáticamente"], ru: ["по израильскому времени", "автоматически"] };
   for (const [loc, [zone, auto]] of Object.entries(TOK)) {
     const prefix = loc === "en" ? "" : `/${loc}`;
-    for (const w of [320, 390, 1280]) {
-      const { ctx, p } = await view("open", `${prefix}/pricing/`, "UTC", C - 86400e3, w, loc);
+    for (const w of [320, 360, 390, 480, 640, 768, 1024, 1280]) for (const bm of ["open", "announce"]) {
+      const { ctx, p } = await view(bm, `${prefix}/pricing/`, "UTC", C - 86400e3, w, loc);
       const bar = await p.evaluate(() => { const b = document.querySelector(".aicc-eabar"); return { clipped: b.scrollHeight > b.clientHeight + 1, text: b.textContent }; });
-      check(!bar.clipped && bar.text.includes(zone), `${loc} at ${w}px: the bar is not clipped and says the time zone (${zone})`);
+      check(!bar.clipped && bar.text.includes(zone), `${loc} ${bm} at ${w}px: the bar is not clipped and says the time zone (${zone})`);
       await ctx.close();
     }
     { const { ctx, p } = await view("open", `${prefix}/`, "UTC", C - 86400e3, 1280, loc); const note = (await text(p, ".aicc-eanote")); check(note.includes(zone) && note.toLowerCase().includes(auto.toLowerCase()), `${loc}: the hero fine print states the zone and that nothing is charged automatically`); await ctx.close(); }
@@ -166,6 +166,48 @@ console.log("\n== every language: the zone is stated, the bar is not clipped, th
   }
 }
 
+
+console.log("\n== no stale or leaked campaign element, in any mode, page, language and width");
+{
+  // The leak probe: elements the campaign marks live must be invisible after the end, elements marked after must be invisible before; counted by what is actually rendered (display:none removes it).
+  const leaks = (p, sel) => p.evaluate((q) => [...document.querySelectorAll(q)].filter((e) => e.getClientRects().length > 0).length, sel);
+  const ROUTES = ["/", "/pricing/", "/product/", "/questions/"];
+  for (const mode of ["open", "announce"]) for (const loc of ["en", "he", "es", "ru"]) for (const route of ROUTES) for (const w of [1280, 390]) {
+    const prefix = loc === "en" ? "" : `/${loc}`;
+    { const { ctx, p } = await view(mode, `${prefix}${route}`, "Asia/Jerusalem", C + 1000, w, loc);
+      if (w === 390) { await p.click("[data-aicc-menu-btn]").catch(() => {}); await p.waitForTimeout(100); }
+      const l = await leaks(p, "[data-ea-live]"), h = await leaks(p, "[data-ea-hide-live]"), a = await leaks(p, "[data-ea-after]");
+      const needsAfter = route === "/pricing/" || route === "/";
+      check(l === 0 && (!needsAfter || a > 0), `${mode} ${loc}${route} @${w}: ENDED view shows no live campaign element (${l} live visible) and the ended counterparts are present (${a})${w === 390 ? " (mobile menu open)" : ""}`);
+      await ctx.close(); }
+    { const { ctx, p } = await view(mode, `${prefix}${route}`, "Asia/Jerusalem", C - 86400e3, w, loc);
+      if (w === 390) { await p.click("[data-aicc-menu-btn]").catch(() => {}); await p.waitForTimeout(100); }
+      const a = await leaks(p, "[data-ea-after]"), h = await leaks(p, "[data-ea-hide-live]");
+      check(a === 0 && h === 0, `${mode} ${loc}${route} @${w}: LIVE view shows no ended-only element (${a}) and no ordinary price (${h})${w === 390 ? " (mobile menu open)" : ""}`);
+      await ctx.close(); }
+  }
+  console.log("== destinations and names (live view)");
+  for (const mode of ["open", "announce"]) {
+    const { ctx, p } = await view(mode, "/", "UTC", C - 86400e3, 1280);
+    const hrefs = await p.locator("a[href]").evaluateAll((a) => a.filter((x) => x.getClientRects().length > 0).map((x) => x.getAttribute("href")));
+    const signup = hrefs.filter((h) => /offer=early-access/.test(h));
+    if (mode === "announce") check(signup.length === 0, "announce: no visible link on Home leads to the sign-up (nothing to sign up for yet)");
+    else check(signup.length >= 2, `open: the header and the hero lead to the sign-up (${signup.length} links)`);
+    const hdr = await p.locator(".aicc-site-header a[data-ea-live]").count();
+    check(mode === "open" ? hdr >= 1 : hdr === 0, `${mode}: the Early Access header button ${mode === "open" ? "exists" : "does not exist"}`);
+    const ordinary = await p.locator(".aicc-site-header a.aicc-btn--primary").evaluateAll((a) => a.filter((x) => x.getClientRects().length > 0).map((x) => x.textContent.trim()));
+    check(mode === "open" ? ordinary.length === 1 && /Request Early Access/.test(ordinary[0]) : ordinary.length === 1 && /Get started/.test(ordinary[0]), `${mode}: exactly one primary header button is visible (${ordinary.join(" | ")})`);
+    const bar = await p.evaluate(() => { const b = document.querySelector(".aicc-eabar"); const a = b.querySelector("a"); return { name: b.getAttribute("aria-label"), role: b.getAttribute("role"), href: a.getAttribute("href") }; });
+    check(bar.role === "region" && !!bar.name && /\/pricing\/#early-access$/.test(bar.href), `${mode}: the bar is a named region and its link goes to /pricing/#early-access (${bar.href})`);
+    const heroHref = await p.locator(".aicc-hero .aicc-hero-actions a.aicc-btn").first().getAttribute("href");
+    check(mode === "open" ? /offer=early-access/.test(heroHref) : /\/pricing\/#early-access$/.test(heroHref), `${mode}: the first hero button goes to ${mode === "open" ? "the sign-up" : "the explanation"} (${heroHref})`);
+    await ctx.close();
+  }
+  const { ctx: c2, p: p2 } = await view("open", "/pricing/", "UTC", C - 86400e3, 1280);
+  const names = await p2.locator(".aicc-plan a.aicc-btn").evaluateAll((a) => a.map((x) => x.textContent.replace(/\s+/g, " ").trim()));
+  check(new Set(names).size === 3, `the three plan buttons have different accessible names (${names.join(" | ")})`);
+  await c2.close();
+}
 console.log("\n== Hebrew (right-to-left), live view");
 {
   const { ctx, p } = await view("open", "/he/pricing/", "Asia/Jerusalem", C - 86400e3, 390, "he");

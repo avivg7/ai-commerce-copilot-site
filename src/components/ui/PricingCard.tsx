@@ -97,7 +97,7 @@ export function PricingCard(p: PricingCardProps) {
           <p className="aicc-plan__ends aicc-muted aicc-small" data-ea-live {...E("ea.plan")}>{ea.ends}</p>
           <div data-ea-live>
             {EA_OPEN ? (
-              <Button href={eaUrl(loc, p.id)} variant={p.featuredLabel ? "primary" : "outline"} block size="lg" {...E("ea.plan")}>{ea.ctaOpen}</Button>
+              <Button href={eaUrl(loc, p.id)} variant={p.featuredLabel ? "primary" : "outline"} block size="lg" {...E("ea.plan")}>{ea.ctaOpen}<span className="aicc-sr-only"> ({p.name})</span></Button>
             ) : (
               <p className="aicc-btn aicc-btn--lg aicc-btn--block aicc-btn--soon" data-ea-soon {...E("ea.plan")}>{ea.ctaAnnounce}</p>
             )}
