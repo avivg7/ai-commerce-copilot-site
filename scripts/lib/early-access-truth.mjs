@@ -31,11 +31,17 @@ export const EA_EXTRA_RULES = [
 
 /** Dates and facts every locale must state, written as that language writes them. Checked against the strings that carry them. */
 export const REQUIRED = {
-  en: { last: "December 31, 2026", end: "January 1, 2027" },
-  he: { last: "31 בדצמבר 2026", end: "1 בינואר 2027" },
-  es: { last: "31 de diciembre de 2026", end: "1 de enero de 2027" },
-  ru: { last: "31 декабря 2026", end: "1 января 2027" },
+  en: { last: "December 31, 2026", end: "January 1, 2027", auto: "automatically", card: "credit card", paid: "paid plan" },
+  he: { last: "31 בדצמבר 2026", end: "1 בינואר 2027", auto: "אוטומטית", card: "כרטיס אשראי", paid: "בתשלום" },
+  es: { last: "31 de diciembre de 2026", end: "1 de enero de 2027", auto: "automáticamente", card: "tarjeta de crédito", paid: "plan de pago" },
+  ru: { last: "31 декабря 2026", end: "1 января 2027", auto: "втоматически", card: "карта", paid: "латный план" },
 };
+
+/** True only for a file INSIDE the campaign folder. A path that merely starts like it, or climbs out of it with .., is not one. */
+export function isCampaignFile(relPath) {
+  const norm = String(relPath).replace(/\\/g, "/");
+  return norm.startsWith(EA_DIR) && !norm.split("/").includes("..");
+}
 
 const walk = (o, path, out) => {
   if (typeof o === "string") out.push([path, o]);
@@ -58,6 +64,8 @@ export function eaDisclosureProblems(locale, ea) {
     ["section.lead", need.last], ["section.lead", need.end], ["section.homeLead", need.last], ["section.homeLead", need.end],
     ["section.steps.use.body", need.last], ["section.steps.decide.body", need.end],
     ["section.endTitle", need.end], ["after.body", need.end],
+    // the promises: no card, nothing charged automatically, a paid plan only by the merchant's choice
+    ["hero.note", need.auto], ["hero.note", need.card], ["section.lead", need.auto], ["after.body", need.auto], ["plan.ends", need.paid], ["section.lead", need.paid],
     ["section.faq.free.a", need.last], ["section.faq.end.q", need.end],
   ]) if (!has(path, tok)) problems.push(`${locale}: ea.${path} must contain "${tok}"`);
   // every dictionary string must be non-empty

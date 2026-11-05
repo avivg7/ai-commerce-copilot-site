@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { ROOT } from "./lib/load.mjs";
 import { truthProblems, selfTestProblems, TRUTH_RULES } from "./lib/launch-truth.mjs";
-import { EA_DIR, ALLOWED_WHY, EA_EXTRA_RULES } from "./lib/early-access-truth.mjs";
+import { ALLOWED_WHY, EA_EXTRA_RULES, isCampaignFile } from "./lib/early-access-truth.mjs";
 
 // "Watch demo" is allowed since the owner visual pass: the modal is an honest labelled placeholder until a real video is configured,
 // and `npm run launch:check` blocks a production launch while the placeholder is active.
@@ -90,6 +90,9 @@ function stripComments(src) {
   const rules = (t, campaign) => RULES.some(([re, why]) => re.test(t) && !(campaign && ALLOWED_WHY.has(why))) || (campaign && EA_EXTRA_RULES.some(([re]) => re.test(t)));
   const okInCampaign = ["No credit card required.", "Free until December 31, 2026", "ללא כרטיס אשראי. חינם עד 31 בדצמבר 2026", "Gratis hasta el 31 de diciembre de 2026. Sin tarjeta de crédito.", "Бесплатно до 31 декабря 2026 г. Без банковской карты."];
   const badInCampaign = ["Start a free trial", "A free plan for one store", "Your subscription renews automatically", "Save 20% with this discount", "Hurry, limited time", "Only 5 spots left", "Increase your revenue", "תקופת ניסיון חינם", "Prueba gratuita de 30 días", "Бесплатная пробная версия"];
+  const notCampaign = ["src/i18n/en.ts", "src/i18n/earlyaccess.ts", "src/i18n/ea/../en.ts", "src/i18n/eax/he.ts", "docs/cutover/early-access.md", "src/components/ea/Ea.tsx", "src/i18n/ea"];
+  const wronglyCampaign = notCampaign.filter((f) => isCampaignFile(f));
+  if (!isCampaignFile("src/i18n/ea/he.ts") || !isCampaignFile("src/i18n/ea/en.ts") || wronglyCampaign.length) { console.error(`FAIL: self-test of the campaign-file test: wrongly treated as campaign files [${wronglyCampaign}]`); process.exit(1); }
   const missed = badInCampaign.filter((t) => !rules(t, true)), wrong = okInCampaign.filter((t) => rules(t, true)), leaked = okInCampaign.filter((t) => t !== "Free until December 31, 2026" && !rules(t, false)); // English "free until ..." was never banned on its own: only "start free", "free trial", "free plan/tier ..."
   if (missed.length || wrong.length || leaked.length) { console.error(`FAIL: self-test of the Early Access allowance: not caught in campaign files [${missed}] wrongly flagged [${wrong}] allowed outside the campaign files [${leaked}]`); process.exit(1); }
 }
@@ -105,7 +108,7 @@ for (const f of [...files(path.join(ROOT, "src")), ...files(path.join(ROOT, "doc
   const text = stripComments(fs.readFileSync(f, "utf8"));
   text.split("\n").forEach((line, i) => {
     // The Early Access campaign copy (src/i18n/ea/) is the ONLY place the plain words "free" / "no credit card" are allowed (owner decision, Production 20); it gets extra bans instead.
-    const campaign = path.relative(ROOT, f).startsWith(EA_DIR);
+    const campaign = isCampaignFile(path.relative(ROOT, f));
     for (const [re, why] of RULES) if (re.test(line) && !(campaign && ALLOWED_WHY.has(why))) hits.push(`${path.relative(ROOT, f)}:${i + 1}  [${why}]  ${line.trim().slice(0, 110)}`);
     if (campaign) for (const [re, why] of EA_EXTRA_RULES) if (re.test(line)) hits.push(`${path.relative(ROOT, f)}:${i + 1}  [${why}]  ${line.trim().slice(0, 110)}`);
     for (const p of truthProblems(line, { publicCopy: /^src\//.test(path.relative(ROOT, f)) })) hits.push(`${path.relative(ROOT, f)}:${i + 1}  [${p.why}]  ${line.trim().slice(0, 110)}`);

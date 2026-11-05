@@ -82,7 +82,9 @@ check(ea.eaIsOver(NaN) === true, "eaIsOver(NaN) fails closed (over)");
   check(late.mode === "off" && late.expired, "build 30 days after with 'announce' -> OFF (the campaign is NOT published)");
   check(none.mode === "off" && !none.expired, "no switch -> OFF, not flagged");
   const junk = JSON.parse(run({ NEXT_PUBLIC_AICC_EARLY_ACCESS: "open", AICC_BUILD_NOW_MS: "abc" }).stdout);
-  check(typeof junk.mode === "string", "a malformed build-clock pin is ignored (the real clock is used)");
+  check(junk.mode === "open" && !junk.expired, "a malformed build-clock pin ('abc') is ignored: the real clock (before the cutoff) is used and the campaign stays OPEN");
+  const junk2 = JSON.parse(run({ NEXT_PUBLIC_AICC_EARLY_ACCESS: "open", AICC_BUILD_NOW_MS: "-5" }).stdout);
+  check(junk2.mode === "open", "a negative pin is ignored too");
 }
 
 // ── 3. the page script ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────
