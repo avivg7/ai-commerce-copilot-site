@@ -10,6 +10,7 @@ import { spawn } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { launch } from "./lib/browser.mjs";
+import { loadDictionaries } from "./lib/load.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const args = process.argv.slice(2);
@@ -19,6 +20,8 @@ const dirs = { open: arg("open"), announce: arg("announce"), off: arg("off") };
 if (!dirs.open || !dirs.announce || !dirs.off) { console.error("usage: --open <dir> --announce <dir> --off <dir>"); process.exit(2); }
 
 const C = Date.UTC(2026, 11, 31, 22, 0, 0);
+const D = await loadDictionaries();
+const norm = (t) => String(t).replace(/\s+/g, " ").replace(/\u00a0/g, " ").trim();
 const results = []; let failed = 0;
 const check = (cond, msg) => { results.push(!!cond); if (!cond) { failed++; console.error("  FAIL " + msg); } else console.log("  ok   " + msg); };
 
@@ -179,11 +182,21 @@ console.log("\n== no stale or leaked campaign element, in any mode, page, langua
       const l = await leaks(p, "[data-ea-live]"), h = await leaks(p, "[data-ea-hide-live]"), a = await leaks(p, "[data-ea-after]");
       const needsAfter = route === "/pricing/" || route === "/";
       check(l === 0 && (!needsAfter || a > 0), `${mode} ${loc}${route} @${w}: ENDED view shows no live campaign element (${l} live visible) and the ended counterparts are present (${a})${w === 390 ? " (mobile menu open)" : ""}`);
+      // Text-based probe (does not depend on the markers): none of the campaign's own sentences may be rendered after the end, whatever element carries them.
+      const inner = norm(await p.evaluate(() => document.body.innerText));
+      const live = [D[loc].ea.hero.ctaOpen, D[loc].ea.header.cta, D[loc].ea.hero.ctaAnnounce, D[loc].ea.section.homeLead, D[loc].ea.plan.free, D[loc].ea.plan.ctaAnnounce, D[loc].ea.hero.note, D[loc].ea.bar.live].map(norm);
+      const seen = live.filter((t) => inner.includes(t));
+      check(seen.length === 0, `${mode} ${loc}${route} @${w}: no campaign sentence is rendered after the end${seen.length ? " -> " + seen[0].slice(0, 60) : ""}`);
       await ctx.close(); }
     { const { ctx, p } = await view(mode, `${prefix}${route}`, "Asia/Jerusalem", C - 86400e3, w, loc);
       if (w === 390) { await p.click("[data-aicc-menu-btn]").catch(() => {}); await p.waitForTimeout(100); }
       const a = await leaks(p, "[data-ea-after]"), h = await leaks(p, "[data-ea-hide-live]");
       check(a === 0 && h === 0, `${mode} ${loc}${route} @${w}: LIVE view shows no ended-only element (${a}) and no ordinary price (${h})${w === 390 ? " (mobile menu open)" : ""}`);
+      const innerLive = norm(await p.evaluate(() => document.body.innerText));
+      const ended = [D[loc].ea.after.title, D[loc].common.soon.band].map(norm).filter((t) => (route === "/" || route === "/pricing/") && innerLive.includes(t));
+      check(ended.length === 0, `${mode} ${loc}${route} @${w}: LIVE view renders neither the ended note nor the ordinary closing band${ended.length ? " -> " + ended[0].slice(0, 50) : ""}`);
+      const prim = await p.locator(".aicc-site-header a.aicc-btn--primary").evaluateAll((els) => els.filter((e) => e.getClientRects().length > 0).length);
+      check(prim === (mode === "open" ? 1 : 1), `${mode} ${loc}${route} @${w}: exactly one primary header button is visible (${prim})${w === 390 ? " (mobile menu open)" : ""}`);
       await ctx.close(); }
   }
   console.log("== destinations and names (live view)");
