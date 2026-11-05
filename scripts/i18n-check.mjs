@@ -51,11 +51,9 @@ const tokensOf = (s) => (s.match(/\{[A-Za-z0-9_]+\}/g) || []).sort().join("|");
 const linksOf = (s) => (s.match(/\]\((route:[a-z-]+|https?:\/\/[^)]+)\)/g) || []).sort().join("|");
 const boldOf = (s) => (s.match(/\*\*/g) || []).length;
 
-// Plugin labels the Early Access answer about the end of the period quotes in English on purpose (the Plugin's expired page, `Renew plan`, Plugin fact map S:6796-6800); he uses the Plugin's Hebrew label.
-const EXTRA_PLUGIN_LABELS = ["Renew plan"];
 function strippedOfBrands(s) {
   let t = s;
-  for (const b of [...REPLICA_LABELS, ...EXTRA_PLUGIN_LABELS]) t = t.split(b).join(" "); // real admin labels (English on purpose), before tokens and brands
+  for (const b of REPLICA_LABELS) t = t.split(b).join(" "); // real admin labels (English on purpose), before tokens and brands
   t = t.replace(/\{[A-Za-z0-9_]+\}/g, " ").replace(/\]\((route:[a-z-]+|https?:\/\/[^)]+)\)/g, " ");
   for (const b of BRAND) t = t.split(b).join(" ");
   t = t.replace(/[0-9$€%.,:;!?()\-–—/&"'“”’*\[\]+©·#_=]/g, " ");
