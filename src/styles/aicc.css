@@ -1263,7 +1263,8 @@ html[data-ea-mode]:not([data-ea-over]) [data-ea-hide-live] { display: none !impo
 
 /* The bar sits in the page flow directly under the fixed header: margin-block pushes it below the header and pulls the page back up by the same amount,
  * so the net height it adds is exactly --aicc-ea-bar-h (fixed, not content-dependent), which the hero and page-head top padding below add. */
-:root { --aicc-ea-bar-h: 4.25rem; }
+:root { --aicc-ea-bar-h: 5.25rem; }
+@media (min-width: 30rem) { :root { --aicc-ea-bar-h: 4.25rem; } }
 @media (min-width: 40rem) { :root { --aicc-ea-bar-h: 2.5rem; } }
 .aicc-eabar { position: relative; z-index: 1; margin-block: var(--aicc-header-h) calc(-1 * var(--aicc-header-h)); block-size: var(--aicc-ea-bar-h); display: flex; align-items: center; overflow: hidden; background: linear-gradient(90deg, var(--aicc-navy-950), var(--aicc-navy-900) 55%, #0b3b35); color: var(--aicc-text-inverse); }
 .aicc-eabar > .aicc-container { inline-size: 100%; }
@@ -1271,7 +1272,9 @@ html[data-ea-mode]:not([data-ea-over]) .aicc-hero { padding-block-start: calc(9r
 @media (min-width: 40rem) { html[data-ea-mode]:not([data-ea-over]) .aicc-hero { padding-block-start: calc(9rem + var(--aicc-ea-bar-h)); } }
 @media (max-width: 30rem) { html[data-ea-mode]:not([data-ea-over]) .aicc-hero { padding-block-start: calc(5.75rem + var(--aicc-ea-bar-h)); } }
 html[data-ea-mode]:not([data-ea-over]) .aicc-pagehead { padding-block-start: calc(var(--aicc-header-h) + clamp(1.5rem, 1rem + 2vw, 3rem) + var(--aicc-ea-bar-h)); }
-.aicc-eabar__text { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 0 0.6rem; margin: 0; font-size: 0.8125rem; line-height: 1.35; font-weight: 600; text-align: center; }
+.aicc-eabar__text { display: block; margin: 0; font-size: 0.8125rem; line-height: 1.35; font-weight: 600; text-align: center; }
+.aicc-eabar__text > * + * { margin-inline-start: 0.5em; }
+@media (min-width: 40rem) { .aicc-eabar__text { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 0 0.6rem; } .aicc-eabar__text > * + * { margin-inline-start: 0; } }
 .aicc-eabar__text svg { color: var(--aicc-cyan-300); flex: none; display: none; }
 @media (min-width: 40rem) { .aicc-eabar__text svg { display: block; } }
 .aicc-eabar__link { color: var(--aicc-cyan-300); text-decoration: underline; text-underline-offset: 0.2em; display: inline-flex; align-items: center; min-block-size: 1.5rem; }
