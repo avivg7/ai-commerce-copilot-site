@@ -125,7 +125,9 @@ def _delivery_lines(cfg: dict, now: float) -> list:
     out.append(("last delivery", age(ok) if ok else "never (nothing delivered since the daemon first recorded this)"))
     out.append(("last failure", age(bad) if bad else "never (no failed or dropped message recorded)"))
     out.append(("since start", f"sent {int(v.get('ops.telegram_sent', 0))}, failed {int(v.get('ops.telegram_failed', 0))}, dropped {int(v.get('ops.telegram_dropped', 0))}, "
-                               f"rate-limited {int(v.get('ops.telegram_rate_limited', 0))} (counters of the current daemon process)"))
+                               f"rate-limited {int(v.get('ops.telegram_rate_limited', 0))}"
+                               + (f", abandoned {int(v['ops.telegram_abandoned'])} alert(s) (every delivery attempt failed; retried when a later message gets through)" if v.get("ops.telegram_abandoned") else "")
+                               + " (counters of the current daemon process)"))
     return out
 
 

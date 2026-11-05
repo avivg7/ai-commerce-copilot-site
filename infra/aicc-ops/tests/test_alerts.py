@@ -357,9 +357,150 @@ class DeliveryRearm(TmpCase):
 
     def test_config_validation_rejects_bad_retry_settings(self):
         from aicc_ops.config import ConfigError
-        for bad in ({"delivery_retry_s": 0}, {"delivery_retry_s": 10, "delivery_retry_max_s": 5}, {"delivery_retry_max_attempts": 0}, {"delivery_retry_max_attempts": 1000}):
+        for bad in ({"delivery_retry_s": 0}, {"delivery_retry_s": 10, "delivery_retry_max_s": 5}, {"delivery_retry_max_attempts": 0}, {"delivery_retry_max_attempts": 1000},
+                    {"delivery_retry_s": float("nan")}, {"delivery_retry_s": float("inf"), "delivery_retry_max_s": float("inf")}, {"delivery_retry_max_s": float("nan")},
+                    {"delivery_retry_s": True}, {"delivery_retry_max_s": True}, {"delivery_retry_max_attempts": True}, {"delivery_retry_max_attempts": float("nan")}):
             with self.assertRaises(ConfigError, msg=str(bad)):
                 load_config(None, {"alerts": bad})
+
+
+class DeliveryRound2(TmpCase):
+    """Production 20 round 2 (R4 section 1.1): in-flight retries that never report back, stale results, abandoned notices, clock steps."""
+
+    def eng(self, store=None, rule=None, **kw):
+        ekw = {k: kw.pop(k) for k in ("delivery_retry_s", "delivery_retry_max_s", "delivery_retry_max_attempts") if k in kw}
+        return AlertEngine([spec(for_samples=1, cooldown_s=3600, **(rule or {}), **kw)], store, **ekw)
+
+    def breach(self, e, t, sev=WARNING, scope="s"):
+        return [n.kind for n in e.process([Obs("r", scope, True, False, sev, "txt")], t)]
+
+    def next_note(self, e, t0, limit=4 * 86400, step=30, sev=WARNING, scope="s"):
+        for dt in range(step, limit, step):
+            ks = self.breach(e, t0 + dt, sev, scope)
+            if ks:
+                return dt, ks
+        return None
+
+    # M-1
+    def test_a_firing_retry_in_flight_at_a_restart_is_not_wedged(self):
+        st = make_store(self.tmp)
+        e1 = self.eng(st)
+        self.assertEqual(self.breach(e1, T), [FIRING])
+        e1.report_delivery(tag(), "failed")
+        dt, ks = self.next_note(e1, T)                         # the retry leaves at T+330 and is now in flight (its result will never come: the daemon stops)
+        self.assertEqual(ks, [FIRING])
+        t = T + dt
+        e2 = self.eng(st)                                      # restart
+        r = self.next_note(e2, t, limit=3 * 86400)
+        self.assertIsNotNone(r, "the key stayed wedged for 3 days")
+        self.assertEqual(r[1], [FIRING])
+        self.assertLessEqual(r[0], 1000)                       # a lost attempt counts as a failure: the second failure waits 900 s
+
+    def test_a_reminder_retry_in_flight_at_a_restart_does_not_silence_later_reminders(self):
+        st = make_store(self.tmp)
+        rule = dict(crit_samples=1, renotify_critical_s=3600)
+        e1 = self.eng(st, rule)
+        self.assertEqual(self.breach(e1, T, CRITICAL), [FIRING])
+        e1.report_delivery(tag(), "delivered")
+        dt, ks = self.next_note(e1, T, sev=CRITICAL)
+        self.assertEqual(ks, [REMINDER])
+        t = T + dt
+        e1.report_delivery(tag(REMINDER), "failed")
+        dt2, ks2 = self.next_note(e1, t, sev=CRITICAL)         # retried: in flight, then the daemon restarts
+        self.assertEqual(ks2, [REMINDER])
+        t += dt2
+        e2 = self.eng(st, rule)
+        r = self.next_note(e2, t, limit=3 * 86400, sev=CRITICAL)
+        self.assertIsNotNone(r, "no CRITICAL reminder for 3 days")
+        self.assertEqual(r[1], [REMINDER])
+        self.assertLessEqual(r[0], 3700)
+
+    def test_a_retry_whose_result_never_comes_back_counts_as_a_failed_attempt_after_ten_minutes(self):
+        e = self.eng()
+        self.assertEqual(self.breach(e, T), [FIRING])
+        e.report_delivery(tag(), "failed")
+        dt, _ = self.next_note(e, T)
+        t = T + dt                                             # retry in flight; no result ever (dead sender thread, disabled adapter)
+        for k in range(30, 570, 30):
+            self.assertEqual(self.breach(e, t + k), [], k)     # inside the 10-minute bound nothing is sent twice
+        r = self.next_note(e, t + 540, limit=86400)
+        self.assertIsNotNone(r)
+        self.assertEqual(r[1], [FIRING])
+        self.assertEqual(e.state["r:s"]["delivery"]["fails"], 2)
+
+    def test_a_pending_reminder_that_is_not_due_falls_through_to_the_normal_reminder_interval(self):
+        e = self.eng(rule=dict(crit_samples=1, renotify_critical_s=3600), delivery_retry_s=20000, delivery_retry_max_s=20000)
+        self.assertEqual(self.breach(e, T, CRITICAL), [FIRING])
+        e.report_delivery(tag(), "delivered")
+        dt, ks = self.next_note(e, T, sev=CRITICAL)
+        self.assertEqual(ks, [REMINDER])
+        e.report_delivery(tag(REMINDER), "failed")             # its retry is not due for 20000 s ...
+        dt2, ks2 = self.next_note(e, T + dt, sev=CRITICAL)
+        self.assertEqual((dt2, ks2), (3600, [REMINDER]))       # ... but the normal 1 h reminder interval still applies
+
+    # m-3
+    def test_a_stale_firing_failure_after_a_delivered_escalation_does_not_resend_a_firing(self):
+        e = AlertEngine([spec(for_samples=1, crit_samples=2, cooldown_s=3600)])
+        self.assertEqual(self.breach(e, T), [FIRING])
+        self.assertEqual(self.breach(e, T + 30, CRITICAL), [])
+        self.assertEqual(self.breach(e, T + 60, CRITICAL), [ESCALATED])
+        e.report_delivery(tag(FIRING), "failed")               # both results are read in one batch, in this order
+        e.report_delivery(tag(ESCALATED), "delivered")
+        got = [k for dt in range(30, 2 * 86400, 30) for k in self.breach(e, T + 60 + dt, WARNING)]
+        self.assertNotIn(FIRING, got)                          # CRITICAL reminders (6 h) go on as before; no second FIRING
+        self.assertTrue(e.state["r:s"]["notified"])
+
+    # m-4
+    def test_a_recovery_retry_falling_due_in_the_cycle_the_alert_fires_again_is_not_sent(self):
+        e = AlertEngine([spec(for_samples=1, clear_samples=1, cooldown_s=0)], flap_max=99)
+        self.breach(e, T)
+        e.report_delivery(tag(), "delivered")
+        self.assertEqual([n.kind for n in e.process([Obs("r", "s", False, True, WARNING)], T + 60)], [RECOVERED])
+        e.report_delivery(tag(RECOVERED), "failed")
+        for dt in range(90, 390, 30):
+            self.assertEqual([n.kind for n in e.process([Obs("r", "s", False, True, WARNING)], T + dt)], [])
+        self.assertEqual([n.kind for n in e.process([Obs("r", "s", True, False, WARNING, "x")], T + 390)], [FIRING])   # due now AND fires again: only the new FIRING
+
+    # m-6
+    def test_an_abandoned_notice_is_re_armed_by_the_next_delivered_message_of_any_key(self):
+        e = self.eng(delivery_retry_max_attempts=2, delivery_retry_s=60, delivery_retry_max_s=60)
+        self.assertEqual(self.breach(e, T, scope="a"), [FIRING])
+        e.report_delivery(tag(key="r:a"), "failed")
+        self.breach(e, T + 30, scope="a")
+        dt, _ = self.next_note(e, T + 30, scope="a")             # the one retry, then it fails again: abandoned
+        e.report_delivery(tag(key="r:a"), "failed")
+        self.breach(e, T + 30 + dt + 30, scope="a")
+        self.assertEqual(e.abandoned_count(), 1)
+        self.assertEqual(e.active()[0]["notified"], True)
+        # the owner fixes the token; some other alert gets through
+        t = T + 30 + dt + 60
+        self.assertEqual(self.breach(e, t, scope="b"), [FIRING])
+        e.report_delivery(tag(key="r:b"), "delivered")
+        got = []
+        for k in range(30, 200, 30):
+            got += [(k, n.scope, n.kind) for n in e.process([Obs("r", "a", True, False, WARNING, "txt"), Obs("r", "b", True, False, WARNING, "txt")], t + k)]
+        self.assertEqual([g[1:] for g in got], [("a", FIRING)])
+        self.assertEqual(e.abandoned_count(), 0)
+
+    def test_nothing_is_re_armed_without_a_delivery(self):
+        e = self.eng(delivery_retry_max_attempts=1)
+        self.assertEqual(self.breach(e, T), [FIRING])
+        e.report_delivery(tag(), "failed")
+        self.breach(e, T + 30)
+        self.assertEqual(e.abandoned_count(), 1)
+        self.assertEqual([k for dt in range(60, 86400, 30) for k in self.breach(e, T + dt)], [])
+
+    # m-7
+    def test_a_persisted_retry_time_far_in_the_future_is_clamped(self):
+        st = make_store(self.tmp)
+        e = self.eng(st)
+        self.assertEqual(self.breach(e, T), [FIRING])
+        e.report_delivery(tag(), "failed")
+        self.breach(e, T + 30)
+        e.state["r:s"]["delivery"]["at"] = T + 30 + 200 * 86400       # the clock stepped back by months while the slot was stored
+        r = self.next_note(e, T + 30)
+        self.assertIsNotNone(r)
+        self.assertLessEqual(r[0], 21600 + 60)
 
 
 class Persistence(TmpCase):

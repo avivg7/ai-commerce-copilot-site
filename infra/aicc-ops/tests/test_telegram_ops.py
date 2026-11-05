@@ -137,6 +137,13 @@ class StatusDeliveryTests(OpsBase):
         self.assertIn("sent 3, failed 2, dropped 1, rate-limited 4", kv["since start"])
         self.assertNotIn(TOKEN, out)
 
+    def test_prints_the_abandoned_count(self):
+        self.secrets()
+        now = 1_800_000_000
+        self.seed([(now - 30, {"ops.telegram_enabled": 1.0, "ops.telegram_sent": 0.0, "ops.telegram_failed": 3.0, "ops.telegram_dropped": 0.0, "ops.telegram_rate_limited": 0.0,
+                               "ops.telegram_abandoned": 2.0})])
+        self.assertIn("abandoned 2", self.kv(self.status(now)[1])["since start"])
+
     def test_says_never_when_nothing_was_delivered_or_failed(self):
         self.secrets()
         now = 1_800_000_000

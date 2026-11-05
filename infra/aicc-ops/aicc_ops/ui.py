@@ -294,12 +294,16 @@ class Pages:
         if L("ops.telegram_enabled") != 1:
             return '<h2>Telegram</h2><div class="grid">' + self.card("Telegram alerts", "disabled", "no credentials or disabled by config: alerts are recorded locally only", "st-warn") + "</div>"
         n = lambda k: int(L(k) or 0)  # noqa: E731
-        ok, bad = L("ops.telegram_last_ok_ts"), L("ops.telegram_last_failure_ts")
+        ok, bad, gone = L("ops.telegram_last_ok_ts"), L("ops.telegram_last_failure_ts"), n("ops.telegram_abandoned")
         age = lambda ts: "never" if ts is None else f"{fmt_duration(max(now - ts, 0))} ago"  # noqa: E731
-        failing = bad is not None and (ok is None or bad > ok)
+        unresolved = bad is not None and (ok is None or bad > ok)
+        # red only while the failure is both unresolved (no delivery since) and recent; an old unresolved one is amber and says how old, so the card cannot stay red for ever
+        cls = "st-crit" if gone or (unresolved and now - bad < 86400) else "st-warn" if unresolved else "st-ok"
         value = f"sent {n('ops.telegram_sent')}, failed {n('ops.telegram_failed')}, dropped {n('ops.telegram_dropped')}, rate-limited {n('ops.telegram_rate_limited')}"
+        if gone:
+            value += f", abandoned {gone}"
         sub = f"last delivery {age(ok)} · last failure {age(bad)} · counters since the daemon started"
-        return '<h2>Telegram</h2><div class="grid">' + self.card("Telegram alerts", esc(value), esc(sub), "st-crit" if failing else "st-ok") + "</div>"
+        return '<h2>Telegram</h2><div class="grid">' + self.card("Telegram alerts", esc(value), esc(sub), cls) + "</div>"
 
     def collectors_table(self):
         lt = self.rt.latest()

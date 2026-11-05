@@ -128,7 +128,8 @@ class Runtime:
         merged["ops.cycle_ms"] = self._last_cycle_ms
         merged["ops.db_bytes"] = self._db_bytes or float(self.store.db_bytes())
         if self.telegram is not None:
-            merged.update(self.telegram.metrics())     # sent / failed / dropped / rate_limited counters and the last delivery / failure times (export.json, UI, telegram-status)
+            merged.update(self.telegram.metrics())
+            merged["ops.telegram_abandoned"] = float(self.engine.abandoned_count())     # sent / failed / dropped / rate_limited counters and the last delivery / failure times (export.json, UI, telegram-status)
         if blocked:
             if not self._blocked_logged:
                 self.log(f"CRITICAL: filesystem free space {free:.1f}% < {self.cfg['storage']['min_free_pct']}%: monitoring writes refused")

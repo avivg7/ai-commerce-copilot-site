@@ -10,6 +10,7 @@ Messages contain no PII by construction
 from __future__ import annotations
 
 import json
+import math
 import os
 import queue
 import re
@@ -279,38 +280,68 @@ class TelegramAdapter:
                 if self._stop.is_set():
                     return
                 continue
-            if not self._allowed_now():
-                self.stats["rate_limited"] += 1
-                self._suppressed += 1
-                self._report(tag, DROPPED_RATE_LIMIT)
+            # EVERY message taken from the queue ends in exactly one report, whatever happens while it is processed (a sender that raises must not leave its alert
+            # waiting for a result that never comes, and must not kill the thread)
+            outcome = FAILED
+            try:
+                if not self._allowed_now():
+                    self.stats["rate_limited"] += 1
+                    self._suppressed += 1
+                    outcome = DROPPED_RATE_LIMIT
+                else:
+                    wait = self.cfg["min_interval_s"] - (self.clock() - self._last_send)
+                    if wait > 0:
+                        self.sleep(self._safe_s(wait, 0.0))
+                    if self._suppressed:
+                        text += f"\n({self._suppressed} earlier notification(s) were suppressed by the hourly rate limit)"
+                        self._suppressed = 0
+                    ok = self._deliver(text)
+                    self._last_send = self.clock()
+                    if ok:
+                        self.sent_times.append(self._last_send)    # only DELIVERED sends use the hourly budget: a dead token must not leave a fixed one rate-limited
+                    outcome = DELIVERED if ok else FAILED
+            except Exception as e:  # noqa: BLE001 - the TYPE only (messages can embed the request path = the token)
+                self.stats["failed"] += 1
+                outcome = FAILED
+                try:
+                    self.log(f"telegram: sender error ({type(e).__name__})")
+                except Exception:  # noqa: BLE001
+                    pass
+            finally:
+                self._report(tag, outcome)
                 if self.q.empty():
                     self._idle.set()
-                continue
-            wait = self.cfg["min_interval_s"] - (self.clock() - self._last_send)
-            if wait > 0:
-                self.sleep(wait)
-            if self._suppressed:
-                text += f"\n({self._suppressed} earlier notification(s) were suppressed by the hourly rate limit)"
-                self._suppressed = 0
-            ok = self._deliver(text)
-            self._last_send = self.clock()
-            self.sent_times.append(self._last_send)
-            self._report(tag, DELIVERED if ok else FAILED)
-            if self.q.empty():
-                self._idle.set()
+
+    @staticmethod
+    def _safe_s(x, default: float) -> float:
+        """A sleep length from a config value or a remote reply: finite, never negative, never more than 60 s (NaN, inf, text, negative values are ignored)."""
+        try:
+            x = float(x)
+        except (TypeError, ValueError, OverflowError):
+            return default
+        return max(0.0, min(x, 60.0)) if math.isfinite(x) else default
 
     def _deliver(self, text: str) -> bool:
         url = f"{self.base}/bot{self.token}/sendMessage"
         body = urllib.parse.urlencode({"chat_id": self.chat_id, "text": text, "disable_web_page_preview": "true"}).encode()
-        delay = self.cfg["backoff_s"]
+        delay = self._safe_s(self.cfg["backoff_s"], 2.0)
         for attempt in range(1, int(self.cfg["retries"]) + 1):
             try:
                 req = urllib.request.Request(url, data=body, method="POST",
                                              headers={"Content-Type": "application/x-www-form-urlencoded", "User-Agent": "aicc-ops/0.1"})
                 with urllib.request.urlopen(req, timeout=10) as r:  # nosec - api.telegram.org (or 127.0.0.1 in tests)
-                    r.read(65536)
-                self.stats["sent"] += 1
-                return True
+                    status, reply = r.status, r.read(65536)
+                # delivered = HTTP 2xx AND a JSON object with ok:true (a proxy or captive portal answering 200 must not make the journal say "delivered")
+                try:
+                    parsed = json.loads(reply)
+                except ValueError:
+                    parsed = None
+                if 200 <= status < 300 and isinstance(parsed, dict) and parsed.get("ok") is True:
+                    self.stats["sent"] += 1
+                    return True
+                self.log(f"telegram: reply was not ok:true (HTTP {int(status)}, attempt {attempt})")      # fixed words and the status only: never the body
+                if attempt < self.cfg["retries"]:
+                    self.sleep(self._safe_s(delay, 2.0))
             except urllib.error.HTTPError as e:
                 retry_after = None
                 if e.code == 429:
@@ -325,11 +356,11 @@ class TelegramAdapter:
                     break
                 self.log(f"telegram: HTTP {e.code} (attempt {attempt})")
                 if attempt < self.cfg["retries"]:
-                    self.sleep(min(retry_after if retry_after is not None else delay, 60))
+                    self.sleep(self._safe_s(retry_after if retry_after is not None else delay, delay))      # NaN / negative / huge retry_after values are clamped, never raised
             except (urllib.error.URLError, OSError, TimeoutError) as e:
                 self.log(f"telegram: send failed ({type(e).__name__}) attempt {attempt}")  # never log URL (it holds the token)
                 if attempt < self.cfg["retries"]:
-                    self.sleep(min(delay, 60))
+                    self.sleep(self._safe_s(delay, 2.0))
             except Exception as e:  # noqa: BLE001 - e.g. http.client.InvalidURL embeds the request path (= the token) in its message: the TYPE only, never retry a malformed request
                 self.log(f"telegram: send failed ({type(e).__name__}), not retrying")
                 break

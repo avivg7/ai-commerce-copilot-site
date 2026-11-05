@@ -5,6 +5,7 @@ runtime secrets file / systemd credentials (see telegram.py)."""
 from __future__ import annotations
 
 import copy
+import math
 import re
 import tomllib
 
@@ -186,12 +187,13 @@ def validate(cfg: dict) -> None:
     if not (1 <= int(s["max_threads"]) <= 64):
         raise ConfigError("server.max_threads must be 1..64")
     a = cfg["alerts"]
-    if not isinstance(a["delivery_retry_s"], (int, float)) or a["delivery_retry_s"] < 1:
-        raise ConfigError("alerts.delivery_retry_s must be >= 1")
-    if not isinstance(a["delivery_retry_max_s"], (int, float)) or a["delivery_retry_max_s"] < a["delivery_retry_s"]:
-        raise ConfigError("alerts.delivery_retry_max_s must be >= alerts.delivery_retry_s")
-    if not isinstance(a["delivery_retry_max_attempts"], int) or not (1 <= a["delivery_retry_max_attempts"] <= 100):
-        raise ConfigError("alerts.delivery_retry_max_attempts must be 1..100")
+    num = lambda v: type(v) in (int, float) and math.isfinite(v)  # noqa: E731 - bool, NaN and inf are not settings
+    if not num(a["delivery_retry_s"]) or a["delivery_retry_s"] < 1:
+        raise ConfigError("alerts.delivery_retry_s must be a finite number >= 1")
+    if not num(a["delivery_retry_max_s"]) or a["delivery_retry_max_s"] < a["delivery_retry_s"]:
+        raise ConfigError("alerts.delivery_retry_max_s must be a finite number >= alerts.delivery_retry_s")
+    if type(a["delivery_retry_max_attempts"]) is not int or not (1 <= a["delivery_retry_max_attempts"] <= 100):
+        raise ConfigError("alerts.delivery_retry_max_attempts must be an integer 1..100")
     if st["max_db_bytes"] < 5 * MIB:
         raise ConfigError("storage.max_db_bytes must be >= 5 MiB")
     if not (1 <= st["min_free_pct"] <= 50):

@@ -240,6 +240,35 @@ class TelegramVisibility(Base):
         self.rt.engine.process([Obs("db_down", "mysql", True, False, "CRITICAL", "MySQL is unreachable")], t + 60)
         self.assertIn("Telegram: not delivered", self.get("/alerts")[2].decode())
 
+    def test_the_card_is_red_only_for_a_recent_failure_newer_than_the_last_delivery(self):
+        now = time.time()
+        base = {"ops.telegram_enabled": 1.0, "ops.telegram_sent": 7.0, "ops.telegram_failed": 1.0, "ops.telegram_dropped": 0.0, "ops.telegram_rate_limited": 0.0}
+
+        def card(extra):
+            with self.rt._lock:
+                for k in [k for k in self.rt._latest if k.startswith("ops.telegram")]:
+                    del self.rt._latest[k]
+                for k, v in {**base, **extra}.items():
+                    self.rt._latest[k] = (v, now)
+            body = self.get("/")[2].decode()
+            return re.search(r'<h3>Telegram alerts</h3><div class="v ([a-z\-]*)">', body).group(1), body
+        self.assertEqual(card({"ops.telegram_last_ok_ts": now - 7200, "ops.telegram_last_failure_ts": now - 600})[0], "st-crit")          # fresh and unresolved
+        self.assertEqual(card({"ops.telegram_last_ok_ts": now - 600, "ops.telegram_last_failure_ts": now - 7200})[0], "st-ok")            # delivered since
+        cls, body = card({"ops.telegram_last_ok_ts": now - 9 * 86400, "ops.telegram_last_failure_ts": now - 3 * 86400})
+        self.assertEqual(cls, "st-warn")                                                                                                  # old and unresolved: amber, not red for ever
+        self.assertIn("last failure 3d 0h ago", body)
+        self.assertEqual(card({"ops.telegram_last_failure_ts": now - 600})[0], "st-crit")                                                  # never delivered, failed just now
+
+    def test_abandoned_notices_are_shown_and_red(self):
+        now = time.time()
+        with self.rt._lock:
+            for k, v in {"ops.telegram_enabled": 1.0, "ops.telegram_sent": 7.0, "ops.telegram_failed": 0.0, "ops.telegram_dropped": 0.0, "ops.telegram_rate_limited": 0.0,
+                         "ops.telegram_abandoned": 2.0, "ops.telegram_last_ok_ts": now - 60}.items():
+                self.rt._latest[k] = (v, now)
+        body = self.get("/")[2].decode()
+        self.assertIn("abandoned 2", body)
+        self.assertIn('<div class="v st-crit">', body.split("Telegram alerts")[1])
+
 
 class Exports(Base):
     def test_json_export(self):

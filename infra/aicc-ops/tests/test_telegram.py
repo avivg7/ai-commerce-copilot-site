@@ -107,7 +107,7 @@ class AdapterTests(TmpCase):
         self.assertNotIn(CHAT, a.out.getvalue())
 
     def test_disabled_without_secrets_makes_no_request_and_logs_once(self):
-        srv = BodyServer(b"{}")
+        srv = BodyServer(b'{"ok":true}')
         try:
             a = self.adapter(srv, secrets=False)
             self.assertFalse(a.enabled)
@@ -190,7 +190,7 @@ class AdapterTests(TmpCase):
             srv.close()
 
     def test_enabled_adapter_says_so_once_and_sends_nothing_at_start(self):
-        srv = BodyServer(b"{}")
+        srv = BodyServer(b'{"ok":true}')
         try:
             a = self.adapter(srv)
             self.assertEqual(len([l for l in a.logs if l.startswith("telegram: enabled")]), 1)
@@ -203,7 +203,7 @@ class AdapterTests(TmpCase):
 
     def test_429_honours_retry_after(self):
         slept = []
-        srv = BodyServer(handler_fn=lambda n, p: (429, b'{"parameters":{"retry_after":7}}') if n == 1 else (200, b"{}"))
+        srv = BodyServer(handler_fn=lambda n, p: (429, b'{"parameters":{"retry_after":7}}') if n == 1 else (200, b'{"ok":true}'))
         try:
             a = self.adapter(srv)
             a.sleep = slept.append
@@ -223,7 +223,7 @@ class AdapterTests(TmpCase):
         self.assertEqual(a.stats["failed"], 1)
 
     def test_hourly_rate_limit_and_summary(self):
-        srv = BodyServer(b"{}")
+        srv = BodyServer(b'{"ok":true}')
         try:
             a = self.adapter(srv, max_per_hour=2)
             for i in range(5):
@@ -235,7 +235,7 @@ class AdapterTests(TmpCase):
             srv.close()
 
     def test_queue_full_drops_not_blocks(self):
-        a = self.adapter(BodyServer(b"{}"))
+        a = self.adapter(BodyServer(b'{"ok":true}'))
         a._ensure_thread = lambda: None   # nothing drains the queue
         for _ in range(150):
             a.submit_text("x")
@@ -290,7 +290,7 @@ class AdapterTests(TmpCase):
             srv.close()
 
     def test_the_hourly_rate_limit_drop_is_reported_and_logged(self):
-        srv = BodyServer(b"{}")
+        srv = BodyServer(b'{"ok":true}')
         try:
             a = self.adapter(srv, max_per_hour=1)
             got = self.results(a)
@@ -305,7 +305,7 @@ class AdapterTests(TmpCase):
             srv.close()
 
     def test_a_full_queue_drop_is_reported_and_logged_by_the_caller_thread(self):
-        a = self.adapter(BodyServer(b"{}"))
+        a = self.adapter(BodyServer(b'{"ok":true}'))
         a._ensure_thread = lambda: None   # nothing drains the queue
         got = self.results(a)
         results = [a.submit(NOTE) for _ in range(130)]
@@ -315,7 +315,7 @@ class AdapterTests(TmpCase):
         self.assertEqual(a.stats["dropped"], 30)
 
     def test_a_tag_that_is_not_a_plain_rule_id_never_reaches_the_journal(self):
-        srv = BodyServer(b"{}")
+        srv = BodyServer(b'{"ok":true}')
         try:
             a = self.adapter(srv)
             a.submit_text("x", tag=("k", "bad rule 203.0.113.9 ops@example.com", "NOT-A-KIND\ninjected"))
@@ -337,7 +337,7 @@ class AdapterTests(TmpCase):
         self.assertFalse([l for l in a.logs + b.logs if l.startswith("telegram: delivered") or l.startswith("telegram: dropped")])
 
     def test_a_raising_result_callback_cannot_stop_the_sender(self):
-        srv = BodyServer(b"{}")
+        srv = BodyServer(b'{"ok":true}')
         try:
             a = self.adapter(srv)
             a.on_result = lambda tag, outcome: (_ for _ in ()).throw(RuntimeError("boom"))
@@ -349,7 +349,7 @@ class AdapterTests(TmpCase):
             srv.close()
 
     def test_the_constructor_accepts_the_callback(self):
-        srv = BodyServer(b"{}")
+        srv = BodyServer(b'{"ok":true}')
         try:
             got = []
             a = tg.TelegramAdapter(cfg(secrets_file=self.secrets()), "aicc-test", out=io.StringIO(), log=lambda m: None, test_base_url=srv.url, environ={},
@@ -360,7 +360,7 @@ class AdapterTests(TmpCase):
             srv.close()
 
     def test_last_delivery_and_last_failure_times_and_the_metrics(self):
-        ok = BodyServer(b"{}")
+        ok = BodyServer(b'{"ok":true}')
         bad = BodyServer(b"{}", status=403)
         try:
             a = self.adapter(ok)
@@ -382,7 +382,7 @@ class AdapterTests(TmpCase):
             ok.close(); bad.close()
 
     def test_a_drop_counts_as_a_failure_time(self):
-        a = self.adapter(BodyServer(b"{}"))
+        a = self.adapter(BodyServer(b'{"ok":true}'))
         a._ensure_thread = lambda: None
         a.clock = lambda: 77.0
         for _ in range(101):
@@ -391,7 +391,7 @@ class AdapterTests(TmpCase):
         self.assertEqual(a.metrics()["ops.telegram_dropped"], 1.0)
 
     def test_the_start_up_line_only_claims_nothing_is_sent_for_the_daemon(self):
-        srv = BodyServer(b"{}")
+        srv = BodyServer(b'{"ok":true}')
         try:
             daemon = self.adapter(srv)
             self.assertIn("nothing is sent at start-up", [l for l in daemon.logs if l.startswith("telegram: enabled")][0])
@@ -401,6 +401,89 @@ class AdapterTests(TmpCase):
             self.assertNotIn("nothing is sent", line)
             self.assertIn("one daily-digest message", line)
             self.assertFalse([l for l in logs if TOKEN in l or CHAT in l])
+        finally:
+            srv.close()
+
+    # -- Production 20 round 2 (R4): odd retry_after, a sender that raises, the hourly budget, what "delivered" means -----------------------------------
+    def test_a_hostile_retry_after_cannot_kill_the_sender_and_the_message_still_reports_once(self):
+        for label, raw in (("nan", b'{"parameters":{"retry_after":NaN}}'), ("negative", b'{"parameters":{"retry_after":-5}}'), ("huge", b'{"parameters":{"retry_after":1e99}}'),
+                           ("inf", b'{"parameters":{"retry_after":Infinity}}'), ("text", b'{"parameters":{"retry_after":"soon"}}')):
+            srv = BodyServer(handler_fn=lambda n, p, raw=raw: (429, raw) if n == 1 else (200, b'{"ok":true}'))
+            try:
+                a = self.adapter(srv)
+                slept = []
+                a.sleep = slept.append
+                got = self.results(a)
+                a.submit(NOTE); self.assertTrue(a.flush(5), label)
+                self.assertEqual([o for _, o in got], ["delivered"], label)        # the retry went through
+                self.assertTrue(a._thread.is_alive() or a.q.empty(), label)
+                self.assertTrue(all(isinstance(x, float) and 0.0 <= x <= 60.0 for x in slept), (label, slept))
+                a.submit(NOTE); self.assertTrue(a.flush(5), label)
+                self.assertEqual(len(got), 2, label)
+            finally:
+                srv.close()
+
+    def test_a_sender_that_raises_still_reports_failed_exactly_once_and_keeps_going(self):
+        srv = BodyServer(b'{"ok":true}')
+        try:
+            a = self.adapter(srv)
+            got = self.results(a)
+            real = a._deliver
+            calls = []
+
+            def flaky(text):
+                calls.append(1)
+                if len(calls) == 1:
+                    raise RuntimeError("boom with " + TOKEN)
+                return real(text)
+            a._deliver = flaky
+            a.submit(NOTE); a.submit(NOTE)
+            self.assertTrue(a.flush(5))
+            self.assertEqual([o for _, o in got], ["failed", "delivered"])
+            self.assertFalse([l for l in a.logs if TOKEN in l])
+            self.assertIn("telegram: failed ram_high FIRING", a.logs)
+        finally:
+            srv.close()
+
+    def test_failed_sends_do_not_consume_the_hourly_budget(self):
+        srv = BodyServer(b'{"ok":false}', status=401)
+        try:
+            a = self.adapter(srv, max_per_hour=2)
+            got = self.results(a)
+            for _ in range(4):
+                a.submit(NOTE)
+            self.assertTrue(a.flush(10))
+            self.assertEqual([o for _, o in got], ["failed"] * 4)           # a dead token never turns into 'dropped by the rate limit'
+            srv.status, srv.body = 200, b'{"ok":true}'                       # the owner fixes the token
+            a.submit(NOTE); self.assertTrue(a.flush(5))
+            self.assertEqual(got[-1][1], "delivered")
+        finally:
+            srv.close()
+
+    def test_delivered_means_http_2xx_and_a_json_body_with_ok_true(self):
+        cases = (("ok false", 200, b'{"ok":false,"description":"chat not found secret-detail"}'), ("html", 200, b"<html>captive portal secret-detail</html>"),
+                 ("empty", 200, b""), ("list", 200, b"[true]"), ("ok string", 200, b'{"ok":"true"}'), ("huge", 200, b'{"ok":true,"pad":"' + b"x" * 70000 + b'"}'))
+        for label, status, body in cases:
+            srv = BodyServer(body, status=status)
+            try:
+                a = self.adapter(srv, retries=1)
+                got = self.results(a)
+                a.submit(NOTE); a.flush(5)
+                self.assertEqual([o for _, o in got], ["failed"], label)
+                self.assertEqual(a.stats["sent"], 0, label)
+                self.assertFalse([l for l in a.logs if l.startswith("telegram: delivered")], label)
+                joined = "\n".join(a.logs)
+                for secret in ("secret-detail", "captive", "chat not found", TOKEN, CHAT):
+                    self.assertNotIn(secret, joined, (label, secret))
+                self.assertTrue([l for l in a.logs if "reply was not ok:true" in l], (label, a.logs))   # one fixed-enum line
+            finally:
+                srv.close()
+        srv = BodyServer(b'{"ok":true,"result":{"message_id":1}}', status=200)
+        try:
+            a = self.adapter(srv)
+            got = self.results(a)
+            a.submit(NOTE); a.flush(5)
+            self.assertEqual([o for _, o in got], ["delivered"])
         finally:
             srv.close()
 

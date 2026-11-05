@@ -164,6 +164,7 @@ class DeliveryEndToEnd(TmpCase):
         self.assertEqual(lt["ops.telegram_failed"][0], 1.0)
         self.assertEqual(lt["ops.telegram_sent"][0], 0.0)
         self.assertIn("ops.telegram_last_failure_ts", lt)
+        self.assertEqual(lt["ops.telegram_abandoned"][0], 0.0)
         self.assertNotIn("ops.telegram_last_ok_ts", lt)
         names = self.rt.store.metric_names()
         for n in ("ops.telegram_sent", "ops.telegram_failed", "ops.telegram_dropped", "ops.telegram_rate_limited", "ops.telegram_last_failure_ts"):
