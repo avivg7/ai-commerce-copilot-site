@@ -34,6 +34,53 @@ export const EA_EXTRA_RULES = [
   [/пробн|бесплатн\w+ (навсегда|пожизненно|тариф|план)|навсегда|пожизненн|подписк|продлева|автопродлен|скидк|выгод|экономи|(?<![а-яё])акци[яи]|ограничен|последний шанс|гарант|результат|(?<![а-яё])рост(?![а-яё])|увелич|продаж|(?<![а-яё])доход|рейтинг|звёзд|звезд|тысяч|сотни|осталось|(?<![а-яё])мест(?![а-яё])|\d\s?%|процент|спишем|\$/i, "ru: no trial, forever/lifetime, subscription, renewal, discount, urgency, scarcity, result, rating or price wording"],
 ];
 
+/**
+ * The dates each step must state in each language, written out as literals on purpose (NOT read from src/i18n/eaTokens.ts): the token table and these literals are two independent
+ * statements of the same calendar facts, and `ea:check` fails when they disagree or when either disagrees with the IANA database. Index 0 = the initial end, 1 and 2 = the extension steps.
+ * last = the last included day (Israel), end = the day access ends at 00:00 Israel time, utc = the UTC line of the plan cards ("22:00 UTC on <last day>").
+ */
+export const REQUIRED_DATES = {
+  en: [
+    { last: "December 31, 2026", end: "January 1, 2027", utc: "22:00 UTC on December 31" },
+    { last: "January 31, 2027", end: "February 1, 2027", utc: "22:00 UTC on January 31" },
+    { last: "February 28, 2027", end: "March 1, 2027", utc: "22:00 UTC on February 28" },
+  ],
+  he: [
+    { last: "31 בדצמבר 2026", end: "1 בינואר 2027", utc: "22:00 UTC ב־31 בדצמבר" },
+    { last: "31 בינואר 2027", end: "1 בפברואר 2027", utc: "22:00 UTC ב־31 בינואר" },
+    { last: "28 בפברואר 2027", end: "1 במרץ 2027", utc: "22:00 UTC ב־28 בפברואר" },
+  ],
+  es: [
+    { last: "31 de diciembre de 2026", end: "1 de enero de 2027", utc: "22:00 UTC del 31 de diciembre" },
+    { last: "31 de enero de 2027", end: "1 de febrero de 2027", utc: "22:00 UTC del 31 de enero" },
+    { last: "28 de febrero de 2027", end: "1 de marzo de 2027", utc: "22:00 UTC del 28 de febrero" },
+  ],
+  ru: [
+    { last: "31 декабря 2026", end: "1 января 2027", utc: "22:00 UTC 31 декабря" },
+    { last: "31 января 2027", end: "1 февраля 2027", utc: "22:00 UTC 31 января" },
+    { last: "28 февраля 2027", end: "1 марта 2027", utc: "22:00 UTC 28 февраля" },
+  ],
+};
+
+/**
+ * Facts every locale must state in EVERY step (Production 21): the permanent extension reservation (terms line and questions), the plan-change answer, the guarantee answer (paid purchases only)
+ * and, in an extended build, the extended bar and note. Written as that language writes them; a rewrite that drops one fails `ea:check`.
+ */
+export const REQUIRED_FACTS = {
+  en: { every: "every Early Access store", noCharge: "never starts a charge", email: "by e-mail before the end date", single: "single store's access", changeBefore: "before Early Access ends", changeFree: "at no charge", sameEnd: "The end date stays the same", paidPurchases: "eligible paid purchases", noteEvery: "every Early Access store", extEvery: "every store", extPay: "no payment is taken", extAuto: "automatically", extZone: "Israel time" },
+  he: { every: "לכל חנויות הגישה המוקדמת בבת אחת", noCharge: "לעולם לא מתחילה חיוב", email: "ובדוא״ל לפני תאריך הסיום", single: "של חנות בודדת", changeBefore: "לפני שהגישה המוקדמת מסתיימת", changeFree: "ללא תשלום", sameEnd: "תאריך הסיום נשאר אותו תאריך", paidPurchases: "רכישות בתשלום הזכאיות לכך", noteEvery: "לכל חנות בגישה מוקדמת", extEvery: "לכל החנויות", extPay: "לא נגבה תשלום", extAuto: "אוטומטית", extZone: "שעון ישראל" },
+  es: { every: "todas las tiendas del Acceso anticipado a la vez", noCharge: "nunca inicia un cobro", email: "por correo electrónico antes de la fecha de fin", single: "de una sola tienda", changeBefore: "antes de que termine el Acceso anticipado", changeFree: "sin ningún coste", sameEnd: "La fecha de fin no cambia", paidPurchases: "compras de pago que cumplan los requisitos", noteEvery: "todas las tiendas del Acceso anticipado", extEvery: "todas las tiendas", extPay: "no se toma ningún pago", extAuto: "automáticamente", extZone: "hora de Israel" },
+  ru: { every: "для всех магазинов раннего доступа", noCharge: "никогда не запускает списание", email: "по электронной почте до", single: "отдельного магазина", changeBefore: "до окончания раннего доступа", changeFree: "бесплатно", sameEnd: "Дата окончания останется прежней", paidPurchases: "платные покупки, которые под неё подпадают", noteEvery: "всех магазинов раннего доступа", extEvery: "всех магазинов", extPay: "платёж не взимается", extAuto: "автоматически", extZone: "по израильскому времени" },
+};
+
+/** What the P20 guarantee and plugin answers said and the Plugin no longer says on a free grant: it must not come back (the Plugin is corrected in `feat/p21-guarantee-fix`). */
+export const FORBIDDEN_SENTENCES = {
+  en: ["may show a 14-day", "money-back message"],
+  he: ["ייתכן שהתוסף יציג", "הודעה על החזר כספי"],
+  es: ["puede mostrar en sus primeros días", "mensaje de devolución"],
+  ru: ["плагин может показывать", "сообщение о возврате"],
+};
+
 /** Dates and facts every locale must state, written as that language writes them. Checked against the strings that carry them. */
 export const REQUIRED = {
   en: { last: "December 31, 2026", end: "January 1, 2027", auto: "automatically", card: "credit card", paid: "paid plan", zone: "Israel time", utc: "22:00 UTC" },
@@ -58,10 +105,12 @@ const walk = (o, path, out) => {
  * Problems of one locale's campaign dictionary `ea` (the merged one the site renders):
  * the free-until date and the end date appear where the offer is stated, "nothing is charged automatically", "no credit card" and the voluntary paid continuation are stated.
  */
-export function eaDisclosureProblems(locale, ea) {
-  const need = REQUIRED[locale];
+export function eaDisclosureProblems(locale, ea, step = 0) {
+  const need = { ...REQUIRED[locale], ...REQUIRED_DATES[locale][step] };
+  const facts = REQUIRED_FACTS[locale];
   const problems = [];
-  const has = (path, tok) => { const v = path.split(".").reduce((a, k) => a?.[k], ea); return typeof v === "string" && v.includes(tok); };
+  const nb = (x) => x.replace(/\u00a0/g, " "); // Russian packs use no-break spaces; the required phrases are written with plain ones
+  const has = (path, tok) => { const v = path.split(".").reduce((a, k) => a?.[k], ea); return typeof v === "string" && nb(v).includes(nb(tok)); };
   // the offer statements: which string must carry which date
   for (const [path, tok] of [
     ["bar.live", need.last], ["bar.announce", need.last],
@@ -76,11 +125,24 @@ export function eaDisclosureProblems(locale, ea) {
     // the promises: no card, nothing charged automatically, a paid plan only by the merchant's choice
     ["hero.note", need.auto], ["hero.note", need.card], ["section.lead", need.auto], ["after.body", need.auto], ["plan.ends", need.paid], ["section.lead", need.paid],
     ["section.faq.free.a", need.last], ["section.faq.end.q", need.end],
+    // the UTC line of the plan card names the UTC day of the step ("22:00 UTC on January 31")
+    ["plan.ends", need.utc],
+    // Production 21: the extension reservation is permanent (terms line and questions), the plan change is answered, the guarantee is for paid purchases only
+    ["section.reservation", facts.every], ["section.reservation", facts.noCharge], ["section.reservation", facts.email], ["section.reservation", facts.single],
+    ["section.faq.extension.a", facts.every], ["section.faq.extension.a", facts.noCharge], ["section.faq.extension.a", facts.email], ["section.faq.extension.a", facts.single],
+    ["section.faq.change.a", facts.changeBefore], ["section.faq.change.a", facts.changeFree], ["section.faq.change.a", facts.sameEnd], ["section.faq.change.a", "{contactEmail}"],
+    ["section.faq.guarantee.a", facts.paidPurchases], ["section.faq.guarantee.a", "route:refund-policy"],
+    // the extended variant (rendered only by an extended build, checked in every step): the clock, no payment, nothing automatic, every store
+    ["extended.bar", facts.extEvery], ["extended.bar", facts.extZone], ["extended.bar", need.last],
+    ["extended.note", facts.noteEvery], ["extended.note", facts.extPay], ["extended.note", facts.extAuto],
   ]) if (!has(path, tok)) problems.push(`${locale}: ea.${path} must contain "${tok}"`);
+  for (const bad of FORBIDDEN_SENTENCES[locale]) for (const [p, v] of walk(ea, "", [])) if (v.includes(bad)) problems.push(`${locale}: ea.${p} must not say "${bad}" (the Plugin no longer shows a money-back message on a free grant)`);
+  // no date token may be left unresolved in a resolved dictionary
+  for (const [p, v] of walk(ea, "", [])) if (/\{(lastDay|lastDayShort|endDate|firstLastDay)\}/.test(v)) problems.push(`${locale}: ea.${p} still contains an unresolved date token`);
   // every dictionary string must be non-empty
   for (const [p, v] of walk(ea, "", [])) if (!v.trim()) problems.push(`${locale}: ea.${p} is empty`);
   return problems;
 }
 
-/** The two FAQ lines that must name a banned idea in order to deny it (the guarantee does not apply; nothing renews or is charged automatically); it is exempt from the extra bans and is reviewed by hand. */
-export const EA_EXEMPT_LINE = /^\s*(guarantee|auto):\s*\{/;
+/** The three FAQ lines that must name a banned idea in order to deny or quote it (the guarantee does not apply to Early Access; nothing renews or is charged automatically; the Plugin's own "Renew plan" wording); they are exempt from the extra bans (never from the base rules) and are reviewed by hand. */
+export const EA_EXEMPT_LINE = /^\s*(guarantee|auto|plugin):\s*\{/;
