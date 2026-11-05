@@ -179,7 +179,7 @@ console.log("\n== no stale or leaked campaign element, in any mode, page, langua
     const prefix = loc === "en" ? "" : `/${loc}`;
     { const { ctx, p } = await view(mode, `${prefix}${route}`, "Asia/Jerusalem", C + 1000, w, loc);
       if (w === 390) { await p.click("[data-aicc-menu-btn]").catch(() => {}); await p.waitForTimeout(100); }
-      const l = await leaks(p, "[data-ea-live]"), h = await leaks(p, "[data-ea-hide-live]"), a = await leaks(p, "[data-ea-after]");
+      const l = await leaks(p, "[data-ea-live]"), a = await leaks(p, "[data-ea-after]");
       const needsAfter = route === "/pricing/" || route === "/";
       check(l === 0 && (!needsAfter || a > 0), `${mode} ${loc}${route} @${w}: ENDED view shows no live campaign element (${l} live visible) and the ended counterparts are present (${a})${w === 390 ? " (mobile menu open)" : ""}`);
       // Text-based probe (does not depend on the markers): none of the campaign's own sentences may be rendered after the end, whatever element carries them.
@@ -196,7 +196,7 @@ console.log("\n== no stale or leaked campaign element, in any mode, page, langua
       const ended = [D[loc].ea.after.title, D[loc].common.soon.band].map(norm).filter((t) => (route === "/" || route === "/pricing/") && innerLive.includes(t));
       check(ended.length === 0, `${mode} ${loc}${route} @${w}: LIVE view renders neither the ended note nor the ordinary closing band${ended.length ? " -> " + ended[0].slice(0, 50) : ""}`);
       const prim = await p.locator(".aicc-site-header a.aicc-btn--primary").evaluateAll((els) => els.filter((e) => e.getClientRects().length > 0).length);
-      check(prim === (mode === "open" ? 1 : 1), `${mode} ${loc}${route} @${w}: exactly one primary header button is visible (${prim})${w === 390 ? " (mobile menu open)" : ""}`);
+      check(prim === 1, `${mode} ${loc}${route} @${w}: exactly one primary header button is visible (${prim})${w === 390 ? " (mobile menu open)" : ""}`);
       await ctx.close(); }
   }
   console.log("== destinations and names (live view)");
@@ -220,6 +220,16 @@ console.log("\n== no stale or leaked campaign element, in any mode, page, langua
   const names = await p2.locator(".aicc-plan a.aicc-btn").evaluateAll((a) => a.map((x) => x.textContent.replace(/\s+/g, " ").trim()));
   check(new Set(names).size === 3, `the three plan buttons have different accessible names (${names.join(" | ")})`);
   await c2.close();
+}
+
+console.log("\n== the header keeps its token height and the bar never sits under it (every language, desktop widths where the header is tightest)");
+for (const loc of ["en", "he", "es", "ru"]) for (const w of [1000, 1024, 1050, 1080, 1100, 1200, 1280]) {
+  const prefix = loc === "en" ? "" : `/${loc}`;
+  const { ctx, p } = await view("open", `${prefix}/pricing/`, "UTC", C - 86400e3, w, loc);
+  const g = await p.evaluate(() => { const r = (q) => document.querySelector(q).getBoundingClientRect(); return { header: r(".aicc-site-header").height, headerBottom: r(".aicc-site-header").bottom, barTop: r(".aicc-eabar").top, crumbs: r(".aicc-crumbs").top, barBottom: r(".aicc-eabar").bottom }; });
+  check(g.header <= 80 && g.barTop >= g.headerBottom - 0.5, `${loc} @${w}: the header is ${Math.round(g.header)}px (token 76) and the bar starts below it (bar ${Math.round(g.barTop)}, header bottom ${Math.round(g.headerBottom)})`);
+  check(g.crumbs - g.barBottom <= 80, `${loc} @${w}: no empty gap under the bar on an inner page (${Math.round(g.crumbs - g.barBottom)}px to the breadcrumb)`);
+  await ctx.close();
 }
 console.log("\n== Hebrew (right-to-left), live view");
 {

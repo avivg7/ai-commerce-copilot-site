@@ -25,7 +25,7 @@ export const eaEs: DeepPartial<EaDict> = {
     ctaAnnounce: "Cómo funciona el Acceso anticipado",
     note: "No hace falta tarjeta de crédito. El acceso termina el 1 de enero de 2027 a las 00:00, hora de Israel, y no se cobra nada automáticamente.",
   },
-  header: { cta: "Solicitar Acceso anticipado" },
+  header: { cta: "Solicitar acceso" },
   plan: {
     free: "Gratis hasta el 31 de diciembre de 2026",
     regular: "Precio regular, no se cobra durante el Acceso anticipado:",
