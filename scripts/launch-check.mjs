@@ -78,6 +78,17 @@ if (approved) console.log(translationsReviewed
 }
 if (env.NEXT_PUBLIC_LEGAL_DRAFT_NOTICE === "off" && !approved) problems.push("NEXT_PUBLIC_LEGAL_DRAFT_NOTICE=off hides the draft pills without approval");
 
+// Early Access (Production 20): a SEPARATE switch from checkout. It never opens paid purchases; it publishes a fixed-end free-access offer.
+{
+  const ea = await loadTs("src/lib/earlyAccess.ts");
+  console.log(`early access switch (NEXT_PUBLIC_AICC_EARLY_ACCESS): ${ea.EA_MODE.toUpperCase()}${ea.EA_REQUESTED !== ea.EA_MODE ? ` (requested "${ea.EA_REQUESTED}", ignored: this build is at or after the cutoff ${ea.EA_CUTOFF_ISO_UTC})` : ""}; cutoff ${ea.EA_CUTOFF_ISO_UTC} = 2027-01-01 00:00 Asia/Jerusalem`);
+  if (ea.EA_EXPIRED_REQUEST) problems.push(`early access: the switch is "${ea.EA_REQUESTED}" but this build is made at or after the cutoff, so the campaign was NOT published; remove NEXT_PUBLIC_AICC_EARLY_ACCESS from the release environment`);
+  if (env.NEXT_PUBLIC_AICC_EARLY_ACCESS && !["announce", "open"].includes(env.NEXT_PUBLIC_AICC_EARLY_ACCESS)) problems.push(`early access: NEXT_PUBLIC_AICC_EARLY_ACCESS is "${env.NEXT_PUBLIC_AICC_EARLY_ACCESS}": only the exact values "announce" and "open" switch the campaign on; anything else is OFF`);
+  if (ea.EA_ON) problems.push("early access is ON in this build: publishing free access needs the owner's explicit approval, the accountant's written confirmation and counsel's review of the promotional terms (docs/cutover/early-access.md section 6)");
+  if (ea.EA_OPEN && !ea.EA_URL_OVERRIDE) problems.push("early access OPEN: NEXT_PUBLIC_AICC_EARLY_ACCESS_URL is not set, so the buttons lead to the plain account page: the Early Access request flow on the Control Plane must exist and be approved first");
+  if (ea.EA_OPEN && !commerceOpen) console.log("early access OPEN with checkout CLOSED: a valid state (free access does not need checkout); after the end date the pages return to \"Purchases open soon\"");
+}
+
 // If a build exists, look at what it really contains.
 const out = path.resolve(ROOT, process.env.AICC_OUT_DIR || "out");
 if (fs.existsSync(out)) {

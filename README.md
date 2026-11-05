@@ -35,6 +35,7 @@ npm run serve:out -- --port 3011   # serve out/ locally (add --prefix /ai-commer
 | `NEXT_PUBLIC_LEGAL_DRAFT_NOTICE` | on | `off` hides the draft pills (screenshots only); `launch:check` still fails without approval |
 | `NEXT_PUBLIC_AICC_LEGAL_NAME`, `..._ADDRESS`, `..._SUPPORT_EMAIL`, `..._GOVERNING_LAW`, `..._PAYMENT_PROCESSOR`, `..._HOSTING_REGION` | unset | owner values; unset renders one calm "To be confirmed before purchases open." line (pre-commercial truth, `docs/cutover/pre-commercial.md`) |
 | `NEXT_PUBLIC_AICC_COMMERCE_OPEN` | unset (CLOSED) | `true` only when commercial checkout opens (set together with the Control Plane owner fact `AICC_COMMERCE_OPEN`): closed shows "Purchases open soon" instead of every purchase button and band; `launch:check` reports it |
+| `NEXT_PUBLIC_AICC_EARLY_ACCESS`, `NEXT_PUBLIC_AICC_EARLY_ACCESS_URL` | unset (OFF) | Early Access campaign (Production 20), separate from checkout: `announce` or `open` renders the fixed-end offer (ends 2027-01-01 00:00 Asia/Jerusalem = 2026-12-31 22:00 UTC); any other value is OFF; a build at or after the cutoff ignores it. `open` needs the Control Plane request flow (`..._URL`). `docs/cutover/early-access.md` |
 
 ## Checks
 
@@ -64,6 +65,8 @@ npm run serve:out -- --port 3011   # serve out/ locally (add --prefix /ai-commer
 | `npm run test:redirects` | the edge redirect matrix (`docs/cutover/redirect-matrix.md`, data in `scripts/lib/redirect-matrix.mjs`) against a local stand-in server and against the Caddyfile text (offline; applies nothing) |
 | `npm run launch:check` | the COMMERCIAL launch gate: what would be published pending, drafted or unapproved, and whether checkout is open (`--strict` fails) |
 | `npm run test:public-truth` | the PUBLIC-TRUTH gate: a built export (`-- --out out`) or a running origin (`-- --url <base> --preset site\|cp`) has nothing internal-looking, staged or untrue in en/he/es/ru; `-- --self-test` proves every rule with a mutation |
+| `npm run ea:check` | the Early Access campaign: the cutoff re-derived from the IANA database under seven process time zones, mode resolution at the boundary, the page script, no time-zone reads, the disclosures in four languages; `-- --out <dir> --expect off\|announce\|open` audits a built export |
+| `npm run test:early-access` | a real browser with a pinned clock: before, at and after the cutoff in six visitor time zones, live and ended views, overflow, keyboard, Hebrew (`-- --open <dir> --announce <dir> --off <dir>`) |
 | `npm run test:payment-gate` | the launch gate fails for bacs / cheque / cod, any gateway not on the (empty) allowlist, and a bank-transfer placeholder in the output; prints the structured-data switch |
 | `npm run test:error-page` | the standalone 5xx page `docs/cutover/50x.html`: exact sentence, no external request, axe at 320/390/1280 in light, dark and forced colours, Caddyfile wiring |
 | `npm run og:build` / `npm run shots` / `npm run shots:brand` | regenerate Open Graph images / visual evidence screenshots |
