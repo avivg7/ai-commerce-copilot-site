@@ -29,6 +29,12 @@ const ok = (m) => console.log("  ok   " + m);
 const bad = (m) => { problems.push(m); console.error("  FAIL " + m); };
 const check = (cond, m) => (cond ? ok(m) : bad(m));
 
+// --exports-only: skip the sections that need no export (the IANA derivation, the child-process matrices, the gates): used by the mutation runner and when auditing a build, after a full run has passed
+const SKIP_STATIC = args.includes("--exports-only");
+const ea = await loadTs("src/lib/earlyAccess.ts");
+const C = ea.EA_CUTOFF_UTC_MS;
+const S1 = ea.EA_EXTENSION_STEPS[0], S2 = ea.EA_EXTENSION_STEPS[1];
+if (!SKIP_STATIC) {
 // ── 1. the instant, derived from the IANA database ───────────────────────────────────────────────────────────────────────────────────────────
 function deriveFromIana(y = 2027, mo = 1, d = 1) {
   // Find the UTC instant whose wall clock in Asia/Jerusalem reads y-mo-d 00:00:00 (search the offsets a zone can have).
@@ -52,7 +58,6 @@ function loadWith(env) {
 }
 
 console.log("1. the cutoff instant");
-const ea = await loadTs("src/lib/earlyAccess.ts");
 const hits = deriveFromIana();
 check(hits.length === 1, `Intl finds exactly one instant at which Jerusalem reads 2027-01-01 00:00:00 (${hits.length})`);
 check(hits[0] === ea.EA_CUTOFF_UTC_MS, `EA_CUTOFF_UTC_MS (${ea.EA_CUTOFF_UTC_MS}) equals the IANA-derived instant (${hits[0]})`);
@@ -89,8 +94,6 @@ check(ea.EA_CUTOFF_UTC_MS < ea.EA_EXTENSION_STEPS[0] && ea.EA_EXTENSION_STEPS[0]
 
 // ── 2. mode resolution ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 console.log("2. modes at the boundary");
-const C = ea.EA_CUTOFF_UTC_MS;
-const S1 = ea.EA_EXTENSION_STEPS[0], S2 = ea.EA_EXTENSION_STEPS[1];
 for (const [raw, want] of [["open", "open"], ["announce", "announce"], [undefined, "off"], ["", "off"], ["true", "off"], ["1", "off"], ["OPEN", "off"], [" open", "off"], ["open ", "off"], ["Announce", "off"], ["on", "off"]])
   check(ea.parseEaMode(raw) === want, `switch ${JSON.stringify(raw)} -> ${want}`);
 for (const mode of ["open", "announce"]) {
@@ -189,6 +192,8 @@ for (const [n, mode, env, E] of [[0, "open", {}, C], [1, "open", { NEXT_PUBLIC_A
   check(!/Intl|toLocale|getTimezoneOffset|new Date\(/.test(script), `${tag}: the page script uses no time zone, locale or Date parsing: only Date.now() against a number`);
   check(script.includes(`Date.now()>=${E}`) && (closes ? script.includes(`Date.now()>=${C}`) : !script.includes(String(n === 0 ? S1 : C))), `${tag}: the number(s) in the page script are the end of the step${closes ? " and the initial end" : ""}, and nothing else`);
   check(script.length < (closes ? 260 : 200), `${tag}: the page script is tiny (${script.length} bytes)`);
+}
+
 }
 
 // ── 4. no time-zone reads or locale date formatting in the campaign code ─────────────────────────────────────────────────────────────────
@@ -312,17 +317,17 @@ if (out) {
       const mine = idx.getEaDictionary(l, step), first = idx.getEaDictionary(l, 0);
       for (const [rel, want] of [[`${pre}pricing/index.html`, ["plan.free", "plan.term", "section.title", "section.reservation", "section.faq.extension.q", "section.faq.change.q", "section.who.b", "section.steps.use.body"]], [`${pre}index.html`, ["hero.note", "section.homeLead"]]]) {
         const tx = text(rel);
-        const missing = [...want, ...(step > 0 ? ["section.who.dExtended"] : ["section.who.d"])].filter((p) => !tx.includes(nbn(p.split(".").reduce((a, k) => a[k], mine))));
+        const missing = [...want, ...(rel.endsWith("pricing/index.html") ? [step > 0 ? "section.who.dExtended" : "section.who.d"] : [])].filter((p) => !tx.includes(nbn(p.split(".").reduce((a, k) => a[k], mine))));
         check(missing.length === 0, `${rel}: says the sentences of step ${step}${missing.length ? " -> missing " + missing.join(", ") : ""}`);
         const barPath = step > 0 ? "extended.bar" : expect === "open" ? "bar.live" : "bar.announce";
         check(tx.includes(nbn(barPath.split(".").reduce((a, k) => a[k], mine))), `${rel}: the bar says '${barPath}' of step ${step}`);
         for (const other of [0, 1, 2].filter((o) => o !== step)) {
           let n = 0; for (const k of ["last", "end", "utc"]) { const lit = REQUIRED_DATES[l][other][k]; n += (tx.match(new RegExp(`(?<![0-9])${lit.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`, "g")) || []).length; }
-          const allowed = step > 0 && other === 0 && rel.endsWith("pricing/index.html") ? 1 : 0; // the extension note
+          const allowed = step > 0 && other === 0 ? 1 : 0; // the extension note: on Home and on Pricing (an extended build)
           check(n === allowed, `${rel}: dates of step ${other} appear ${n} time(s) (allowed ${allowed}${allowed ? ": the extension note names the initial last day" : ""})`);
         }
         if (step === 0) check(!tx.includes(nbn(mine.extended.note)) && !tx.includes(nbn(mine.extended.bar)), `${rel}: a step-0 build says nothing about an extension (the reservation is the only extension text)`);
-        else if (rel.endsWith("pricing/index.html")) check(tx.includes(nbn(mine.extended.note)), `${rel}: the extension note is in the explanation`);
+        else check(tx.includes(nbn(mine.extended.note)), `${rel}: the extension note is on the page (Home and the Pricing explanation: the moved date is never silent)`);
         // the leak probe: no sentence of the initial-end copy that CHANGED is rendered in an extended build
         if (step > 0) {
           const stale = flat(first).filter(([p, v]) => p !== "extended.note" && v !== flat(mine).find(([q]) => q === p)?.[1] && tx.includes(nbn(v)));
@@ -384,6 +389,7 @@ if (out && off) {
   check(n > 0 && diff === 0, `${n} pages: title, meta, Open Graph, hreflang, canonical and JSON-LD are byte-identical with the campaign on and off`);
 }
 
+if (!SKIP_STATIC) {
 // ── 9. the launch gates (Production 21): the extension reference, the Plugin identity (allow-list) and the extended-build confirmations, exercised in real child processes ──
 console.log("9. launch:check gates (extension reference, Plugin release identity allow-list, extended-build confirmations)");
 {
@@ -436,6 +442,8 @@ console.log("10. ea:live: Cache-Control and the served build (local fixture orig
     srv.close();
     check(r.status === wantExit, `ea:live: ${label} -> exit ${wantExit} (got ${r.status})`);
   }
+}
+
 }
 
 // ── 11. the text snapshot of the final English Early Access pack and the hero (a semantic reversal that keeps every required token still shows up as a diff) ───────

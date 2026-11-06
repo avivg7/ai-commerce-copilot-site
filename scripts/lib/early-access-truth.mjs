@@ -149,6 +149,10 @@ export function eaDisclosureProblems(locale, ea, step = 0) {
     const v = nb(p.split(".").reduce((a, k) => a?.[k], ea) || "");
     if (/e-?mail|דוא״ל|correo|почт/i.test(v) && !v.includes(nb(facts.soft))) problems.push(`${locale}: ea.${p} promises e-mail without "${facts.soft}" (no e-mail sender exists yet)`);
   }
+  // typography and register (Production 21 review R1-n3, n4): the clock moment never breaks between the word before "00:00" and the time (a no-break space), and Spanish addresses the merchant as usted throughout
+  const NBSP_RULES = { en: [/\bat 00:00/, "the time 00:00 must follow \"at\" with a no-break space"], he: [/בשעה 00:00/, "00:00 must follow בשעה with a no-break space (a wrap left \"00:00,\" at the start of a line)"], es: [/a las 00:00/, "00:00 must follow \"a las\" with no-break spaces"] };
+  if (NBSP_RULES[locale]) for (const [p, v] of walk(ea, "", [])) if (NBSP_RULES[locale][0].test(v)) problems.push(`${locale}: ea.${p}: ${NBSP_RULES[locale][1]}`);
+  if (locale === "es") for (const [p, v] of walk(ea, "", [])) if (/(?<!usted )\bcompra (el|un) plan/i.test(v)) problems.push(`es: ea.${p} uses an informal or ambiguous "compra" (write "usted compra")`);
   for (const bad of FORBIDDEN_SENTENCES[locale]) for (const [p, v] of walk(ea, "", [])) if (v.includes(bad)) problems.push(`${locale}: ea.${p} must not say "${bad}" (the Plugin no longer shows a money-back message on a free grant)`);
   // no date token may be left unresolved in a resolved dictionary
   for (const [p, v] of walk(ea, "", [])) if (/\{(lastDay|lastDayShort|endDate|firstLastDay)\}/.test(v)) problems.push(`${locale}: ea.${p} still contains an unresolved date token`);

@@ -61,5 +61,9 @@ console.log(`largest content page (no demo): ${maxContent.route} ${kb(maxContent
 console.log(`largest demo page: ${rows.filter((r) => r.demo).reduce((m, r) => (r.total > m.total ? r : m), { total: 0, route: "-" }).route} ${kb(rows.filter((r) => r.demo).reduce((m, r) => Math.max(m, r.total), 0))} of ${BUDGET_DEMO / 1024} kB`);
 if (!demoChunks.length) { console.error("FAIL: demo chunk not found; cannot verify the demo budget"); process.exit(1); }
 void max;
+// Headroom (Production 21): the content-page budget is NOT raised, but the largest content page (the 404, which ships all four languages' strings) must keep at least 1.0 kB below it, so the next edit does not trip the gate by a few bytes.
+const HEADROOM = BUDGET_CONTENT - maxContent.total;
+console.log(`headroom of the largest content page: ${(HEADROOM / 1024).toFixed(2)} kB (must stay >= 1.00 kB)`);
+if (HEADROOM < 1024) { console.error(`\nFAIL: ${maxContent.route} leaves ${(HEADROOM / 1024).toFixed(2)} kB under the ${BUDGET_CONTENT / 1024} kB content budget (need >= 1.00 kB): trim the page's JavaScript, do not raise the budget`); process.exit(1); }
 if (fail) { console.error(`\nFAIL: ${fail} page(s) over budget`); process.exit(1); }
 console.log(`PASS: ${rows.length} pages within budget`);
