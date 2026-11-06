@@ -22,11 +22,18 @@ const RULES = [
   [/limited time|countdown|hurry|act now/i, "urgency"], [/#1\b|best[- ]selling|number one/i, "superlative"],
   [/crossed[- ]out|strike-?through price/i, "strike-through price"], [/works with any theme|any theme/i, "any theme claim"],
   [/\bdeleted after\b|deleted when you/i, "deletion promise"], [/is (fully )?(wcag )?compliant/i, "conformance claim"],
+  // Production 21 (R1 copy-gate gap): outcome promises that the digit-and-percent rule cannot see (the hero decision stays an exact-text pin; these bans stop a rewrite from drifting there)
+  [/(turn|convert|transform)\w*\s+(more\s+)?(your\s+)?(browsers?|visitors?|shoppers?|lookers?)\s+(in)?to\s+(buyers?|customers?)|browsers?\s+into\s+buyers?/i, "browsers-into-buyers promise"],
+  [/(?<!\bno\s)guarantee[sd]?\s+(more\s+)?(sales|revenue|orders|results)|(sales|revenue|orders|results)\s+(are\s+|is\s+)?guarantee[sd]?/i, "guaranteed-sales promise"],
+  [/more orders from the same traffic/i, "more-orders-from-the-same-traffic promise"],
+  [/(?<!n['\u2019]t an )(?<!not an )upsell engine/i, "upsell engine (only the Product page's denial \"isn't an upsell engine\" is allowed)"],
+  [/\b(one|two|three|four|five|six|seven|eight|nine|ten|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred)(-\w+)?\s+(percent|per\s?cent)\b/i, "spelled-out percentage"],
   // Hebrew
   [/חינם|בחינם/, "he: free"], [/ללא כרטיס אשראי/, "he: no credit card"], [/מגמות|מגמה|טרנד/, "he: trends"], [/(?<!הזד)מנוי/, "he: subscription"],
   [/מתחדש\w* אוטומטית/, "he: auto-renew"], [/ביטול בכל עת|בטל בכל עת/, "he: cancel anytime"], [/30 יום/, "he: 30-day"],
   [/הפופולרי ביותר|הנפוץ ביותר/, "he: most popular"], [/תוצאות אמיתיות/, "he: real results"], [/הצטרפו/, "he: join"], [/סומכים עלינו|מהימן על ידי/, "he: trusted by"],
   [/תואם ל?-?GDPR|עומד ב-?GDPR/, "he: GDPR compliant"],
+  [/(להפוך|הופכים|הפכו|הופך) (גולשים|מבקרים) לקונים/, "he: visitors-into-buyers promise"], [/מכירות (נוספות )?מובטחות|מובטח\w* (יותר )?מכירות/, "he: guaranteed-sales promise"], [/(עשרה|עשרים|שלושים|ארבעים|חמישים|שישים|שבעים|שמונים|תשעים) אחוז/, "he: spelled-out percentage"],
   // Spanish
   [/\bgratis\b|prueba gratuita|gratuito/i, "es: free"], [/sin tarjeta de cr[eé]dito/i, "es: no credit card"], [/tendencia/i, "es: trends"],
   [/suscripci[oó]n/i, "es: subscription"], [/renovaci[oó]n autom[aá]tica/i, "es: auto-renew"], [/cancela cuando quieras/i, "es: cancel anytime"],
@@ -38,7 +45,9 @@ const RULES = [
   [/מייבא (את )?(ההזמנות|היסטוריית)[^.]{0,40}(אוטומטית|בעת החיבור|כשמתחברים)|(אוטומטית|בעת החיבור|כשמתחברים)[^.]{0,30}מייבא|ייבוא[^.]{0,20}(מתחיל|רץ|מתבצע) אוטומטית|(הזמנות|היסטוריה)[^.]{0,30}מיובאות (אוטומטית|בעת החיבור|כשמתחברים)/, "he: past-order import must be optional, never automatic or on connect"],
   [/importa (automáticamente|al conectar)|importa (los |sus )?(pedidos|historial)[^.]{0,40}(automáticamente|al conectar|cuando conecta)|importación (comienza|empieza|se inicia|se ejecuta) automáticamente|pedidos[^.]{0,30}se importan (automáticamente|al conectar|cuando conecta)/i, "es: past-order import must be optional, never automatic or on connect"],
   [/импортирует[^.]{0,40}(автоматически|при подключении)|(автоматически|при подключении)[^.]{0,40}импортирует|импорт (начинается|запускается|выполняется) автоматически|заказы[^.]{0,30}импортируются (автоматически|при подключении)/i, "ru: past-order import must be optional, never automatic or on connect"],
+  [/convi?e?rt\w*\s+(a\s+)?(los\s+)?(visitantes|navegantes)\s+en\s+compradores/i, "es: visitors-into-buyers promise"], [/ventas garantizadas|garantiz\w+\s+(m[a\u00e1]s\s+)?ventas/i, "es: guaranteed-sales promise"], [/(diez|veinte|treinta|cuarenta|cincuenta|sesenta|setenta|ochenta|noventa|cien)\s+por\s+ciento/i, "es: spelled-out percentage"],
   // Russian
+  [/превращ[а-яё]+\s+(посетителей|визитёров|просмотры)\s+в\s+покупателей/i, "ru: visitors-into-buyers promise"], [/гарантированн[а-яё]+\s+(рост\s+)?продаж|гарантир[а-яё]+\s+(рост\s+)?продаж/i, "ru: guaranteed-sales promise"], [/(десять|двадцать|тридцать|сорок|пятьдесят|шестьдесят|семьдесят|восемьдесят|девяносто)\s+процентов/i, "ru: spelled-out percentage"],
   [/бесплатн/i, "ru: free"], [/без банковской карты|без кредитной карты/i, "ru: no credit card"], [/тренд/i, "ru: trends"], [/подписк/i, "ru: subscription"],
   [/автопродлен|автоматическое продление|автоматически продлева/i, "ru: auto-renew"], [/отмен\w* в любой момент/i, "ru: cancel anytime"],
   [/30[ \u00a0]дней (на возврат|гарантии|пробн)|30[- ]дневн|(гарантия|возврат|пробн)[^.]{0,24}30[ \u00a0]дней/i, "ru: 30-day refund/trial claim (the guarantee is 14 days; \"последние 30 дней\" for the dashboard period is fine)"], [/самый популярный|самый востребованный/i, "ru: most popular"], [/реальные результаты/i, "ru: real results"],
@@ -73,6 +82,17 @@ function stripComments(src) {
   const bad = ["מנוי חודשי", "המנוי שלכם מתחדש", "מנויים"], ok = ["יותר הזדמנויות למכור.", "הזדמנויות"];
   const missed = bad.filter((t) => !rule(t)), wrong = ok.filter((t) => rule(t));
   if (missed.length || wrong.length) { console.error(`FAIL: self-test of the Hebrew subscription rule: missed [${missed}] flagged [${wrong}]`); process.exit(1); }
+}
+// Self-test of the outcome-promise bans (Production 21): each of the phrases the digit-and-percent rule let through is now caught, and the Product page's denial is still allowed.
+{
+  const rule = (t) => RULES.some(([re]) => re.test(t));
+  const bad = ["Guaranteed more sales.", "Turn more browsers into buyers.", "Turn your visitors into customers.", "Thirty percent more sales.", "More orders from the same traffic.", "The upsell engine for WooCommerce.", "AICC is an upsell engine.", "twenty-five percent more", "Sales are guaranteed.",
+    "הופכים גולשים לקונים", "מכירות מובטחות", "שלושים אחוז יותר",
+    "Convierte visitantes en compradores", "Ventas garantizadas", "treinta por ciento más",
+    "Превращайте посетителей в покупателей", "Гарантированный рост продаж", "тридцать процентов больше"];
+  const ok = ["No guaranteed results", "It isn't an upsell engine.", "It is not an upsell engine.", "Closed 30 days ago", "Placing an order never waits on AICC."];
+  const missed = bad.filter((t) => !rule(t)), wrong = ok.filter((t) => rule(t));
+  if (missed.length || wrong.length) { console.error(`FAIL: self-test of the outcome-promise bans: missed [${missed}] flagged [${wrong}]`); process.exit(1); }
 }
 // Self-test of the optional-import rules (he, es, ru) and the Studio badge rule: automatic / on-connect import and "recommended for 2 stores" are caught; the opt-in phrasing passes.
 {
