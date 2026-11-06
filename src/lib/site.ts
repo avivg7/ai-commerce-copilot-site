@@ -1,5 +1,6 @@
 import { DEFAULT_LOCALE, type Locale } from "@/i18n/config";
 import { localePath, type RouteId } from "./routes";
+import { BASE_PATH, withBase } from "./basePath";
 
 /**
  * Build-time site origin for canonical URLs, hreflang, sitemap and Open Graph. No trailing slash.
@@ -8,12 +9,7 @@ import { localePath, type RouteId } from "./routes";
  */
 export const SITE_URL = (process.env.SITE_URL || "https://www.copilt.org").replace(/\/+$/, "");
 
-/** Prefix for hand-built URLs (raw <a>, <img>, script text). next/link and next/image add it themselves. */
-export const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
-
-export function withBase(path: string): string {
-  return `${BASE_PATH}${path}`;
-}
+export { BASE_PATH, withBase };
 
 export function absoluteUrl(locale: Locale, route: RouteId = "home"): string {
   return `${SITE_URL}${localePath(locale, route)}`;

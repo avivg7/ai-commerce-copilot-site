@@ -1,4 +1,4 @@
-import { withBase } from "@/lib/site";
+import { withBase } from "@/lib/basePath";
 
 /** URL of a brand-kit asset (copied to public/brand-kit by scripts/publish-brand-assets.mjs before dev/build). */
 export const kitAsset = (name: string) => withBase(`/brand-kit/${name}`);

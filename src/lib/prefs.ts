@@ -4,8 +4,9 @@
  * Everything is wrapped in try/catch: storage can be blocked, and the site must work without it.
  * Both stores expose subscribe/getSnapshot for useSyncExternalStore (no setState-in-effect, no hydration mismatch).
  */
-import { LANG_KEY, LOCALES, type Locale, isLocale } from "@/i18n/config";
+import { LOCALES, type Locale } from "@/i18n/config";
 import { storeLang as kitStoreLang } from "../../brand/js/lang-store.js";
+import { readStoredLang } from "./storedLang";
 
 export const A11Y_KEY = "aicc_a11y";
 export type A11yPrefs = { motion: boolean; contrast: boolean; text: boolean };
@@ -73,17 +74,7 @@ function persistA11y() {
 /* ── language ── */
 export const langSubscribe = subscribe;
 
-export function readStoredLang(): Locale | null {
-  try {
-    const v = localStorage.getItem(LANG_KEY);
-    if (isLocale(v ?? undefined)) return v as Locale;
-  } catch {}
-  try {
-    const m = document.cookie.match(new RegExp(`(?:^|; )${LANG_KEY}=([^;]+)`));
-    if (m && isLocale(m[1])) return m[1] as Locale;
-  } catch {}
-  return null;
-}
+export { readStoredLang };
 
 /** Remember an explicit choice in a cookie (1 year, first party, Secure on https) AND localStorage: implemented once, in the brand kit. */
 export function storeLang(locale: Locale) {

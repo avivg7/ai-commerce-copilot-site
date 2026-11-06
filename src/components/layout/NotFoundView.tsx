@@ -2,8 +2,8 @@
 import { useEffect, useSyncExternalStore } from "react";
 import { LOCALE_META, DEFAULT_LOCALE, isLocale, type Locale } from "@/i18n/config";
 import { localePath } from "@/lib/routes";
-import { withBase, BASE_PATH } from "@/lib/site";
-import { readStoredLang } from "@/lib/prefs";
+import { withBase, BASE_PATH } from "@/lib/basePath";
+import { readStoredLang } from "@/lib/storedLang";
 import { Logo } from "@/components/ui/Logo";
 import { RecoImage } from "@/components/ui/RecoImage";
 
