@@ -66,7 +66,8 @@
     "test:brand-collisions": "node scripts/check-brand-collisions.mjs",
     "test:public-truth": "node scripts/public-truth-gate.mjs",
     "ea:check": "node scripts/ea-check.mjs",
-    "test:early-access": "node scripts/test-early-access.mjs"
+    "test:early-access": "node scripts/test-early-access.mjs",
+    "ea:live": "node scripts/ea-live-check.mjs"
   },
   "dependencies": {
     "clsx": "^2.1.1",

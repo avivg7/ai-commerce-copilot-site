@@ -1,0 +1,16 @@
+{
+  "_doc": "Plugin release identities for the Early Access identity gate (`npm run launch:check`, announce and open builds). AICC_EA_PLUGIN_RELEASE_SHA256 must be one of the `allowed` hashes and none of the `superseded` ones. Adding an `allowed` entry is a CONSCIOUS ACT: do it in its own commit, only when a new Plugin build has been attested (built from the corrected source, ZIP hashed, and, for a release, signed). The Site build never reads this file or the variable.",
+  "allowed": [
+    {
+      "sha256": "3f7a85eac8a55b5196d24508a70cbe7f8341a258a1bc21294454d387cf39c1b6",
+      "status": "unsigned candidate",
+      "note": "Corrected Plugin ZIP (feat/p21-guarantee-fix): no 14-day money-back message on a free grant. NOT signed yet: the entry records the candidate, not a release approval; replace or add the signed hash when the owner signs."
+    }
+  ],
+  "superseded": [
+    {
+      "sha256": "0fee2c9d994cfe554103d78997be3a83a676dae8a9ee88bfd8319fcd9e9b5a83",
+      "reason": "Plugin 1.1.0 candidate that shows a 14-day money-back message on a free grant"
+    }
+  ]
+}

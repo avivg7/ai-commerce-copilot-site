@@ -111,10 +111,12 @@ check(ea.EA_STEP_ISO_UTC.every((iso, i) => Date.parse(iso) === [C, S1, S2][i]) &
 // The extension input: ONLY the exact words "1" or "2" AND a decision reference; anything else is step 0.
 {
   const REF = "DEC-2027-0001";
-  for (const [st, ref, want] of [["1", REF, 1], ["2", REF, 2], ["1", undefined, 0], ["2", "", 0], ["1", "ab", 0], ["1", "a".repeat(65), 0], ["1", "a".repeat(64), 1], ["1", "abc", 1], ["1", "has space", 0], ["1", "<script>", 0], ["1", "-leading", 0], ["1", "line\nbreak", 0],
+  for (const [st, ref, want] of [["1", REF, 1], ["2", REF, 2], ["1", undefined, 0], ["2", "", 0], ["1", "ab", 0], ["1", "a".repeat(65), 0], ["1", "ab".repeat(32), 1], ["1", "DEC-1", 1], ["1", "has space", 0],
+    // obvious placeholders are no decision reference (Production 21 review): the real reference is the only thing that makes a build "extended"
+    ["1", "todo", 0], ["1", "TODO", 0], ["1", "tbd", 0], ["1", "xxx", 0], ["1", "XXXX", 0], ["1", "test", 0], ["1", "placeholder", 0], ["1", "n/a", 0], ["1", "abc", 0], ["1", "a".repeat(64), 0], ["1", "0000", 0], ["1", "DEC-TEST-0001", 1], ["1", "<script>", 0], ["1", "-leading", 0], ["1", "line\nbreak", 0],
     ["0", REF, 0], ["3", REF, 0], ["01", REF, 0], [" 1", REF, 0], ["1 ", REF, 0], ["one", REF, 0], ["true", REF, 0], ["", REF, 0], [undefined, REF, 0], ["1.0", REF, 0], ["+1", REF, 0], ["-1", REF, 0], ["２", REF, 0]])
     check(ea.parseEaExtension(st, ref).step === want, `extension step ${JSON.stringify(st)} with reference ${JSON.stringify(ref && ref.length > 20 ? ref.length + " chars" : ref)} -> ${want}`);
-  check(ea.parseEaExtension("1", undefined).rejected.includes("EXTENSION_REF") && ea.parseEaExtension("9", REF).rejected.includes("exactly"), "a rejected request says why (the reference is missing / the step is not 1 or 2)");
+  check(ea.parseEaExtension("1", undefined).rejected.includes("EXTENSION_REF") && ea.parseEaExtension("9", REF).rejected.includes("exactly") && ea.parseEaExtension("1", "todo").rejected.includes("placeholder"), "a rejected request says why (the reference is missing / a placeholder / the step is not 1 or 2)");
 }
 // The build guard, in real child processes: the build clock is pinned, the switch and the extension are set.
 {
@@ -168,20 +170,25 @@ function runHead(script, nowMs) {
   vm.runInNewContext(script, sandbox, { timeout: 1000 });
   return attrs;
 }
-for (const [n, env, E] of [[0, {}, C], [1, { NEXT_PUBLIC_AICC_EA_EXTENSION_STEP: "1", NEXT_PUBLIC_AICC_EA_EXTENSION_REF: "DEC-0001" }, S1], [2, { NEXT_PUBLIC_AICC_EA_EXTENSION_STEP: "2", NEXT_PUBLIC_AICC_EA_EXTENSION_REF: "DEC-0002" }, S2]]) {
-  const script = loadWith({ NEXT_PUBLIC_AICC_EARLY_ACCESS: "open", AICC_BUILD_NOW_MS: String(C - 1000), AICC_EA_TEST_SEAM: "1", ...env }).script;
-  const tag = `step ${n}`;
+for (const [n, mode, env, E] of [[0, "open", {}, C], [1, "open", { NEXT_PUBLIC_AICC_EA_EXTENSION_STEP: "1", NEXT_PUBLIC_AICC_EA_EXTENSION_REF: "DEC-0001" }, S1], [2, "open", { NEXT_PUBLIC_AICC_EA_EXTENSION_STEP: "2", NEXT_PUBLIC_AICC_EA_EXTENSION_REF: "DEC-0002" }, S2], [1, "announce", { NEXT_PUBLIC_AICC_EA_EXTENSION_STEP: "1", NEXT_PUBLIC_AICC_EA_EXTENSION_REF: "DEC-0001" }, S1], [2, "announce", { NEXT_PUBLIC_AICC_EA_EXTENSION_STEP: "2", NEXT_PUBLIC_AICC_EA_EXTENSION_REF: "DEC-0002" }, S2]]) {
+  const script = loadWith({ NEXT_PUBLIC_AICC_EARLY_ACCESS: mode, AICC_BUILD_NOW_MS: String(C - 1000), AICC_EA_TEST_SEAM: "1", ...env }).script;
+  const tag = `step ${n} ${mode}`;
   check(!("data-ea-over" in runHead(script, E - 1)), `${tag}: 1 ms before the end: the document is NOT marked`);
   check("data-ea-over" in runHead(script, E), `${tag}: at the end: the document is marked`);
   check("data-ea-over" in runHead(script, E + 3600e3), `${tag}: an hour after: marked`);
   check("data-ea-over" in runHead(script, 4102444800000), `${tag}: far future: marked`);
-  check(!("data-ea-over" in runHead(script, NaN)), `${tag}: a broken clock (NaN) leaves the page as built (NaN >= end is false) and does not throw`);
+  check(!("data-ea-over" in runHead(script, NaN)) && !("data-ea-closed" in runHead(script, NaN)), `${tag}: a broken clock (NaN) leaves the page as built (NaN >= end is false) and does not throw`);
   if (n > 0) check(!("data-ea-over" in runHead(script, C + 1)) && !("data-ea-over" in runHead(script, C)), `${tag}: the INITIAL cutoff no longer ends the page (an extended page stays live there)`);
+  // Extended OPEN builds close new requests at the INITIAL end (the Control Plane grants only before it): the same script marks <html data-ea-closed> from the initial instant; no other build marks it
+  const closes = n > 0 && mode === "open";
+  const closedAt = (t) => "data-ea-closed" in runHead(script, t);
+  if (closes) check(!closedAt(C - 1) && closedAt(C) && closedAt(C + 1) && closedAt(E - 1) && closedAt(E) && !closedAt(NaN), `${tag}: the requests-closed mark is set exactly from the INITIAL end (1 ms before: no; at it, after it and at the extended end: yes)`);
+  else check(!closedAt(C) && !closedAt(E) && !script.includes("data-ea-closed"), `${tag}: this build never marks requests closed (the script has no closed mark)`);
   const throws = (() => { try { vm.runInNewContext(script, { document: null, Date: { now: () => 0 } }); return false; } catch { return true; } })();
   check(!throws, `${tag}: the script never throws (a failure leaves the page as built)`);
   check(!/Intl|toLocale|getTimezoneOffset|new Date\(/.test(script), `${tag}: the page script uses no time zone, locale or Date parsing: only Date.now() against a number`);
-  check(script.includes(String(E)) && !script.includes(String(n === 0 ? S1 : C)), `${tag}: the number in the page script is the end of the step`);
-  check(script.length < 200, `${tag}: the page script is tiny (${script.length} bytes)`);
+  check(script.includes(`Date.now()>=${E}`) && (closes ? script.includes(`Date.now()>=${C}`) : !script.includes(String(n === 0 ? S1 : C))), `${tag}: the number(s) in the page script are the end of the step${closes ? " and the initial end" : ""}, and nothing else`);
+  check(script.length < (closes ? 260 : 200), `${tag}: the page script is tiny (${script.length} bytes)`);
 }
 
 // ── 4. no time-zone reads or locale date formatting in the campaign code ─────────────────────────────────────────────────────────────────
@@ -263,6 +270,7 @@ if (out) {
   const expect = arg("expect") || "off";
   const step = Number(arg("expect-step") || 0);
   const E = [C, S1, S2][step];
+  const closes = step > 0 && expect === "open";
   const root = path.resolve(out);
   const html = (rel) => fs.readFileSync(path.join(root, rel), "utf8");
   const pages = ["index.html", "pricing/index.html", "he/index.html", "he/pricing/index.html", "es/index.html", "es/pricing/index.html", "ru/index.html", "ru/pricing/index.html", "product/index.html", "questions/index.html"];
@@ -278,8 +286,11 @@ if (out) {
       check(hasScript, `${p}: the head script is present with the end number of step ${step} (${E})`);
       const headEnd = h.indexOf("</head>"); const sp = h.indexOf(`Date.now()>=${E}`);
       check(sp > -1 && sp < headEnd, `${p}: the script runs in <head> (before first paint)`);
-      const others = [C, S1, S2].filter((x) => x !== E);
+      // an extended OPEN build also carries the INITIAL end in its head script (it closes new requests there); nothing else
+      const others = [C, S1, S2].filter((x) => x !== E && !(closes && x === C));
       check(!others.some((x) => h.includes(String(x))) && !others.some((x) => h.includes(new Date(x).toISOString().replace(".000Z", "Z"))), `${p}: no other end instant (milliseconds or ISO) appears anywhere in the page`);
+      if (closes) check(h.includes(`Date.now()>=${C})document.documentElement.setAttribute("data-ea-closed"`), `${p}: the head script closes new requests at the INITIAL end (extended OPEN build)`);
+      else check(!h.includes("data-ea-closed") && !h.includes("data-ea-intake") && !h.includes("data-ea-closed-only"), `${p}: no requests-closed mechanism in this build (only an extended OPEN build has one)`);
     }
   }
   if (expect !== "off") {
@@ -290,6 +301,9 @@ if (out) {
     else check(!/<s>|<del>/.test(pr.slice(pr.indexOf("<main"), pr.indexOf("</main>"))) && /Planned price when purchases open:/.test(pr), "pricing: strike-through OFF (default): no struck-through price; the price is labelled 'Planned price when purchases open:'");
     check(pr.includes(`data-ea-cutoff="${ea.EA_STEP_ISO_UTC[step]}"`), `pricing: the explanation is marked with the end of step ${step} (data-ea-cutoff="${ea.EA_STEP_ISO_UTC[step]}")`);
     check(pr.includes(`Free until ${REQUIRED_DATES.en[step].last}`) && pr.includes(REQUIRED_DATES.en[step].end), `pricing: 'Free until ${REQUIRED_DATES.en[step].last}' and the end date '${REQUIRED_DATES.en[step].end}' are stated`);
+    if (closes) check(["pricing/index.html", "index.html", "he/pricing/index.html", "es/index.html", "ru/pricing/index.html"].every((q) => html(q).includes("data-ea-intake") && html(q).includes("data-ea-closed-only")), "extended OPEN build: the request controls and their closed counterparts are both in the pages (the head script picks one at the initial end)");
+    // the decision reference never reaches a page (--ref <value>: the value the build was given)
+    if (arg("ref")) { const refv = args[args.indexOf("--ref") + 1]; let hits = 0, files = 0; const walkR = (d) => { for (const e of fs.readdirSync(d, { withFileTypes: true })) { const q = path.join(d, e.name); if (e.isDirectory()) walkR(q); else if (/\.(html|js|css|json|txt|xml|vtt|webmanifest|map)$/.test(e.name)) { files++; if (fs.readFileSync(q, "utf8").includes(refv)) hits++; } } }; walkR(root); check(hits === 0 && files > 20, `the decision reference "${refv}" appears in none of the ${files} text files of the export`); }
     check(!/(<meta[^>]*(description|og:)[^>]*Early Access)/i.test(html("index.html")), "the meta description and Open Graph text do not mention the campaign (they would go stale after the end date)");
     check(!/application\/ld\+json[^<]*Early Access/i.test(html("pricing/index.html")), "no JSON-LD mentions the campaign");
     // every language: the page says THIS step's sentences and no other step's dates (the extension note's mention of the initial last day is the one exception)
@@ -298,9 +312,9 @@ if (out) {
       const mine = idx.getEaDictionary(l, step), first = idx.getEaDictionary(l, 0);
       for (const [rel, want] of [[`${pre}pricing/index.html`, ["plan.free", "plan.term", "section.title", "section.reservation", "section.faq.extension.q", "section.faq.change.q", "section.who.b", "section.steps.use.body"]], [`${pre}index.html`, ["hero.note", "section.homeLead"]]]) {
         const tx = text(rel);
-        const missing = want.filter((p) => !tx.includes(nbn(p.split(".").reduce((a, k) => a[k], mine))));
+        const missing = [...want, ...(step > 0 ? ["section.who.dExtended"] : ["section.who.d"])].filter((p) => !tx.includes(nbn(p.split(".").reduce((a, k) => a[k], mine))));
         check(missing.length === 0, `${rel}: says the sentences of step ${step}${missing.length ? " -> missing " + missing.join(", ") : ""}`);
-        const barPath = expect === "open" ? (step > 0 ? "extended.bar" : "bar.live") : "bar.announce";
+        const barPath = step > 0 ? "extended.bar" : expect === "open" ? "bar.live" : "bar.announce";
         check(tx.includes(nbn(barPath.split(".").reduce((a, k) => a[k], mine))), `${rel}: the bar says '${barPath}' of step ${step}`);
         for (const other of [0, 1, 2].filter((o) => o !== step)) {
           let n = 0; for (const k of ["last", "end", "utc"]) { const lit = REQUIRED_DATES[l][other][k]; n += (tx.match(new RegExp(`(?<![0-9])${lit.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`, "g")) || []).length; }
@@ -320,19 +334,34 @@ if (out) {
 }
 
 // ── 7. the Control Plane constants ───────────────────────────────────────────────────────────────────────────────────────────────────────
+// Default: the Control Plane worktree of Production 21 (branch feat/p21-early-access, head 0579a31 when this was written). The comparison is NOT optional: when the file is missing the check FAILS,
+// unless the run says so explicitly with AICC_CP_DIR=none (documented in docs/cutover/early-access.md: only for a machine that has no Control Plane checkout; never in a release run).
+function cpProblems(src) {
+  const out = [];
+  const m = src.match(/CUTOFF_UNIX\s*=\s*(\d+)/);
+  if (!m || Number(m[1]) * 1000 !== C) out.push(`Control Plane CUTOFF_UNIX (${m ? m[1] : "not found"}) differs from the Site constant (${C / 1000})`);
+  const e = src.match(/EXTENSION_STEPS\s*=\s*array\(\s*1\s*=>\s*(\d+)\s*,\s*2\s*=>\s*(\d+)\s*,?\s*\)/);
+  if (!e) out.push("Control Plane has no EXTENSION_STEPS table with exactly steps 1 and 2 (expected from feat/p21-early-access)");
+  else if (Number(e[1]) * 1000 !== S1 || Number(e[2]) * 1000 !== S2) out.push(`Control Plane EXTENSION_STEPS (1 => ${e[1]}, 2 => ${e[2]}) differ from the Site steps (${S1 / 1000}, ${S2 / 1000})`);
+  if (/EXTENSION_STEPS\s*=\s*array\([^)]*3\s*=>/.test(src)) out.push("Control Plane has a step 3");
+  return out;
+}
 {
-  const cp = process.env.AICC_CP_DIR || path.join(process.env.HOME || "", "Local Sites/woo-recommendation-qa/aicc-control-plane-worktrees/p21-early-access");
+  const cpEnv = process.env.AICC_CP_DIR;
+  const cp = cpEnv || path.join(process.env.HOME || "", "Local Sites/woo-recommendation-qa/aicc-control-plane-worktrees/p21-early-access");
   const f = path.join(cp, "admin/wp-content/plugins/aicc-license-manager/includes/class-aicc-lm-early-access.php");
   console.log("7. the Control Plane constants (CUTOFF_UNIX and EXTENSION_STEPS)");
-  if (fs.existsSync(f)) {
-    const src = fs.readFileSync(f, "utf8");
-    const m = src.match(/CUTOFF_UNIX\s*=\s*(\d+)/);
-    check(m && Number(m[1]) * 1000 === C, `Control Plane CUTOFF_UNIX (${m ? m[1] : "not found"}) equals the Site constant (${C / 1000})`);
-    const e = src.match(/EXTENSION_STEPS\s*=\s*array\(\s*1\s*=>\s*(\d+)\s*,\s*2\s*=>\s*(\d+)\s*,?\s*\)/);
-    if (!e) bad(`Control Plane has no EXTENSION_STEPS table with steps 1 and 2 in ${f} (expected from feat/p21-early-access; set AICC_CP_DIR to the worktree that has it)`);
-    else check(Number(e[1]) * 1000 === S1 && Number(e[2]) * 1000 === S2, `Control Plane EXTENSION_STEPS (1 => ${e[1]}, 2 => ${e[2]}) equal the Site steps (${S1 / 1000}, ${S2 / 1000})`);
-    if (e) check(!/EXTENSION_STEPS\s*=\s*array\([^)]*3\s*=>/.test(src), "Control Plane has exactly two extension steps (no step 3)");
-  } else console.log(`  note Control Plane file not found (${f}); set AICC_CP_DIR to compare`);
+  // negative controls: the comparison itself is proven to fail on a wrong table (a check that cannot fail is worth nothing)
+  {
+    const good = `const CUTOFF_UNIX = ${C / 1000};\n const EXTENSION_STEPS = array( 1 => ${S1 / 1000}, 2 => ${S2 / 1000} );`;
+    check(cpProblems(good).length === 0, "control: a Control Plane file with the right constants passes the comparison");
+    for (const [label, bad] of [["a wrong CUTOFF_UNIX", good.replace(String(C / 1000), String(C / 1000 + 3600))], ["a wrong step 1", good.replace(String(S1 / 1000), String(S1 / 1000 + 3600))], ["a wrong step 2", good.replace(String(S2 / 1000), String(S2 / 1000 - 86400))], ["no EXTENSION_STEPS table", `const CUTOFF_UNIX = ${C / 1000};`], ["a third step", good.replace(" );", `, 3 => ${S2 / 1000 + 86400 * 31} );`)], ["no CUTOFF_UNIX", good.replace("CUTOFF_UNIX", "OTHER_NAME")]])
+      check(cpProblems(bad).length > 0, `negative control: ${label} FAILS the comparison`);
+  }
+  if (cpEnv === "none") console.log("  note AICC_CP_DIR=none: the Control Plane comparison was disabled explicitly for this run (not acceptable for a release run)");
+  else if (!fs.existsSync(f)) bad(`Control Plane file not found (${f}): the comparison of the Site constants with the product's cannot run. Point AICC_CP_DIR at a Control Plane checkout that has class-aicc-lm-early-access.php, or set AICC_CP_DIR=none to disable it explicitly`);
+  else for (const pr of cpProblems(fs.readFileSync(f, "utf8"))) bad(pr);
+  if (cpEnv !== "none" && fs.existsSync(f)) { const src = fs.readFileSync(f, "utf8"); const m = src.match(/CUTOFF_UNIX\s*=\s*(\d+)/); const e = src.match(/EXTENSION_STEPS\s*=\s*array\(\s*1\s*=>\s*(\d+)\s*,\s*2\s*=>\s*(\d+)/); if (m && e) ok(`Control Plane CUTOFF_UNIX ${m[1]} and EXTENSION_STEPS 1 => ${e[1]}, 2 => ${e[2]} equal the Site's (${f})`); }
 }
 
 // ── 8. the head metadata is identical with the campaign ON and OFF (it must never mention the campaign) ────────────────────────────────────
@@ -355,30 +384,85 @@ if (out && off) {
   check(n > 0 && diff === 0, `${n} pages: title, meta, Open Graph, hreflang, canonical and JSON-LD are byte-identical with the campaign on and off`);
 }
 
-// ── 9. the launch gates (Production 21): the extension reference and the Plugin identity, exercised in real child processes ─────────────────────────────────────
-console.log("9. launch:check gates (extension reference, Plugin release identity)");
+// ── 9. the launch gates (Production 21): the extension reference, the Plugin identity (allow-list) and the extended-build confirmations, exercised in real child processes ──
+console.log("9. launch:check gates (extension reference, Plugin release identity allow-list, extended-build confirmations)");
 {
   const SUPERSEDED = "0fee2c9d994cfe554103d78997be3a83a676dae8a9ee88bfd8319fcd9e9b5a83";
-  const GOOD = "a".repeat(64);
+  const GOOD = "3f7a85eac8a55b5196d24508a70cbe7f8341a258a1bc21294454d387cf39c1b6"; // the allow-listed (unsigned) candidate, scripts/data/ea-plugin-releases.json
   const lc = (env) => spawnSync(process.execPath, [path.join(ROOT, "scripts/launch-check.mjs")], { env: { PATH: process.env.PATH, HOME: process.env.HOME || "", AICC_OUT_DIR: path.join(ROOT, ".no-such-out"), ...env }, encoding: "utf8", cwd: ROOT }).stdout;
   const has = (out, re) => re.test(out);
   const PLUG = /AICC_EA_PLUGIN_RELEASE_SHA256/;
+  const reg = JSON.parse(fs.readFileSync(path.join(ROOT, "scripts/data/ea-plugin-releases.json"), "utf8"));
+  check(reg.allowed.length >= 1 && reg.allowed.every((x) => /^[0-9a-f]{64}$/.test(x.sha256)) && reg.superseded.some((x) => x.sha256 === SUPERSEDED) && !reg.allowed.some((x) => x.sha256 === SUPERSEDED) && reg.allowed.some((x) => x.sha256 === GOOD), "the committed allow-list holds the current candidate, keeps the superseded hash out, and every entry is 64 lower-case hex");
   for (const mode of ["open", "announce"]) {
     const M = { NEXT_PUBLIC_AICC_EARLY_ACCESS: mode };
     check(has(lc(M), PLUG) && has(lc(M), /is not set/), `${mode}: without AICC_EA_PLUGIN_RELEASE_SHA256 launch:check reports a blocker that says what the value is for`);
     check(has(lc({ ...M, AICC_EA_PLUGIN_RELEASE_SHA256: SUPERSEDED }), /SUPERSEDED candidate/), `${mode}: the superseded candidate hash (0fee2c9d...) is refused`);
-    for (const bad of ["ABC", GOOD.toUpperCase(), "a".repeat(63), "a".repeat(65), `${"a".repeat(63)}g`]) check(has(lc({ ...M, AICC_EA_PLUGIN_RELEASE_SHA256: bad }), /must be 64 lower-case hex/), `${mode}: ${JSON.stringify(bad.length > 20 ? bad.slice(0, 6) + "...(" + bad.length + ")" : bad)} is not a valid release hash`);
+    check(has(lc({ ...M, AICC_EA_PLUGIN_RELEASE_SHA256: "0".repeat(64) }), /64 zeros/), `${mode}: 64 zeros are refused as a placeholder`);
+    for (const bad of ["a".repeat(64), "b".repeat(63) + "c", "1234567890abcdef".repeat(4)]) check(has(lc({ ...M, AICC_EA_PLUGIN_RELEASE_SHA256: bad }), /not in the allow-list/), `${mode}: a well-formed hash that is not allow-listed (${bad.slice(0, 8)}...) is refused, and the message says adding an entry is a conscious act`);
+    for (const bad of ["ABC", GOOD.toUpperCase(), "a".repeat(63), "a".repeat(65), `${"a".repeat(63)}g`, ` ${GOOD}`]) check(has(lc({ ...M, AICC_EA_PLUGIN_RELEASE_SHA256: bad }), /must be 64 lower-case hex/), `${mode}: ${JSON.stringify(bad.length > 20 ? bad.slice(0, 6) + "...(" + bad.length + ")" : bad)} is not a valid release hash`);
     const good = lc({ ...M, AICC_EA_PLUGIN_RELEASE_SHA256: GOOD });
-    check(!has(good, /AICC_EA_PLUGIN_RELEASE_SHA256 (is not set|must be|is the SUPERSEDED)/) && has(good, /Plugin release identity/), `${mode}: a 64-hex hash that is not the superseded one passes the identity gate`);
+    check(!has(good, /AICC_EA_PLUGIN_RELEASE_SHA256 (is not set|must be|is a SUPERSEDED|is 64 zeros)|not in the allow-list/) && has(good, /Plugin release identity.*allow-listed.*recorded, not verified/) && has(good, /UNSIGNED candidate/), `${mode}: the allow-listed candidate passes the identity gate, is called "recorded, not verified", and is still blocked as UNSIGNED until a signed hash replaces it`);
   }
   check(!has(lc({}), PLUG), "a normal build (switch off) does not need the Plugin release hash");
   // the extension
   const X = { NEXT_PUBLIC_AICC_EARLY_ACCESS: "announce", AICC_EA_PLUGIN_RELEASE_SHA256: GOOD };
   check(has(lc({ ...X, NEXT_PUBLIC_AICC_EA_EXTENSION_STEP: "1" }), /extension was IGNORED \(an extension needs NEXT_PUBLIC_AICC_EA_EXTENSION_REF/), "a step without the decision reference is reported as IGNORED");
   check(has(lc({ ...X, NEXT_PUBLIC_AICC_EA_EXTENSION_STEP: "3", NEXT_PUBLIC_AICC_EA_EXTENSION_REF: "DEC-0001" }), /extension was IGNORED \(the step must be exactly/), "a step other than 1 or 2 is reported as IGNORED");
-  const ext = lc({ ...X, NEXT_PUBLIC_AICC_EA_EXTENSION_STEP: "2", NEXT_PUBLIC_AICC_EA_EXTENSION_REF: "DEC-0002" });
-  check(has(ext, /EXTENSION STEP 2/) && has(ext, /early access EXTENDED to step 2 \(2027-02-28T22:00:00Z; decision reference DEC-0002\)/) && has(ext, /AFTER the Control Plane/), "an extended build names its step, its end and its reference, and says the Control Plane `extend` must come first");
+  check(has(lc({ ...X, NEXT_PUBLIC_AICC_EA_EXTENSION_STEP: "1", NEXT_PUBLIC_AICC_EA_EXTENSION_REF: "TODO" }), /extension was IGNORED \(NEXT_PUBLIC_AICC_EA_EXTENSION_REF looks like a placeholder/), "a placeholder reference (TODO) is reported as IGNORED");
+  const E2 = { ...X, NEXT_PUBLIC_AICC_EA_EXTENSION_STEP: "2", NEXT_PUBLIC_AICC_EA_EXTENSION_REF: "DEC-0002" };
+  const ext = lc(E2);
+  check(has(ext, /EXTENSION STEP 2/) && has(ext, /early access EXTENDED to step 2 \(2027-02-28T22:00:00Z; decision reference DEC-0002\)/) && has(ext, /AFTER the Control Plane/) && has(ext, /AICC_EA_EXTENSION_CP_VERIFIED=yes/) && has(ext, /AICC_EA_HTML_NOCACHE_CONFIRMED=yes/) && has(ext, /ea:live/), "an extended build names its step, its end and its reference, and asks for BOTH confirmations (Control Plane verified; HTML caches and Cache-Control) naming `ea:live`");
+  const one = lc({ ...E2, AICC_EA_EXTENSION_CP_VERIFIED: "yes" }), both = lc({ ...E2, AICC_EA_EXTENSION_CP_VERIFIED: "yes", AICC_EA_HTML_NOCACHE_CONFIRMED: "yes" });
+  check(has(one, /confirmed \(AICC_EA_EXTENSION_CP_VERIFIED=yes\)/) && has(one, /a cached page of the INITIAL build flips/) && !has(one, /AFTER the Control Plane/), "confirming only the Control Plane clears only that blocker (the cache blocker stays)");
+  check(has(both, /confirmed \(AICC_EA_HTML_NOCACHE_CONFIRMED=yes\)/) && !has(both, /a cached page of the INITIAL build flips/) && !has(both, /AFTER the Control Plane/), "both confirmations clear the extended-build blockers (the owner-approval blockers of any Early Access build stay)");
+  for (const bad of ["YES", "true", "1", " yes", "yes "]) check(has(lc({ ...E2, AICC_EA_EXTENSION_CP_VERIFIED: bad, AICC_EA_HTML_NOCACHE_CONFIRMED: bad }), /AFTER the Control Plane/), `the confirmation is the exact word yes (${JSON.stringify(bad)} does not count)`);
   check(has(lc({ NEXT_PUBLIC_AICC_EA_EXTENSION_STEP: "1", NEXT_PUBLIC_AICC_EA_EXTENSION_REF: "DEC-0001" }), /switch is off in this build: the extension changes nothing/), "an extension with the switch off is reported (it changes nothing)");
+}
+
+// ── 10. the post-deploy check `ea:live` against a local fixture origin (cache headers and the served head script) ──────────────────────────────────────────────────
+console.log("10. ea:live: Cache-Control and the served build (local fixture origin)");
+{
+  const http = await import("node:http");
+  const { spawn } = await import("node:child_process");
+  // asynchronous on purpose: the fixture server lives in THIS process, so a blocking spawnSync would deadlock it
+  const run = (port, ...a) => new Promise((resolve) => { const c = spawn(process.execPath, [path.join(ROOT, "scripts/ea-live-check.mjs"), `http://127.0.0.1:${port}`, ...a], { cwd: ROOT, stdio: "ignore" }); c.on("exit", (code) => resolve({ status: code })); });
+  const mk = (cc, script) => new Promise((resolve) => { const srv = http.createServer((req, res) => { const h = { "content-type": "text/html" }; if (cc) h["cache-control"] = cc; res.writeHead(200, h); res.end(`<html><head><script>try{${script}}catch(e){}</script></head><body>x</body></html>`); }).listen(0, "127.0.0.1", () => resolve(srv)); });
+  const GOODS = `if(Date.now()>=${S1})document.documentElement.setAttribute("data-ea-over","")`, STALE = `if(Date.now()>=${C})document.documentElement.setAttribute("data-ea-over","")`;
+  const cases = [["no-cache + step 1 script", "no-cache", GOODS, 1, 0], ["max-age=60 + step 1 script", "public, max-age=60", GOODS, 1, 0], ["no-store", "no-store", GOODS, 1, 0], ["max-age=86400 (long-lived)", "public, max-age=86400", GOODS, 1, 1], ["no Cache-Control at all", "", GOODS, 1, 1], ["s-maxage=3600 (CDN)", "max-age=0, s-maxage=3600", GOODS, 1, 1], ["stale step 0 script served", "no-cache", STALE, 1, 1], ["step 0 expected, step 0 served", "no-cache", STALE, 0, 0]];
+  for (const [label, cc, script, step, wantExit] of cases) {
+    const srv = await mk(cc, script);
+    const r = await run(srv.address().port, "--step", String(step), "--pages", "/,/pricing/");
+    srv.close();
+    check(r.status === wantExit, `ea:live: ${label} -> exit ${wantExit} (got ${r.status})`);
+  }
+}
+
+// ── 11. the text snapshot of the final English Early Access pack and the hero (a semantic reversal that keeps every required token still shows up as a diff) ───────
+console.log("11. text snapshot: scripts/snapshots/ea-pack-en.txt");
+{
+  const idx = await loadTs("src/i18n/index.ts");
+  const dicts = await loadDictionaries();
+  const hero = dicts.en.home.hero;
+  const e0 = flat(idx.getEaDictionary("en", 0), "ea"), e1 = flat(idx.getEaDictionary("en", 1), "ea");
+  const m1 = new Map(e1);
+  const fmt = (v) => v.replace(/\u00a0/g, "[nbsp]");
+  const text = [
+    "# English Early Access pack and hero, as rendered (date tokens resolved). `node scripts/ea-check.mjs --update-snapshot` rewrites it; a diff here is a change of what the page says: read it as copy review.",
+    "## home.hero (every build)", ...flat(hero, "home.hero").map(([k, v]) => `${k} = ${fmt(v)}`),
+    "## step 0 (the initial end): the whole pack", ...e0.map(([k, v]) => `${k} = ${fmt(v)}`),
+    "## step 1 (extended to 2027-01-31): only the strings that differ from step 0", ...e1.filter(([k, v]) => v !== (e0.find(([q]) => q === k) || [])[1]).map(([k, v]) => `${k} = ${fmt(v)}`),
+    "",
+  ].join("\n");
+  const snapFile = path.join(ROOT, "scripts/snapshots/ea-pack-en.txt");
+  if (args.includes("--update-snapshot")) { fs.mkdirSync(path.dirname(snapFile), { recursive: true }); fs.writeFileSync(snapFile, text); console.log("  note snapshot rewritten"); }
+  const have = fs.existsSync(snapFile) ? fs.readFileSync(snapFile, "utf8") : null;
+  if (have === text) ok(`the English pack and hero equal the committed snapshot (${text.split("\n").length - 1} lines)`);
+  else {
+    const a = (have || "").split("\n"), b = text.split("\n");
+    const diff = []; for (let i = 0; i < Math.max(a.length, b.length) && diff.length < 6; i++) if (a[i] !== b[i]) diff.push(`line ${i + 1}: committed ${JSON.stringify((a[i] || "").slice(0, 80))} vs now ${JSON.stringify((b[i] || "").slice(0, 80))}`);
+    bad(`the English Early Access pack or hero differs from scripts/snapshots/ea-pack-en.txt (review the wording, then run \`node scripts/ea-check.mjs --update-snapshot\`): ${diff.join(" | ")}`);
+  }
 }
 
 console.log("");

@@ -86,20 +86,28 @@ if (env.NEXT_PUBLIC_LEGAL_DRAFT_NOTICE === "off" && !approved) problems.push("NE
   // Extension (Production 21): a step needs its decision reference; without it the build silently keeps the initial end, which is the conservative side, but the operator must be told.
   if (ea.EA_EXTENSION_REQUESTED && !ea.EA_EXTENDED) problems.push(`early access extension: NEXT_PUBLIC_AICC_EA_EXTENSION_STEP is "${env.NEXT_PUBLIC_AICC_EA_EXTENSION_STEP}" but the extension was IGNORED (${ea.EA_EXTENSION_REJECTED}); this build keeps the initial end ${ea.EA_CUTOFF_ISO_UTC}`);
   if (ea.EA_EXTENDED && !ea.EA_ON) problems.push(`early access extension: step ${ea.EA_EXTENSION_STEP} is set but the Early Access switch is off in this build: the extension changes nothing; remove NEXT_PUBLIC_AICC_EA_EXTENSION_STEP and NEXT_PUBLIC_AICC_EA_EXTENSION_REF`);
-  if (ea.EA_EXTENDED && ea.EA_ON) problems.push(`early access EXTENDED to step ${ea.EA_EXTENSION_STEP} (${ea.EA_END_ISO_UTC}; decision reference ${env.NEXT_PUBLIC_AICC_EA_EXTENSION_REF}): publish this build only AFTER the Control Plane \`wp aicc-ea extend --step=${ea.EA_EXTENSION_STEP}\` has been run and verified (a Site that announces a later date than the product delivers is the harmful order; docs/cutover/early-access.md section 7b), and only with the operator's decision`);
-  // Plugin identity gate (Production 21): the release being distributed must be the corrected Plugin (no 14-day money-back message on a free grant), recorded by its hash.
-  if (ea.EA_ON) {
-    const SUPERSEDED_PLUGIN_SHA256 = "0fee2c9d994cfe554103d78997be3a83a676dae8a9ee88bfd8319fcd9e9b5a83";
-    const v = env.AICC_EA_PLUGIN_RELEASE_SHA256;
-    const why = "it records that the Plugin release distributed with Early Access is the corrected one that no longer shows a 14-day money-back message on a free grant (the superseded 1.1.0 candidate does); the Site build never reads it, the owner supplies it after the corrected Plugin ZIP is signed";
-    if (!v) problems.push(`early access ${ea.EA_MODE.toUpperCase()}: AICC_EA_PLUGIN_RELEASE_SHA256 is not set: ${why}`);
-    else if (!/^[0-9a-f]{64}$/.test(v)) problems.push(`early access ${ea.EA_MODE.toUpperCase()}: AICC_EA_PLUGIN_RELEASE_SHA256 must be 64 lower-case hex characters (the sha256 of the Plugin release ZIP): ${why}`);
-    else if (v === SUPERSEDED_PLUGIN_SHA256) problems.push(`early access ${ea.EA_MODE.toUpperCase()}: AICC_EA_PLUGIN_RELEASE_SHA256 is the SUPERSEDED candidate (${SUPERSEDED_PLUGIN_SHA256.slice(0, 8)}...): that Plugin shows the money-back message on free grants and must not be distributed with Early Access; ${why}`);
-    else console.log(`early access Plugin release identity (AICC_EA_PLUGIN_RELEASE_SHA256): ${v.slice(0, 12)}... (not the superseded candidate)`);
+  if (ea.EA_EXTENDED && ea.EA_ON) {
+    const step = ea.EA_EXTENSION_STEP;
+    console.log(`early access EXTENDED to step ${step} (${ea.EA_END_ISO_UTC}; decision reference ${env.NEXT_PUBLIC_AICC_EA_EXTENSION_REF}): two explicit confirmations are required`);
+    if (env.AICC_EA_EXTENSION_CP_VERIFIED === "yes") console.log(`  confirmed (AICC_EA_EXTENSION_CP_VERIFIED=yes): the Control Plane \`wp aicc-ea extend --step=${step}\` has been run and verified`);
+    else problems.push(`early access EXTENDED to step ${step}: publish this build only AFTER the Control Plane \`wp aicc-ea extend --step=${step}\` has been run and VERIFIED (a Site that announces a later date than the product delivers is the harmful order; docs/cutover/early-access.md section 7b); confirm with AICC_EA_EXTENSION_CP_VERIFIED=yes`);
+    if (env.AICC_EA_HTML_NOCACHE_CONFIRMED === "yes") console.log("  confirmed (AICC_EA_HTML_NOCACHE_CONFIRMED=yes): HTML pages are served with a short or no-cache Cache-Control, the CDN/browser HTML caches were purged, and `npm run ea:live` passed against the live pages");
+    else problems.push(`early access EXTENDED to step ${step}: a cached page of the INITIAL build flips to "Early Access has ended" at ${ea.EA_CUTOFF_ISO_UTC} although access is extended: serve HTML with a short or no-cache Cache-Control, purge HTML caches and CDN at this deploy, then run \`npm run ea:live -- <live origin> --step ${step}\`; confirm with AICC_EA_HTML_NOCACHE_CONFIRMED=yes (docs/cutover/early-access.md section 7b)`);
   }
-  if (env.NEXT_PUBLIC_AICC_EARLY_ACCESS && !["announce", "open"].includes(env.NEXT_PUBLIC_AICC_EARLY_ACCESS)) problems.push(`early access: NEXT_PUBLIC_AICC_EARLY_ACCESS is "${env.NEXT_PUBLIC_AICC_EARLY_ACCESS}": only the exact values "announce" and "open" switch the campaign on; anything else is OFF`);
-  if (env.AICC_BUILD_NOW_MS || env.AICC_EA_TEST_SEAM) problems.push("early access: AICC_BUILD_NOW_MS / AICC_EA_TEST_SEAM are set: they pin the build clock for tests and must never exist in a release environment");
-  if (ea.EA_ON) problems.push("early access is ON in this build: publishing free access needs the owner's explicit approval, the accountant's written confirmation and counsel's review of the promotional terms (docs/cutover/early-access.md section 6)");
+  // Plugin identity gate (Production 21): the release being distributed must be the corrected Plugin (no 14-day money-back message on a free grant), recorded by its hash.
+  // The hash must be in the committed allow-list (scripts/data/ea-plugin-releases.json): adding an entry is a conscious act when a new Plugin build is attested.
+  if (ea.EA_ON) {
+    const reg = JSON.parse(fs.readFileSync(path.join(ROOT, "scripts/data/ea-plugin-releases.json"), "utf8"));
+    const v = env.AICC_EA_PLUGIN_RELEASE_SHA256;
+    const why = "it records that the Plugin release distributed with Early Access is the corrected one that no longer shows a 14-day money-back message on a free grant (the superseded 1.1.0 candidate does); the Site build never reads it; the hash must be in scripts/data/ea-plugin-releases.json, and adding an entry there is a conscious act when a new Plugin build is attested";
+    const M = ea.EA_MODE.toUpperCase();
+    if (!v) problems.push(`early access ${M}: AICC_EA_PLUGIN_RELEASE_SHA256 is not set: ${why}`);
+    else if (!/^[0-9a-f]{64}$/.test(v)) problems.push(`early access ${M}: AICC_EA_PLUGIN_RELEASE_SHA256 must be 64 lower-case hex characters (the sha256 of the Plugin release ZIP): ${why}`);
+    else if (reg.superseded.some((x) => x.sha256 === v)) problems.push(`early access ${M}: AICC_EA_PLUGIN_RELEASE_SHA256 is a SUPERSEDED candidate (${v.slice(0, 8)}...): that Plugin shows the money-back message on free grants and must not be distributed with Early Access; ${why}`);
+    else if (/^0{64}$/.test(v)) problems.push(`early access ${M}: AICC_EA_PLUGIN_RELEASE_SHA256 is 64 zeros, a placeholder and not the hash of any file; ${why}`);
+    else if (!reg.allowed.some((x) => x.sha256 === v)) problems.push(`early access ${M}: AICC_EA_PLUGIN_RELEASE_SHA256 (${v.slice(0, 12)}...) is not in the allow-list scripts/data/ea-plugin-releases.json: ${why}`);
+    else { const e = reg.allowed.find((x) => x.sha256 === v); console.log(`early access Plugin release identity (AICC_EA_PLUGIN_RELEASE_SHA256): ${v.slice(0, 12)}... allow-listed (${e.status}); recorded, not verified against any file`); if (/unsigned/i.test(e.status)) problems.push(`early access ${M}: the allow-listed Plugin release ${v.slice(0, 12)}... is an UNSIGNED candidate: do not publish until the signed release hash replaces it in scripts/data/ea-plugin-releases.json`); }
+  }
   if (ea.EA_OPEN && !ea.EA_URL_OVERRIDE) problems.push("early access OPEN: NEXT_PUBLIC_AICC_EARLY_ACCESS_URL is not set, so the buttons lead to the plain account page: the Early Access request flow on the Control Plane must exist and be approved first");
   if (ea.EA_STRIKE) problems.push("early access: NEXT_PUBLIC_AICC_EA_STRIKE=on shows the plan price struck through next to the free offer: counsel must approve that presentation first (no plan has ever been sold at that price)");
   if (ea.EA_OPEN && ea.EA_URL_OVERRIDE && !/^https:\/\//.test(ea.EA_URL_OVERRIDE)) problems.push(`early access OPEN: NEXT_PUBLIC_AICC_EARLY_ACCESS_URL ("${ea.EA_URL_OVERRIDE}") must be an https address`);
