@@ -7,6 +7,28 @@ import { ALLOWED_WHY, EA_EXTRA_RULES, EA_EXEMPT_LINE, isCampaignFile } from "./l
 
 // "Watch demo" is allowed since the owner visual pass: the modal is an honest labelled placeholder until a real video is configured,
 // and `npm run launch:check` blocks a production launch while the placeholder is active.
+// Production 21 outcome-promise bans (review R1/R7): promises the digit-and-percent rule cannot see, in four languages. Honest DENIALS stay allowed through a narrow allowance:
+// a negation right before "guarantee" ("We do not guarantee results.", "We cannot guarantee sales.", "No guaranteed results") is not flagged; "Orders are guaranteed to complete" is not a sales promise.
+// (JavaScript's \w does not match Hebrew or Cyrillic: those rules spell the letters out.)
+const OUTCOME_RULES = [
+  [/(turn|convert|transform)\w*\s+(more\s+)?(your\s+)?(browsers?|visitors?|shoppers?|lookers?)\s+(in)?to\s+(buyers?|customers?)|\b(browsers?|visitors?|shoppers?)\s+(become|turn\s+into|convert\s+(in)?to)\s+(buyers?|customers?)|browsers?\s+into\s+buyers?/i, "visitors-into-buyers promise"],
+  [/(?<!\b(?:not|no|never|cannot|can['’]t|don['’]t|doesn['’]t|won['’]t)\s)guarantee[sd]?\s+(more\s+)?(sales|revenue|orders|results|growth)\b|\b(sales|revenue|results|growth)\s*,?\s+(are\s+|is\s+)?guarantee[sd]?\b(?!\s+to\b)/i, "guaranteed-sales promise (a denial such as \"We do not guarantee results\" is allowed)"],
+  [/more orders from the same traffic|pays? for itself|\b\d+\s?x\b[^.]{0,25}\b(sales|revenue|orders|conversion)/i, "more-from-the-same-traffic / payback promise"],
+  [/(?<!n['’]t an )(?<!not an )upsell engine/i, "upsell engine (only the Product page's denial \"isn't an upsell engine\" is allowed)"],
+  [/\d+(\.\d+)?\s?(%|percent|per\s?cent)\s*(more|higher|increase\w*|growth|lift|uplift|revenue|sales|orders|conversion|aov|ctr|roi|off)\b|\b(one|two|three|four|five|six|seven|eight|nine|ten|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred)(-\w+)?\s+(percent|per\s?cent)\s+(more|higher|increase\w*|growth|lift|uplift|revenue|sales|orders|conversion|off)\b/i, "percentage result claim (digits or words)"],
+  // Hebrew
+  [/הופכ[תים]* (את )?ה?(גולשים|מבקרים)|(גולשים|מבקרים) (שלכם )?(הופכים|הופכות) לקונים/, "he: visitors-into-buyers promise"],
+  [/(?<!לא )(?<!איננו )(?<!אנו לא )(נבטיח|מבטיחים|מבטיח|מובטח\w*)\s*(לכם\s*)?(יותר\s+)?(מכירות|הכנסות|תוצאות|רווחים)|(?<!אין )(?<!לא )(מכירות|הכנסות|תוצאות)\s+(נוספות\s+)?(מובטחות|מובטחים)/, "he: guaranteed-sales promise"],
+  [/(עשרה|עשרים|שלושים|ארבעים|חמישים|שישים|שבעים|שמונים|תשעים) אחוז|\d+\s?%\s*(יותר|עוד)?\s*(מכירות|הכנסות|הזמנות|המרות)|\d+\s?אחוז\s*(יותר\s+)?(מכירות|הכנסות|הזמנות)|\d+\s?אחוז\s+יותר/, "he: percentage result claim"],
+  // Spanish
+  [/convi?e?rt\w*\s+(a\s+)?(los\s+|sus\s+)?(visitantes|navegantes)\s+en\s+(compradores|clientes)|(visitantes|navegantes)\s+(se\s+)?(convierten|vuelven)\s+(en\s+)?(compradores|clientes)/i, "es: visitors-into-buyers promise"],
+  [/(?<!\bno )(?<!\bnunca )garantiz\w*\s+(m[aá]s\s+)?(ventas|ingresos|resultados|pedidos)|(?<!\bsin )(?<!\bno )(ventas|ingresos|resultados)\s+garantizad\w*/i, "es: guaranteed-sales promise"],
+  [/(diez|veinte|treinta|cuarenta|cincuenta|sesenta|setenta|ochenta|noventa|cien)\s+por\s+ciento|\d+\s?%\s*(m[aá]s\s+)?(de\s+)?(ventas|ingresos|pedidos|conversi\w+)|\d+\s+por\s+ciento\s+(m[aá]s\s+)?(de\s+)?(ventas|ingresos|pedidos)/i, "es: percentage result claim"],
+  // Russian
+  [/превращ[а-яё]+\s+(ваших\s+)?(посетителей|визитёров)\s+в\s+(покупателей|клиентов)|(посетители|визитёры)\s+(становятся|превращаются\s+в)\s+(покупателями|покупателей|клиентами)/i, "ru: visitors-into-buyers promise"],
+  [/(?<!не )(?<!не можем )(?<!нельзя )гарантир[а-яё]+\s+(рост\s+)?(продаж|выручк[а-яё]*|заказов|результат[а-яё]*|дохода)|гарантированн[а-яё]+\s+(рост\s+)?(продаж|выручки|дохода)/i, "ru: guaranteed-sales promise"],
+  [/(десять|двадцать|тридцать|сорок|пятьдесят|шестьдесят|семьдесят|восемьдесят|девяносто)\s+процентов|\d+\s?%\s*(больше|рост[а-яё]*)?\s*(продаж|выручк[а-яё]*|заказов)|(продаж|выручк[а-яё]*|заказов)\s+на\s+\d+\s?(%|процент)|\d+\s+процент[а-яё]*\s+(больше\s+)?(продаж|выручк[а-яё]*)/i, "ru: percentage result claim"],
+];
 const RULES = [
   // English
   [/start free/i, "free tier / trial claim"], [/no credit card/i, "no credit card"], 
@@ -22,18 +44,12 @@ const RULES = [
   [/limited time|countdown|hurry|act now/i, "urgency"], [/#1\b|best[- ]selling|number one/i, "superlative"],
   [/crossed[- ]out|strike-?through price/i, "strike-through price"], [/works with any theme|any theme/i, "any theme claim"],
   [/\bdeleted after\b|deleted when you/i, "deletion promise"], [/is (fully )?(wcag )?compliant/i, "conformance claim"],
-  // Production 21 (R1 copy-gate gap): outcome promises that the digit-and-percent rule cannot see (the hero decision stays an exact-text pin; these bans stop a rewrite from drifting there)
-  [/(turn|convert|transform)\w*\s+(more\s+)?(your\s+)?(browsers?|visitors?|shoppers?|lookers?)\s+(in)?to\s+(buyers?|customers?)|browsers?\s+into\s+buyers?/i, "browsers-into-buyers promise"],
-  [/(?<!\bno\s)guarantee[sd]?\s+(more\s+)?(sales|revenue|orders|results)|(sales|revenue|orders|results)\s+(are\s+|is\s+)?guarantee[sd]?/i, "guaranteed-sales promise"],
-  [/more orders from the same traffic/i, "more-orders-from-the-same-traffic promise"],
-  [/(?<!n['\u2019]t an )(?<!not an )upsell engine/i, "upsell engine (only the Product page's denial \"isn't an upsell engine\" is allowed)"],
-  [/\b(one|two|three|four|five|six|seven|eight|nine|ten|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred)(-\w+)?\s+(percent|per\s?cent)\b/i, "spelled-out percentage"],
+  ...OUTCOME_RULES, // Production 21: outcome promises (see OUTCOME_RULES above)
   // Hebrew
   [/חינם|בחינם/, "he: free"], [/ללא כרטיס אשראי/, "he: no credit card"], [/מגמות|מגמה|טרנד/, "he: trends"], [/(?<!הזד)מנוי/, "he: subscription"],
   [/מתחדש\w* אוטומטית/, "he: auto-renew"], [/ביטול בכל עת|בטל בכל עת/, "he: cancel anytime"], [/30 יום/, "he: 30-day"],
   [/הפופולרי ביותר|הנפוץ ביותר/, "he: most popular"], [/תוצאות אמיתיות/, "he: real results"], [/הצטרפו/, "he: join"], [/סומכים עלינו|מהימן על ידי/, "he: trusted by"],
   [/תואם ל?-?GDPR|עומד ב-?GDPR/, "he: GDPR compliant"],
-  [/(להפוך|הופכים|הפכו|הופך) (גולשים|מבקרים) לקונים/, "he: visitors-into-buyers promise"], [/מכירות (נוספות )?מובטחות|מובטח\w* (יותר )?מכירות/, "he: guaranteed-sales promise"], [/(עשרה|עשרים|שלושים|ארבעים|חמישים|שישים|שבעים|שמונים|תשעים) אחוז/, "he: spelled-out percentage"],
   // Spanish
   [/\bgratis\b|prueba gratuita|gratuito/i, "es: free"], [/sin tarjeta de cr[eé]dito/i, "es: no credit card"], [/tendencia/i, "es: trends"],
   [/suscripci[oó]n/i, "es: subscription"], [/renovaci[oó]n autom[aá]tica/i, "es: auto-renew"], [/cancela cuando quieras/i, "es: cancel anytime"],
@@ -45,9 +61,7 @@ const RULES = [
   [/מייבא (את )?(ההזמנות|היסטוריית)[^.]{0,40}(אוטומטית|בעת החיבור|כשמתחברים)|(אוטומטית|בעת החיבור|כשמתחברים)[^.]{0,30}מייבא|ייבוא[^.]{0,20}(מתחיל|רץ|מתבצע) אוטומטית|(הזמנות|היסטוריה)[^.]{0,30}מיובאות (אוטומטית|בעת החיבור|כשמתחברים)/, "he: past-order import must be optional, never automatic or on connect"],
   [/importa (automáticamente|al conectar)|importa (los |sus )?(pedidos|historial)[^.]{0,40}(automáticamente|al conectar|cuando conecta)|importación (comienza|empieza|se inicia|se ejecuta) automáticamente|pedidos[^.]{0,30}se importan (automáticamente|al conectar|cuando conecta)/i, "es: past-order import must be optional, never automatic or on connect"],
   [/импортирует[^.]{0,40}(автоматически|при подключении)|(автоматически|при подключении)[^.]{0,40}импортирует|импорт (начинается|запускается|выполняется) автоматически|заказы[^.]{0,30}импортируются (автоматически|при подключении)/i, "ru: past-order import must be optional, never automatic or on connect"],
-  [/convi?e?rt\w*\s+(a\s+)?(los\s+)?(visitantes|navegantes)\s+en\s+compradores/i, "es: visitors-into-buyers promise"], [/ventas garantizadas|garantiz\w+\s+(m[a\u00e1]s\s+)?ventas/i, "es: guaranteed-sales promise"], [/(diez|veinte|treinta|cuarenta|cincuenta|sesenta|setenta|ochenta|noventa|cien)\s+por\s+ciento/i, "es: spelled-out percentage"],
   // Russian
-  [/превращ[а-яё]+\s+(посетителей|визитёров|просмотры)\s+в\s+покупателей/i, "ru: visitors-into-buyers promise"], [/гарантированн[а-яё]+\s+(рост\s+)?продаж|гарантир[а-яё]+\s+(рост\s+)?продаж/i, "ru: guaranteed-sales promise"], [/(десять|двадцать|тридцать|сорок|пятьдесят|шестьдесят|семьдесят|восемьдесят|девяносто)\s+процентов/i, "ru: spelled-out percentage"],
   [/бесплатн/i, "ru: free"], [/без банковской карты|без кредитной карты/i, "ru: no credit card"], [/тренд/i, "ru: trends"], [/подписк/i, "ru: subscription"],
   [/автопродлен|автоматическое продление|автоматически продлева/i, "ru: auto-renew"], [/отмен\w* в любой момент/i, "ru: cancel anytime"],
   [/30[ \u00a0]дней (на возврат|гарантии|пробн)|30[- ]дневн|(гарантия|возврат|пробн)[^.]{0,24}30[ \u00a0]дней/i, "ru: 30-day refund/trial claim (the guarantee is 14 days; \"последние 30 дней\" for the dashboard period is fine)"], [/самый популярный|самый востребованный/i, "ru: most popular"], [/реальные результаты/i, "ru: real results"],
@@ -83,14 +97,16 @@ function stripComments(src) {
   const missed = bad.filter((t) => !rule(t)), wrong = ok.filter((t) => rule(t));
   if (missed.length || wrong.length) { console.error(`FAIL: self-test of the Hebrew subscription rule: missed [${missed}] flagged [${wrong}]`); process.exit(1); }
 }
-// Self-test of the outcome-promise bans (Production 21): each of the phrases the digit-and-percent rule let through is now caught, and the Product page's denial is still allowed.
+// Self-test of the outcome-promise bans (Production 21): every phrase the digit-and-percent rule let through is caught, in four languages, and honest denials still pass.
 {
   const rule = (t) => RULES.some(([re]) => re.test(t));
-  const bad = ["Guaranteed more sales.", "Turn more browsers into buyers.", "Turn your visitors into customers.", "Thirty percent more sales.", "More orders from the same traffic.", "The upsell engine for WooCommerce.", "AICC is an upsell engine.", "twenty-five percent more", "Sales are guaranteed.",
-    "הופכים גולשים לקונים", "מכירות מובטחות", "שלושים אחוז יותר",
-    "Convierte visitantes en compradores", "Ventas garantizadas", "treinta por ciento más",
-    "Превращайте посетителей в покупателей", "Гарантированный рост продаж", "тридцать процентов больше"];
-  const ok = ["No guaranteed results", "It isn't an upsell engine.", "It is not an upsell engine.", "Closed 30 days ago", "Placing an order never waits on AICC."];
+  const bad = [
+    "Guaranteed more sales.", "Turn more browsers into buyers.", "Turn your visitors into customers.", "Visitors become buyers.", "Thirty percent more sales.", "30 percent more sales.", "30% more sales.", "More orders from the same traffic.", "The upsell engine for WooCommerce.", "AICC is an upsell engine.", "twenty-five percent more", "Sales are guaranteed.", "More sales, guaranteed.", "Pays for itself in a month.", "A 3x boost in sales.",
+    "הופכים גולשים לקונים", "הופכת גולשים לקונים", "מכירות מובטחות", "נבטיח יותר מכירות", "שלושים אחוז יותר", "30% יותר מכירות", "עד 30 אחוז יותר מכירות",
+    "Convierte visitantes en compradores", "Convierta a sus visitantes en compradores", "Ventas garantizadas", "Garantizamos más ventas", "treinta por ciento más", "30% más ventas.", "30 por ciento más ventas",
+    "Превращайте посетителей в покупателей", "Гарантированный рост продаж", "Гарантируем рост выручки", "тридцать процентов больше", "30% больше продаж.", "Больше продаж на 30 процентов", "Рост продаж на 30%"];
+  const ok = ["No guaranteed results", "We do not guarantee results.", "We cannot guarantee sales.", "AICC does not guarantee more orders.", "Orders are guaranteed to complete even if AICC is down.", "Nothing here is a guarantee of sales.", "Order totals are one hundred percent accurate.", "It isn't an upsell engine.", "It is not an upsell engine.", "Closed 30 days ago", "Placing an order never waits on AICC.", "Share of store purchases: 24%",
+    "איננו מבטיחים תוצאות", "לא מבטיחים מכירות", "אין תוצאות מובטחות", "Sin resultados garantizados", "Hace todo el texto un 19% más grande", "No garantizamos resultados.", "Мы не гарантируем результат.", "Мы не можем гарантировать продажи."];
   const missed = bad.filter((t) => !rule(t)), wrong = ok.filter((t) => rule(t));
   if (missed.length || wrong.length) { console.error(`FAIL: self-test of the outcome-promise bans: missed [${missed}] flagged [${wrong}]`); process.exit(1); }
 }
