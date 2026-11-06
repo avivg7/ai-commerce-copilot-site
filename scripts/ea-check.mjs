@@ -426,6 +426,15 @@ console.log("9. launch:check gates (extension reference, Plugin release identity
   check(has(lc({ NEXT_PUBLIC_AICC_EA_EXTENSION_STEP: "1", NEXT_PUBLIC_AICC_EA_EXTENSION_REF: "DEC-0001" }), /switch is off in this build: the extension changes nothing/), "an extension with the switch off is reported (it changes nothing)");
 }
 
+// The Control Plane comparison is not optional (Production 21 review R4-F3): a missing Control Plane file fails the run, only the explicit AICC_CP_DIR=none disables it.
+{
+  const run = (cp) => spawnSync(process.execPath, [path.join(ROOT, "scripts/ea-check.mjs"), "--exports-only"], { env: { ...process.env, AICC_CP_DIR: cp }, encoding: "utf8", cwd: ROOT });
+  const gone = run(path.join(ROOT, ".no-such-control-plane")), off = run("none"), empty = run(path.join(ROOT, "docs"));
+  check(gone.status === 1 && /Control Plane file not found/.test(gone.stderr + gone.stdout), "ea:check FAILS when the Control Plane file is missing (AICC_CP_DIR pointing nowhere)");
+  check(empty.status === 1 && /Control Plane file not found/.test(empty.stderr + empty.stdout), "ea:check FAILS when AICC_CP_DIR points at a directory that holds no Control Plane");
+  check(off.status === 0 && /disabled explicitly/.test(off.stdout), "ea:check passes only with the explicit AICC_CP_DIR=none, and says it was disabled");
+}
+
 // ── 10. the post-deploy check `ea:live` against a local fixture origin (cache headers and the served head script) ──────────────────────────────────────────────────
 console.log("10. ea:live: Cache-Control and the served build (local fixture origin)");
 {

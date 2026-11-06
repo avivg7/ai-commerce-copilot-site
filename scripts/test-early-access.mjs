@@ -218,7 +218,7 @@ for (const { key: mode0, mode, step, phases } of VARIANTS) {
   }
 
   console.log(`== ${tag}: above the fold (Production 21): the whole headline, the primary action and the fine print without scrolling`);
-  for (const ph of phases) for (const [w, h] of [[1280, 720], [390, 844]]) {
+  for (const ph of phases) for (const [w, h] of [[1280, 720], [1280, 680], [390, 844]]) { // 1280x680: stricter than the brief (1280x720); the compaction of an Early Access hero is what makes it fit
     const { ctx, p } = await view(mode0, "/", "Asia/Jerusalem", ph.t, w, "en", h);
     const m = await p.evaluate(() => {
       const vq = (q) => [...document.querySelectorAll(q)].find((e) => e.getClientRects().length > 0);
