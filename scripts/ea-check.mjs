@@ -453,7 +453,6 @@ console.log("11. text snapshot: scripts/snapshots/ea-pack-en.txt");
   const dicts = await loadDictionaries();
   const hero = dicts.en.home.hero;
   const e0 = flat(idx.getEaDictionary("en", 0), "ea"), e1 = flat(idx.getEaDictionary("en", 1), "ea");
-  const m1 = new Map(e1);
   const fmt = (v) => v.replace(/\u00a0/g, "[nbsp]");
   const text = [
     "# English Early Access pack and hero, as rendered (date tokens resolved). `node scripts/ea-check.mjs --update-snapshot` rewrites it; a diff here is a change of what the page says: read it as copy review.",

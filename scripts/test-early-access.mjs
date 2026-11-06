@@ -405,7 +405,7 @@ console.log("\n== no stale or leaked campaign element, in any mode, page, langua
       await ctx.close(); }
   }
   console.log("== destinations and names (live view)");
-  for (const { key, mode, step } of VARIANTS) {
+  for (const { key, mode } of VARIANTS) {
     const { ctx, p } = await view(key, "/", "UTC", C - D1, 1280);
     const hrefs = await p.locator("a[href]").evaluateAll((a) => a.filter((x) => x.getClientRects().length > 0).map((x) => x.getAttribute("href")));
     const signup = hrefs.filter((h) => /offer=early-access/.test(h));
@@ -428,7 +428,7 @@ console.log("\n== no stale or leaked campaign element, in any mode, page, langua
     const prim0 = await p0.locator(".aicc-hero .aicc-hero-actions .aicc-btn--primary").evaluateAll((a) => a.filter((x) => x.getClientRects().length > 0).map((x) => x.textContent.trim()));
     check(prim0.length === 1 && prim0[0] === "See it in action", `the normal build's one primary hero action is "See it in action" (${prim0.join(" | ")})`);
     await c0.close(); }
-  for (const { key, step } of VARIANTS.filter((v) => v.mode === "open")) {
+  for (const { key } of VARIANTS.filter((v) => v.mode === "open")) {
     const { ctx: c2, p: p2 } = await view(key, "/pricing/", "UTC", C - D1, 1280);
     const names = await p2.locator(".aicc-plan a.aicc-btn").evaluateAll((a) => a.map((x) => x.textContent.replace(/\s+/g, " ").trim()));
     check(new Set(names).size === 3, `${key}: the three plan buttons have different accessible names (${names.join(" | ")})`);
@@ -447,7 +447,7 @@ for (const { key, step, phases } of VARIANTS.filter((v) => v.mode === "open")) f
   await ctx.close();
 }
 console.log("\n== Hebrew (right-to-left), live view");
-for (const { key, step, phases } of VARIANTS.filter((v) => v.mode === "open")) for (const ph of phases) {
+for (const { key, phases } of VARIANTS.filter((v) => v.mode === "open")) for (const ph of phases) {
   const { ctx, p } = await view(key, "/he/pricing/", "Asia/Jerusalem", ph.t, 390, "he");
   const m = await p.evaluate(() => ({ dir: document.documentElement.dir, over: document.documentElement.scrollWidth <= window.innerWidth, bar: !!document.querySelector(".aicc-eabar"), free: [...document.querySelectorAll(".aicc-plan__free")].map((e) => e.textContent) }));
   check(m.dir === "rtl" && m.over && m.bar && m.free.length === 3, `${key} ${ph.name} he: rtl, no overflow, bar and three offers present (${m.free[0] || "?"})`);
