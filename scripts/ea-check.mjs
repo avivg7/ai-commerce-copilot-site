@@ -480,6 +480,7 @@ console.log("10. ea:live: Cache-Control and the served build (local fixture orig
   const cases = [];
   for (const [mode, n, script] of VARS) for (const expect of [0, 1, 2]) cases.push([`real ${mode} step ${n} page, step ${expect} expected`, "no-cache", script, expect, expect === n ? 0 : 1]);
   const o1 = VARS[2][2];
+  cases.push(["a page with NO head script at all, step 1 expected", "no-cache", "", 1, 1], ["a page with NO head script at all, step 0 expected", "no-cache", "", 0, 1]);
   cases.push(["real open step 1 page: max-age=60", "public, max-age=60", o1, 1, 0], ["real open step 1 page: no-store", "no-store", o1, 1, 0], ["real open step 1 page: max-age=86400 (long-lived)", "public, max-age=86400", o1, 1, 1], ["real open step 1 page: no Cache-Control at all", "", o1, 1, 1], ["real open step 1 page: s-maxage=3600 (CDN)", "max-age=0, s-maxage=3600", o1, 1, 1]);
   for (const [label, cc, script, step, wantExit] of cases) {
     const srv = await mk(cc, script);
