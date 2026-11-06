@@ -29,7 +29,8 @@ const C = Date.UTC(2026, 11, 31, 22, 0, 0);
 const ENDS = [C, Date.UTC(2027, 0, 31, 22, 0, 0), Date.UTC(2027, 1, 28, 22, 0, 0)];
 // The builds under test: key, mode, extension step. The default matrices run for every one of them.
 const VARIANTS = [{ key: "open", mode: "open", step: 0 }, { key: "announce", mode: "announce", step: 0 }, ...(EXT ? [{ key: "open1", mode: "open", step: 1 }, { key: "announce1", mode: "announce", step: 1 }, { key: "open2", mode: "open", step: 2 }, { key: "announce2", mode: "announce", step: 2 }] : [])]
-  .filter((v) => !args.includes("--only-open") || v.mode === "open");
+  .filter((v) => !args.includes("--only-open") || v.mode === "open")
+  .filter((v) => arg0("only-variants") === undefined || arg0("only-variants").split(",").includes(v.key)); // mutation runs: only the variants a mutant can affect (the global sections always run)
 const D1 = 86400e3;
 // The phases of a build while it is live: only an extended OPEN build has two (new requests are open until the INITIAL end, then closed until the extended end: the Control Plane grants only before the initial end).
 for (const v of VARIANTS) v.phases = v.step > 0 && v.mode === "open" ? [{ name: "requests open", t: C - D1, closed: false }, { name: "requests closed", t: ENDS[v.step] - D1, closed: true }] : [{ name: "live", t: ENDS[v.step] - D1, closed: false }];
