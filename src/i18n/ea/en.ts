@@ -24,43 +24,49 @@ export const eaEn = {
   // Only an EXTENDED build (Production 21): the bar line (OPEN mode) and one short paragraph in the explanation. Both name the clock, say that payment details are not taken and that nothing converts or is charged by itself.
   extended: {
     bar: "Early Access has been extended for every store: free until {lastDay}, Israel time.",
-    note: "Early Access was first announced to end on {firstLastDay}. We extended it for every Early Access store. Nothing else changed: no payment is taken and nothing converts or is charged automatically.",
+    barClosed: "Early Access has been extended for every store already in it: free until {lastDay}, Israel time. New requests closed at the original end date.",
+    closedNote: "New requests closed at the original end date. The extension is for stores that were already in Early Access.",
+    note: "Early Access was first announced to end on {firstLastDay}, Israel time. We extended it for every Early Access store. Nothing else changed: no payment is taken and nothing converts or is charged automatically.",
   },
   // Shown INSTEAD of the offer once the end date has passed (set by the page script; see EA_HEAD_SCRIPT).
   after: {
     title: "Early Access has ended.",
-    body: "Early Access ended on {endDate}, at 00:00 Israel time. To use AICC from here on, you choose a plan once purchases open. Nothing is charged automatically.",
+    body: "Early Access ended on {endDate}, at\u00a000:00 Israel time. To use AICC from here on, you choose a plan once purchases open. Nothing is charged automatically.",
     cta: "See the plans",
   },
   hero: {
     ctaOpen: "Request free Early Access",
     ctaAnnounce: "How Early Access works",
-    note: "No credit card required. Access ends at 00:00 on {endDate}, Israel time, and nothing is charged automatically.",
+    note: "No credit card required. Access ends at\u00a000:00 on {endDate}, Israel time, and nothing is charged automatically.",
+    noteClosed: "New requests are closed. Access for stores already in Early Access ends at\u00a000:00 on {endDate}, Israel time, and nothing is charged automatically.",
   },
   // The header button while the offer is live (the ordinary "Get started" returns after the end date).
   header: { cta: "Request Early Access" },
   plan: {
-    free: "Free until {lastDay}",
+    free: "Free until {lastDay}, Israel time",
     regular: "Regular price, not charged during Early Access:",
     // Used when the strike-through is off (the default): the same price, said as a plan for the future, not as a reduction.
     planned: "Planned price when purchases open:",
     regularPer: "a year",
     noCard: "No credit card required",
     term: "Early Access term: until {lastDay}, Israel time",
-    ends: "Access ends at 00:00 on {endDate}, Israel time (22:00 UTC on {lastDayShort}). A paid plan starts only if you choose to buy one.",
+    ends: "Access ends at\u00a000:00 on {endDate}, Israel time (22:00 UTC on {lastDayShort}). A paid plan starts only if you choose to buy one.",
     ctaOpen: "Request free Early Access",
     ctaAnnounce: "Early Access opens soon",
+    ctaClosed: "New requests are closed",
   },
   // The explanation block on the Pricing page (#early-access) and its short form on Home and in the Pricing hero.
   section: {
-    title: "Early Access: free until {lastDay}",
-    lead: "Use the full product on your WooCommerce store at no cost until {lastDay}. Access ends at 00:00 on {endDate}, Israel time (22:00 UTC on {lastDay}). If you want to continue, you choose a paid plan. Nothing is charged automatically.",
+    title: "Early Access: free until {lastDay}, Israel time",
+    lead: "Use the full product on your WooCommerce store at no cost until {lastDay}. Access ends at\u00a000:00 on {endDate}, Israel time (22:00 UTC on {lastDay}). If you want to continue, you choose a paid plan. Nothing is charged automatically.",
     homeLead: "During Early Access every plan is free for approved stores until {lastDay}, Israel time. Access ends on {endDate}, and a paid plan starts only if you choose to buy one.",
+    homeLeadClosed: "Early Access has been extended for stores already in it: every plan is free until {lastDay}, Israel time. Access ends on {endDate}, and a paid plan starts only if you choose to buy one. New requests closed at the original end date.",
     link: "How Early Access works",
     stepsLabel: "How Early Access works",
     steps: {
       request: { title: "Request access", body: "Ask for Early Access for your WooCommerce store. No credit card is needed. We review each request." },
-      use: { title: "Use everything", body: "Connect your store and use the full product until {lastDay}." },
+      requestClosed: { title: "New requests are closed", body: "Requests closed at the original end date. Stores already in Early Access keep access until {lastDay}, Israel time." },
+      use: { title: "Use everything", body: "Connect your store and use the full product until {lastDay}, Israel time." },
       decide: { title: "Decide at the end", body: "At 00:00 on {endDate}, Israel time, access ends and your store keeps selling as usual. To continue you buy the plan your store holds at that time, once purchases open; if you do not, nothing is charged." },
     },
     whoTitle: "Who it is for",
@@ -69,6 +75,7 @@ export const eaEn = {
       b: "Every approved store ends at the same moment, 00:00 on {endDate}, Israel time, whatever day it joined.",
       c: "One Early Access per account, and we check that a store does not receive it twice. Store limits follow the plan you ask for: Solo 1 store, Studio up to 3, Agency up to 10. Ask for the plan you would want to keep: continuing is simplest on the plan your store holds at the end, and before the end you can ask us to change it (see the questions below).",
       d: "We review each request and not every request will be approved. Early Access can close to new requests at any time, and it is not granted in the final 24 hours before it ends.",
+      dExtended: "We review each request and not every request will be approved. Early Access can close to new requests at any time. It is not granted in the final 24 hours before the original end date, and new requests are closed from that date.",
     },
     endTitle: "What happens on {endDate}",
     end: {
@@ -81,7 +88,7 @@ export const eaEn = {
     reservation: "If we extend Early Access, we do it for every Early Access store at once and we say so on this page before the end date; where we can, we also tell you by e-mail. An extension never starts a charge. We cannot extend a single store's access.",
     faqTitle: "Early Access questions",
     faq: {
-      free: { q: "Is Early Access really free?", a: "Yes, for approved stores until {lastDay}. We do not ask for payment details, and nothing is charged." },
+      free: { q: "Is Early Access really free?", a: "Yes, for approved stores until {lastDay}, Israel time. We do not ask for payment details, and nothing is charged." },
       end: { q: "What happens on {endDate}?", a: "Access ends for every Early Access store at the same moment, 00:00 Israel time. AICC stops showing on your storefront and your store keeps working as usual. To continue, you buy a plan once purchases open." },
       auto: { q: "Will I be charged automatically?", a: "No. There is no card on file, no automatic renewal and no automatic switch to a paid plan." },
       continue: { q: "How do I continue after Early Access?", a: "You buy the plan your store holds at that time, once purchases open. Your connected store picks up the new end date. To hold a different plan, ask us before Early Access ends (see \"Can I change my plan?\")." },

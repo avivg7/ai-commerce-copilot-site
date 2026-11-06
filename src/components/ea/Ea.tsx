@@ -2,7 +2,7 @@ import { ArrowRight, CalendarCheck, Check, Rocket, Sparkles } from "lucide-react
 import type { Locale } from "@/i18n/config";
 import type { Dictionary } from "@/i18n";
 import { txProps } from "@/i18n";
-import { EA_ON, EA_OPEN, EA_EXTENDED, EA_END_ISO_UTC, eaUrl } from "@/lib/earlyAccess";
+import { EA_ON, EA_OPEN, EA_EXTENDED, EA_INTAKE_CLOSES, EA_END_ISO_UTC, eaUrl } from "@/lib/earlyAccess";
 import { localePath } from "@/lib/routes";
 import { Button } from "@/components/ui/Button";
 import { Container, Section, SectionHeading } from "@/components/ui/Primitives";
@@ -18,6 +18,14 @@ import { Rich } from "@/lib/rich";
  */
 const A = (locale: Locale, path: string) => { const { lang, dir } = txProps(locale, path); return { lang, dir }; };
 
+/**
+ * In an extended OPEN build new requests close at the INITIAL end (EA_INTAKE_CLOSES): the blocks that invite a request carry `data-ea-intake` (hidden once the head script sets
+ * `data-ea-closed`), and their "requests are closed, the extension is for stores already in" counterparts carry `data-ea-closed-only` (hidden before it).
+ * Every other build renders only the request wording and neither attribute.
+ */
+const INTAKE: Record<string, string> = EA_INTAKE_CLOSES ? { "data-ea-intake": "" } : {};
+const CLOSED_ONLY: Record<string, string> = { "data-ea-closed-only": "" };
+
 /** The slim bar above the header. */
 export function EaBar({ locale, t }: { locale: Locale; t: Dictionary }) {
   if (!EA_ON) return null;
@@ -27,7 +35,14 @@ export function EaBar({ locale, t }: { locale: Locale; t: Dictionary }) {
       <Container>
         <p className="aicc-eabar__text">
           <Sparkles size={16} aria-hidden="true" />
-          <span {...A(locale, EA_OPEN && EA_EXTENDED ? "ea.extended" : "ea.bar")}>{EA_OPEN ? (EA_EXTENDED ? t.ea.extended.bar : e.live) : e.announce}</span>
+          {EA_EXTENDED ? (
+            <>
+              <span {...INTAKE} {...A(locale, "ea.extended")}>{t.ea.extended.bar}</span>
+              {EA_INTAKE_CLOSES ? <span {...CLOSED_ONLY} {...A(locale, "ea.extended")}>{t.ea.extended.barClosed}</span> : null}
+            </>
+          ) : (
+            <span {...A(locale, "ea.bar")}>{EA_OPEN ? e.live : e.announce}</span>
+          )}
           <LocaleLink locale={locale} route="pricing" hash="early-access" className="aicc-eabar__link">
             <span {...A(locale, "ea.bar")}>{e.link}</span>
           </LocaleLink>
@@ -40,7 +55,8 @@ export function EaBar({ locale, t }: { locale: Locale; t: Dictionary }) {
 /** The honest fine print under the hero buttons. */
 export function EaHeroNote({ locale, t }: { locale: Locale; t: Dictionary }) {
   if (!EA_ON) return null;
-  return <p className="aicc-eanote aicc-fade-up" data-ea-live style={{ ["--i" as string]: 4 }} {...A(locale, "ea.hero")}>{t.ea.hero.note}</p>;
+  const note = (text: string, extra: Record<string, string>) => <p className="aicc-eanote aicc-fade-up" data-ea-live style={{ ["--i" as string]: 4 }} {...extra} {...A(locale, "ea.hero")}>{text}</p>;
+  return EA_INTAKE_CLOSES ? <>{note(t.ea.hero.note, INTAKE)}{note(t.ea.hero.noteClosed, CLOSED_ONLY)}</> : note(t.ea.hero.note, {});
 }
 
 /** The Early Access button. OPEN: a link to the sign-up. ANNOUNCE: a pointer to the explanation (nothing to sign up for yet). */
@@ -48,9 +64,16 @@ export function EaCta({ locale, t, size = "lg", variant = "primary", plan }: { l
   if (!EA_ON) return null;
   const arrow = <ArrowRight size={18} className="aicc-flip" aria-hidden="true" />;
   return EA_OPEN ? (
-    <span data-ea-live style={{ display: "contents" }}>
-      <Button href={eaUrl(locale, plan)} variant={variant} size={size} icon={arrow} {...A(locale, "ea.hero")}>{t.ea.hero.ctaOpen}</Button>
-    </span>
+    <>
+      <span data-ea-live {...INTAKE} style={{ display: "contents" }}>
+        <Button href={eaUrl(locale, plan)} variant={variant} size={size} icon={arrow} {...A(locale, "ea.hero")}>{t.ea.hero.ctaOpen}</Button>
+      </span>
+      {EA_INTAKE_CLOSES ? (
+        <span data-ea-live {...CLOSED_ONLY} style={{ display: "contents" }}>
+          <Button href={`${localePath(locale, "pricing")}#early-access`} variant={variant} size={size} icon={arrow} {...A(locale, "ea.hero")}>{t.ea.hero.ctaAnnounce}</Button>
+        </span>
+      ) : null}
+    </>
   ) : (
     <span data-ea-live style={{ display: "contents" }}>
       <Button href={`${localePath(locale, "pricing")}#early-access`} variant={variant} size={size} icon={arrow} {...A(locale, "ea.hero")}>{t.ea.hero.ctaAnnounce}</Button>
@@ -72,16 +95,40 @@ export function EaAfterNote({ locale, t }: { locale: Locale; t: Dictionary }) {
   );
 }
 
+/** The offer sentence (Home, Pricing hero line, closing bands): the request wording, plus the "already in Early Access" wording once new requests have closed (extended OPEN builds). */
+export function EaLeadText({ locale, t }: { locale: Locale; t: Dictionary }) {
+  if (!EA_INTAKE_CLOSES) return <>{t.ea.section.homeLead}</>;
+  return (
+    <>
+      <span {...INTAKE} {...A(locale, "ea.section")}>{t.ea.section.homeLead}</span>
+      <span {...CLOSED_ONLY} {...A(locale, "ea.section")}>{t.ea.section.homeLeadClosed}</span>
+    </>
+  );
+}
+
+/** The paragraph version used by the closing bands. */
+export function EaClosingLead({ locale, t }: { locale: Locale; t: Dictionary }) {
+  return <p className="aicc-lead" {...A(locale, "ea.section")}><EaLeadText locale={locale} t={t} /></p>;
+}
+
 /** The short Home version of the offer, above the plan cards. */
 export function EaHomeLead({ locale, t }: { locale: Locale; t: Dictionary }) {
   if (!EA_ON) return null;
   return (
-    <p className="aicc-ealead" data-ea-live {...A(locale, "ea.section")}>
-      <Sparkles size={18} aria-hidden="true" />
-      <span>{t.ea.section.homeLead}{" "}
-        <LocaleLink locale={locale} route="pricing" hash="early-access" className="aicc-link">{t.ea.section.link}</LocaleLink>
-      </span>
-    </p>
+    <>
+      <p className="aicc-ealead" data-ea-live {...A(locale, "ea.section")}>
+        <Sparkles size={18} aria-hidden="true" />
+        <span><EaLeadText locale={locale} t={t} />{" "}
+          <LocaleLink locale={locale} route="pricing" hash="early-access" className="aicc-link">{t.ea.section.link}</LocaleLink>
+        </span>
+      </p>
+      {EA_EXTENDED ? (
+        <p className="aicc-ealead aicc-eaextended" data-ea-live data-ea-extended-note {...A(locale, "ea.extended")}>
+          <Sparkles size={18} aria-hidden="true" />
+          <span>{t.ea.extended.note}</span>
+        </p>
+      ) : null}
+    </>
   );
 }
 
@@ -104,17 +151,34 @@ export function EaSection({ locale, t }: { locale: Locale; t: Dictionary }) {
             </div>
           </div>
           {EA_EXTENDED ? (
-            <p className="aicc-ealead aicc-eaextended" data-ea-extended-note {...A(locale, "ea.extended")}>
-              <Sparkles size={18} aria-hidden="true" />
-              <span>{t.ea.extended.note}</span>
-            </p>
+            <>
+              <p className="aicc-ealead aicc-eaextended" data-ea-extended-note {...A(locale, "ea.extended")}>
+                <Sparkles size={18} aria-hidden="true" />
+                <span>{t.ea.extended.note}</span>
+              </p>
+              {EA_INTAKE_CLOSES ? (
+                <p className="aicc-ealead aicc-eaextended" {...CLOSED_ONLY} {...A(locale, "ea.extended")}>
+                  <Sparkles size={18} aria-hidden="true" />
+                  <span>{t.ea.extended.closedNote}</span>
+                </p>
+              ) : null}
+            </>
           ) : null}
           <ol className="aicc-eatimeline" aria-label={s.stepsLabel}>
             {steps.map((st, i) => (
               <li key={st.title}>
                 <span className="aicc-eatimeline__dot" aria-hidden="true">{icons[i]}</span>
-                <h3>{st.title}</h3>
-                <p>{st.body}</p>
+                {i === 0 && EA_INTAKE_CLOSES ? (
+                  <>
+                    <h3><span {...INTAKE}>{st.title}</span><span {...CLOSED_ONLY}>{s.steps.requestClosed.title}</span></h3>
+                    <p><span {...INTAKE}>{st.body}</span><span {...CLOSED_ONLY}>{s.steps.requestClosed.body}</span></p>
+                  </>
+                ) : (
+                  <>
+                    <h3>{st.title}</h3>
+                    <p>{st.body}</p>
+                  </>
+                )}
               </li>
             ))}
           </ol>
@@ -122,7 +186,7 @@ export function EaSection({ locale, t }: { locale: Locale; t: Dictionary }) {
             <div>
               <h3 className="aicc-eah3">{s.whoTitle}</h3>
               <ul className="aicc-lines">
-                {(["a", "b", "c", "d"] as const).map((k) => (<li key={k}><Check size={20} aria-hidden="true" /><span>{s.who[k]}</span></li>))}
+                {(["a", "b", "c", "d"] as const).map((k) => (<li key={k}><Check size={20} aria-hidden="true" /><span>{k === "d" && EA_EXTENDED ? s.who.dExtended : s.who[k]}</span></li>))}
               </ul>
             </div>
             <div>
@@ -144,7 +208,12 @@ export function EaSection({ locale, t }: { locale: Locale; t: Dictionary }) {
 /** The header button while the offer is live in OPEN mode: same words and destination as the hero button (the ordinary "Get started" is shown after the end date and in every other mode). */
 export function EaHeaderCta({ locale, t, className }: { locale: Locale; t: Dictionary; className: string }) {
   if (!EA_OPEN) return null;
-  return <a href={eaUrl(locale)} className={className} data-ea-live {...A(locale, "ea.header")}>{t.ea.header.cta}</a>;
+  return (
+    <>
+      <a href={eaUrl(locale)} className={className} data-ea-live {...INTAKE} {...A(locale, "ea.header")}>{t.ea.header.cta}</a>
+      {EA_INTAKE_CLOSES ? <a href={`${localePath(locale, "pricing")}#early-access`} className={className} data-ea-live {...CLOSED_ONLY} {...A(locale, "ea.bar")}>{t.ea.bar.link}</a> : null}
+    </>
+  );
 }
 
 /** One line under the Pricing headline so the offer is on the first screen, not only after the plan cards. */
@@ -153,7 +222,7 @@ export function EaPricingLine({ locale, t }: { locale: Locale; t: Dictionary }) 
   return (
     <p className="aicc-ealead" data-ea-live {...A(locale, "ea.section")}>
       <Sparkles size={18} aria-hidden="true" />
-      <span>{t.ea.section.homeLead}{" "}
+      <span><EaLeadText locale={locale} t={t} />{" "}
         <LocaleLink locale={locale} route="pricing" hash="early-access" className="aicc-link">{t.ea.section.link}</LocaleLink>
       </span>
     </p>

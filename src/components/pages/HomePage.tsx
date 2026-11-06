@@ -6,7 +6,7 @@ import { Lb, Rich, type RichCtx } from "@/lib/rich";
 import { PLANS } from "@/data/plans";
 import { COMMERCE_OPEN, getStartedUrl } from "@/lib/site";
 import { EA_ON } from "@/lib/earlyAccess";
-import { EaAfterPlans, EaCta, EaHeroNote, EaHomeLead } from "@/components/ea/Ea";
+import { EaAfterPlans, EaClosingLead, EaCta, EaHeroNote, EaHomeLead } from "@/components/ea/Ea";
 import { SoonBandActions } from "@/components/ui/Soon";
 import { localePath } from "@/lib/routes";
 import { Button } from "@/components/ui/Button";
@@ -287,7 +287,7 @@ export function HomePage({ locale, t }: { locale: Locale; t: Dictionary }) {
               <h2 id="final-title" className="aicc-h2">{h.final.title}</h2>
               {EA_ON ? (
                 <div className="aicc-stack aicc-stack--lg" data-ea-live>
-                  <p className="aicc-lead" {...tx("ea.section")}>{t.ea.section.homeLead}</p>
+                  <EaClosingLead locale={locale} t={t} />
                   <div className="aicc-hero-actions">
                     <EaCta locale={locale} t={t} variant="primary" />
                     <Button href={localePath(locale, "pricing")} variant="ghost" size="lg" {...tx("common.seePricing")}>{t.common.seePricing}</Button>

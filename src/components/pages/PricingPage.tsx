@@ -7,7 +7,7 @@ import { PLANS } from "@/data/plans";
 import { COMMERCE_OPEN, getStartedUrl } from "@/lib/site";
 import { EA_ON } from "@/lib/earlyAccess";
 
-import { EaAfterNote, EaCta, EaPricingLine, EaSection } from "@/components/ea/Ea";
+import { EaAfterNote, EaClosingLead, EaCta, EaPricingLine, EaSection } from "@/components/ea/Ea";
 import { SoonBandActions } from "@/components/ui/Soon";
 import { Container, Section, SectionHeading } from "@/components/ui/Primitives";
 import { PricingCard } from "@/components/ui/PricingCard";
@@ -175,7 +175,7 @@ export function PricingPage({ locale, t }: { locale: Locale; t: Dictionary }) {
               <h2 id="pricing-final" className="aicc-h2">{p.final.title}</h2>
               {EA_ON ? (
                 <div className="aicc-stack aicc-stack--lg" data-ea-live>
-                  <p className="aicc-lead" {...tx("ea.section")}>{t.ea.section.homeLead}</p>
+                  <EaClosingLead locale={locale} t={t} />
                   <div className="aicc-hero-actions">
                     <EaCta locale={locale} t={t} variant="primary" />
                   </div>

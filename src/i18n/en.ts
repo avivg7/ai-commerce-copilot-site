@@ -548,7 +548,7 @@ export const en = {
         },
         fallback: {
           title: "Limited history still gets relevant picks.",
-          body: "When a product has few co-purchases, AICC still fills the widget, using signals from your catalog beyond past purchases: relevant in-stock products first, then your newest in-stock products. Nothing is invented, and real bought-together pairs take over as orders are counted. Learned partners (products your orders show were bought together) and fallbacks share the widget heading today; your dashboard preview shows which is which.",
+          body: "When a product has few co-purchases, AICC still fills the widget, using signals from your catalog beyond past purchases: relevant in-stock products first, then your newest in-stock products. Nothing is invented, and real bought-together pairs take over as orders are counted. While history is thin, the first fallback picks come from the same category, much like WooCommerce's own related products; the list becomes specific to your store as your orders accumulate. Learned partners (products your orders show were bought together) and fallbacks share the widget heading today; your dashboard preview shows which is which.",
         },
       },
       link: "See how a recommendation is decided",

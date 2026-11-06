@@ -5,7 +5,7 @@ import { Button } from "./Button";
 import { cn } from "@/lib/cn";
 import { currencySuffix, formatPrice } from "@/data/plans";
 import { COMMERCE_OPEN, planUrl, type PlanId } from "@/lib/site";
-import { EA_ON, EA_OPEN, EA_STRIKE, eaUrl } from "@/lib/earlyAccess";
+import { EA_ON, EA_OPEN, EA_STRIKE, EA_INTAKE_CLOSES, eaUrl } from "@/lib/earlyAccess";
 import { txProps } from "@/i18n";
 import type { Locale } from "@/i18n/config";
 
@@ -28,7 +28,7 @@ export interface PricingCardProps {
   headingLevel?: 2 | 3;
   extra?: ReactNode;
   /** Early Access strings (t.ea.plan). Rendered only by an Early Access build; a normal build ignores them. */
-  ea?: { free: string; regular: string; planned: string; regularPer: string; noCard: string; term: string; ends: string; ctaOpen: string; ctaAnnounce: string };
+  ea?: { free: string; regular: string; planned: string; regularPer: string; noCard: string; term: string; ends: string; ctaOpen: string; ctaAnnounce: string; ctaClosed: string };
 }
 
 /**
@@ -95,13 +95,18 @@ export function PricingCard(p: PricingCardProps) {
       {ea ? (
         <>
           <p className="aicc-plan__ends aicc-muted aicc-small" data-ea-live {...E("ea.plan")}>{ea.ends}</p>
-          <div data-ea-live>
+          <div data-ea-live {...(EA_INTAKE_CLOSES ? { "data-ea-intake": "" } : {})}>
             {EA_OPEN ? (
               <Button href={eaUrl(loc, p.id)} variant={p.featuredLabel ? "primary" : "outline"} block size="lg" {...E("ea.plan")}>{ea.ctaOpen}<span className="aicc-sr-only"> ({p.name})</span></Button>
             ) : (
               <p className="aicc-btn aicc-btn--lg aicc-btn--block aicc-btn--soon" data-ea-soon {...E("ea.plan")}>{ea.ctaAnnounce}</p>
             )}
           </div>
+          {EA_INTAKE_CLOSES ? (
+            <div data-ea-live data-ea-closed-only>
+              <p className="aicc-btn aicc-btn--lg aicc-btn--block aicc-btn--soon" data-ea-soon {...E("ea.plan")}>{ea.ctaClosed}</p>
+            </div>
+          ) : null}
           <div data-ea-after>{standardCta}</div>
         </>
       ) : standardCta}

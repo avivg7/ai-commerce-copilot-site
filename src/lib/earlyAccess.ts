@@ -20,6 +20,7 @@
  * two published later ends (EA_EXTENSION_STEPS). The Site follows by REBUILD, never by itself: a build says "extended" only when it is given BOTH
  *   NEXT_PUBLIC_AICC_EA_EXTENSION_STEP  exactly "1" or "2" (anything else is step 0, the initial end), and
  *   NEXT_PUBLIC_AICC_EA_EXTENSION_REF   the operator's decision reference (3-64 characters; without it the step is 0 and the build keeps the initial end).
+ * An extended OPEN build also closes the request controls at the INITIAL end (see EA_INTAKE_CLOSES): the Control Plane takes no new request after it.
  * EA_END_UTC_MS is the one instant that means "the end" everywhere (build clock, head script, strike-through, every band). Rebuild only AFTER the Control Plane `extend` has run and
  * been verified: a Site that announces a later date than the product delivers is the harmful order (docs/cutover/early-access.md section 7b).
  */
@@ -52,6 +53,10 @@ export const EA_TIME_ZONE = "Asia/Jerusalem";
 export type EaStep = 0 | 1 | 2;
 /** The decision reference an extension needs: 3 to 64 characters, letters, digits and . _ : / # - only (it is an operator's reference, never public text). */
 export const EA_REF_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:/#-]{2,63}$/;
+/** A reference that is obviously not a decision reference (a placeholder, or one character repeated): refused, so a template value can never make a build "extended". */
+export function eaRefIsPlaceholder(ref: string): boolean {
+  return /^(todo|tbd|tba|xxx+|test|testing|placeholder|n\/a|na|none|null|ref|reference|changeme|foo|bar|abc|abcd|1234|123456)$/i.test(ref) || /^(.)\1+$/.test(ref);
+}
 /**
  * The extension step a build is allowed to claim: 1 or 2 only when the raw step is EXACTLY "1" or "2" AND a valid decision reference is given; anything else is 0 (the initial end).
  * `rejected` says why a requested step was ignored (launch:check reports it).
@@ -60,6 +65,7 @@ export function parseEaExtension(rawStep: string | undefined, rawRef: string | u
   const requested = rawStep !== undefined && rawStep !== "";
   if (rawStep !== "1" && rawStep !== "2") return { step: 0, requested, rejected: requested ? `the step must be exactly "1" or "2" (got "${rawStep}")` : "" };
   if (typeof rawRef !== "string" || !EA_REF_PATTERN.test(rawRef)) return { step: 0, requested, rejected: "an extension needs NEXT_PUBLIC_AICC_EA_EXTENSION_REF (the operator's decision reference, 3-64 characters)" };
+  if (eaRefIsPlaceholder(rawRef)) return { step: 0, requested, rejected: "NEXT_PUBLIC_AICC_EA_EXTENSION_REF looks like a placeholder (todo, tbd, xxx, test, placeholder, n/a ...): give the real decision reference" };
   return { step: rawStep === "1" ? 1 : 2, requested, rejected: "" };
 }
 /** The end instant for a step (0 = the initial cutoff). */
@@ -130,7 +136,14 @@ export const EA_URL_OVERRIDE = process.env.NEXT_PUBLIC_AICC_EARLY_ACCESS_URL || 
  * the document, and the CSS then hides every `data-ea-live` block and shows the `data-ea-after` blocks. It compares absolute UTC milliseconds: no time zone,
  * no locale. A visitor with a wrong device clock only changes what THEY see; entitlement is decided on the servers.
  */
-export const EA_HEAD_SCRIPT = `try{if(Date.now()>=${EA_END_UTC_MS})document.documentElement.setAttribute("data-ea-over","")}catch(e){}`;
+export const EA_HEAD_SCRIPT = EA_EXTENDED && EA_OPEN
+  ? `try{if(Date.now()>=${EA_END_UTC_MS})document.documentElement.setAttribute("data-ea-over","");if(Date.now()>=${EA_CUTOFF_UTC_MS})document.documentElement.setAttribute("data-ea-closed","")}catch(e){}`
+  : `try{if(Date.now()>=${EA_END_UTC_MS})document.documentElement.setAttribute("data-ea-over","")}catch(e){}`;
+/**
+ * In an extended OPEN build new requests close at the INITIAL end (the Control Plane grants only before it, whatever extension is in effect): from that instant until the extended end
+ * the page offers no request action and says the extension is for stores already in Early Access (`data-ea-closed`, set by the same fixed-instant head script).
+ */
+export const EA_INTAKE_CLOSES = EA_EXTENDED && EA_OPEN;
 
 
 /** The Early Access destination in the page language (OPEN mode only); `plan` adds the plan hint like the normal plan buttons. */

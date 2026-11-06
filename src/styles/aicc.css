@@ -1260,6 +1260,9 @@ p > .aicc-link:only-child { display: inline-block; min-block-size: 1.5rem; paddi
 html[data-ea-over] [data-ea-live] { display: none !important; }
 html:not([data-ea-over]) [data-ea-after] { display: none !important; }
 html[data-ea-mode]:not([data-ea-over]) [data-ea-hide-live] { display: none !important; }
+/* Extended OPEN builds (Production 21): new requests close at the INITIAL end. The head script sets <html data-ea-closed> then (same fixed-instant mechanism, no fetch). */
+html[data-ea-closed] [data-ea-intake] { display: none !important; }
+html:not([data-ea-closed]) [data-ea-closed-only] { display: none !important; }
 
 /* The bar sits in the page flow directly under the fixed header: its top margin clears the header, and it has the HEIGHT OF ITS OWN TEXT (no fixed height, nothing is clipped at any width, zoom or language).
  * The section that follows already carries the header's height in its top padding, so that padding is reduced by exactly the header height while the bar is live. */
@@ -1269,6 +1272,10 @@ html[data-ea-mode]:not([data-ea-over]) .aicc-hero { padding-block-start: calc(9r
 /* P21: in the two-column hero the longest headline word ("recommendations.", "Recomendaciones", "рекомендации") must fit the column at every width, or it breaks in the middle of the
  * word (it did at 1024 px): the size follows the viewport between 1024 and about 1200 px and is the brand's 3.75rem above that. */
 @media (min-width: 64rem) { .aicc-hero-title { font-size: min(3.75rem, calc((100vw - 7.5rem) / 18)); } }
+/* P21: no hyphenation in the hero headline in any language: "возможно-/стей" broke a word at 360-480 px (hyphens:auto is set for headings on phones above). */
+:root .aicc-hero-title, :root:lang(es) .aicc-hero-title, :root:lang(ru) .aicc-hero-title, :root:lang(he) .aicc-hero-title { hyphens: manual; }
+/* P21: on laptop-height screens (up to 760 px) the two-sentence headline is set at 3rem in EVERY build, so the primary action of the ordinary hero stays above the fold at 1280x720 and 1536x730 as it did in Production 20. */
+@media (min-width: 64rem) and (max-height: 47.5rem) { .aicc-hero-title { font-size: 3rem; } }
 /* P21: the headline is two sentences: the accent (the second one) starts its own line, so a line never ends on "More" with its noun on the next. fit-content keeps the gradient the width of the text. */
 .aicc-hero-title .aicc-text-gradient { display: block; inline-size: fit-content; max-inline-size: 100%; }
 /* P21: above the fold of an Early Access build. The global bar already says the offer once; on a desktop or laptop screen of ordinary height (up to 56rem = 896 px) the hero is
@@ -1311,6 +1318,9 @@ html[data-ea-mode]:not([data-ea-over]) .aicc-pagehead { padding-block-start: cla
 
 .aicc-easection__head { display: flex; flex-wrap: wrap; gap: var(--aicc-space-6); align-items: center; justify-content: space-between; }
 .aicc-easection__head > .aicc-heading { flex: 1 1 28rem; }
+/* The note after the head must never sit under the mascot (it did on phones: the wrapped figure overhangs the head by its own padding). */
+.aicc-easection__head + .aicc-eaextended { margin-block-start: 2.5rem; position: relative; z-index: 1; }
+.aicc-eaextended + .aicc-eaextended { margin-block-start: calc(-1 * var(--aicc-space-3)); }
 .aicc-eah3 { font-size: var(--aicc-text-lg); font-weight: 700; margin: 0 0 var(--aicc-space-3); }
 .aicc-eatimeline { list-style: none; padding: 0; margin: var(--aicc-space-6) 0 var(--aicc-space-8); display: grid; gap: var(--aicc-space-6); counter-reset: ea; position: relative; }
 .aicc-eatimeline li { position: relative; padding-inline-start: 3.5rem; }

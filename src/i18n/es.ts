@@ -548,7 +548,7 @@ export const es: DeepPartial<Dictionary> = {
         },
         fallback: {
           title: "Un historial escaso sigue recibiendo recomendaciones relevantes.",
-          body: "Cuando un producto tiene pocas compras conjuntas, AICC sigue completando el widget con señales de su catálogo más allá de las compras anteriores: primero productos relevantes con stock y después sus productos con stock más recientes. No se inventa nada, y los pares reales comprados juntos toman el relevo a medida que se cuentan los pedidos. Los acompañantes aprendidos (productos que sus pedidos muestran comprados juntos) y las alternativas comparten hoy el título del widget; la vista previa de su panel muestra cuál es cuál.",
+          body: "Cuando un producto tiene pocas compras conjuntas, AICC sigue completando el widget con señales de su catálogo más allá de las compras anteriores: primero productos relevantes con stock y después sus productos con stock más recientes. No se inventa nada, y los pares reales comprados juntos toman el relevo a medida que se cuentan los pedidos. Mientras el historial es escaso, las primeras alternativas salen de la misma categoría, de forma parecida a los productos relacionados de WooCommerce; la lista se vuelve específica de su tienda a medida que se acumulan sus pedidos. Los acompañantes aprendidos (productos que sus pedidos muestran comprados juntos) y las alternativas comparten hoy el título del widget; la vista previa de su panel muestra cuál es cuál.",
         },
       },
       link: "Vea cómo se decide una recomendación",
