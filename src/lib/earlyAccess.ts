@@ -53,9 +53,15 @@ export const EA_TIME_ZONE = "Asia/Jerusalem";
 export type EaStep = 0 | 1 | 2;
 /** The decision reference an extension needs: 3 to 64 characters, letters, digits and . _ : / # - only (it is an operator's reference, never public text). */
 export const EA_REF_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:/#-]{2,63}$/;
-/** A reference that is obviously not a decision reference (a placeholder, or one character repeated): refused, so a template value can never make a build "extended". */
+/** Tokens that make a reference "obviously not a decision reference" when NOTHING else is in it (REPLACE_ME, ref-1, TBD-1, XXXX-XXXX, decision, placeholder-1, 123, TEST-001 ...). */
+const EA_REF_PLACEHOLDER_TOKENS = new Set(["todo", "tbd", "tba", "test", "testing", "placeholder", "replace", "replaceme", "me", "changeme", "change", "fixme", "fix", "fill", "here", "your", "example", "sample", "dummy", "none", "null", "no", "na", "n", "a", "ref", "reference", "decision", "id", "number", "foo", "bar", "abc", "abcd", "temp", "tmp"]);
+/**
+ * A reference that is obviously not a decision reference (a placeholder): refused, so a template value can never make a build "extended". It is split into words at - _ . : / # and
+ * space; it is a placeholder when EVERY word is a placeholder word, a short number, or one repeated character. A reference that carries any real word (DEC-2027-0001, OPS-014) passes.
+ */
 export function eaRefIsPlaceholder(ref: string): boolean {
-  return /^(todo|tbd|tba|xxx+|test|testing|placeholder|n\/a|na|none|null|ref|reference|changeme|foo|bar|abc|abcd|1234|123456)$/i.test(ref) || /^(.)\1+$/.test(ref);
+  const words = ref.split(/[-_.:/# ]+/).filter(Boolean).map((w) => w.toLowerCase());
+  return words.length === 0 || words.every((w) => EA_REF_PLACEHOLDER_TOKENS.has(w) || /^(.)\1*$/.test(w) || /^\d{1,6}$/.test(w));
 }
 /**
  * The extension step a build is allowed to claim: 1 or 2 only when the raw step is EXACTLY "1" or "2" AND a valid decision reference is given; anything else is 0 (the initial end).

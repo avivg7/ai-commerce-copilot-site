@@ -682,7 +682,7 @@ export const es: DeepPartial<Dictionary> = {
     sparse: {
       title: "¿Poco historial? Sigue habiendo recomendaciones relevantes.",
       lead: "AICC usa señales de su catálogo más allá de las compras anteriores, para que el widget no se quede vacío.",
-      p1: "Los puestos que el historial de compras no puede llenar se completan con productos relevantes con stock de su catálogo y después con sus productos con stock más recientes. Salen del catálogo, no de las compras. A medida que llegan pedidos, las compras conjuntas reales sustituyen a las alternativas.",
+      p1: "Los puestos que el historial de compras no puede llenar se completan con productos con stock de su catálogo, primero de la misma categoría (de forma parecida a los productos relacionados de WooCommerce) y después con sus productos con stock más recientes. Salen del catálogo, no de las compras. A medida que llegan pedidos, las compras conjuntas reales sustituyen a las alternativas.",
       p2: "Puede importar hasta 24 meses de pedidos anteriores (opcional), para que AICC parta de su historial y no de cero.",
       limitTitle: "En el widget",
       limit: "El título del widget es el mismo para todos los elementos. En Recommendation Preview, en su panel, los acompañantes aprendidos muestran cuántas veces se compraron juntos y los productos alternativos solo muestran un precio, así que siempre puede distinguirlos.",
@@ -774,7 +774,7 @@ export const es: DeepPartial<Dictionary> = {
     history: {
       title: "Sus pedidos anteriores pueden dar a AICC una ventaja inicial.",
       lead: "Cuando su tienda está conectada, AICC le ofrece importar hasta 24 meses de pedidos anteriores, para que las recomendaciones aprendan de su historial existente. Es opcional: usted decide.",
-      p1: "Si lo omite, AICC sigue recomendando desde su catálogo (productos relevantes con stock y después los más recientes) y aprende de los pedidos nuevos. AICC no importa sus pedidos anteriores hasta que usted lo decida. Los pedidos hechos antes de conectar no se envían a menos que los importe; los hechos después de conectar se envían al crearse o actualizarse.",
+      p1: "Si lo omite, AICC sigue recomendando desde su catálogo (productos con stock elegidos de forma parecida a los productos relacionados de WooCommerce, primero de la misma categoría, y después los más recientes) y aprende de los pedidos nuevos. AICC no importa sus pedidos anteriores hasta que usted lo decida. Los pedidos hechos antes de conectar no se envían a menos que los importe; los hechos después de conectar se envían al crearse o actualizarse.",
       p2: "Puede iniciar la importación más tarde desde el panel. Lee sus pedidos y envía datos de los pedidos a AICC sin cambiarlos en WooCommerce, los pedidos ya importados no se duplican y puede cancelar una importación desde el panel. El tiempo varía según el tamaño del catálogo y las tareas programadas de su sitio.",
       p3: "¿Vuelve tras una pausa? AICC puede conservar el historial de su tienda cuando se pausa el acceso, para que los comerciantes que regresan continúen en lugar de empezar desde cero. Si importó su historial, AICC se pone al día con su historial real de WooCommerce; una tienda que declinó la oferta de importación nunca se importa sin preguntar. Nunca inventa impresiones, clics ni ingresos del tiempo en que no estuvo funcionando.",
       link: "Conservación exacta, hoy y como objetivo",

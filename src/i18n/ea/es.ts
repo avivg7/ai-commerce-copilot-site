@@ -18,6 +18,8 @@ export const eaEs: DeepPartial<EaDict> = {
   },
   extended: {
     bar: "El Acceso anticipado se ha ampliado para todas las tiendas: gratis hasta el {lastDay}, hora de Israel.",
+    barAnnounce: "El Acceso anticipado llega pronto y su fecha de fin se ha pospuesto: gratis para tiendas aprobadas hasta el {lastDay}, hora de Israel.",
+    noteAnnounce: "El Acceso anticipado se anunció al principio para terminar el {firstLastDay}, hora de Israel. La fecha de fin se ha pospuesto. Todavía no se puede solicitar nada, no se toma ningún pago y nada se convierte ni se cobra automáticamente.",
     barClosed: "El Acceso anticipado se ha ampliado para todas las tiendas que ya participan: gratis hasta el {lastDay}, hora de Israel. Las solicitudes nuevas se cerraron en la fecha de fin original.",
     closedNote: "Las solicitudes nuevas se cerraron en la fecha de fin original. La ampliación es para las tiendas que ya estaban en el Acceso anticipado.",
     note: "El Acceso anticipado se anunció al principio para terminar el {firstLastDay}, hora de Israel. Lo ampliamos para todas las tiendas del Acceso anticipado. Nada más ha cambiado: no se toma ningún pago y nada se convierte ni se cobra automáticamente.",
@@ -51,6 +53,8 @@ export const eaEs: DeepPartial<EaDict> = {
     lead: "Use el producto completo en su tienda WooCommerce sin coste hasta el {lastDay}. El acceso termina el {endDate} a\u00a0las\u00a000:00, hora de Israel (22:00 UTC del {lastDay}). Si quiere continuar, elige un plan de pago. No se cobra nada automáticamente.",
     homeLead: "Durante el Acceso anticipado, todos los planes son gratis para tiendas aprobadas hasta el {lastDay}, hora de Israel. El acceso termina el {endDate}, y un plan de pago empieza solo si usted decide comprarlo.",
     homeLeadClosed: "El Acceso anticipado se ha ampliado para las tiendas que ya participan: todos los planes son gratis hasta el {lastDay}, hora de Israel. El acceso termina el {endDate}, y un plan de pago empieza solo si usted decide comprarlo. Las solicitudes nuevas se cerraron en la fecha de fin original.",
+    intakeCutoff: "Las solicitudes se cierran 24 horas antes del final.",
+    intakeCutoffExt: "Las solicitudes se cierran 24 horas antes de la fecha de fin original.",
     link: "Cómo funciona el Acceso anticipado",
     stepsLabel: "Cómo funciona el Acceso anticipado",
     steps: {
@@ -66,6 +70,8 @@ export const eaEs: DeepPartial<EaDict> = {
       c: "Un Acceso anticipado por cuenta, y comprobamos que una tienda no lo reciba dos veces. El número de tiendas depende del plan que solicite: Solo 1 tienda, Studio hasta 3, Agency hasta 10. Pida el plan que querría conservar: continuar es más sencillo con el plan que su tienda tenga al final, y antes del final puede pedirnos que lo cambiemos (vea las preguntas más abajo).",
       d: "Revisamos cada solicitud y no todas se aprobarán. El Acceso anticipado puede cerrarse a nuevas solicitudes en cualquier momento, y no se concede en las últimas 24 horas antes de que termine.",
       dExtended: "Revisamos cada solicitud y no todas se aprobarán. El Acceso anticipado puede cerrarse a nuevas solicitudes en cualquier momento. No se concede en las últimas 24 horas antes de la fecha de fin original, y las solicitudes nuevas están cerradas desde esa fecha.",
+      cClosed: "El número de tiendas depende del plan: Solo 1 tienda, Studio hasta 3, Agency hasta 10. Continuar es más sencillo con el plan que su tienda tenga al final, y antes del final puede pedirnos que lo cambiemos (vea las preguntas más abajo).",
+      dClosed: "Las solicitudes nuevas están cerradas. El Acceso anticipado ya no está abierto a tiendas nuevas.",
     },
     endTitle: "Qué ocurre el {endDate}",
     end: {
@@ -84,7 +90,7 @@ export const eaEs: DeepPartial<EaDict> = {
       change: { q: "¿Puedo cambiar mi plan?", a: "Sí, antes de que termine el Acceso anticipado. Escriba a {contactEmail} desde la dirección de correo de su cuenta y cambiamos el plan de su tienda del Acceso anticipado sin ningún coste. La fecha de fin no cambia. El número de tiendas depende del plan, así que un plan más pequeño admite menos tiendas conectadas. Para continuar después del Acceso anticipado, usted compra el plan que su tienda tenga en ese momento, cuando se abran las compras." },
       extension: { q: "¿Podría ampliarse el Acceso anticipado?", a: "Si ampliamos el Acceso anticipado, lo hacemos para todas las tiendas del Acceso anticipado a la vez y lo anunciamos en esta página antes de la fecha de fin; cuando podemos, también se lo comunicamos por correo electrónico. Una ampliación nunca inicia un cobro. No podemos ampliar el acceso de una sola tienda." },
       guarantee: { q: "¿La garantía de devolución del dinero se aplica al Acceso anticipado?", a: "No. La garantía de devolución del dinero de 14 días se aplica a las compras de pago que cumplan los requisitos, según la [Política de reembolso](route:refund-policy), y no al Acceso anticipado gratuito. No se cobra ningún pago durante el Acceso anticipado, así que no hay nada que reembolsar. Cuando se abran las compras, la [Política de reembolso](route:refund-policy) se aplica a las compras de pago que cumplan los requisitos." },
-      plugin: { q: "¿Qué verá en el plugin cuando termine el Acceso anticipado?", a: "A las 00:00 del {endDate} (hora de Israel) el plugin indica que su plan ha caducado, con un botón para renovar el plan, y AICC deja de mostrarse en el escaparate de su tienda. Su tienda sigue vendiendo como siempre. El plugin no avisa de antemano, así que anote la fecha; la página de su cuenta también la muestra." },
+      plugin: { q: "¿Qué verá en el plugin cuando termine el Acceso anticipado?", a: "A\u00a0las\u00a000:00 del {endDate} (hora de Israel) el plugin indica que su plan ha caducado, con un botón para renovar el plan, y AICC deja de mostrarse en el escaparate de su tienda. Su tienda sigue vendiendo como siempre. El plugin no avisa de antemano, así que anote la fecha; la página de su cuenta también la muestra." },
     },
   },
 };

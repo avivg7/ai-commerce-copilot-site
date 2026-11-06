@@ -1,3 +1,4 @@
+import { Fragment } from "react";
 import { ArrowRight, CalendarCheck, Check, Rocket, Sparkles } from "lucide-react";
 import type { Locale } from "@/i18n/config";
 import type { Dictionary } from "@/i18n";
@@ -37,15 +38,18 @@ export function EaBar({ locale, t }: { locale: Locale; t: Dictionary }) {
           <Sparkles size={16} aria-hidden="true" />
           {EA_EXTENDED ? (
             <>
-              <span {...INTAKE} {...A(locale, "ea.extended")}>{t.ea.extended.bar}</span>
+              <span {...INTAKE} {...A(locale, "ea.extended")}>{EA_OPEN ? t.ea.extended.bar : t.ea.extended.barAnnounce}</span>
               {EA_INTAKE_CLOSES ? <span {...CLOSED_ONLY} {...A(locale, "ea.extended")}>{t.ea.extended.barClosed}</span> : null}
             </>
           ) : (
             <span {...A(locale, "ea.bar")}>{EA_OPEN ? e.live : e.announce}</span>
           )}
-          <LocaleLink locale={locale} route="pricing" hash="early-access" className="aicc-eabar__link">
-            <span {...A(locale, "ea.bar")}>{e.link}</span>
-          </LocaleLink>
+          {/* in the closed phase the header button and the hero action already lead to the same place: one tab stop fewer */}
+          <span {...INTAKE} style={{ display: "contents" }}>
+            <LocaleLink locale={locale} route="pricing" hash="early-access" className="aicc-eabar__link">
+              <span {...A(locale, "ea.bar")}>{e.link}</span>
+            </LocaleLink>
+          </span>
         </p>
       </Container>
     </div>
@@ -97,10 +101,11 @@ export function EaAfterNote({ locale, t }: { locale: Locale; t: Dictionary }) {
 
 /** The offer sentence (Home, Pricing hero line, closing bands): the request wording, plus the "already in Early Access" wording once new requests have closed (extended OPEN builds). */
 export function EaLeadText({ locale, t }: { locale: Locale; t: Dictionary }) {
-  if (!EA_INTAKE_CLOSES) return <>{t.ea.section.homeLead}</>;
+  // OPEN builds say when requests stop (the Control Plane grants nothing in the final 24 hours): next to the offer, not only in the list below
+  if (!EA_INTAKE_CLOSES) return <>{t.ea.section.homeLead}{EA_OPEN ? ` ${t.ea.section.intakeCutoff}` : ""}</>;
   return (
     <>
-      <span {...INTAKE} {...A(locale, "ea.section")}>{t.ea.section.homeLead}</span>
+      <span {...INTAKE} {...A(locale, "ea.section")}>{t.ea.section.homeLead} {t.ea.section.intakeCutoffExt}</span>
       <span {...CLOSED_ONLY} {...A(locale, "ea.section")}>{t.ea.section.homeLeadClosed}</span>
     </>
   );
@@ -125,7 +130,7 @@ export function EaHomeLead({ locale, t }: { locale: Locale; t: Dictionary }) {
       {EA_EXTENDED ? (
         <p className="aicc-ealead aicc-eaextended" data-ea-live data-ea-extended-note {...A(locale, "ea.extended")}>
           <Sparkles size={18} aria-hidden="true" />
-          <span>{t.ea.extended.note}</span>
+          <span>{EA_OPEN ? t.ea.extended.note : t.ea.extended.noteAnnounce}</span>
         </p>
       ) : null}
     </>
@@ -154,7 +159,7 @@ export function EaSection({ locale, t }: { locale: Locale; t: Dictionary }) {
             <>
               <p className="aicc-ealead aicc-eaextended" data-ea-extended-note {...A(locale, "ea.extended")}>
                 <Sparkles size={18} aria-hidden="true" />
-                <span>{t.ea.extended.note}</span>
+                <span>{EA_OPEN ? t.ea.extended.note : t.ea.extended.noteAnnounce}</span>
               </p>
               {EA_INTAKE_CLOSES ? (
                 <p className="aicc-ealead aicc-eaextended" {...CLOSED_ONLY} {...A(locale, "ea.extended")}>
@@ -186,7 +191,18 @@ export function EaSection({ locale, t }: { locale: Locale; t: Dictionary }) {
             <div>
               <h3 className="aicc-eah3">{s.whoTitle}</h3>
               <ul className="aicc-lines">
-                {(["a", "b", "c", "d"] as const).map((k) => (<li key={k}><Check size={20} aria-hidden="true" /><span>{k === "d" && EA_EXTENDED ? s.who.dExtended : s.who[k]}</span></li>))}
+                {(["a", "b", "c", "d"] as const).map((k) => {
+                  const text = k === "d" && EA_EXTENDED ? s.who.dExtended : s.who[k];
+                  // closed phase (extended OPEN build): the eligibility line and the "ask for the plan you would want" / "we review each request" lines invite a request, so they give way to their closed wording
+                  if (!EA_INTAKE_CLOSES || k === "b") return <li key={k}><Check size={20} aria-hidden="true" /><span>{text}</span></li>;
+                  return (
+                    <Fragment key={k}>
+                      <li {...INTAKE}><Check size={20} aria-hidden="true" /><span>{text}</span></li>
+                      {k === "c" ? <li {...CLOSED_ONLY}><Check size={20} aria-hidden="true" /><span>{s.who.cClosed}</span></li> : null}
+                      {k === "d" ? <li {...CLOSED_ONLY}><Check size={20} aria-hidden="true" /><span>{s.who.dClosed}</span></li> : null}
+                    </Fragment>
+                  );
+                })}
               </ul>
             </div>
             <div>

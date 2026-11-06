@@ -708,7 +708,7 @@ export const en = {
     sparse: {
       title: "Not much history? You still get relevant recommendations.",
       lead: "AICC uses signals from your catalog beyond past purchases, so the widget isn't left empty.",
-      p1: "The spots that purchase history can't fill go to relevant in-stock products from your catalog, then your newest in-stock products. They come from your catalog, not from purchases. As orders come in, real co-purchases take over from these fallbacks.",
+      p1: "The spots that purchase history can't fill go to in-stock products from your catalog, from the same category first (much like WooCommerce's related products), then your newest in-stock products. They come from your catalog, not from purchases. As orders come in, real co-purchases take over from these fallbacks.",
       p2: "You can import up to 24 months of past orders (optional), so AICC can start from your history instead of from zero.",
       limitTitle: "In the widget",
       limit:
@@ -809,7 +809,7 @@ export const en = {
     history: {
       title: "Your past orders can give AICC a head start.",
       lead: "After your store is connected, AICC offers to import up to 24 months of your past orders, so recommendations can learn from your existing history. It is optional: you choose.",
-      p1: "Skip it and AICC still recommends from your catalog (relevant in-stock products, then your newest) and learns from new orders. AICC doesn't import your past orders until you choose. Orders placed before you connected are not sent unless you import them; orders placed after connecting are sent as they are created or updated.",
+      p1: "Skip it and AICC still recommends from your catalog (in-stock products chosen much like WooCommerce's related products, same category first, then your newest) and learns from new orders. AICC doesn't import your past orders until you choose. Orders placed before you connected are not sent unless you import them; orders placed after connecting are sent as they are created or updated.",
       p2: "You can start the import later from the dashboard. It reads your orders and sends order facts to AICC without changing them in WooCommerce, orders already imported aren't duplicated, and you can cancel an import from the dashboard. Timing varies with catalog size and your site's scheduled tasks.",
       p3: "Coming back after a pause? AICC can preserve your store history when access pauses, so returning merchants can continue instead of starting from zero. If you imported your history, AICC catches up from your real WooCommerce history; a store that chose Not now is never imported without asking. It never invents impressions, clicks or revenue for the time it wasn't running.",
       link: "Exact retention, today and as our target",

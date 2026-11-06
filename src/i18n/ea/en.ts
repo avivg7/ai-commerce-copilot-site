@@ -24,6 +24,8 @@ export const eaEn = {
   // Only an EXTENDED build (Production 21): the bar line (OPEN mode) and one short paragraph in the explanation. Both name the clock, say that payment details are not taken and that nothing converts or is charged by itself.
   extended: {
     bar: "Early Access has been extended for every store: free until {lastDay}, Israel time.",
+    barAnnounce: "Early Access is coming and its end date has moved: free for approved stores until {lastDay}, Israel time.",
+    noteAnnounce: "Early Access was first announced to end on {firstLastDay}, Israel time. The end date has moved. Nothing can be requested yet, no payment is taken and nothing converts or is charged automatically.",
     barClosed: "Early Access has been extended for every store already in it: free until {lastDay}, Israel time. New requests closed at the original end date.",
     closedNote: "New requests closed at the original end date. The extension is for stores that were already in Early Access.",
     note: "Early Access was first announced to end on {firstLastDay}, Israel time. We extended it for every Early Access store. Nothing else changed: no payment is taken and nothing converts or is charged automatically.",
@@ -61,13 +63,15 @@ export const eaEn = {
     lead: "Use the full product on your WooCommerce store at no cost until {lastDay}. Access ends at\u00a000:00 on {endDate}, Israel time (22:00 UTC on {lastDay}). If you want to continue, you choose a paid plan. Nothing is charged automatically.",
     homeLead: "During Early Access every plan is free for approved stores until {lastDay}, Israel time. Access ends on {endDate}, and a paid plan starts only if you choose to buy one.",
     homeLeadClosed: "Early Access has been extended for stores already in it: every plan is free until {lastDay}, Israel time. Access ends on {endDate}, and a paid plan starts only if you choose to buy one. New requests closed at the original end date.",
+    intakeCutoff: "Requests close 24 hours before it ends.",
+    intakeCutoffExt: "Requests close 24 hours before the original end date.",
     link: "How Early Access works",
     stepsLabel: "How Early Access works",
     steps: {
       request: { title: "Request access", body: "Ask for Early Access for your WooCommerce store. No credit card is needed. We review each request." },
       requestClosed: { title: "New requests are closed", body: "Requests closed at the original end date. Stores already in Early Access keep access until {lastDay}, Israel time." },
       use: { title: "Use everything", body: "Connect your store and use the full product until {lastDay}, Israel time." },
-      decide: { title: "Decide at the end", body: "At 00:00 on {endDate}, Israel time, access ends and your store keeps selling as usual. To continue you buy the plan your store holds at that time, once purchases open; if you do not, nothing is charged." },
+      decide: { title: "Decide at the end", body: "At\u00a000:00 on {endDate}, Israel time, access ends and your store keeps selling as usual. To continue you buy the plan your store holds at that time, once purchases open; if you do not, nothing is charged." },
     },
     whoTitle: "Who it is for",
     who: {
@@ -76,6 +80,8 @@ export const eaEn = {
       c: "One Early Access per account, and we check that a store does not receive it twice. Store limits follow the plan you ask for: Solo 1 store, Studio up to 3, Agency up to 10. Ask for the plan you would want to keep: continuing is simplest on the plan your store holds at the end, and before the end you can ask us to change it (see the questions below).",
       d: "We review each request and not every request will be approved. Early Access can close to new requests at any time, and it is not granted in the final 24 hours before it ends.",
       dExtended: "We review each request and not every request will be approved. Early Access can close to new requests at any time. It is not granted in the final 24 hours before the original end date, and new requests are closed from that date.",
+      cClosed: "Store limits follow the plan: Solo 1 store, Studio up to 3, Agency up to 10. Continuing is simplest on the plan your store holds at the end, and before the end you can ask us to change it (see the questions below).",
+      dClosed: "New requests are closed. Early Access is no longer open to new stores.",
     },
     endTitle: "What happens on {endDate}",
     end: {
@@ -95,7 +101,7 @@ export const eaEn = {
       change: { q: "Can I change my plan?", a: "Yes, before Early Access ends. Write to {contactEmail} from your account's e-mail address and we change the plan of your Early Access store at no charge. The end date stays the same. Store limits follow the plan, so a smaller plan needs fewer connected stores. To continue after Early Access you buy the plan your store holds at that time, once purchases open." },
       extension: { q: "Could Early Access be extended?", a: "If we extend Early Access, we do it for every Early Access store at once and we say so on this page before the end date; where we can, we also tell you by e-mail. An extension never starts a charge. We cannot extend a single store's access." },
       guarantee: { q: "Does the money-back guarantee apply to Early Access?", a: "No. The 14-day money-back guarantee applies to eligible paid purchases, as set out in the [Refund Policy](route:refund-policy), not to free Early Access. No payment is taken during Early Access, so there is nothing to refund. When purchases open, the [Refund Policy](route:refund-policy) applies to eligible paid purchases." },
-      plugin: { q: "What will I see in the plugin when Early Access ends?", a: "At 00:00 on {endDate} (Israel time) the plugin shows that your plan has expired, with a \"Renew plan\" button, and AICC stops showing on your storefront. Your store keeps selling as usual. The plugin does not warn you beforehand, so note the date; your account page shows it too." },
+      plugin: { q: "What will I see in the plugin when Early Access ends?", a: "At\u00a000:00 on {endDate} (Israel time) the plugin shows that your plan has expired, with a \"Renew plan\" button, and AICC stops showing on your storefront. Your store keeps selling as usual. The plugin does not warn you beforehand, so note the date; your account page shows it too." },
     },
   },
 };
