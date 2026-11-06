@@ -1292,6 +1292,8 @@ html[data-ea-mode]:not([data-ea-over]) .aicc-hero { padding-block-start: calc(9r
 html[data-ea-mode]:not([data-ea-over]) .aicc-pagehead { padding-block-start: clamp(1.5rem, 1rem + 2vw, 3rem); }
 .aicc-eabar__text { display: block; margin: 0; font-size: 0.8125rem; line-height: 1.35; font-weight: 600; text-align: center; }
 .aicc-eabar__text > * + * { margin-inline-start: 0.5em; }
+/* the bar link sits in a display:contents wrapper (it is hidden in the closed phase), so the sibling rule above no longer reaches it on a phone */
+@media (max-width: 39.99rem) { .aicc-eabar__link { margin-inline-start: 0.5em; } }
 @media (min-width: 40rem) { .aicc-eabar__text { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 0 0.6rem; } .aicc-eabar__text > * + * { margin-inline-start: 0; } }
 .aicc-eabar__text svg { color: var(--aicc-cyan-300); flex: none; display: none; }
 @media (min-width: 40rem) { .aicc-eabar__text svg { display: block; } }
