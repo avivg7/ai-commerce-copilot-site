@@ -1272,12 +1272,11 @@ html[data-ea-mode]:not([data-ea-over]) .aicc-hero { padding-block-start: calc(9r
 :root .aicc-hero-title, :root:lang(es) .aicc-hero-title, :root:lang(ru) .aicc-hero-title, :root:lang(he) .aicc-hero-title { hyphens: manual; }
 /* P21: on laptop-height screens (up to 760 px) the two-sentence headline is set at 3rem in EVERY build, so the primary action of the ordinary hero stays above the fold at 1280x720 and 1536x730 as it did in Production 20. */
 @media (min-width: 64rem) and (max-height: 47.5rem) { .aicc-hero-title { font-size: 3rem; } }
-/* P21: the headline is two sentences: the accent (the second one) starts its own line, so a line never ends on "More" with its noun on the next. fit-content keeps the gradient the width of the text. */
+/* P21 (kept in P23): the headline is a lead line plus an accent line: the accent starts its own line, so a line never ends on a stranded word of the other part. fit-content keeps the gradient the width of the text. */
 .aicc-hero-title .aicc-text-gradient { display: block; inline-size: fit-content; max-inline-size: 100%; }
 /* ── P23 hero (owner decision, final): the headline states the outcome. Hierarchy, whitespace and wrapping only; the brand kit (brand/) is untouched.
  * The headline is a lead line plus an accent line (the accent starts its own line, see above); the subtitle is ONE sentence; the no-guarantee line is small and muted under the actions.
  * Sizes follow the width of the longest line of the English headline ("Grow Your Store's", 17 characters) between phone and desktop and are the brand's 3.75rem above that. */
-.aicc-hero__kicker { margin-block-end: 0; }
 .aicc-hero-title { margin-block-start: 1.25rem; line-height: 1.06; letter-spacing: -0.03em; text-wrap: balance; }
 .aicc-hero-lead { margin-block-start: 1.25rem; max-inline-size: 30rem; font-size: 1.25rem; line-height: 1.5; text-wrap: balance; }
 .aicc-hero-actions { margin-block-start: 2rem; }
@@ -1302,6 +1301,8 @@ html[data-ea-mode]:not([data-ea-over]) .aicc-hero { padding-block-start: calc(9r
   html[data-ea-mode]:not([data-ea-over]) .aicc-hero-actions { margin-block-start: 1.5rem; }
   html[data-ea-mode]:not([data-ea-over]) .aicc-eanote { margin-block-start: 0.75rem; }
 }
+/* P23: Russian keeps its smaller headline while the campaign is live on laptop-height screens too (the 3rem above would wrap "Увеличивайте продажи" at 1024 px). */
+@media (min-width: 64rem) and (max-height: 56rem) { html[data-ea-mode]:not([data-ea-over]):lang(ru) .aicc-hero-title { font-size: min(3rem, calc((100vw - 7.5rem) / 24)); } }
 html[data-ea-mode]:not([data-ea-over]) .aicc-pagehead { padding-block-start: clamp(1.5rem, 1rem + 2vw, 3rem); }
 .aicc-eabar__text { display: block; margin: 0; font-size: 0.8125rem; line-height: 1.35; font-weight: 600; text-align: center; }
 .aicc-eabar__text > * + * { margin-inline-start: 0.5em; }
