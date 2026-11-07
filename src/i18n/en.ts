@@ -510,10 +510,11 @@ export const en = {
   home: {
     hero: {
       eyebrow: "Available for WooCommerce",
-      category: "Commerce recommendation and merchandising copilot",
-      titleLead: "More relevant recommendations.",
-      titleAccent: "More opportunities to sell.",
-      lead: "AICC learns from your own WooCommerce orders, puts relevant products on your product and cart pages, and shows in your dashboard what it recommends. You set the rules. Placing an order never waits on AICC.",
+      // P23 (owner decision, final): the outcome is the headline; the one-sentence subtitle carries no mechanics (they are said in the sections below); the disclosure is the Terms clause in one line.
+      titleLead: "Grow Your Store's",
+      titleAccent: "Sales with AI.",
+      lead: "Turn product recommendations into more sales, automatically.",
+      disclosure: "AICC helps create more sales opportunities. It does not guarantee any increase in sales or revenue; results depend on your store.",
       ctaDemo: "See it in action",
       ctaPlans: "View plans",
     },

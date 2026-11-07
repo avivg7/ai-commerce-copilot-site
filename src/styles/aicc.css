@@ -1182,7 +1182,6 @@ p > .aicc-link:only-child { display: inline-block; min-block-size: 1.5rem; paddi
 
 /* ── Positioning v3: outcome-led hero (one sentence, CTAs, one slim pillar line, muted purchase confidence) and the pillars strip ── */
 .aicc-hero__kicker { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.75rem; }
-.aicc-hero__category { color: var(--aicc-text-muted); font-size: var(--aicc-text-sm); font-weight: 600; }
 .aicc-hero__confidence { margin-block-start: 1.25rem; }
 .aicc-pillars { background: var(--aicc-surface); border-block: 1px solid var(--aicc-border); }
 .aicc-pillars__list { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); }
@@ -1205,8 +1204,6 @@ p > .aicc-link:only-child { display: inline-block; min-block-size: 1.5rem; paddi
 /* ═══ Conversion pass: outcome first, proof early, mobile as a first-class target ═══════════════════════════════════════════════════════════════════
    Site-only (nothing here touches the shared brand kit in brand/). Hero: lighter first viewport (the purchase-confidence line moved to the pricing section).
    Outcomes: cards on a phone. Versus: what shoppers see and what you see and control. */
-.aicc-hero__category { flex-basis: 100%; }
-@media (min-width: 40rem) { .aicc-hero__category { flex-basis: auto; } }
 @media (max-width: 39.99rem) {
   .aicc-hero { padding-block: 5.75rem 2.25rem; }
   .aicc-hero__grid { gap: 1.5rem; }
@@ -1249,7 +1246,6 @@ p > .aicc-link:only-child { display: inline-block; min-block-size: 1.5rem; paddi
 
 /* Hero wrapping polish (conversion pass revision): no stranded word in the headline on the narrowest phones, and a calmer last line in the shorter subheadline. */
 .aicc-hero-lead { text-wrap: pretty; }
-@media (max-width: 21.5rem) { .aicc-hero-title { font-size: 1.75rem; } }
 
 /* ── Early Access (Production 20) ─────────────────────────────────────────────────────────────────────────────
  * Rendered only by an Early Access build (src/lib/earlyAccess.ts). The three data attributes below are the whole time logic on the page:
@@ -1278,12 +1274,29 @@ html[data-ea-mode]:not([data-ea-over]) .aicc-hero { padding-block-start: calc(9r
 @media (min-width: 64rem) and (max-height: 47.5rem) { .aicc-hero-title { font-size: 3rem; } }
 /* P21: the headline is two sentences: the accent (the second one) starts its own line, so a line never ends on "More" with its noun on the next. fit-content keeps the gradient the width of the text. */
 .aicc-hero-title .aicc-text-gradient { display: block; inline-size: fit-content; max-inline-size: 100%; }
+/* ── P23 hero (owner decision, final): the headline states the outcome. Hierarchy, whitespace and wrapping only; the brand kit (brand/) is untouched.
+ * The headline is a lead line plus an accent line (the accent starts its own line, see above); the subtitle is ONE sentence; the no-guarantee line is small and muted under the actions.
+ * Sizes follow the width of the longest line of the English headline ("Grow Your Store's", 17 characters) between phone and desktop and are the brand's 3.75rem above that. */
+.aicc-hero__kicker { margin-block-end: 0; }
+.aicc-hero-title { margin-block-start: 1.25rem; line-height: 1.06; letter-spacing: -0.03em; text-wrap: balance; }
+.aicc-hero-lead { margin-block-start: 1.25rem; max-inline-size: 30rem; font-size: 1.25rem; line-height: 1.5; text-wrap: balance; }
+.aicc-hero-actions { margin-block-start: 2rem; }
+.aicc-hero-disclosure { margin: 1.25rem 0 0; max-inline-size: 30rem; font-size: 0.8125rem; line-height: 1.5; color: var(--aicc-text-muted); text-wrap: pretty; }
+.aicc-eanote + .aicc-hero-disclosure { margin-block-start: 0.75rem; }
+/* phones: the headline is scaled to the width so "Grow Your Store's" is one line down to 320 px; the subtitle is a little smaller; the actions and the note stay close to it */
+@media (max-width: 39.99rem) {
+  .aicc-hero-title { margin-block-start: 1rem; font-size: clamp(1.75rem, calc((100vw - 3rem) / 9.4), 2.5rem); line-height: 1.08; }
+  .aicc-hero-lead { margin-block-start: 0.9rem; font-size: 1.125rem; line-height: 1.5; }
+  .aicc-hero-actions { margin-block-start: 1.5rem; }
+  .aicc-hero-disclosure { margin-block-start: 1rem; }
+}
+/* the old 1.75rem floor below 344 px is replaced by the clamp above */
+/* Russian is set a notch smaller on desktop (Cyrillic is wider and its lead line, "Увеличивайте продажи", is 20 characters): three lines at the same visual weight instead of four. */
+@media (min-width: 64rem) { :root:lang(ru) .aicc-hero-title { font-size: min(3rem, calc((100vw - 7.5rem) / 24)); } }
 /* P21: above the fold of an Early Access build. The global bar already says the offer once; on a desktop or laptop screen of ordinary height (up to 56rem = 896 px) the hero is
- * compacted while the offer is live so the whole headline, the primary action and the fine print are on the first screen (1280 x 720). The category line is dropped (the pill
- * above the headline already says what the product is for) and the headline is set at 3rem instead of 3.75rem. Only while the campaign is live: the ended view and every normal build keep the standard hero. */
+ * compacted while the offer is live so the whole headline, the primary action and the fine print are on the first screen (1280 x 720). The headline is set at 3rem instead of 3.75rem. Only while the campaign is live: the ended view and every normal build keep the standard hero. */
 @media (min-width: 40rem) and (max-height: 56rem) {
   html[data-ea-mode]:not([data-ea-over]) .aicc-hero { padding-block: 2rem 3rem; }
-  html[data-ea-mode]:not([data-ea-over]) .aicc-hero__category { display: none; }
   html[data-ea-mode]:not([data-ea-over]) .aicc-hero-title { margin-block-start: 1rem; font-size: 3rem; }
   html[data-ea-mode]:not([data-ea-over]) .aicc-hero-lead { margin-block-start: 1rem; }
   html[data-ea-mode]:not([data-ea-over]) .aicc-hero-actions { margin-block-start: 1.5rem; }
@@ -1309,7 +1322,6 @@ html[data-ea-mode]:not([data-ea-over]) .aicc-pagehead { padding-block-start: cla
 .aicc-plan__free { margin: 0; font-size: 1.5rem; font-weight: 750; letter-spacing: -0.02em; line-height: 1.15; color: var(--aicc-success); }
 .aicc-plan__regular { margin: 0; color: var(--aicc-text-muted); font-weight: 600; font-variant-numeric: tabular-nums; }
 .aicc-plan__regular-label { font-weight: 500; }
-@media (max-width: 40rem) { html[data-ea-mode]:not([data-ea-over]) .aicc-hero__category { display: none; } }
 .aicc-plan__regular s { text-decoration-thickness: 2px; font-size: 1.15em; }
 .aicc-plan--compact .aicc-plan__free { font-size: 1.25rem; }
 .aicc-plan__ends { margin: 0; }

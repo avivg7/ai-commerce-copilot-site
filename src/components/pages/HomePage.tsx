@@ -37,13 +37,13 @@ export function HomePage({ locale, t }: { locale: Locale; t: Dictionary }) {
       <JsonLd data={softwareLd(locale, t)} />
       <JsonLd data={faqLd(locale, t, "home")} />
 
-      {/* 1. Hero: the live copilt.org composition (eyebrow, gradient headline, CTAs, animated Reco) */}
+      {/* 1. Hero (P23, owner decision): the outcome headline with its accent line, ONE subtitle sentence, the two truthful actions, one muted no-guarantee line, and the animated Reco.
+           The category line and the explanatory paragraph are gone from the first screen; their facts are said by the sections below (why, workspace, safety). */}
       <section className="aicc-hero" aria-labelledby="hero-title" {...fb("home.hero")}>
         <div className="aicc-hero__grid">
           <div className="aicc-hero__copy">
             <div className="aicc-hero__kicker aicc-fade-up" style={{ ["--i" as string]: 0 }}>
               <span className="aicc-eyebrow-pill">{h.hero.eyebrow}</span>
-              <span className="aicc-hero__category">{h.hero.category}</span>
             </div>
             <h1 id="hero-title" className="aicc-hero-title aicc-fade-up" style={{ ["--i" as string]: 1 }}>
               {h.hero.titleLead} <span className="aicc-text-gradient">{h.hero.titleAccent}</span>
@@ -64,6 +64,7 @@ export function HomePage({ locale, t }: { locale: Locale; t: Dictionary }) {
               )}
             </div>
             <EaHeroNote locale={locale} t={t} />
+            <p className="aicc-hero-disclosure aicc-fade-up" style={{ ["--i" as string]: 5 }}>{h.hero.disclosure}</p>
           </div>
           <div className="aicc-hero__visual">
             <div {...tx("brand.chips")}><RecoHero labels={[t.brand.chips.orders, t.brand.chips.clicks, t.brand.chips.recs, t.brand.chips.insights, t.brand.chips.bundles]} motion={t.brand.motion} /></div>

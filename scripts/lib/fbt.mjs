@@ -21,7 +21,6 @@ export function positioningSlots(dict) {
   const pages = Object.keys(dict.meta.pages);
   const slots = [
     ["home.hero.eyebrow", dict.home.hero.eyebrow],
-    ["home.hero.category", dict.home.hero.category],
     ["home.hero.titleLead", dict.home.hero.titleLead],
     ["home.hero.titleAccent", dict.home.hero.titleAccent],
     ["home.hero.lead", dict.home.hero.lead],
