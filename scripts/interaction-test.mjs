@@ -340,7 +340,7 @@ for (const [w, h] of [[390, 844], [320, 256]]) {
   check("language button name is 'Language: English, EN' (contains its visible code as a word: WCAG 2.5.3)", (await p.getAttribute(".aicc-lang button", "aria-label")) === "Language: English, EN");
   await p.click(".aicc-lang button"); await p.focus(".aicc-lang__menu a"); await p.keyboard.press("Shift+Tab"); await p.keyboard.press("Shift+Tab"); await p.keyboard.press("Shift+Tab");
   check("language menu closes when focus leaves it", await p.evaluate(() => document.querySelector(".aicc-lang__menu").hidden));
-  check("home has no draft pills and no pending lines; hero says the new headline", await p.evaluate(() => !document.querySelector("[data-legal-draft]") && !document.querySelector("[data-pending]") && /^More relevant recommendations\. More opportunities to sell\.$/.test(document.querySelector("h1").textContent.replace(/\s+/g, " ").trim())));
+  check("home has no draft pills and no pending lines; hero says the new headline", await p.evaluate(() => !document.querySelector("[data-legal-draft]") && !document.querySelector("[data-pending]") && /^Grow Your Store's Sales with AI\.$/.test(document.querySelector("h1").textContent.replace(/\s+/g, " ").trim())));
   await p.goto(urlFor("en", "pricing"));
   check("pricing: no draft pill on marketing content; one muted pending line pattern absent here", await p.evaluate(() => !document.querySelector("[data-legal-draft]")));
   const tops = await p.$$eval(".aicc-plan__amount", (e) => e.map((x) => Math.round(x.getBoundingClientRect().top)));
@@ -633,8 +633,8 @@ for (const route of ["", "product"]) {
 {
   const [ctx, p] = await fresh();
   await p.goto(urlFor("en", ""));
-  const h = await p.evaluate(() => ({ h1: document.querySelector("h1").textContent.replace(/\s+/g, " ").trim(), lead: document.querySelector(".aicc-hero-lead").textContent.replace(/\s+/g, " ").trim(), eyebrow: document.querySelector(".aicc-hero .aicc-eyebrow, .aicc-hero [class*=eyebrow]")?.textContent.trim(), cat: document.querySelector(".aicc-hero__category")?.textContent.trim(), ctas: [...document.querySelectorAll(".aicc-hero .aicc-hero-actions a, .aicc-hero .aicc-hero-actions button")].map((x) => x.textContent.trim()), hasDemoTrigger: !!document.querySelector(".aicc-hero .aicc-hero-actions [data-aicc-demo-trigger]") }));
-  check(`home hero: approved headline, subheadline, category, availability and the two approved CTAs (${h.ctas.join(" | ")})`, h.h1 === "More relevant recommendations. More opportunities to sell." && h.lead === "AICC learns from your own WooCommerce orders, puts relevant products on your product and cart pages, and shows in your dashboard what it recommends. You set the rules. Placing an order never waits on AICC." && /available for woocommerce/i.test(h.eyebrow) && h.cat === "Commerce recommendation and merchandising copilot" && h.ctas.join("|") === "See it in action|View plans" && h.hasDemoTrigger, JSON.stringify(h));
+  const h = await p.evaluate(() => ({ h1: document.querySelector("h1").textContent.replace(/\s+/g, " ").trim(), lead: document.querySelector(".aicc-hero-lead").textContent.replace(/\s+/g, " ").trim(), eyebrow: document.querySelector(".aicc-hero .aicc-eyebrow, .aicc-hero [class*=eyebrow]")?.textContent.trim(), note: document.querySelector(".aicc-hero-disclosure")?.textContent.replace(/\s+/g, " ").trim(), ctas: [...document.querySelectorAll(".aicc-hero .aicc-hero-actions a, .aicc-hero .aicc-hero-actions button")].map((x) => x.textContent.trim()), hasDemoTrigger: !!document.querySelector(".aicc-hero .aicc-hero-actions [data-aicc-demo-trigger]") }));
+  check(`home hero (P23, owner decision): approved headline, one-sentence subtitle, no-guarantee line, availability and the two truthful CTAs (${h.ctas.join(" | ")})`, h.h1 === "Grow Your Store's Sales with AI." && h.lead === "Turn product recommendations into more sales, automatically." && h.note === "AICC helps create more sales opportunities. It does not guarantee any increase in sales or revenue; results depend on your store." && /available for woocommerce/i.test(h.eyebrow) && h.ctas.join("|") === "See it in action|View plans" && h.hasDemoTrigger, JSON.stringify(h));
   const o = await p.evaluate(() => ({ titles: [...document.querySelectorAll(".aicc-pillars h3, .aicc-pillars [class*=title]")].map((x) => x.textContent.trim()), order: [...document.querySelectorAll("main > section[id], main > .aicc-section[id]")].map((x) => x.id) }));
   check(`home order: three merchant outcomes first (${o.titles.join(" | ")})`, o.titles.slice(0, 3).join("|") === "Help shoppers discover more|Merchandise less by hand|Stay in control", JSON.stringify(o));
   const ord = await p.evaluate(() => ["demo", "workspace", "why", "how-it-works"].map((id) => document.getElementById(id)?.getBoundingClientRect().top + scrollY));
@@ -1149,9 +1149,9 @@ for (const w of [1280, 390, 320]) {
   await p.goto(urlFor("en", ""));
   const h = await p.evaluate(() => ({
     eyebrow: document.querySelector(".aicc-eyebrow-pill")?.textContent.trim(), h1: document.querySelector("h1")?.textContent.replace(/\s+/g, " ").trim(),
-    paras: document.querySelectorAll(".aicc-hero__copy > p").length, lead: document.querySelector(".aicc-hero-lead")?.textContent.trim(),
+    paras: document.querySelectorAll(".aicc-hero__copy > p").length, lead: document.querySelector(".aicc-hero-lead")?.textContent.trim(), note: document.querySelector(".aicc-hero-disclosure")?.textContent.trim(),
     ctas: [...document.querySelectorAll(".aicc-hero .aicc-hero-actions > *")].map((e) => e.textContent.trim()),
-    category: document.querySelector(".aicc-hero__category")?.textContent.trim(),
+    category: document.querySelector(".aicc-hero__category")?.textContent.trim() ?? null,
     conf: [...document.querySelectorAll(".aicc-hero__confidence li")].map((e) => e.textContent.trim()),
     order: [...document.querySelectorAll(".aicc-hero__copy > *")].map((e) => e.className.split(" ")[0]),
     strip: [...document.querySelectorAll(".aicc-pillars__title")].map((e) => e.textContent.trim()),
@@ -1161,10 +1161,11 @@ for (const w of [1280, 390, 320]) {
     heroBottom: Math.round(document.querySelector(".aicc-hero").getBoundingClientRect().bottom),
     words: document.querySelector(".aicc-hero__copy").textContent.trim().split(/\s+/).length,
   }));
-  check(`hero: category cue and "Available for WooCommerce", the approved H1 (Production 21), ONE paragraph, the two approved CTAs, nothing else competing, in that order (${h.words} words in the copy column)`,
-    h.eyebrow?.toLowerCase() === "available for woocommerce" && h.h1 === "More relevant recommendations. More opportunities to sell." && h.paras === 1 && h.lead === "AICC learns from your own WooCommerce orders, puts relevant products on your product and cart pages, and shows in your dashboard what it recommends. You set the rules. Placing an order never waits on AICC." &&
-    h.ctas.join("|") === "See it in action|View plans" && h.category === "Commerce recommendation and merchandising copilot" && h.conf.length === 0 && h.words <= 60 &&
-    h.order.join(",") === "aicc-hero__kicker,aicc-hero-title,aicc-hero-lead,aicc-hero-actions", JSON.stringify(h));
+  check(`hero (P23): "Available for WooCommerce", the approved H1, ONE subtitle sentence, the two truthful CTAs, then the one muted no-guarantee line; no category line, nothing else competing, in that order (${h.words} words in the copy column)`,
+    h.eyebrow?.toLowerCase() === "available for woocommerce" && h.h1 === "Grow Your Store's Sales with AI." && h.paras === 2 && h.lead === "Turn product recommendations into more sales, automatically." &&
+    h.note === "AICC helps create more sales opportunities. It does not guarantee any increase in sales or revenue; results depend on your store." &&
+    h.ctas.join("|") === "See it in action|View plans" && h.category === null && h.conf.length === 0 && h.words <= 50 &&
+    h.order.join(",") === "aicc-hero__kicker,aicc-hero-title,aicc-hero-lead,aicc-hero-actions,aicc-hero-disclosure", JSON.stringify(h));
   check(`pillars strip: three pillars with one line each and anchor links, right after the hero and before the demo (${h.strip.join(" / ")}; ${h.stripLinks.join(" ")})`, h.strip.length === 3 && h.stripLinks.join() === "#demo,#workspace,#demo" && h.stripBeforeDemo);
   await p.evaluate(() => document.querySelector("#demo").scrollIntoView()); await p.waitForSelector(".aicc-fbt input[type=checkbox]", { state: "attached", timeout: 8000 });
   check(`demo section: titled "See what each recommendation is based on." (not the Frequently Bought Together category line); the widget inside keeps its own heading`, h.demoTitle === "See what each recommendation is based on." && /Frequently Bought Together/.test(await p.evaluate(() => document.querySelector(".aicc-fbt")?.textContent || "")), h.demoTitle);
