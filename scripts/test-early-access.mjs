@@ -281,7 +281,10 @@ console.log("\n== the hero headline: no word breaks mid-word (phone widths, four
         const rects = [...r.getClientRects()]; if (new Set(rects.map((x) => Math.round(x.top))).size > 1) broken.push(m[0]);
       }
       const nr = document.createRange(); nr.selectNodeContents(n); const rr = [...nr.getClientRects()];
-      if (accent && accent.contains(n)) { if (accentTop === null && rr.length) { accentTop = rr[0].top; accentEdge = rr[0]; } } else if (rr.length) lastLead = rr[rr.length - 1];
+      if (accent && accent.contains(n)) {
+        // P23: a Hebrew accent ends in the Latin "AI." (mixed directions): the client rects of one line come in visual order, so the line's start edge is taken over ALL rects of its first line, not rr[0]
+        if (accentTop === null && rr.length) { accentTop = Math.min(...rr.map((x) => x.top)); const first = rr.filter((x) => Math.abs(x.top - accentTop) < 2); accentEdge = { left: Math.min(...first.map((x) => x.left)), right: Math.max(...first.map((x) => x.right)), top: accentTop }; }
+      } else if (rr.length) lastLead = rr[rr.length - 1];
     }
     const hy = getComputedStyle(h1).hyphens;
     // rect boxes are taller than the line height, so compare line TOPS and require the accent to start at the line start edge
