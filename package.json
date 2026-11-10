@@ -12,6 +12,7 @@
     "tokens:check": "node scripts/tokens-check.mjs",
     "pricing:check": "node scripts/pricing-check.mjs",
     "copy:check": "node scripts/copy-check.mjs",
+    "dash:audit": "node scripts/dash-audit.mjs",
     "fbt:audit": "node scripts/fbt-audit.mjs",
     "density:check": "node scripts/density-check.mjs",
     "content:check": "node scripts/content-check.mjs",

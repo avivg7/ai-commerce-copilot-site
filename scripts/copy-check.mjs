@@ -1,6 +1,7 @@
 // npm run copy:check: banned phrases in any locale source (dictionaries, data, components, app). Comments are ignored.
 import fs from "node:fs";
 import path from "node:path";
+import { spawnSync } from "node:child_process";
 import { ROOT } from "./lib/load.mjs";
 import { truthProblems, selfTestProblems, TRUTH_RULES } from "./lib/launch-truth.mjs";
 import { ALLOWED_WHY, EA_EXTRA_RULES, EA_EXEMPT_LINE, isCampaignFile } from "./lib/early-access-truth.mjs";
@@ -178,6 +179,11 @@ for (const f of [...files(path.join(ROOT, "src")), ...files(path.join(ROOT, "doc
     for (const p of truthProblems(line, { publicCopy: /^src\//.test(path.relative(ROOT, f)) })) hits.push(`${path.relative(ROOT, f)}:${i + 1}  [${p.why}]  ${line.trim().slice(0, 110)}`);
   });
 }
+// Typography rule (owner, global): no em dash (U+2014) and no en dash (U+2013) in customer-facing text. scripts/dash-audit.mjs reads string literals, JSX text, JSON and public text only (comments never count);
+// its self-test proves the check fails on injected dashes. `node scripts/dash-audit.mjs --check --out <export dir>` runs the same rule on a built export.
+const dash = [["--self-test"], ["--check"]].map((a) => spawnSync(process.execPath, [path.join(ROOT, "scripts", "dash-audit.mjs"), ...a], { encoding: "utf8" }));
+dash.forEach((r) => { process.stdout.write(r.stdout || ""); process.stderr.write(r.stderr || ""); });
+if (dash.some((r) => r.status !== 0)) { console.error("FAIL: typography (em / en dash in customer-facing text): see scripts/dash-audit.mjs"); process.exit(1); }
 console.log(`copy:check  scanned ${scanned} source files, ${RULES.length}+${TRUTH_RULES.length} rules`);
 if (hits.length) {
   console.error(`FAIL: ${hits.length} banned phrase(s)`);
