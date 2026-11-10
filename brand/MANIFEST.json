@@ -99,8 +99,8 @@
       "bytes": 37041
     },
     "content/faq.ru.json": {
-      "sha256": "7e00cac26f43849ef34dd54cb9a1b3429035085baf691c3d36db3287ebd07045",
-      "bytes": 48955
+      "sha256": "806160c0d8d179bf869416ad26d9c753c3161cc424978e319d3fc0e918a0c113",
+      "bytes": 48904
     },
     "content/header-nav.json": {
       "sha256": "a31b9c29336087771731384c61ed17ac5950e3f4922ad9056a7b34c58ca1a0bb",
@@ -115,8 +115,8 @@
       "bytes": 1339
     },
     "i18n/strings.json": {
-      "sha256": "8da23f393f5465c03bfe374dfaa836f3355274d55b9a8e7f55e9e8b7798dc910",
-      "bytes": 102916
+      "sha256": "96e844578ab8e0d1c32bf72660c29bd158836a385eafdd1c3ff9ef164cca4a3f",
+      "bytes": 102896
     },
     "js/a11y-trigger.js": {
       "sha256": "b9c13ac552fa0bed063742b3830bc58ea9404184cac37d6f62ce215c3b7c496c",
