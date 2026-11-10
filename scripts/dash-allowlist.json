@@ -1,11 +1,17 @@
 {
-  "_doc": "Allow-list for scripts/dash-audit.mjs --check. Each entry: path (repo-relative or, for scope export, relative to the export root; one * wildcard per segment allowed), max (the most dashes tolerated there), reason (why the dash cannot become a hyphen), scope (source | export, default source). An entry that matches nothing is STALE and fails the check, so the list can only shrink. --fix never edits an allow-listed file.",
+  "_doc": "Allow-list for scripts/dash-audit.mjs --check. Each entry (scope source = a repo file, scope export = a file of a built export): path (repo-relative or, for scope export, relative to the export root; one * wildcard per segment allowed), max (the most dashes tolerated there), reason (why the dash cannot become a hyphen), scope (source | export, default source). An entry that matches nothing is STALE and fails the check, so the list can only shrink. --fix never edits an allow-listed file.",
   "allow": [
     {
       "path": "brand/js/fbt-demo.js",
       "max": 1,
       "scope": "source",
       "reason": "OWNER-PINNED approved shopper-demo file (docs/approved-shopper-demo.json, test:launch-invariants). One en dash (U+2013) in an aria-hidden position glyph (line ~179, never read by a screen reader, shown only on the hidden rows of the 'Frequently bought together' demo). Changing it is an owner-review action (--update-pins); the ready patch is dash-cleanup/fbt-demo-glyph.patch. Delete this entry when the owner approves the patch."
+    },
+    {
+      "path": "_next/static/chunks/*.js",
+      "max": 1,
+      "scope": "export",
+      "reason": "The same owner-pinned glyph as brand/js/fbt-demo.js above, as it appears in the built client chunk (the aria-hidden position glyph of the 'Frequently bought together' demo). Delete together with the source entry."
     }
   ]
 }

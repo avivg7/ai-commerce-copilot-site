@@ -3,7 +3,7 @@
 //
 //   node scripts/dash-audit.mjs --list [--all] [--json] [--root DIR]   every dash by file, line, class (string / comment / regex / text) ; --all adds the out-of-scope files
 //   node scripts/dash-audit.mjs --check [--root DIR]                   exit 1 on any customer-facing hit that is not covered by scripts/dash-allowlist.json (a stale allow-list entry also fails)
-//   node scripts/dash-audit.mjs --check --out DIR                      the same for a BUILT export (HTML visible text, attributes / meta, JSON-LD, RSC payload and other script data, JS chunk strings, text files)
+//   node scripts/dash-audit.mjs --check --out DIR [--allowlist FILE]   the same for a BUILT export (HTML visible text, attributes / meta, JSON-LD, RSC payload and other script data, JS chunk strings, text files)
 //   node scripts/dash-audit.mjs --fix [--root DIR]                     dry run: the reviewable diff of the rewrite (nothing is written)
 //   node scripts/dash-audit.mjs --fix --write [--root DIR]             apply it
 //   node scripts/dash-audit.mjs --self-test                            proves the check fails on injected dashes and passes on a comment (runs inside `npm run copy:check`)
@@ -123,7 +123,7 @@ function analyzeFile(root, file, rtype) {
 
 // ---------- allow-list ----------
 function loadAllow(root, which) {
-  const f = [path.join(root, "scripts", "dash-allowlist.json"), path.join(HERE, "dash-allowlist.json")].find((p) => fs.existsSync(p));
+  const f = [opt("--allowlist"), path.join(root, "scripts", "dash-allowlist.json"), path.join(HERE, "dash-allowlist.json")].filter(Boolean).find((p) => fs.existsSync(p));
   if (!f) return [];
   const j = JSON.parse(fs.readFileSync(f, "utf8"));
   return (j.allow || []).filter((e) => (e.scope || "source") === which);
@@ -290,7 +290,8 @@ function selfTest() {
     write(root, "_next/static/chunks/app.js", `var a="ok";var re=/[${EN}${ED}]/;// ${ED} comment\n`);
     write(root, "robots.txt", "User-agent: *\nAllow: /\n");
   };
-  const runCli = (extra) => spawnSync(process.execPath, [fileURLToPath(import.meta.url), ...extra], { encoding: "utf8" });
+  const emptyAllow = path.join(tmpRoot, "empty-allowlist.json"); fs.writeFileSync(emptyAllow, JSON.stringify({ allow: [] }));
+  const runCli = (extra) => spawnSync(process.execPath, [fileURLToPath(import.meta.url), ...extra, ...(extra.includes("--out") ? ["--allowlist", emptyAllow] : [])], { encoding: "utf8" });
   const mkSrc = (name, mutate) => { const root = path.join(tmpRoot, name); clean(root); mutate(root); return root; };
   const mkOut = (name, mutate) => { const root = path.join(tmpRoot, name); cleanOut(root); mutate(root); return root; };
   const mustFail = (label, args, expectFile, expectKind) => {
@@ -360,7 +361,7 @@ async function main() {
     ev.failing.slice(0, 60).forEach((h) => console.error(`  ${h.rel}:${h.line}:${h.col}  [${h.kind}]  ${cp(h.text)}  ${h.ctx}`));
     ev.problems.forEach((p) => console.error("  " + p));
     if (ev.failing.length || ev.problems.length) { console.error(`dash-audit --out: FAIL ${ev.failing.length} customer-facing dash(es) in the built export${ev.problems.length ? `, ${ev.problems.length} allow-list problem(s) (stale)` : ""}`); process.exit(1); }
-    console.log(`dash-audit --out: PASS scanned ${files.length} files of ${dir}: 0 dashes in visible text, attributes / meta, JSON-LD, RSC / script data and JS strings (${ev.info.length} non-rendered: ${JSON.stringify(byKind)}; ${ev.allowed} allow-listed)`);
+    console.log(`dash-audit --out: PASS scanned ${files.length} files of ${dir}: 0 dashes in visible text, attributes / meta, JSON-LD, RSC / script data and JS strings (${ev.info.length} in comments / regex literals; ${ev.allowed} allow-listed)`);
     return;
   }
 
