@@ -1274,22 +1274,53 @@ html[data-ea-mode]:not([data-ea-over]) .aicc-hero { padding-block-start: calc(9r
 @media (min-width: 64rem) and (max-height: 47.5rem) { .aicc-hero-title { font-size: 3rem; } }
 /* P21 (kept in P23): the headline is a lead line plus an accent line: the accent starts its own line, so a line never ends on a stranded word of the other part. fit-content keeps the gradient the width of the text. */
 .aicc-hero-title .aicc-text-gradient { display: block; inline-size: fit-content; max-inline-size: 100%; }
-/* ── P23 hero (owner decision, final): the headline states the outcome. Hierarchy, whitespace and wrapping only; the brand kit (brand/) is untouched.
- * The headline is a lead line plus an accent line (the accent starts its own line, see above); the subtitle is ONE sentence; the no-guarantee line is small and muted under the actions.
- * Sizes follow the width of the longest line of the English headline ("Grow Your Store's", 17 characters) between phone and desktop and are the brand's 3.75rem above that. */
+/* ── P23/P24 hero (owner decision, final): the headline states the outcome. Hierarchy, whitespace and wrapping only; the brand kit (brand/) is untouched.
+ * The headline is a lead line plus an accent line (the accent starts its own line, see above); the subtitle is ONE sentence; there is no disclosure line in the hero (P24).
+ * Sizes follow the width of the longest line of the English headline ("From Every Visit", 16 characters) between phone and desktop and are the brand's 3.75rem above that. */
 .aicc-hero-title { margin-block-start: 1.25rem; line-height: 1.06; letter-spacing: -0.03em; text-wrap: balance; }
 .aicc-hero-lead { margin-block-start: 1.25rem; max-inline-size: 30rem; font-size: 1.25rem; line-height: 1.5; text-wrap: balance; }
 .aicc-hero-actions { margin-block-start: 2rem; }
-.aicc-hero-disclosure { margin: 1.25rem 0 0; max-inline-size: 30rem; font-size: 0.8125rem; line-height: 1.5; color: var(--aicc-text-muted); text-wrap: pretty; }
-.aicc-eanote + .aicc-hero-disclosure { margin-block-start: 0.75rem; }
-/* phones: the headline is scaled to the width so "Grow Your Store's" is one line down to 320 px; the subtitle is a little smaller; the actions and the note stay close to it */
+/* phones: the headline is scaled to the width so "From Every Visit" is one line down to 320 px; the subtitle is a little smaller; the actions stay close to it */
 @media (max-width: 39.99rem) {
   .aicc-hero-title { margin-block-start: 1rem; font-size: clamp(1.75rem, calc((100vw - 3rem) / 9.4), 2.5rem); line-height: 1.08; }
   .aicc-hero-lead { margin-block-start: 0.9rem; font-size: 1.125rem; line-height: 1.5; }
   .aicc-hero-actions { margin-block-start: 1.5rem; }
-  .aicc-hero-disclosure { margin-block-start: 1rem; }
 }
 /* the old 1.75rem floor below 344 px is replaced by the clamp above */
+/* P24, home hero only (class aicc-hero--home): less dead space above and below, a tighter headline > subtitle > actions rhythm, and a secondary action that is clearly visible on the page
+ * (solid white, 2px blue border and blue text: 6.7:1 text and 6.7:1 border on white) while staying visually below the gradient primary. Early Access builds keep their own
+ * compaction rules (they are more specific); forced-colors keeps the brand kit's system-colour buttons. */
+/* both hero actions are the same height (the secondary's 2px border would otherwise make it 4px taller than the primary) */
+.aicc-hero--home .aicc-hero-actions .aicc-btn { block-size: 3.5rem; }
+@media (min-width: 40rem) and (max-width: 63.99rem) { .aicc-hero--home .aicc-hero__grid { gap: 2rem; } }
+@media (min-width: 40rem) {
+  .aicc-hero--home { padding-block: 8.25rem 3.75rem; }
+  .aicc-hero--home .aicc-hero-title { margin-block-start: 1rem; }
+  .aicc-hero--home .aicc-hero-lead { margin-block-start: 1rem; }
+  .aicc-hero--home .aicc-hero-actions { margin-block-start: 1.75rem; }
+}
+/* Headline size: the lines are short ("From Every Visit", 16 characters), so the headline can be larger than the P23 sizes. Cyrillic is wider and has its own factor. The rules are
+ * written for every build EXCEPT a live Early Access one (that view keeps its own compaction above, which is more specific there). Laptop-height screens keep the primary action on the first screen. */
+@media (min-width: 64rem) {
+  html:not([data-ea-mode]:not([data-ea-over])) .aicc-hero--home .aicc-hero-title { font-size: min(4.25rem, calc((100vw - 7.5rem) / 16)); }
+  html:not([data-ea-mode]:not([data-ea-over])):lang(ru) .aicc-hero--home .aicc-hero-title { font-size: min(4rem, calc((100vw - 7.5rem) / 18.5)); }
+}
+@media (min-width: 64rem) and (max-height: 47.5rem) {
+  html:not([data-ea-mode]:not([data-ea-over])) .aicc-hero--home .aicc-hero-title, html:not([data-ea-mode]:not([data-ea-over])):lang(ru) .aicc-hero--home .aicc-hero-title { font-size: 3.25rem; }
+}
+/* Laptop-height screens (up to 800 px): the hero fills the first viewport, its content centred, so the next section does not creep into a short first screen (density:check counts every
+ * word in the viewport). Taller screens keep the compact hero and show the top of the next section. */
+@media (min-width: 64rem) and (max-height: 50rem) {
+  html:not([data-ea-mode]:not([data-ea-over])) .aicc-hero--home { min-block-size: 100svh; display: flex; align-items: center; }
+  html:not([data-ea-mode]:not([data-ea-over])) .aicc-hero--home .aicc-hero__grid { inline-size: 100%; }
+}
+@media (max-width: 39.99rem) {
+  :root:not(:lang(ru)) .aicc-hero--home .aicc-hero-title { font-size: clamp(1.75rem, calc((100vw - 3rem) / 8.4), 2.75rem); }
+}
+@media (not (forced-colors: active)) {
+  .aicc-hero--home .aicc-hero-actions .aicc-btn--secondary { background: var(--aicc-surface); -webkit-backdrop-filter: none; backdrop-filter: none; border: 2px solid var(--aicc-primary-strong); color: var(--aicc-primary-strong); font-weight: 600; box-shadow: 0 1px 2px rgb(15 23 42 / 0.08); }
+  .aicc-hero--home .aicc-hero-actions .aicc-btn--secondary:hover { background: var(--aicc-blue-50); }
+}
 /* Russian is set a notch smaller on desktop (Cyrillic is wider and its lead line, "Увеличивайте продажи", is 20 characters): three lines at the same visual weight instead of four. */
 @media (min-width: 64rem) { :root:lang(ru) .aicc-hero-title { font-size: min(3rem, calc((100vw - 7.5rem) / 24)); } }
 /* P21: above the fold of an Early Access build. The global bar already says the offer once; on a desktop or laptop screen of ordinary height (up to 56rem = 896 px) the hero is

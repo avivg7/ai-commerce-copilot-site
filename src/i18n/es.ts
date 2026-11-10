@@ -493,12 +493,11 @@ export const es: DeepPartial<Dictionary> = {
     connectorNote: "Un panel de ejemplo con el estilo de la administración de AICC",
     hero: {
       eyebrow: "Disponible para WooCommerce",
-      titleLead: "Aumente las ventas",
-      titleAccent: "de su tienda con IA.",
-      lead: "Convierta las recomendaciones de productos en más ventas, de forma automática.",
-      disclosure: "AICC ayuda a crear más oportunidades de venta. No garantiza ningún aumento de las ventas ni de los ingresos; los resultados dependen de su tienda.",
-      ctaDemo: "Véalo en acción",
-      ctaPlans: "Ver planes",
+      titleLead: "Venda más",
+      titleAccent: "con cada visita",
+      lead: "Automatice su merchandising y descubra ingresos ocultos con un copiloto de IA que usted controla por completo.",
+      ctaDemo: "Pruebe la demo en vivo",
+      ctaPlans: "Ver precios",
     },
 
     pillars: {

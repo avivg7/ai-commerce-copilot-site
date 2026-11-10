@@ -58,7 +58,7 @@ const browser = await launch();
     { name: "desktop", opts: { viewport: { width: 1280, height: 800 } }, tap: false },
     { name: "mobile 390", opts: { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 }, tap: true },
   ];
-  for (const prof of payloadProfiles) for (const route of ["/", "/he/"]) {
+  for (const prof of payloadProfiles) for (const route of ["/product/", "/he/product/"]) {
     const label = `payload ${prof.name} ${route}`;
     await reset();
     const ctx = await browser.newContext(prof.opts);
@@ -116,7 +116,7 @@ const profiles = [
 ];
 
 for (const prof of profiles) {
-  for (const route of ["/", "/he/"]) {
+  for (const route of ["/product/", "/he/product/"]) {
     const label = `${prof.name} ${route}`;
     const ctx = await browser.newContext(prof.opts);
     const p = await ctx.newPage();

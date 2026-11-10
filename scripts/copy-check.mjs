@@ -16,7 +16,7 @@ const OUTCOME_RULES = [
   [/(?<!\b(?:not|no|never|cannot|can['’]t|don['’]t|doesn['’]t|won['’]t)\s)guarantee[sd]?\s+(more\s+)?(sales|revenue|orders|results|growth)\b|\b(sales|revenue|results|growth)\s*,?\s+(are\s+|is\s+)?guarantee[sd]?\b(?!\s+to\b)/i, "guaranteed-sales promise (a denial such as \"We do not guarantee results\" is allowed)"],
   [/more orders from the same traffic|pays? for itself|\b\d+\s?x\b[^.]{0,25}\b(sales|revenue|orders|conversion)/i, "more-from-the-same-traffic / payback promise"],
   [/(?<!n['’]t an )(?<!not an )upsell engine/i, "upsell engine (only the Product page's denial \"isn't an upsell engine\" is allowed)"],
-  // P23: the owner-approved headline ("Grow Your Store's Sales with AI.") is an outcome statement WITHOUT a figure. This keeps the next obvious edit out: a sales / revenue figure ("Grow Your Store's Sales by 30% with AI").
+  // P23/P24: the owner-approved headline ("Sell More From Every Visit") is an outcome statement WITHOUT a figure. This keeps the next obvious edit out: a sales / revenue figure ("Grow Your Store's Sales by 30% with AI").
   [/\b(sales|revenue|orders|conversions?|aov)\b[^.;]{0,24}\b(by|up|of)\s+(up to\s+)?\d+(\.\d+)?\s?(%|percent|per\s?cent)/i, "sales / revenue figure (\"sales by 30%\")"],
   [/,\s*guarantee[sd]?\s*[.!]/i, "trailing \"..., guaranteed.\" promise (P23: the approved headline carries no guarantee)"],
   [/\d+(\.\d+)?\s?(%|percent|per\s?cent)\s*(more|higher|increase\w*|growth|lift|uplift|revenue|sales|orders|conversion|aov|ctr|roi|off)\b|\b(one|two|three|four|five|six|seven|eight|nine|ten|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred)(-\w+)?\s+(percent|per\s?cent)\s+(more|higher|increase\w*|growth|lift|uplift|revenue|sales|orders|conversion|off)\b/i, "percentage result claim (digits or words)"],
@@ -114,22 +114,22 @@ function stripComments(src) {
   const missed = bad.filter((t) => !rule(t)), wrong = ok.filter((t) => rule(t));
   if (missed.length || wrong.length) { console.error(`FAIL: self-test of the outcome-promise bans: missed [${missed}] flagged [${wrong}]`); process.exit(1); }
 }
-// Self-test of the P23 owner decision (final): the approved hero headline, subtitle and no-guarantee line, in four languages, pass EVERY rule above with NO exemption (the general
-// ban is unchanged), while the nearby variants (a figure, a guarantee, the plain "grow your sales" promise) are still caught.
+// Self-test of the P24 owner decision (final): the approved hero headline and subtitle, in four languages, pass EVERY rule above with NO exemption (the general
+// ban is unchanged), while the nearby variants (a figure, a guarantee, the plain "grow your sales" promise) are still caught. The hero carries no disclosure line (P24).
 {
   const rule = (t) => RULES.some(([re]) => re.test(t)) || truthProblems(t).length > 0;
   const approved = [
-    "Grow Your Store's Sales with AI.", "Turn product recommendations into more sales, automatically.", "AICC helps create more sales opportunities. It does not guarantee any increase in sales or revenue; results depend on your store.",
-    "להגדיל את המכירות בחנות שלכם בעזרת AI.", "הפכו המלצות על מוצרים למכירות נוספות, באופן אוטומטי.", "AICC עוזר ליצור יותר הזדמנויות מכירה. הוא אינו מבטיח כל עלייה במכירות או בהכנסות; התוצאות תלויות בחנות שלכם.",
-    "Aumente las ventas de su tienda con IA.", "Convierta las recomendaciones de productos en más ventas, de forma automática.", "AICC ayuda a crear más oportunidades de venta. No garantiza ningún aumento de las ventas ni de los ingresos; los resultados dependen de su tienda.",
-    "Увеличивайте продажи вашего магазина с\u00a0помощью\u00a0ИИ.", "Превращайте товарные рекомендации в\u00a0дополнительные продажи, автоматически.", "AICC помогает создавать больше возможностей для\u00a0продаж. Он не\u00a0гарантирует никакого роста продаж или выручки; результаты зависят от\u00a0вашего магазина.",
+    "Sell More From Every Visit", "Automate your merchandising and uncover hidden revenue with an AI copilot you fully control.",
+    "מכרו יותר מכל ביקור", "הפכו את המרצ׳נדייזינג לאוטומטי וגלו הכנסות נסתרות עם קופיילוט AI שנמצא בשליטתכם המלאה.",
+    "Venda más con cada visita", "Automatice su merchandising y descubra ingresos ocultos con un copiloto de IA que usted controla por completo.",
+    "Больше продаж с\u00a0каждого визита", "Автоматизируйте мерчандайзинг и\u00a0находите скрытую выручку с\u00a0ИИ-копилотом, который вы\u00a0полностью контролируете.",
   ];
   const variants = [
-    "Grow your sales with AI.", "Grow Your Sales by 30%.", "Grow Your Store's Sales by 30% with AI.", "Grow Your Store's Sales by up to 40 percent.", "Grow Your Store's Sales with AI, guaranteed.", "Guaranteed sales growth with AI.", "AICC guarantees more sales.", "Boost your revenue with AI.", "Turn more visitors into buyers, automatically.", "Thirty percent more sales, automatically.",
+    "Grow your sales with AI.", "Grow Your Sales by 30%.", "Grow Your Store's Sales by 30% with AI.", "Grow Your Store's Sales by up to 40 percent.", "Grow Your Store's Sales with AI, guaranteed.", "Guaranteed sales growth with AI.", "AICC guarantees more sales.", "Boost your revenue with AI.", "Turn more visitors into buyers, automatically.", "Thirty percent more sales, automatically.", "Sell 30% More From Every Visit", "Sell More From Every Visit, guaranteed.", "Guaranteed sales from every visit.",
     "Увеличивайте продажи на 30%.", "Рост продаж гарантирован.", "Aumente las ventas un 30% más de ventas.", "Ventas garantizadas con IA.", "מכירות מובטחות בעזרת AI.", "30% יותר מכירות בעזרת AI.",
   ];
   const wrong = approved.filter(rule), missed = variants.filter((t) => !rule(t));
-  if (wrong.length || missed.length) { console.error(`FAIL: self-test of the P23 approved hero strings: wrongly flagged [${wrong}] variants not caught [${missed}]`); process.exit(1); }
+  if (wrong.length || missed.length) { console.error(`FAIL: self-test of the P24 approved hero strings: wrongly flagged [${wrong}] variants not caught [${missed}]`); process.exit(1); }
 }
 // Self-test of the optional-import rules (he, es, ru) and the Studio badge rule: automatic / on-connect import and "recommended for 2 stores" are caught; the opt-in phrasing passes.
 {

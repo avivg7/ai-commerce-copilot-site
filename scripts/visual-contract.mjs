@@ -369,7 +369,7 @@ async function surfaceChecks(surface, url) {
   } else rec(surface, "FBT section present", false, "no [data-aicc-fbt]");
   // element screenshot comparison (fresh pages: the capture helper hides everything but the element under test)
   if (mine.primaryLg?.present) {
-    // The approved hero CTA labels ("See it in action", "View plans") differ from the live site's ("Get started", "Watch demo"), so a pixel diff of the whole button can no longer be
+    // The approved hero CTA labels ("Try Live Demo", "See Pricing") differ from the live site's ("Get started", "Watch demo"), so a pixel diff of the whole button can no longer be
     // identical: the computed-style contract above (geometry, type, gradient, border, shadow) is still enforced; the pixel diff is skipped only while the labels differ.
     const labelOf = (pg, q) => pg.evaluate((x) => document.querySelector(x)?.textContent.trim() || "", q);
     const lpl = await mk(LEGACY), npl = await mk(url);

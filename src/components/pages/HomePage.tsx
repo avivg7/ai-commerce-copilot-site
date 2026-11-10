@@ -1,4 +1,4 @@
-import { ArrowRight, Check, Coffee, Compass, ShieldCheck, SlidersHorizontal } from "lucide-react";
+import { ArrowRight, Check, Coffee, Compass, MousePointerClick, ShieldCheck, SlidersHorizontal } from "lucide-react";
 import type { Locale } from "@/i18n/config";
 import type { Dictionary } from "@/i18n";
 import { fbProps, txProps } from "@/i18n";
@@ -16,7 +16,6 @@ import { LocaleLink } from "@/components/ui/LocaleLink";
 import { RecoImage } from "@/components/ui/RecoImage";
 import { RecoHero } from "@/components/brand/RecoHero";
 import { FbtSection } from "@/components/brand/FbtSection";
-import { WatchDemo } from "@/components/brand/WatchDemo";
 import { Fb, Strip, Tabs, Track } from "@/components/blocks/Blocks";
 import { DashPreview, Flow, InsightsPreview, Loop, RecoAskPanel, RulesDemo } from "@/components/blocks/KitMounts";
 import { Faq, JsonLd } from "./shared";
@@ -30,6 +29,13 @@ export function HomePage({ locale, t }: { locale: Locale; t: Dictionary }) {
   const tx = (path: string) => { const { lang, dir } = txProps(locale, path); return { lang, dir }; };
   const arrow = <ArrowRight size={18} className="aicc-flip" aria-hidden="true" />;
   const w = h.workspace;
+  // "Try Live Demo": a plain in-page link to the interactive demo (#demo, below the pillars), not the recorded video (that stays on the Product page).
+  const demoCta = (variant: "primary" | "secondary") => (
+    <a className={`aicc-btn aicc-btn--${variant} aicc-btn--lg`} href="#demo" {...tx("home.hero.ctaDemo")}>
+      {h.hero.ctaDemo}
+      <span className="aicc-btn__icon"><MousePointerClick size={16} aria-hidden="true" /></span>
+    </a>
+  );
 
   return (
     <>
@@ -37,9 +43,9 @@ export function HomePage({ locale, t }: { locale: Locale; t: Dictionary }) {
       <JsonLd data={softwareLd(locale, t)} />
       <JsonLd data={faqLd(locale, t, "home")} />
 
-      {/* 1. Hero (P23, owner decision): the outcome headline with its accent line, ONE subtitle sentence, the two truthful actions, one muted no-guarantee line, and the animated Reco.
-           The category line and the explanatory paragraph are gone from the first screen; their facts are said by the sections below (why, workspace, safety). */}
-      <section className="aicc-hero" aria-labelledby="hero-title" {...fb("home.hero")}>
+      {/* 1. Hero (P24, owner decision): the outcome headline with its accent line, ONE subtitle sentence, the two actions (live demo, pricing) and the animated Reco.
+           No disclosure line here (owner decision): the no-guarantee wording is the Terms clause. The category line and the explanatory paragraph stay off the first screen; their facts are said by the sections below (why, workspace, safety). */}
+      <section className="aicc-hero aicc-hero--home" aria-labelledby="hero-title" {...fb("home.hero")}>
         <div className="aicc-hero__grid">
           <div className="aicc-hero__copy">
             <div className="aicc-hero__kicker aicc-fade-up" style={{ ["--i" as string]: 0 }}>
@@ -53,18 +59,17 @@ export function HomePage({ locale, t }: { locale: Locale; t: Dictionary }) {
               {EA_ON ? (
                 <>
                   <EaCta locale={locale} t={t} variant="primary" />
-                  <WatchDemo locale={locale} t={t} variant="secondary" label={h.hero.ctaDemo} labelKey="home.hero.ctaDemo" />
+                  {demoCta("secondary")}
                   <EaAfterPlans locale={locale} label={h.hero.ctaPlans} path="home.hero.ctaPlans" />
                 </>
               ) : (
                 <>
-                  <WatchDemo locale={locale} t={t} variant="primary" label={h.hero.ctaDemo} labelKey="home.hero.ctaDemo" />
+                  {demoCta("primary")}
                   <Button href={localePath(locale, "pricing")} variant="secondary" size="lg" {...tx("home.hero.ctaPlans")}>{h.hero.ctaPlans}</Button>
                 </>
               )}
             </div>
             <EaHeroNote locale={locale} t={t} />
-            <p className="aicc-hero-disclosure aicc-fade-up" style={{ ["--i" as string]: 5 }}>{h.hero.disclosure}</p>
           </div>
           <div className="aicc-hero__visual">
             <div {...tx("brand.chips")}><RecoHero labels={[t.brand.chips.orders, t.brand.chips.clicks, t.brand.chips.recs, t.brand.chips.insights, t.brand.chips.bundles]} motion={t.brand.motion} /></div>

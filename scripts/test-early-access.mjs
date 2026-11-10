@@ -155,10 +155,10 @@ for (const { key: mode0, mode, step, phases } of VARIANTS) {
   console.log(`== ${tag}: the Home hero in the live view`);
   {
     const { ctx, p } = await view(mode0, "/", "Asia/Jerusalem", C - D1);
-    check(norm(await text(p, "h1")) === "Grow Your Store's Sales with AI.", "hero headline (P23, owner decision)");
-    check(norm(await text(p, ".aicc-hero-lead")) === "Turn product recommendations into more sales, automatically." && !/\d|%|guarantee[sd]?\b|\b(boost|lift|revenue|conversion|buyers?)\b/i.test(await text(p, "h1, .aicc-hero-lead")) && /does not guarantee any increase in sales or revenue; results depend on your store\.$/.test(norm(await text(p, ".aicc-hero-disclosure"))), "hero: exactly the owner-approved headline and one-sentence subtitle (P23), no number, percent, guarantee or other result word in them, and the no-guarantee line under the actions");
+    check(norm(await text(p, "h1")) === "Sell More From Every Visit", "hero headline (P24, owner decision)");
+    check(norm(await text(p, ".aicc-hero-lead")) === "Automate your merchandising and uncover hidden revenue with an AI copilot you fully control." && !/\d|%|guarantee[sd]?\b|\b(boost|lift|conversion|buyers?)\b/i.test(await text(p, "h1, .aicc-hero-lead")) && (await p.locator(".aicc-hero-disclosure").count()) === 0, "hero: exactly the owner-approved headline and one-sentence subtitle (P24), no number, percent, guarantee or other result word in them ('revenue' is in the approved subtitle), and no disclosure line");
     const visActions = (await p.locator(".aicc-hero .aicc-hero-actions .aicc-btn").evaluateAll((els) => els.filter((e) => e.getClientRects().length > 0).map((e) => e.textContent.trim()))).join(" | ");
-    check(mode === "open" ? visActions === "Request free Early Access | See it in action" : visActions === "How Early Access works | See it in action", `hero actions while live (${visActions})`);
+    check(mode === "open" ? visActions === "Request free Early Access | Try Live Demo" : visActions === "How Early Access works | Try Live Demo", `hero actions while live (${visActions})`);
     check(norm(await text(p, ".aicc-eanote")) === norm(ea.hero.note) && /No credit card required\. Access ends at 00:00 on .*, Israel time, and nothing is charged automatically\./.test(await text(p, ".aicc-eanote")), `hero fine print: no card, the end instant with its time zone, nothing charged automatically (${norm(ea.hero.note)})`);
     if (mode === "open") check(/Request Early Access/.test(await p.locator(".aicc-site-header a[data-ea-live]").first().textContent()), "open: the header button says the same thing as the hero button");
     check(await vis(p, ".aicc-eabar"), "the announcement bar is visible");
@@ -195,13 +195,13 @@ for (const { key: mode0, mode, step, phases } of VARIANTS) {
       await ctx.close(); }
     { const { ctx, p } = await view(mode0, "/", "Asia/Jerusalem", TC);
       const acts = await p.locator(".aicc-hero .aicc-hero-actions .aicc-btn").evaluateAll((els) => els.filter((e) => e.getClientRects().length > 0).map((e) => [e.textContent.trim(), e.classList.contains("aicc-btn--primary"), e.getAttribute("href")]));
-      check(acts.length === 2 && acts[0][0] === ea.hero.ctaAnnounce && acts[0][1] && /\/pricing\/#early-access$/.test(acts[0][2]) && acts[1][0] === "See it in action" && !acts[1][1], `requests closed: the hero has one primary action "${ea.hero.ctaAnnounce}" and "See it in action" (${JSON.stringify(acts.map((a) => a[0]))})`);
+      check(acts.length === 2 && acts[0][0] === ea.hero.ctaAnnounce && acts[0][1] && /\/pricing\/#early-access$/.test(acts[0][2]) && acts[1][0] === "Try Live Demo" && !acts[1][1], `requests closed: the hero has one primary action "${ea.hero.ctaAnnounce}" and "Try Live Demo" (${JSON.stringify(acts.map((a) => a[0]))})`);
       check(norm(await text(p, ".aicc-eanote")) === norm(ea.hero.noteClosed), `requests closed: the fine print says ${norm(ea.hero.noteClosed)}`);
       check((await visCount(p, "a[href*='offer=early-access']")) === 0, "requests closed: no visible link on Home leads to the request flow");
       await ctx.close(); }
     { const { ctx, p } = await view(mode0, "/", "Asia/Jerusalem", C - D1);
       const acts = await p.locator(".aicc-hero .aicc-hero-actions .aicc-btn").evaluateAll((els) => els.filter((e) => e.getClientRects().length > 0).map((e) => e.textContent.trim()));
-      check(acts.join(" | ") === `${ea.hero.ctaOpen} | See it in action`, `requests open (before the initial end): the hero offers the request as before (${acts.join(" | ")})`);
+      check(acts.join(" | ") === `${ea.hero.ctaOpen} | Try Live Demo`, `requests open (before the initial end): the hero offers the request as before (${acts.join(" | ")})`);
       await ctx.close(); }
   }
   // ── the extension note never sits under the mascot (R4-F1: the wrapped figure overhung the note by 32 px on phones in every extended build) ──
@@ -316,7 +316,7 @@ for (const { key, step } of VARIANTS.filter((v) => v.mode === "open")) {
   check(!(await vis(p, ".aicc-eanote")) && !(await vis(p, ".aicc-eabar")) && !(await vis(p, ".aicc-ealead")), `${key}: Home after the end: no campaign text visible`);
   check(/Plans and prices are final\. Purchases and new accounts open soon\./.test(await text(p, "#final-title ~ div [data-ea-after], [data-ea-after] .aicc-lead")), `${key}: Home after the end: the ordinary closing band (purchases open soon) is back`);
   const endedActions = (await p.locator(".aicc-hero .aicc-hero-actions .aicc-btn").evaluateAll((els) => els.filter((e) => e.getClientRects().length > 0).map((e) => e.textContent.trim()))).join(" | ");
-  check(endedActions === "See it in action | View plans", `${key}: Home after the end: the hero offers the demo and the plans, not Early Access (${endedActions})`);
+  check(endedActions === "Try Live Demo | See Pricing", `${key}: Home after the end: the hero offers the demo and the plans, not Early Access (${endedActions})`);
   await ctx.close();
   { const { ctx: c3, p: p3 } = await view(key, "/pricing/", "UTC", ENDS[step] + 5 * 86400e3);
     const ended = norm(await text(p3, ".aicc-eaafter"));
@@ -435,7 +435,7 @@ console.log("\n== no stale or leaked campaign element, in any mode, page, langua
   }
   { const { ctx: c0, p: p0 } = await view("off", "/", "UTC", C - 86400e3, 1280);
     const prim0 = await p0.locator(".aicc-hero .aicc-hero-actions .aicc-btn--primary").evaluateAll((a) => a.filter((x) => x.getClientRects().length > 0).map((x) => x.textContent.trim()));
-    check(prim0.length === 1 && prim0[0] === "See it in action", `the normal build's one primary hero action is "See it in action" (${prim0.join(" | ")})`);
+    check(prim0.length === 1 && prim0[0] === "Try Live Demo", `the normal build's one primary hero action is "Try Live Demo" (${prim0.join(" | ")})`);
     await c0.close(); }
   for (const { key } of VARIANTS.filter((v) => v.mode === "open")) {
     const { ctx: c2, p: p2 } = await view(key, "/pricing/", "UTC", C - D1, 1280);

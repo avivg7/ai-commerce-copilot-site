@@ -340,7 +340,7 @@ for (const [w, h] of [[390, 844], [320, 256]]) {
   check("language button name is 'Language: English, EN' (contains its visible code as a word: WCAG 2.5.3)", (await p.getAttribute(".aicc-lang button", "aria-label")) === "Language: English, EN");
   await p.click(".aicc-lang button"); await p.focus(".aicc-lang__menu a"); await p.keyboard.press("Shift+Tab"); await p.keyboard.press("Shift+Tab"); await p.keyboard.press("Shift+Tab");
   check("language menu closes when focus leaves it", await p.evaluate(() => document.querySelector(".aicc-lang__menu").hidden));
-  check("home has no draft pills and no pending lines; hero says the new headline", await p.evaluate(() => !document.querySelector("[data-legal-draft]") && !document.querySelector("[data-pending]") && /^Grow Your Store's Sales with AI\.$/.test(document.querySelector("h1").textContent.replace(/\s+/g, " ").trim())));
+  check("home has no draft pills and no pending lines; hero says the new headline", await p.evaluate(() => !document.querySelector("[data-legal-draft]") && !document.querySelector("[data-pending]") && /^Sell More From Every Visit$/.test(document.querySelector("h1").textContent.replace(/\s+/g, " ").trim())));
   await p.goto(urlFor("en", "pricing"));
   check("pricing: no draft pill on marketing content; one muted pending line pattern absent here", await p.evaluate(() => !document.querySelector("[data-legal-draft]")));
   const tops = await p.$$eval(".aicc-plan__amount", (e) => e.map((x) => Math.round(x.getBoundingClientRect().top)));
@@ -633,8 +633,8 @@ for (const route of ["", "product"]) {
 {
   const [ctx, p] = await fresh();
   await p.goto(urlFor("en", ""));
-  const h = await p.evaluate(() => ({ h1: document.querySelector("h1").textContent.replace(/\s+/g, " ").trim(), lead: document.querySelector(".aicc-hero-lead").textContent.replace(/\s+/g, " ").trim(), eyebrow: document.querySelector(".aicc-hero .aicc-eyebrow, .aicc-hero [class*=eyebrow]")?.textContent.trim(), note: document.querySelector(".aicc-hero-disclosure")?.textContent.replace(/\s+/g, " ").trim(), ctas: [...document.querySelectorAll(".aicc-hero .aicc-hero-actions a, .aicc-hero .aicc-hero-actions button")].map((x) => x.textContent.trim()), hasDemoTrigger: !!document.querySelector(".aicc-hero .aicc-hero-actions [data-aicc-demo-trigger]") }));
-  check(`home hero (P23, owner decision): approved headline, one-sentence subtitle, no-guarantee line, availability and the two truthful CTAs (${h.ctas.join(" | ")})`, h.h1 === "Grow Your Store's Sales with AI." && h.lead === "Turn product recommendations into more sales, automatically." && h.note === "AICC helps create more sales opportunities. It does not guarantee any increase in sales or revenue; results depend on your store." && /available for woocommerce/i.test(h.eyebrow) && h.ctas.join("|") === "See it in action|View plans" && h.hasDemoTrigger, JSON.stringify(h));
+  const h = await p.evaluate(() => ({ h1: document.querySelector("h1").textContent.replace(/\s+/g, " ").trim(), lead: document.querySelector(".aicc-hero-lead").textContent.replace(/\s+/g, " ").trim(), eyebrow: document.querySelector(".aicc-hero .aicc-eyebrow, .aicc-hero [class*=eyebrow]")?.textContent.trim(), note: document.querySelector(".aicc-hero-disclosure, .aicc-hero__copy [class*=disclosure]")?.textContent.replace(/\s+/g, " ").trim() ?? null, guarantee: /guarantee/i.test(document.querySelector(".aicc-hero__copy").textContent), ctas: [...document.querySelectorAll(".aicc-hero .aicc-hero-actions a, .aicc-hero .aicc-hero-actions button")].map((x) => x.textContent.trim()), hrefs: [...document.querySelectorAll(".aicc-hero .aicc-hero-actions a")].map((x) => x.getAttribute("href")), hasDemoTrigger: !!document.querySelector(".aicc-hero .aicc-hero-actions [data-aicc-demo-trigger]") }));
+  check(`home hero (P24, owner decision): approved headline (no period), one-sentence subtitle, NO disclosure line, availability and the two CTAs: Try Live Demo -> #demo (the interactive demo, not the video modal), See Pricing -> /pricing/ (${h.ctas.join(" | ")})`, h.h1 === "Sell More From Every Visit" && h.lead === "Automate your merchandising and uncover hidden revenue with an AI copilot you fully control." && h.note === null && h.guarantee === false && /available for woocommerce/i.test(h.eyebrow) && h.ctas.join("|") === "Try Live Demo|See Pricing" && h.hrefs.length === 2 && h.hrefs[0] === "#demo" && /\/pricing\/$/.test(h.hrefs[1]) && !h.hasDemoTrigger, JSON.stringify(h));
   const o = await p.evaluate(() => ({ titles: [...document.querySelectorAll(".aicc-pillars h3, .aicc-pillars [class*=title]")].map((x) => x.textContent.trim()), order: [...document.querySelectorAll("main > section[id], main > .aicc-section[id]")].map((x) => x.id) }));
   check(`home order: three merchant outcomes first (${o.titles.join(" | ")})`, o.titles.slice(0, 3).join("|") === "Help shoppers discover more|Merchandise less by hand|Stay in control", JSON.stringify(o));
   const ord = await p.evaluate(() => ["demo", "workspace", "why", "how-it-works"].map((id) => document.getElementById(id)?.getBoundingClientRect().top + scrollY));
@@ -797,8 +797,9 @@ for (const [w, h] of [[390, 844], [360, 740], [320, 640]]) {
   check(`questions search: ?q= scrolls the field and its results into view (field y=${q.top}, ${q.results} results)`, q.top >= 0 && q.top < 400 && q.results > 0, JSON.stringify(q));
   await ctx.close();
 }
-// 16. Watch demo: the owner-approved master plays in a real dialog (full playback checks live in `npm run test:demo`)
-for (const route of ["", "product"]) {
+// 16. Watch demo: the owner-approved master plays in a real dialog (full playback checks live in `npm run test:demo`). P24: the home hero's demo action is the in-page interactive demo (#demo),
+// so the recorded video is opened from the Product page only.
+for (const route of ["product"]) {
   const [ctx, p] = await fresh({ viewport: { width: 1280, height: 800 } });
   await p.goto(urlFor("en", route));
   await p.waitForSelector("[data-aicc-demo-trigger][data-aicc-ready], [data-aicc-demo-trigger]");
@@ -947,8 +948,10 @@ for (const [route, contrast] of [["", false], ["", true], ["pricing", false], ["
   check(`tabs: the panel area keeps one height across all four tabs (${hs.join(", ")}px), so nothing below jumps`, new Set(hs).size === 1, hs.join());
   const st = await p.evaluate(() => ({ inert: [...document.querySelectorAll("#workspace [role=tabpanel]")].map((x) => x.inert), ti: [...document.querySelectorAll("#workspace [role=tabpanel]")].map((x) => x.getAttribute("tabindex")) }));
   check("tabs: exactly one panel is interactive (the others are inert) and every panel is focusable (tabindex=0)", st.inert.filter((x) => !x).length === 1 && st.ti.every((x) => x === "0"), JSON.stringify(st));
-  const bc = await p.evaluate(() => getComputedStyle(document.querySelector(".aicc-btn--secondary")).borderTopColor);
-  check(`secondary buttons have a visible boundary (${bc}, slate-500 = 4.76:1)`, bc === "rgb(100, 116, 139)", bc);
+  // P24: the home hero's "See Pricing" is the first secondary button on the page and has a stronger boundary (blue-700, 6.7:1) than the brand kit's slate-500 (4.76:1): the contract is WCAG 1.4.11, 3:1 against the page.
+  const bc = await p.evaluate(() => { const lum = (c) => { const v = c.match(/\d+/g).slice(0, 3).map((x) => { const u = x / 255; return u <= 0.03928 ? u / 12.92 : ((u + 0.055) / 1.055) ** 2.4; }); return 0.2126 * v[0] + 0.7152 * v[1] + 0.0722 * v[2]; };
+    const b = getComputedStyle(document.querySelector(".aicc-btn--secondary")).borderTopColor, bg = getComputedStyle(document.body).backgroundColor, [hi, lo] = [lum(b), lum(bg)].sort((x, y) => y - x); return { color: b, ratio: Math.round(((hi + 0.05) / (lo + 0.05)) * 100) / 100 }; });
+  check(`secondary buttons have a visible boundary (${bc.color}, ${bc.ratio}:1 against the page, at least 3:1)`, bc.ratio >= 3, JSON.stringify(bc));
   const tap = await p.evaluate(() => Math.round(document.querySelector(".aicc-connector a").getBoundingClientRect().height));
   check(`"Back to the demo" has a 44px tap area (${tap}px)`, tap >= 44, String(tap));
   await ctx.close();
@@ -1149,7 +1152,7 @@ for (const w of [1280, 390, 320]) {
   await p.goto(urlFor("en", ""));
   const h = await p.evaluate(() => ({
     eyebrow: document.querySelector(".aicc-eyebrow-pill")?.textContent.trim(), h1: document.querySelector("h1")?.textContent.replace(/\s+/g, " ").trim(),
-    paras: document.querySelectorAll(".aicc-hero__copy > p").length, lead: document.querySelector(".aicc-hero-lead")?.textContent.trim(), note: document.querySelector(".aicc-hero-disclosure")?.textContent.trim(),
+    paras: document.querySelectorAll(".aicc-hero__copy > p").length, lead: document.querySelector(".aicc-hero-lead")?.textContent.trim(), note: document.querySelector(".aicc-hero-disclosure")?.textContent.trim() ?? null,
     ctas: [...document.querySelectorAll(".aicc-hero .aicc-hero-actions > *")].map((e) => e.textContent.trim()),
     category: document.querySelector(".aicc-hero__category")?.textContent.trim() ?? null,
     conf: [...document.querySelectorAll(".aicc-hero__confidence li")].map((e) => e.textContent.trim()),
@@ -1161,11 +1164,11 @@ for (const w of [1280, 390, 320]) {
     heroBottom: Math.round(document.querySelector(".aicc-hero").getBoundingClientRect().bottom),
     words: document.querySelector(".aicc-hero__copy").textContent.trim().split(/\s+/).length,
   }));
-  check(`hero (P23): "Available for WooCommerce", the approved H1, ONE subtitle sentence, the two truthful CTAs, then the one muted no-guarantee line; no category line, nothing else competing, in that order (${h.words} words in the copy column)`,
-    h.eyebrow?.toLowerCase() === "available for woocommerce" && h.h1 === "Grow Your Store's Sales with AI." && h.paras === 2 && h.lead === "Turn product recommendations into more sales, automatically." &&
-    h.note === "AICC helps create more sales opportunities. It does not guarantee any increase in sales or revenue; results depend on your store." &&
-    h.ctas.join("|") === "See it in action|View plans" && h.category === null && h.conf.length === 0 && h.words <= 50 &&
-    h.order.join(",") === "aicc-hero__kicker,aicc-hero-title,aicc-hero-lead,aicc-hero-actions,aicc-hero-disclosure", JSON.stringify(h));
+  check(`hero (P24): "Available for WooCommerce", the approved H1, ONE subtitle sentence, the two CTAs; no disclosure line, no category line, nothing else competing, in that order (${h.words} words in the copy column)`,
+    h.eyebrow?.toLowerCase() === "available for woocommerce" && h.h1 === "Sell More From Every Visit" && h.paras === 1 && h.lead === "Automate your merchandising and uncover hidden revenue with an AI copilot you fully control." &&
+    h.note === null &&
+    h.ctas.join("|") === "Try Live Demo|See Pricing" && h.category === null && h.conf.length === 0 && h.words <= 50 &&
+    h.order.join(",") === "aicc-hero__kicker,aicc-hero-title,aicc-hero-lead,aicc-hero-actions", JSON.stringify(h));
   check(`pillars strip: three pillars with one line each and anchor links, right after the hero and before the demo (${h.strip.join(" / ")}; ${h.stripLinks.join(" ")})`, h.strip.length === 3 && h.stripLinks.join() === "#demo,#workspace,#demo" && h.stripBeforeDemo);
   await p.evaluate(() => document.querySelector("#demo").scrollIntoView()); await p.waitForSelector(".aicc-fbt input[type=checkbox]", { state: "attached", timeout: 8000 });
   check(`demo section: titled "See what each recommendation is based on." (not the Frequently Bought Together category line); the widget inside keeps its own heading`, h.demoTitle === "See what each recommendation is based on." && /Frequently Bought Together/.test(await p.evaluate(() => document.querySelector(".aicc-fbt")?.textContent || "")), h.demoTitle);
