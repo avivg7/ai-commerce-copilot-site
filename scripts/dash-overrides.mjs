@@ -3,7 +3,7 @@
 // Everything not listed here simply becomes "word - word", the ordinary Russian typographic fallback when no dash character is allowed.
 const ED = "—", NB = " ", ESC = "\\u00a0"; // ESC = the six characters   as they appear in src/i18n/*.ts
 const TS = "src/i18n/ru.ts", FAQ = "brand/content/faq.ru.json";
-export default [
+const OVERRIDES = [
   // an enumeration: a colon reads better than a hyphen
   { file: TS, from: `из${ESC}двух дат${ESC}${ED} сегодняшней`, to: `из${ESC}двух дат: сегодняшней` },
   { file: FAQ, from: `из${NB}двух дат${NB}${ED} сегодняшней`, to: `из${NB}двух дат: сегодняшней` },
@@ -16,3 +16,4 @@ export default [
   // the dash followed a comma and stood for an omitted verb: the comma is enough
   { file: FAQ, from: `где истории мало,${NB}${ED} подходящие товары`, to: `где истории мало, подходящие товары` },
 ];
+export default OVERRIDES;
