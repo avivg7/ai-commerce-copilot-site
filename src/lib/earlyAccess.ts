@@ -26,8 +26,8 @@
  */
 
 /** 2027-01-01T00:00:00 Asia/Jerusalem, in UTC milliseconds. */
-import type { Locale } from "@/i18n/config";
-import { getStartedUrl, localizeAccountUrl, type PlanId } from "./site";
+import { DEFAULT_LOCALE, type Locale } from "@/i18n/config";
+import type { PlanId } from "./site";
 
 /** The INITIAL published end (unix 1798754400 = the Control Plane CUTOFF_UNIX). An extension moves the end to a later step below; it never touches this constant. */
 export const EA_CUTOFF_UTC_MS = Date.UTC(2026, 11, 31, 22, 0, 0);
@@ -121,19 +121,36 @@ export const EA_END_ISO_UTC = EA_STEP_ISO_UTC[EA_EXTENSION_STEP];
 /** The mode of THIS build. OFF unless the switch is "announce" or "open" and the build is made before the end. */
 export const EA_MODE: EaMode = eaModeAt(EA_REQUESTED, EA_BUILD_MS, EA_END_UTC_MS);
 /** The switch is set but this build is at or past the end: the campaign was NOT published (`launch:check` reports it). */
-export const EA_EXPIRED_REQUEST = EA_REQUESTED !== "off" && EA_MODE === "off";
+/**
+ * VERIFY mode (P32, NEXT_PUBLIC_AICC_EARLY_ACCESS=verify): the owner rule says "Request Free Access" is not shown publicly until its destination is verified, so the destination must be
+ * testable on the live host BEFORE any button exists. A verify build is the ordinary (OFF) site, byte for byte in every page, plus the UNLISTED request pages (/request-access/ and
+ * /request-access/confirm/, four languages): noindex, not in the sitemap, not linked from anywhere, each carrying a "Verification page, not public" banner. EA_MODE stays "off", so no
+ * campaign text, bar, button or header link exists. Like every campaign mode it is ignored at or after the end (an expired build carries nothing).
+ */
+export const EA_VERIFY = process.env.NEXT_PUBLIC_AICC_EARLY_ACCESS === "verify" && !eaIsOver(EA_BUILD_MS, EA_END_UTC_MS);
+/** The request pages exist in an OPEN build and in a VERIFY build, and in no other. */
+export const EA_REQUEST_PAGES = EA_MODE === "open" || EA_VERIFY;
+export const EA_EXPIRED_REQUEST = (EA_REQUESTED !== "off" && EA_MODE === "off") || (process.env.NEXT_PUBLIC_AICC_EARLY_ACCESS === "verify" && !EA_VERIFY);
 export const EA_ON = EA_MODE !== "off";
 /**
- * Build-time sub-switch NEXT_PUBLIC_AICC_EA_STRIKE=on: show the plan price STRUCK THROUGH next to the free offer. Default OFF: the same price is shown plainly as "Planned price when purchases open".
+ * Build-time sub-switch NEXT_PUBLIC_AICC_EA_STRIKE=on: show the plan price STRUCK THROUGH next to the free offer. Default OFF: the regular price is shown plainly as "Regular price" (P32: a fact, never a reduction).
  * A strike-through reads as a reduction from an established price, and no plan has ever been sold; turn it on only when counsel has approved it (docs/cutover/early-access.md).
+ * P34 (owner request): this is the switch for the owner's crossed-out regular price; `launch:check` still blocks it until AICC_EA_STRIKE_COUNSEL_APPROVED=<counsel reference> is given.
  */
 export const EA_STRIKE = process.env.NEXT_PUBLIC_AICC_EA_STRIKE === "on";
+/**
+ * Build-time sub-switch NEXT_PUBLIC_AICC_EA_LIMITED_NOTE=on (P34): adds the short line "Limited availability" to the Hero support lines of a campaign build. Default OFF.
+ * It is true only because every request is reviewed by hand, approvals are capped by the Control Plane (AICC_EA_REQUESTS_CAPACITY) and the offer can close to new requests at any time;
+ * it never carries a number, a countdown or "only N left". `npm run launch:check` blocks a build with it on until the owner attests those facts with AICC_EA_LIMITED_ATTESTED=<reference>.
+ * Exactly "on"; anything else (including "true", "1", "ON") is off. Only an OPEN build renders it; OFF, verify and announce builds render nothing, whatever this says.
+ */
+export const EA_LIMITED_REQUESTED = process.env.NEXT_PUBLIC_AICC_EA_LIMITED_NOTE === "on";
+export const EA_LIMITED = EA_LIMITED_REQUESTED && EA_MODE === "open"; // review P34-5: OPEN mode only (an announce build has nothing to request, so it never says it)
 export const EA_OPEN = EA_MODE === "open";
 
 /**
- * Where the Early Access button leads in OPEN mode: the Control Plane sign-up for Early Access (an English base, localised like the account URL).
- * Default: the account page with an offer hint. It is a placeholder for a flow that is not built or approved yet; `npm run launch:check` fails in OPEN mode
- * until NEXT_PUBLIC_AICC_EARLY_ACCESS_URL names the real destination.
+ * DEPRECATED (P32): the destination of the request buttons is now fixed to this site's own request page (`eaUrl` below). The variable is still read ONLY so that
+ * `npm run launch:check` can tell the operator that a leftover value is ignored; nothing renders it.
  */
 export const EA_URL_OVERRIDE = process.env.NEXT_PUBLIC_AICC_EARLY_ACCESS_URL || "";
 
@@ -152,12 +169,24 @@ export const EA_HEAD_SCRIPT = EA_EXTENDED && EA_OPEN
 export const EA_INTAKE_CLOSES = EA_EXTENDED && EA_OPEN;
 
 
-/** The Early Access destination in the page language (OPEN mode only); `plan` adds the plan hint like the normal plan buttons. */
+/**
+ * Where the request buttons lead in OPEN mode (P32): the launch-offer request page of this site, in the page language, with the plan as a query hint (`?plan=studio`, a plain
+ * preselection; nothing secret). It is the same-origin form of the intake contract (the request-access API of the Control Plane). A build can never lead anywhere else: the older
+ * NEXT_PUBLIC_AICC_EARLY_ACCESS_URL override is no longer a destination (launch:check reports it if it is still set).
+ */
 export function eaUrl(locale: Locale, plan?: PlanId): string {
-  const base = EA_URL_OVERRIDE ? localizeAccountUrl(EA_URL_OVERRIDE, locale) : getStartedUrl(locale);
-  const hash = base.indexOf("#");
-  const head = hash === -1 ? base : base.slice(0, hash);
-  const frag = hash === -1 ? "" : base.slice(hash);
-  const q = [...(EA_URL_OVERRIDE ? [] : ["offer=early-access"]), ...(plan ? [`plan=${plan}`] : [])];
-  return q.length ? `${head}${head.includes("?") ? "&" : "?"}${q.join("&")}${frag}` : base;
+  const base = `${locale === DEFAULT_LOCALE ? "" : `/${locale}`}/request-access/`; // the same path as pagePath(locale, "request-access") in src/lib/requestRoutes.ts (not imported here: that module imports this one)
+  return plan ? `${base}?plan=${plan}` : base;
 }
+
+/**
+ * The e-mail delivery provider named in the request form's privacy notice (a build-time value the owner supplies: NEXT_PUBLIC_AICC_EA_MAIL_PROVIDER). It is deliberately a placeholder until
+ * the owner decides: `npm run launch:check` blocks an OPEN build while it is empty or looks like a placeholder, so the page can never name a processor that was not chosen.
+ */
+export const EA_MAIL_PROVIDER = (process.env.NEXT_PUBLIC_AICC_EA_MAIL_PROVIDER || "").trim();
+export const EA_MAIL_PROVIDER_PLACEHOLDER: Record<Locale, string> = {
+  en: "[e-mail delivery provider, to be confirmed]",
+  he: "[ספק משלוח האימייל, יאושר]",
+  es: "[proveedor de entrega de correo, por confirmar]",
+  ru: "[поставщик доставки почты, будет подтверждён]",
+};

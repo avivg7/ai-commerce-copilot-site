@@ -6,7 +6,7 @@ import { Lb, Rich, type RichCtx } from "@/lib/rich";
 import { PLANS } from "@/data/plans";
 import { COMMERCE_OPEN, getStartedUrl } from "@/lib/site";
 import { EA_ON } from "@/lib/earlyAccess";
-import { EaAfterPlans, EaClosingLead, EaCta, EaHeroNote, EaHomeLead } from "@/components/ea/Ea";
+import { EaClosingLead, EaCta, EaHeroBadge, EaHeroSupport, EaHomeLead, EaPlanSupport } from "@/components/ea/Ea";
 import { SoonBandActions } from "@/components/ui/Soon";
 import { localePath } from "@/lib/routes";
 import { Button } from "@/components/ui/Button";
@@ -29,6 +29,13 @@ export function HomePage({ locale, t }: { locale: Locale; t: Dictionary }) {
   const tx = (path: string) => { const { lang, dir } = txProps(locale, path); return { lang, dir }; };
   const arrow = <ArrowRight size={18} className="aicc-flip" aria-hidden="true" />;
   const w = h.workspace;
+  const confidence = (
+    <ul className="aicc-pricing-confidence" {...fb("home.pricing")}>
+      <li>{R(h.pricing.confidence.price)}</li>
+      <li>{h.pricing.confidence.guarantee}</li>
+      <li>{h.pricing.confidence.renewal}</li>
+    </ul>
+  );
   // "Try Live Demo": a plain in-page link to the interactive demo (#demo, below the pillars), not the recorded video (that stays on the Product page).
   const demoCta = (variant: "primary" | "secondary") => (
     <a className={`aicc-btn aicc-btn--${variant} aicc-btn--lg`} href="#demo" {...tx("home.hero.ctaDemo")}>
@@ -49,7 +56,7 @@ export function HomePage({ locale, t }: { locale: Locale; t: Dictionary }) {
         <div className="aicc-hero__grid">
           <div className="aicc-hero__copy">
             <div className="aicc-hero__kicker aicc-fade-up" style={{ ["--i" as string]: 0 }}>
-              <span className="aicc-eyebrow-pill">{h.hero.eyebrow}</span>
+              <span className="aicc-eyebrow-pill">{EA_ON ? <EaHeroBadge locale={locale} t={t} ordinary={h.hero.eyebrow} /> : h.hero.eyebrow}</span>
             </div>
             <h1 id="hero-title" className="aicc-hero-title aicc-fade-up" style={{ ["--i" as string]: 1 }}>
               {h.hero.titleLead} <span className="aicc-text-gradient">{h.hero.titleAccent}</span>
@@ -58,9 +65,15 @@ export function HomePage({ locale, t }: { locale: Locale; t: Dictionary }) {
             <div className="aicc-hero-actions aicc-fade-up" style={{ ["--i" as string]: 3 }}>
               {EA_ON ? (
                 <>
+                  {/* launch offer (P32): the request action and "See Pricing"; once the offer has ended (page script) the ordinary live-demo hero returns */}
                   <EaCta locale={locale} t={t} variant="primary" />
-                  {demoCta("secondary")}
-                  <EaAfterPlans locale={locale} label={h.hero.ctaPlans} path="home.hero.ctaPlans" />
+                  <span data-ea-live style={{ display: "contents" }}>
+                    <Button href={localePath(locale, "pricing")} variant="secondary" size="lg" {...tx("home.hero.ctaPlans")}>{h.hero.ctaPlans}</Button>
+                  </span>
+                  <span data-ea-after style={{ display: "contents" }}>
+                    {demoCta("primary")}
+                    <Button href={localePath(locale, "pricing")} variant="secondary" size="lg" {...tx("home.hero.ctaPlans")}>{h.hero.ctaPlans}</Button>
+                  </span>
                 </>
               ) : (
                 <>
@@ -69,7 +82,8 @@ export function HomePage({ locale, t }: { locale: Locale; t: Dictionary }) {
                 </>
               )}
             </div>
-            <EaHeroNote locale={locale} t={t} />
+            {/* P34 (owner request): three short support lines under the launch-offer buttons; nothing in an ordinary build */}
+            <EaHeroSupport locale={locale} t={t} />
           </div>
           <div className="aicc-hero__visual">
             <div {...tx("brand.chips")}><RecoHero labels={[t.brand.chips.orders, t.brand.chips.clicks, t.brand.chips.recs, t.brand.chips.insights, t.brand.chips.bundles]} motion={t.brand.motion} /></div>
@@ -263,11 +277,20 @@ export function HomePage({ locale, t }: { locale: Locale; t: Dictionary }) {
               />
             ))}
           </div>
-          <ul className="aicc-pricing-confidence" {...fb("home.pricing")}>
-            <li>{R(h.pricing.confidence.price)}</li>
-            <li>{h.pricing.confidence.guarantee}</li>
-            <li>{h.pricing.confidence.renewal}</li>
-          </ul>
+          {/* P34: while the offer is live the owner's three support lines replace this list (its 14-day guarantee line is hidden while the product is free); it returns after the end date.
+               An ordinary build renders exactly the old single list (byte-identical pages). */}
+          {EA_ON ? (
+            <>
+              <EaPlanSupport locale={locale} t={t} />
+              {/* review P34-6: the ended view gets the list back WITHOUT the guarantee line: a campaign build never carries it in the DOM (like the cards) */}
+              <div data-ea-after="">
+                <ul className="aicc-pricing-confidence" {...fb("home.pricing")}>
+                  <li>{R(h.pricing.confidence.price)}</li>
+                  <li>{h.pricing.confidence.renewal}</li>
+                </ul>
+              </div>
+            </>
+          ) : confidence}
           <p style={{ marginBlockStart: "1rem" }}>
             <LocaleLink locale={locale} route="pricing" className="aicc-link">{h.pricing.link}</LocaleLink>
           </p>

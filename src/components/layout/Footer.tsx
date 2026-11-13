@@ -1,6 +1,7 @@
 import type { Locale } from "@/i18n/config";
 import type { Dictionary } from "@/i18n";
 import { localePath, type RouteId } from "@/lib/routes";
+import type { PageId } from "@/lib/requestRoutes";
 import { Rich } from "@/lib/rich";
 import { Logo } from "@/components/ui/Logo";
 import { LocaleLink } from "@/components/ui/LocaleLink";
@@ -10,7 +11,7 @@ import { COMPANY, wordpressUrl } from "@/lib/site";
 import { DPA_PATH } from "@/lib/routes";
 import { fbProps } from "@/i18n";
 
-export function Footer({ locale, route, t }: { locale: Locale; route: RouteId; t: Dictionary }) {
+export function Footer({ locale, route, t }: { locale: Locale; route: PageId; t: Dictionary }) {
   const c = t.common;
   const ctx = { locale, t, vars: { name: COMPANY.legalName || "AICC" } };
   const aicc: [RouteId, string][] = [

@@ -7,7 +7,7 @@ import { PLANS } from "@/data/plans";
 import { COMMERCE_OPEN, getStartedUrl } from "@/lib/site";
 import { EA_ON } from "@/lib/earlyAccess";
 
-import { EaAfterNote, EaClosingLead, EaCta, EaPricingLine, EaSection } from "@/components/ea/Ea";
+import { EaAfterNote, EaClosingLead, EaCta, EaPlanSupport, EaPlanTerms, EaPricingLine, EaPricingNote, EaSection } from "@/components/ea/Ea";
 import { SoonBandActions } from "@/components/ui/Soon";
 import { Container, Section, SectionHeading } from "@/components/ui/Primitives";
 import { PricingCard } from "@/components/ui/PricingCard";
@@ -78,9 +78,12 @@ export function PricingPage({ locale, t }: { locale: Locale; t: Dictionary }) {
                 headingLevel={3}
                 ea={t.ea.plan}
               />
-            ))}
+            ))
+              // the terms every plan shares take the full width under the three cards (a campaign build only; an ordinary build adds nothing here, so its page is byte-identical);
+              // P34 (owner list): the three short support lines come first, right under the cards
+              .concat(EA_ON ? [<EaPlanSupport key="ea-support" locale={locale} t={t} />, <EaPlanTerms key="ea-terms" locale={locale} t={t} />] : [])}
           </div>
-          <p className="aicc-countline" style={{ marginBlockStart: "1.5rem" }}>{p.plansSection.note} {t.common.plan.renewal}</p>
+          <p className="aicc-countline" style={{ marginBlockStart: "1.5rem" }}>{EA_ON ? <EaPricingNote locale={locale} t={t} ordinary={p.plansSection.note} /> : p.plansSection.note} {t.common.plan.renewal}</p>
           <p className="aicc-countline" style={{ marginBlockStart: "0.5rem" }} {...tx("pricing.teaser")}>
             {p.teaser.text}{" "}
             <LocaleLink locale={locale} route="product" hash="demo" className="aicc-link">{p.teaser.link}</LocaleLink>

@@ -28,7 +28,7 @@ export interface PricingCardProps {
   headingLevel?: 2 | 3;
   extra?: ReactNode;
   /** Early Access strings (t.ea.plan). Rendered only by an Early Access build; a normal build ignores them. */
-  ea?: { free: string; regular: string; planned: string; regularPer: string; noCard: string; term: string; ends: string; ctaOpen: string; ctaAnnounce: string; ctaClosed: string };
+  ea?: { pill: string; free: string; regular: string; planned: string; regularPer: string; approved: string; noCard: string; noAuto: string; term: string; ends: string; ctaOpen: string; ctaAnnounce: string; ctaClosed: string };
 }
 
 /**
@@ -43,6 +43,7 @@ export function PricingCard(p: PricingCardProps) {
   const storesPath = p.id === "solo" ? "common.plan.oneStore" : "common.plan.upToStores";
   const ea = EA_ON ? p.ea : undefined;
   const E = (path: string) => A(path);
+  const featured = p.featuredLabel ? <span {...A("common.plan.recommended")}><Badge tone="brand">{p.featuredLabel}</Badge></span> : null;
   // The ordinary purchase control (Purchases open soon, or the choose-a-plan button): the only one shown after the Early Access end date.
   const standardCta = COMMERCE_OPEN ? (
     <Button href={planUrl(p.id, loc)} variant={p.featuredLabel ? "primary" : "outline"} block size="lg" {...A("common.plan.choose")}>
@@ -54,7 +55,8 @@ export function PricingCard(p: PricingCardProps) {
   return (
     <article className={cn("aicc-plan", p.featuredLabel && "aicc-plan--featured", p.compact && "aicc-plan--compact")} aria-labelledby={`plan-${p.id}`}>
       <div>
-        <div className="aicc-plan__badgerow">{p.featuredLabel ? <span {...A("common.plan.recommended")}><Badge tone="brand">{p.featuredLabel}</Badge></span> : null}</div>
+        {/* P34 (owner request): the launch-offer label on every card while the offer is live; an ordinary build renders exactly the old single child (byte-identical pages) */}
+        <div className="aicc-plan__badgerow">{ea ? <>{featured}<span data-ea-live data-ea-pill {...E("ea.plan")}><Badge tone="success">{ea.pill}</Badge></span></> : featured}</div>
         <H id={`plan-${p.id}`} className="aicc-plan__name">
           <bdi>{p.name}</bdi>
         </H>
@@ -66,28 +68,35 @@ export function PricingCard(p: PricingCardProps) {
       </p>
       {ea ? (
         <div className="aicc-plan__offer" data-ea-live>
-          <p className="aicc-plan__free" {...E("ea.plan")}>{ea.free}</p>
-          <p className="aicc-plan__regular" {...E("ea.plan")}>
+          {/* P34: with the strike-through switch (counsel-gated in launch:check) the labelled, crossed-out regular price comes first and "Free until ..." follows it; without it the order is unchanged */}
+          {EA_STRIKE ? null : <p className="aicc-plan__free" {...E("ea.plan")}>{ea.free}</p>}
+          <p className={EA_STRIKE ? "aicc-plan__regular aicc-plan__regular--strike" : "aicc-plan__regular"} {...E("ea.plan")}>
             <span className="aicc-plan__regular-label">{EA_STRIKE ? ea.regular : ea.planned}</span>{" "}
             {EA_STRIKE ? <s><bdi>{formatPrice(p.price, p.locale)}</bdi></s> : <bdi>{formatPrice(p.price, p.locale)}</bdi>}
             <span className="aicc-plan__regular-per"> {ea.regularPer}{currencySuffix(p.locale ?? "en")}</span>
           </p>
+          {EA_STRIKE ? <p className="aicc-plan__free" {...E("ea.plan")}>{ea.free}</p> : null}
         </div>
       ) : null}
       <p className="aicc-plan__stores" {...A(storesPath)}>{p.storesLabel}</p>
       {ea ? (
         <ul className="aicc-plan__list" data-ea-live>
+          <li><Check size={18} aria-hidden="true" /><span {...E("ea.plan")}>{ea.approved}</span></li>
           <li><Check size={18} aria-hidden="true" /><span {...E("ea.plan")}>{ea.noCard}</span></li>
+          <li><Check size={18} aria-hidden="true" /><span {...E("ea.plan")}>{ea.noAuto}</span></li>
           <li><Check size={18} aria-hidden="true" /><span {...E("ea.plan")}>{ea.term}</span></li>
         </ul>
       ) : null}
       {!p.compact ? (
         <ul className="aicc-plan__list" {...(ea ? { "data-ea-after": "" } : {})}>
           {p.features.map((f, i) => (
-            <li key={f}>
-              <Check size={18} aria-hidden="true" />
-              <span {...(p.featurePaths?.[i] ? A(p.featurePaths[i]) : {})}>{f}</span>
-            </li>
+            // a launch-offer build never renders the 14-day guarantee line on a card (not even hidden): no payment is taken, so there is nothing to guarantee; the policy lives in the FAQ and the Refund Policy
+            ea && p.featurePaths?.[i] === "common.plan.guarantee" ? null : (
+              <li key={f}>
+                <Check size={18} aria-hidden="true" />
+                <span {...(p.featurePaths?.[i] ? A(p.featurePaths[i]) : {})}>{f}</span>
+              </li>
+            )
           ))}
         </ul>
       ) : null}

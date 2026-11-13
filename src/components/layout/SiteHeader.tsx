@@ -3,6 +3,7 @@ import { Menu, X } from "lucide-react";
 import type { Locale } from "@/i18n/config";
 import type { Dictionary } from "@/i18n";
 import { localePath, type RouteId } from "@/lib/routes";
+import { isRequestRoute, type PageId } from "@/lib/requestRoutes";
 import { getStartedUrl } from "@/lib/site";
 import { LangMenu } from "@/components/brand/LangMenu";
 import { A11yTrigger } from "./A11yControl";
@@ -14,7 +15,7 @@ import { EaHeaderCta } from "@/components/ea/Ea";
  * The legacy copilt.org header: fixed, transparent at the top, a blurred bar after 12px of scroll (or while the mobile menu is open).
  * Styles: brand/aicc-brand.css (.aicc-site-header*). Behaviour: brand/js/header-scroll.js and lang-menu.js, wired by BrandInit.
  */
-export function SiteHeader({ locale, route, t }: { locale: Locale; route: RouteId; t: Dictionary }) {
+export function SiteHeader({ locale, route, t }: { locale: Locale; route: PageId; t: Dictionary }) {
   const c = t.common;
   const account = getStartedUrl(locale);
   const nav: { route: RouteId | "account"; label: string }[] = [
@@ -47,7 +48,7 @@ export function SiteHeader({ locale, route, t }: { locale: Locale; route: RouteI
           <LangMenu locale={locale} route={route} label={c.language.label} currentWord={c.language.current} idSuffix="header" />
           <A11yTrigger label={c.a11y.title} iconOnly className="aicc-iconbtn aicc-a11y-trigger" />
           <a href={account} className="aicc-btn aicc-btn--quiet aicc-site-header__desktop-only">{t.brand.signIn}</a>
-          <EaHeaderCta locale={locale} t={t} className="aicc-btn aicc-btn--primary aicc-site-header__desktop-only" />
+          <EaHeaderCta locale={locale} t={t} hidden={isRequestRoute(route)} className="aicc-btn aicc-btn--primary aicc-site-header__desktop-only" />
           <a href={account} className="aicc-btn aicc-btn--primary aicc-site-header__desktop-only" {...(EA_OPEN ? { "data-ea-after": "" } : {})}>
             {c.getStarted}
           </a>
@@ -65,7 +66,7 @@ export function SiteHeader({ locale, route, t }: { locale: Locale; route: RouteI
           <LangMenu locale={locale} route={route} label={c.language.label} currentWord={c.language.current} idSuffix="mobile" block />
           <div><A11yTrigger label={c.a11y.title} className="aicc-btn aicc-btn--quiet aicc-btn--sm" /></div>
           <a href={account} className="aicc-btn aicc-btn--quiet aicc-btn--block">{t.brand.signIn}</a>
-          <EaHeaderCta locale={locale} t={t} className="aicc-btn aicc-btn--primary aicc-btn--lg aicc-btn--block" />
+          <EaHeaderCta locale={locale} t={t} hidden={isRequestRoute(route)} className="aicc-btn aicc-btn--primary aicc-btn--lg aicc-btn--block" />
           <a href={account} className="aicc-btn aicc-btn--primary aicc-btn--lg aicc-btn--block" {...(EA_OPEN ? { "data-ea-after": "" } : {})}>{c.getStarted}</a>
         </div>
       </div>

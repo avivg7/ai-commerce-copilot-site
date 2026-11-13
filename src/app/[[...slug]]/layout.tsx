@@ -5,6 +5,7 @@ import { geistExt, geistLatin } from "../fonts";
 import { LOCALES, LOCALE_META, DEFAULT_LOCALE } from "@/i18n/config";
 import { getDictionary } from "@/i18n";
 import { allStaticParams, parseSlug } from "@/lib/routes";
+import { isRequestRoute, parseRequestSlug, requestStaticParams } from "@/lib/requestRoutes";
 import { SkipLink } from "@/components/ui/SkipLink";
 import { SiteHeader } from "@/components/layout/SiteHeader";
 import { BrandInit } from "@/components/brand/BrandInit";
@@ -14,11 +15,11 @@ import { withBase } from "@/lib/site";
 import { localePath } from "@/lib/routes";
 import { LanguageSuggestion, type SuggestStrings } from "@/components/layout/LanguageSuggestion";
 import { EA_HEAD_SCRIPT, EA_MODE, EA_ON } from "@/lib/earlyAccess";
-import { EaBar } from "@/components/ea/Ea";
+import { EA_HERO_CSS, EA_P34_CSS, EaBar } from "@/components/ea/Ea";
 
 export const dynamicParams = false;
 export function generateStaticParams() {
-  return allStaticParams();
+  return [...allStaticParams(), ...requestStaticParams()];
 }
 
 /** Applies saved accessibility preferences before first paint (no flash). Tiny, first-party, no network. */
@@ -32,7 +33,7 @@ export default async function RootLayout({
   params: Promise<{ slug?: string[] }>;
 }) {
   const { slug } = await params;
-  const parsed = parseSlug(slug) ?? { locale: DEFAULT_LOCALE, route: "home" as const };
+  const parsed = parseSlug(slug) ?? parseRequestSlug(slug) ?? { locale: DEFAULT_LOCALE, route: "home" as const };
   const { locale, route } = parsed;
   const t = getDictionary(locale);
   const meta = LOCALE_META[locale];
@@ -53,7 +54,7 @@ export default async function RootLayout({
       <head>
         <script dangerouslySetInnerHTML={{ __html: PREFS_SCRIPT }} />
         {/* Early Access builds only: marks the document when the campaign end date has passed (absolute UTC time, no time zone), so an old page switches to the ended view. */}
-        {EA_ON ? <script dangerouslySetInnerHTML={{ __html: EA_HEAD_SCRIPT }} /> : null}
+        {EA_ON ? (<><script dangerouslySetInnerHTML={{ __html: EA_HEAD_SCRIPT }} /><style dangerouslySetInnerHTML={{ __html: EA_HERO_CSS + EA_P34_CSS }} /></>) : null}
         {locale === "he" ? (
           <>
             {/* Heebo (SIL OFL, public/fonts/OFL-Heebo.txt), Hebrew subset, only declared and preloaded on Hebrew pages. */}
@@ -67,7 +68,7 @@ export default async function RootLayout({
       </head>
       <body>
         <SkipLink label={t.common.skip} />
-        <LanguageSuggestion locale={locale} route={route} strings={suggest} />
+        <LanguageSuggestion locale={locale} route={isRequestRoute(route) ? "home" : route} strings={suggest} />
         <SiteHeader locale={locale} route={route} t={t} />
         <BrandInit />
         <main id="main" tabIndex={-1}>

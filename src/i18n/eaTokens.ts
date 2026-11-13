@@ -1,7 +1,7 @@
 import type { Locale } from "./config";
 
 /**
- * Early Access date tokens (Production 21): ONE copy of the campaign sentences, four ends (step 0 = the initial published end, 1 and 2 = the published extension steps).
+ * Launch offer date tokens (Production 21): ONE copy of the campaign sentences, four ends (step 0 = the initial published end, 1 and 2 = the published extension steps).
  * The sentences in `ea/{en,he,es,ru}.ts` carry tokens; this table writes the dates as each language writes them. The calendar facts behind every row (the Israel day before and
  * after the end instant) are re-derived from the IANA database, and every row is compared with Intl's own formatting of that day, by `npm run ea:check`.
  *   {lastDay}       the last included day, with the year           (December 31, 2026)
@@ -27,16 +27,19 @@ export const EA_DATES: Record<Locale, readonly [EaDates, EaDates, EaDates]> = {
     { lastDay: "28 de febrero de 2027", lastDayShort: "28 de febrero", endDate: "1 de marzo de 2027" },
   ],
   ru: [
-    { lastDay: "31 декабря 2026 г.", lastDayShort: "31 декабря", endDate: "1 января 2027 г." },
-    { lastDay: "31 января 2027 г.", lastDayShort: "31 января", endDate: "1 февраля 2027 г." },
-    { lastDay: "28 февраля 2027 г.", lastDayShort: "28 февраля", endDate: "1 марта 2027 г." },
+    { lastDay: "31 декабря 2026 г.", lastDayShort: "31 декабря", endDate: "1 января 2027 г." },
+    { lastDay: "31 января 2027 г.", lastDayShort: "31 января", endDate: "1 февраля 2027 г." },
+    { lastDay: "28 февраля 2027 г.", lastDayShort: "28 февраля", endDate: "1 марта 2027 г." },
   ],
 };
 
 export type EaStepIndex = 0 | 1 | 2;
 export const EA_DATE_TOKENS = ["lastDay", "lastDayShort", "endDate", "firstLastDay"] as const;
 /** Tokens that other code resolves later (not dates): they pass through untouched. */
-const PASS_THROUGH = new Set(["contactEmail"]);
+const PASS_THROUGH = new Set(["contactEmail", "mailProvider", "priceSolo", "priceStudio", "priceAgency"]);
+
+/** A date with its spaces made no-break (used by the Hero badge only, so the badge never breaks in the middle of a date; the long dates stay breakable on the plan cards, where an unbreakable Spanish date overflowed a 1024 px column). */
+export const nbDate = (d: string) => d.replace(/ /g, "\u00a0");
 
 /** Resolve the date tokens of one string for `locale` and `step`. An unknown {token} is a bug: it throws, so a typo can never reach a page. */
 export function resolveEaTokens(text: string, locale: Locale, step: EaStepIndex): string {

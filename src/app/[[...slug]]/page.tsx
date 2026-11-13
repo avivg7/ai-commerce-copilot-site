@@ -3,7 +3,9 @@ import { notFound } from "next/navigation";
 import { LOCALES, LOCALE_META, type Locale } from "@/i18n/config";
 import { getDictionary } from "@/i18n";
 import { allStaticParams, parseSlug, type RouteId } from "@/lib/routes";
+import { isRequestRoute, parseRequestSlug, requestStaticParams } from "@/lib/requestRoutes";
 import { SITE_URL, absoluteUrl } from "@/lib/site";
+import { EA_ON } from "@/lib/earlyAccess";
 import { kitAsset } from "@/lib/brand";
 import { formatPlain } from "@/lib/rich";
 import { HomePage } from "@/components/pages/HomePage";
@@ -16,7 +18,7 @@ type Params = { slug?: string[] };
 
 export const dynamicParams = false;
 export function generateStaticParams() {
-  return allStaticParams();
+  return [...allStaticParams(), ...requestStaticParams()];
 }
 
 const META_KEY: Record<RouteId, "home" | "product" | "pricing" | "dataTrust" | "privacy" | "terms" | "refund" | "accessibility" | "questions"> = {
@@ -32,14 +34,33 @@ const META_KEY: Record<RouteId, "home" | "product" | "pricing" | "dataTrust" | "
 };
 
 export async function generateMetadata({ params }: { params: Promise<Params> }): Promise<Metadata> {
-  const parsed = parseSlug((await params).slug);
+  const slugParts = (await params).slug;
+  const parsed = parseSlug(slugParts) ?? parseRequestSlug(slugParts);
   if (!parsed) return {};
   const { locale, route } = parsed;
   const t = getDictionary(locale);
+  if (isRequestRoute(route)) {
+    // the launch-offer request pages (OPEN builds only): a plain title, never indexed or followed, no Open Graph card, and the confirm link must not leak anywhere (no referrer)
+    const rt = route === "request-access" ? t.ea.request.pageTitle : t.ea.request.confirm.pageTitle;
+    return {
+      title: { absolute: `${rt} | ${t.meta.siteName}` },
+      metadataBase: new URL(SITE_URL),
+      icons: {
+        icon: [
+          { url: kitAsset("favicon.svg"), type: "image/svg+xml" },
+          { url: kitAsset("icon-192.png"), sizes: "192x192", type: "image/png" },
+        ],
+        apple: [{ url: kitAsset("icon-180.png"), sizes: "180x180" }],
+      },
+      referrer: "no-referrer",
+      robots: "noindex,nofollow",
+    };
+  }
   const m = t.meta.pages[META_KEY[route]];
   const ctx = { locale, t };
   const title = formatPlain(m.title, ctx);
-  const description = formatPlain(m.description, ctx);
+  // a launch-offer build leaves the 14-day guarantee out of the Pricing description (no payment is taken, the cards say nothing about it); the text names no offer and no date, so it never goes stale
+  const description = formatPlain(EA_ON && route === "pricing" ? t.ea.meta.pricingDescription : m.description, ctx);
   const url = absoluteUrl(locale, route);
   const ogImage = `${SITE_URL}/og/${locale}-${route === "home" ? "home" : route}.jpg`;
   const languages: Record<string, string> = {};
@@ -74,11 +95,27 @@ export async function generateMetadata({ params }: { params: Promise<Params> }):
 }
 
 export default async function Page({ params }: { params: Promise<Params> }) {
-  const parsed = parseSlug((await params).slug);
+  const slugParts = (await params).slug;
+  const parsed = parseSlug(slugParts) ?? parseRequestSlug(slugParts);
   if (!parsed) notFound();
   const { locale, route } = parsed;
   const t = getDictionary(locale as Locale);
   switch (route) {
+    // The request pages: the import sits behind a compile-time constant (next.config.ts) so that every build but an OPEN one folds it away and carries none of their code.
+    case "request-access": {
+      if (process.env.NEXT_PUBLIC_AICC_EA_REQUEST_PAGES === "1") {
+        const { RequestAccessPage } = await import("@/components/request/RequestPages");
+        return <RequestAccessPage locale={locale} t={t} />;
+      }
+      notFound();
+    }
+    case "request-access-confirm": {
+      if (process.env.NEXT_PUBLIC_AICC_EA_REQUEST_PAGES === "1") {
+        const { RequestConfirmPage } = await import("@/components/request/RequestPages");
+        return <RequestConfirmPage locale={locale} t={t} />;
+      }
+      notFound();
+    }
     case "home":
       return <HomePage locale={locale} t={t} />;
     case "product":

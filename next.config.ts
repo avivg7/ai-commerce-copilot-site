@@ -25,6 +25,9 @@ const nextConfig: NextConfig = {
     // SITE_URL is also read by CLIENT components (PlanFinder builds plan links at runtime): inline it so the browser bundle carries the build's origin instead of falling back to
     // the production default (a stage build otherwise sends a visitor who changes the store count to the PRODUCTION account page). Empty = the code's own default applies.
     SITE_URL: process.env.SITE_URL ?? "",
+    // P32: "1" only for an `open` or `verify` launch-offer build. A compile-time constant on purpose: the request pages (and their client code) are imported behind `if (process.env.NEXT_PUBLIC_AICC_EA_REQUEST_PAGES === "1")`,
+    // which webpack folds away in every other build, so those builds carry none of that code and stay byte-identical to a build made before the pages existed.
+    NEXT_PUBLIC_AICC_EA_REQUEST_PAGES: process.env.NEXT_PUBLIC_AICC_EARLY_ACCESS === "open" || process.env.NEXT_PUBLIC_AICC_EARLY_ACCESS === "verify" ? "1" : "",
   },
   experimental: {
     // Unmatched URLs get a branded 404.html even though the root layout lives in a dynamic segment.
