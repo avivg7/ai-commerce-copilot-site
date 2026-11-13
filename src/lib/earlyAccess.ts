@@ -1,7 +1,7 @@
 /**
  * EARLY ACCESS (Production 20): a fixed-calendar promotional access period, NOT a free trial and NOT a free plan.
  * Every Early Access entitlement ends at the same absolute instant, whatever the sign-up date:
- *   2027-01-01 00:00:00 Asia/Jerusalem = 2026-12-31 22:00:00 UTC (Israel is UTC+2 in winter). The last included moment is 31 December 2026, Israel time.
+ *   The authoritative instant is 2026-12-31T22:00:00Z (unix 1798754400). Customer copy states it in UTC only ("{lastDay}" and "22:00 UTC"); it never prints a local time zone or a 1 January date.
  * The instant is a UTC millisecond constant. It never depends on a visitor's time zone: the browser compares Date.now() with the constant, and
  * `scripts/test-early-access.mjs` re-derives it from the IANA time-zone database (Intl) under several process time zones and fails if they disagree.
  *
@@ -38,7 +38,7 @@ export const EA_CUTOFF_ISO_UTC = "2026-12-31T22:00:00Z";
  * Constants, never input: nothing but these two instants can ever be an end. `npm run ea:check` re-derives both from the IANA database and compares them with the Control Plane table.
  */
 export const EA_EXTENSION_STEPS: readonly [number, number] = [Date.UTC(2027, 0, 31, 22, 0, 0), Date.UTC(2027, 1, 28, 22, 0, 0)];
-/** Human wording is fixed in the dictionaries (`ea.*`, see src/i18n/ea/dates.ts); these are the Israel calendar facts those strings state per step (0 = initial), checked by `npm run ea:check`. */
+/** Human wording is fixed in the dictionaries (`ea.*`, see src/i18n/ea/dates.ts); these are the calendar facts (last included day per step) those strings state (0 = initial), checked by `npm run ea:check`. */
 export const EA_STEP_DAYS: readonly { last: string; end: string }[] = [
   { last: "2026-12-31", end: "2027-01-01" },
   { last: "2027-01-31", end: "2027-02-01" },

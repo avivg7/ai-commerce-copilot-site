@@ -44,24 +44,24 @@ export const EA_EXTRA_RULES = [
  */
 export const REQUIRED_DATES = {
   en: [
-    { last: "December 31, 2026", end: "January 1, 2027", utc: "22:00 UTC on December 31" },
-    { last: "January 31, 2027", end: "February 1, 2027", utc: "22:00 UTC on January 31" },
-    { last: "February 28, 2027", end: "March 1, 2027", utc: "22:00 UTC on February 28" },
+    { last: "December 31, 2026", end: "January 1, 2027", utc: "22:00 UTC on December 31", until: "Dec 31, 2026" },
+    { last: "January 31, 2027", end: "February 1, 2027", utc: "22:00 UTC on January 31", until: "Jan 31, 2027" },
+    { last: "February 28, 2027", end: "March 1, 2027", utc: "22:00 UTC on February 28", until: "Feb 28, 2027" },
   ],
   he: [
-    { last: "31 בדצמבר 2026", end: "1 בינואר 2027", utc: "22:00 UTC ב־31 בדצמבר" },
-    { last: "31 בינואר 2027", end: "1 בפברואר 2027", utc: "22:00 UTC ב־31 בינואר" },
-    { last: "28 בפברואר 2027", end: "1 במרץ 2027", utc: "22:00 UTC ב־28 בפברואר" },
+    { last: "31 בדצמבר 2026", end: "1 בינואר 2027", utc: "22:00 UTC ב־31 בדצמבר", until: "31 בדצמבר 2026" },
+    { last: "31 בינואר 2027", end: "1 בפברואר 2027", utc: "22:00 UTC ב־31 בינואר", until: "31 בינואר 2027" },
+    { last: "28 בפברואר 2027", end: "1 במרץ 2027", utc: "22:00 UTC ב־28 בפברואר", until: "28 בפברואר 2027" },
   ],
   es: [
-    { last: "31 de diciembre de 2026", end: "1 de enero de 2027", utc: "22:00 UTC del 31 de diciembre" },
-    { last: "31 de enero de 2027", end: "1 de febrero de 2027", utc: "22:00 UTC del 31 de enero" },
-    { last: "28 de febrero de 2027", end: "1 de marzo de 2027", utc: "22:00 UTC del 28 de febrero" },
+    { last: "31 de diciembre de 2026", end: "1 de enero de 2027", utc: "22:00 UTC del 31 de diciembre", until: "31 dic 2026" },
+    { last: "31 de enero de 2027", end: "1 de febrero de 2027", utc: "22:00 UTC del 31 de enero", until: "31 ene 2027" },
+    { last: "28 de febrero de 2027", end: "1 de marzo de 2027", utc: "22:00 UTC del 28 de febrero", until: "28 feb 2027" },
   ],
   ru: [
-    { last: "31 декабря 2026", end: "1 января 2027", utc: "22:00 UTC 31 декабря" },
-    { last: "31 января 2027", end: "1 февраля 2027", utc: "22:00 UTC 31 января" },
-    { last: "28 февраля 2027", end: "1 марта 2027", utc: "22:00 UTC 28 февраля" },
+    { last: "31 декабря 2026", end: "1 января 2027", utc: "22:00 UTC 31 декабря", until: "31 дек. 2026" },
+    { last: "31 января 2027", end: "1 февраля 2027", utc: "22:00 UTC 31 января", until: "31 янв. 2027" },
+    { last: "28 февраля 2027", end: "1 марта 2027", utc: "22:00 UTC 28 февраля", until: "28 февр. 2027" },
   ],
 };
 
@@ -70,10 +70,10 @@ export const REQUIRED_DATES = {
  * and, in an extended build, the extended bar and note. Written as that language writes them; a rewrite that drops one fails `ea:check`.
  */
 export const REQUIRED_FACTS = {
-  en: { h24: "24 hours", closedEvery: "every store already in it", original: "original end date", soft: "where we can", renew: "Renew plan", every: "every launch-offer store", noCharge: "never starts a charge", before: "on this page before the end date", single: "single store's access", changeBefore: "before the launch offer ends", changeFree: "at no charge", sameEnd: "The end date stays the same", paidPurchases: "eligible paid purchases", noteEvery: "every launch-offer store", extEvery: "every store", extPay: "no payment is taken", extAuto: "automatically", extZone: "Israel time", decision: "explicit renewal decision", notOpen: "paid purchases are not open yet", approved: "approved stores" },
-  he: { h24: "24 שעות", closedEvery: "לכל חנות שכבר נמצאת בה", original: "מועד הסיום המקורי", soft: "במקום שנוכל", renew: "חידוש התוכנית", every: "לכל חנויות הצעת ההשקה בבת אחת", noCharge: "לעולם לא מתחילה חיוב", before: "בעמוד הזה לפני תאריך הסיום", single: "של חנות בודדת", changeBefore: "לפני שהצעת ההשקה מסתיימת", changeFree: "ללא תשלום", sameEnd: "תאריך הסיום נשאר אותו תאריך", paidPurchases: "רכישות בתשלום הזכאיות לכך", noteEvery: "לכל חנות בהצעת ההשקה", extEvery: "לכל החנויות", extPay: "לא נגבה תשלום", extAuto: "אוטומטית", extZone: "שעון ישראל", decision: "החלטת חידוש מפורשת", notOpen: "רכישות בתשלום עדיין אינן פתוחות", approved: "לחנויות מאושרות" },
-  es: { h24: "24 horas", closedEvery: "todas las tiendas que ya participan", original: "fecha de fin original", soft: "cuando podemos", renew: "botón para renovar el plan", every: "todas las tiendas de la oferta de lanzamiento a la vez", noCharge: "nunca inicia un cobro", before: "en esta página antes de la fecha de fin", single: "de una sola tienda", changeBefore: "antes de que termine la oferta de lanzamiento", changeFree: "sin ningún coste", sameEnd: "La fecha de fin no cambia", paidPurchases: "compras de pago que cumplan los requisitos", noteEvery: "todas las tiendas de la oferta de lanzamiento", extEvery: "todas las tiendas", extPay: "no se toma ningún pago", extAuto: "automáticamente", extZone: "hora de Israel", decision: "decisión explícita de renovar", notOpen: "las compras de pago aún no están abiertas", approved: "tiendas aprobadas" },
-  ru: { h24: "24 часа", closedEvery: "всех магазинов, которые уже в нём", original: "первоначальн", soft: "где можем", renew: "кнопкой продления плана", every: "для всех магазинов предложения в честь запуска", noCharge: "никогда не запускает списание", before: "на этой странице до даты окончания", single: "отдельного магазина", changeBefore: "до окончания предложения в честь запуска", changeFree: "бесплатно", sameEnd: "Дата окончания останется прежней", paidPurchases: "платные покупки, которые под неё подпадают", noteEvery: "всех магазинов предложения в честь запуска", extEvery: "всех магазинов", extPay: "платёж не взимается", extAuto: "автоматически", extZone: "по израильскому времени", decision: "явное решение о продлении", notOpen: "платные покупки пока не открыты", approved: "одобренных магазинов" },
+  en: { h24: "24 hours", closedEvery: "every store already in it", original: "original end date", soft: "where we can", renew: "Renew plan", every: "every launch-offer store", noCharge: "never starts a charge", before: "on this page before the end date", single: "single store's access", changeBefore: "before the launch offer ends", changeFree: "at no charge", sameEnd: "The end date stays the same", paidPurchases: "eligible paid purchases", noteEvery: "every launch-offer store", extEvery: "every store", extPay: "no payment is taken", extAuto: "automatically", extZone: "UTC", decision: "explicit renewal decision", notOpen: "paid purchases are not open yet", approved: "approved stores" },
+  he: { h24: "24 שעות", closedEvery: "לכל חנות שכבר נמצאת בה", original: "מועד הסיום המקורי", soft: "במקום שנוכל", renew: "חידוש התוכנית", every: "לכל חנויות הצעת ההשקה בבת אחת", noCharge: "לעולם לא מתחילה חיוב", before: "בעמוד הזה לפני תאריך הסיום", single: "של חנות בודדת", changeBefore: "לפני שהצעת ההשקה מסתיימת", changeFree: "ללא תשלום", sameEnd: "תאריך הסיום נשאר אותו תאריך", paidPurchases: "רכישות בתשלום הזכאיות לכך", noteEvery: "לכל חנות בהצעת ההשקה", extEvery: "לכל החנויות", extPay: "לא נגבה תשלום", extAuto: "אוטומטית", extZone: "UTC", decision: "החלטת חידוש מפורשת", notOpen: "רכישות בתשלום עדיין אינן פתוחות", approved: "לחנויות מאושרות" },
+  es: { h24: "24 horas", closedEvery: "todas las tiendas que ya participan", original: "fecha de fin original", soft: "cuando podemos", renew: "botón para renovar el plan", every: "todas las tiendas de la oferta de lanzamiento a la vez", noCharge: "nunca inicia un cobro", before: "en esta página antes de la fecha de fin", single: "de una sola tienda", changeBefore: "antes de que termine la oferta de lanzamiento", changeFree: "sin ningún coste", sameEnd: "La fecha de fin no cambia", paidPurchases: "compras de pago que cumplan los requisitos", noteEvery: "todas las tiendas de la oferta de lanzamiento", extEvery: "todas las tiendas", extPay: "no se toma ningún pago", extAuto: "automáticamente", extZone: "UTC", decision: "decisión explícita de renovar", notOpen: "las compras de pago aún no están abiertas", approved: "tiendas aprobadas" },
+  ru: { h24: "24 часа", closedEvery: "всех магазинов, которые уже в нём", original: "первоначальн", soft: "где можем", renew: "кнопкой продления плана", every: "для всех магазинов предложения в честь запуска", noCharge: "никогда не запускает списание", before: "на этой странице до даты окончания", single: "отдельного магазина", changeBefore: "до окончания предложения в честь запуска", changeFree: "бесплатно", sameEnd: "Дата окончания останется прежней", paidPurchases: "платные покупки, которые под неё подпадают", noteEvery: "всех магазинов предложения в честь запуска", extEvery: "всех магазинов", extPay: "платёж не взимается", extAuto: "автоматически", extZone: "UTC", decision: "явное решение о продлении", notOpen: "платные покупки пока не открыты", approved: "одобренных магазинов" },
 };
 
 /** What the P20 guarantee and plugin answers said and the Plugin no longer says on a free grant: it must not come back (the Plugin is corrected in `feat/p21-guarantee-fix`). */
@@ -86,10 +86,10 @@ export const FORBIDDEN_SENTENCES = {
 
 /** Dates and facts every locale must state, written as that language writes them. Checked against the strings that carry them. */
 export const REQUIRED = {
-  en: { last: "December 31, 2026", end: "January 1, 2027", auto: "automatically", card: "credit card", paid: "paid plan", zone: "Israel time", utc: "22:00 UTC" },
-  he: { last: "31 בדצמבר 2026", end: "1 בינואר 2027", auto: "אוטומטית", card: "כרטיס אשראי", paid: "בתשלום", zone: "שעון ישראל", utc: "22:00 UTC" },
-  es: { last: "31 de diciembre de 2026", end: "1 de enero de 2027", auto: "automáticamente", card: "tarjeta de crédito", paid: "plan de pago", zone: "hora de Israel", utc: "22:00 UTC" },
-  ru: { last: "31 декабря 2026", end: "1 января 2027", auto: "втоматически", card: "карта", paid: "латный план", zone: "по израильскому времени", utc: "22:00 UTC" },
+  en: { last: "December 31, 2026", end: "January 1, 2027", auto: "automatic", card: "credit card", paid: "paid plan", zone: "Israel time", utc: "22:00 UTC" },
+  he: { last: "31 בדצמבר 2026", end: "1 בינואר 2027", auto: "אוטומטי", card: "כרטיס אשראי", paid: "בתשלום", zone: "שעון ישראל", utc: "22:00 UTC" },
+  es: { last: "31 de diciembre de 2026", end: "1 de enero de 2027", auto: "automátic", card: "tarjeta de crédito", paid: "plan de pago", zone: "hora de Israel", utc: "22:00 UTC" },
+  ru: { last: "31 декабря 2026", end: "1 января 2027", auto: "втоматическ", card: "карта", paid: "латный план", zone: "по израильскому времени", utc: "22:00 UTC" },
 };
 
 /** The only campaign files: the four language packs. A path that merely starts like the folder, climbs out of it with .., or names another file in it is NOT one. */
@@ -109,23 +109,21 @@ const walk = (o, path, out) => {
  * the free-until date and the end date appear where the offer is stated, "nothing is charged automatically", "no credit card" and the voluntary paid continuation are stated.
  */
 export function eaDisclosureProblems(locale, ea, step = 0) {
-  const need = { ...REQUIRED[locale], ...REQUIRED_DATES[locale][step] };
+  // P36 (owner rule: UTC deadlines): the clock is UTC, the instant is "22:00 UTC"; no local time zone and no end-date line ("January 1") is required or allowed in customer copy
+  const need = { ...REQUIRED[locale], ...REQUIRED_DATES[locale][step], zone: "UTC", utc: "22:00 UTC" };
   const facts = REQUIRED_FACTS[locale];
   const problems = [];
   const nb = (x) => x.replace(/\u00a0/g, " "); // Russian packs use no-break spaces; the required phrases are written with plain ones
   const has = (path, tok) => { const v = path.split(".").reduce((a, k) => a?.[k], ea); return typeof v === "string" && nb(v).toLowerCase().includes(nb(tok).toLowerCase()); };
   // the offer statements: which string must carry which date, the clock, and the promises (P32: no hero fine print exists any more; the facts live in the bar, the cards and the explanation)
   for (const [path, tok] of [
-    ["bar.live", need.last], ["bar.announce", need.last], ["hero.badge", need.last],
-    ["plan.free", need.last], ["plan.ends", need.end], ["plan.term", need.last],
-    ["section.lead", need.last], ["section.lead", need.end], ["section.homeLead", need.last], ["section.homeLead", need.end],
-    ["section.steps.use.body", need.last], ["section.steps.decide.body", need.end],
-    ["section.endTitle", need.end], ["after.body", need.end],
-    // the time zone: the instant is midnight in Israel = 22:00 UTC the day before; a visitor elsewhere must be told which clock
+    ["bar.live", need.until], ["bar.announce", need.until], ["hero.badge", need.until],
+    ["plan.free", need.last], ["plan.term", need.last],
+    ["section.lead", need.last], ["section.homeLead", need.last],     ["section.steps.use.body", need.last],         // the time zone: the instant is midnight in Israel = 22:00 UTC the day before; a visitor elsewhere must be told which clock
     // P34 (owner wording, review P34-4): the bar and the Hero pill say "Free for approved stores until <last day>" (the approved-stores qualifier is required there); the clock and the
     // exact instant are required where the end is stated (cards, explanation, questions), not in the bar
-    ["bar.live", facts.approved], ["bar.announce", facts.approved], ["hero.badge", facts.approved],
-    ["plan.term", need.zone], ["plan.ends", need.zone], ["plan.ends", need.utc],
+    ["bar.live", facts.approved], ["bar.announce", facts.approved],
+    ["plan.ends", need.zone], ["plan.ends", need.utc],
     ["section.lead", need.zone], ["section.lead", need.utc], ["section.homeLead", need.zone], ["after.body", need.zone],
     ["section.steps.decide.body", need.zone], ["section.who.b", need.zone], ["section.faq.end.a", need.zone], ["section.faq.plugin.a", need.zone],
     // the promises: no card, nothing charged automatically, an explicit renewal decision to continue, paid purchases not open (and no promise of a paid plan in 2027)
@@ -133,8 +131,7 @@ export function eaDisclosureProblems(locale, ea, step = 0) {
     ["pricing.decision", facts.decision], ["section.lead", facts.decision], ["section.homeLead", facts.decision], ["section.steps.decide.body", facts.decision],
     ["section.end.c", facts.decision], ["section.faq.end.a", facts.decision], ["section.faq.continue.a", facts.decision], ["after.body", facts.decision],
     ["pricing.note", facts.notOpen], ["section.steps.decide.body", facts.notOpen], ["section.end.c", facts.notOpen], ["section.faq.end.a", facts.notOpen], ["section.faq.continue.a", facts.notOpen], ["after.body", facts.notOpen],
-    ["section.faq.free.a", need.last], ["section.faq.end.q", need.end],
-    // the extension reservation is permanent (terms line and questions), the plan change is answered, the guarantee is for paid purchases only
+    ["section.faq.free.a", need.last],     // the extension reservation is permanent (terms line and questions), the plan change is answered, the guarantee is for paid purchases only
     ["section.reservation", facts.every], ["section.reservation", facts.noCharge], ["section.reservation", facts.before], ["section.reservation", facts.single],
     ["section.faq.extension.a", facts.every], ["section.faq.extension.a", facts.noCharge], ["section.faq.extension.a", facts.before], ["section.faq.extension.a", facts.single],
     ["section.faq.change.a", facts.changeBefore], ["section.faq.change.a", facts.changeFree], ["section.faq.change.a", facts.sameEnd], ["section.faq.change.a", "{contactEmail}"],
@@ -142,26 +139,24 @@ export function eaDisclosureProblems(locale, ea, step = 0) {
     // the extended variant (rendered only by an extended build, checked in every step): the clock, no payment, nothing automatic, every store
     ["extended.bar", facts.extEvery], ["extended.bar", facts.extZone], ["extended.bar", need.last],
     // the clock is named wherever the end is stated: cards, the page heading, the first question, the "use" step and the extension note
-    ["plan.free", need.zone], ["section.title", need.zone], ["section.faq.free.a", need.zone], ["section.steps.use.body", need.zone], ["extended.note", need.zone],
-    // from the INITIAL end until the extended end (extended OPEN builds): no request is offered, the extension is for stores already in the offer, and the wording still names the clock
-    ["extended.barClosed", facts.closedEvery], ["extended.barClosed", need.zone], ["extended.barClosed", need.last], ["extended.barClosed", facts.original],
+        // from the INITIAL end until the extended end (extended OPEN builds): no request is offered, the extension is for stores already in the offer, and the wording still names the clock
+    ["extended.barClosed", facts.closedEvery], ["extended.barClosed", need.last], ["extended.barClosed", facts.original],
     ["extended.closedNote", facts.original],
-    ["section.homeLeadClosed", need.zone], ["section.homeLeadClosed", need.last], ["section.homeLeadClosed", need.end], ["section.homeLeadClosed", facts.original],
-    ["section.steps.requestClosed.body", need.last], ["section.steps.requestClosed.body", need.zone], ["section.steps.requestClosed.body", facts.original],
+    ["section.homeLeadClosed", need.zone], ["section.homeLeadClosed", need.last], ["section.homeLeadClosed", facts.original],
+    ["section.steps.requestClosed.body", need.last], ["section.steps.requestClosed.body", facts.original],
     ["section.who.dExtended", facts.original],
     // announce builds with an extension: nothing can be requested, so the wording says the end date MOVED (never "for every store"), still names the clock and the charge rule
-    ["extended.barAnnounce", need.zone], ["extended.barAnnounce", need.last], ["extended.noteAnnounce", need.zone], ["extended.noteAnnounce", need.auto],
+    ["extended.barAnnounce", need.last], ["extended.noteAnnounce", need.auto],
     // the requests cutoff next to the offer and the closed wording of the "who it is for" lines
     ["section.intakeCutoff", facts.h24], ["section.intakeCutoffExt", facts.h24], ["section.intakeCutoffExt", facts.original],
     ["extended.note", facts.noteEvery], ["extended.note", facts.extPay], ["extended.note", facts.extAuto],
     // the request pages: the clock, the processors named next to the form (Cloudflare Turnstile and the e-mail provider placeholder), the legal links, the contract's neutral success text is the only success text
-    ["request.lead", need.last], ["request.lead", need.zone], ["request.notice", "Cloudflare Turnstile"], ["request.notice", "{mailProvider}"], ["request.notice", "route:privacy"],
+    ["request.lead", need.last], ["request.notice", "Cloudflare Turnstile"], ["request.notice", "{mailProvider}"], ["request.notice", "route:privacy"],
     ["request.consent", "route:terms"], ["request.consent", "route:privacy"], ["section.notice", "route:privacy"], ["request.notice", "route:privacy"],
     // the announce variants (P32 review): coming soon, never read as live; the dates, the clock and the renewal decision are still stated
-    ["section.homeLeadAnnounce", need.last], ["section.homeLeadAnnounce", need.end], ["section.homeLeadAnnounce", need.zone], ["section.homeLeadAnnounce", facts.decision],
-    ["section.leadAnnounce", need.last], ["section.leadAnnounce", need.end], ["section.leadAnnounce", need.zone], ["section.leadAnnounce", need.utc], ["section.leadAnnounce", need.auto], ["section.leadAnnounce", facts.decision],
-    ["section.steps.useAnnounce.body", need.last], ["section.steps.useAnnounce.body", need.zone], ["section.faq.free.aAnnounce", need.last], ["section.faq.free.aAnnounce", need.zone],
-    ["section.terms", facts.h24],
+    ["section.homeLeadAnnounce", need.last], ["section.homeLeadAnnounce", need.zone], ["section.homeLeadAnnounce", facts.decision],
+    ["section.leadAnnounce", need.last], ["section.leadAnnounce", need.zone], ["section.leadAnnounce", need.utc], ["section.leadAnnounce", need.auto], ["section.leadAnnounce", facts.decision],
+    ["section.steps.useAnnounce.body", need.last], ["section.faq.free.aAnnounce", need.last],     ["section.terms", facts.h24],
     // P34: the support lines under the Hero buttons and under the plan cards name the card (the "approved stores" and exact-instant facts stay on every card, required above)
     ["hero.support.noCard", need.card], ["pricing.support.noCard", need.card],
   ]) if (!has(path, tok)) problems.push(`${locale}: ea.${path} must contain "${tok}"`);
@@ -185,7 +180,10 @@ export function eaDisclosureProblems(locale, ea, step = 0) {
   for (const k of ["noCard", "manual", "regular"]) if (!ea.pricing?.support?.[k]) problems.push(`${locale}: ea.pricing.support.${k} is missing`);
   for (const p of ["hero.support.manual", "pricing.support.manual"]) if (nb(p.split(".").reduce((a, k) => a?.[k], ea) || "") !== nb(EA_MANUAL_PHRASE[locale])) problems.push(`${locale}: ea.${p} must be exactly "${EA_MANUAL_PHRASE[locale]}"`);
   if (nb(ea.hero?.support?.limited || "") !== nb(EA_LIMITED_PHRASE[locale])) problems.push(`${locale}: ea.hero.support.limited must be exactly "${EA_LIMITED_PHRASE[locale]}" (no number, countdown or urgency)`);
-  if (ea.hero?.badgeTagAnnounce === ea.hero?.badgeTag || ea.bar?.announce === ea.bar?.live) problems.push(`${locale}: the announce badge and bar must differ from the open ones (an announce page must not read as live)`);
+  // P36 (owner copy): the bar and the Hero pill are the same short offer text in announce and open; an announce page still must not read as live: the bar LINK and the Hero status line say that requests are not open yet and differ from the open wording
+  if (!ea.bar?.linkAnnounce || ea.bar.linkAnnounce === ea.bar.link || !ea.hero?.ctaAnnounce || ea.hero.ctaAnnounce === ea.hero.ctaOpen || !ea.plan?.ctaAnnounce || ea.plan.ctaAnnounce === ea.plan.ctaOpen) problems.push(`${locale}: the announce bar link and the announce status lines must differ from the open ones (an announce page must not read as live)`);
+  // P36: the Hero pill no longer carries "for approved stores": the approval requirement is the Hero support line right under the buttons, and the bar above says it in full
+  for (const k of ["noAuto", "approval"]) if (!ea.hero?.support?.[k]) problems.push(`${locale}: ea.hero.support.${k} is missing`);
   if (ea.hero && "badgeAnnounce" in ea.hero) problems.push(`${locale}: ea.hero.badgeAnnounce exists: the P34 pill is badgeTag / badgeTagAnnounce plus badge`);
   // e-mail may be mentioned only as a best effort: the Control Plane has no working e-mail sender, so a promise of e-mail without "where we can" is false
   for (const p of ["section.reservation", "section.faq.extension.a"]) {
@@ -193,13 +191,24 @@ export function eaDisclosureProblems(locale, ea, step = 0) {
     if (/e-?mail|דוא״ל|correo|почт/i.test(v) && !v.includes(nb(facts.soft))) problems.push(`${locale}: ea.${p} promises e-mail without "${facts.soft}" (no e-mail sender exists yet)`);
   }
   // typography and register (Production 21 review R1-n3, n4): the clock moment never breaks between the word before "00:00" and the time (a no-break space), and Spanish addresses the merchant as usted throughout
-  const NBSP_RULES = { en: [/\bat 00:00/i, "the time 00:00 must follow \"at\" with a no-break space"], he: [/בשעה 00:00/, "00:00 must follow בשעה with a no-break space (a wrap left \"00:00,\" at the start of a line)"], es: [/a las 00:00/i, "00:00 must follow \"a las\" with no-break spaces"] };
+  const NBSP_RULES = { en: [/\bat 22:00/i, "the time 22:00 must follow \"at\" with a no-break space"], he: [/בשעה 22:00/, "22:00 must follow בשעה with a no-break space (a wrap left \"00:00,\" at the start of a line)"], es: [/a las 22:00/i, "22:00 must follow \"a las\" with no-break spaces"] };
   if (NBSP_RULES[locale]) for (const [p, v] of walk(ea, "", [])) if (NBSP_RULES[locale][0].test(v)) problems.push(`${locale}: ea.${p}: ${NBSP_RULES[locale][1]}`);
   if (locale === "es") for (const [p, v] of walk(ea, "", [])) if (/(?<!usted )\bcompra (el|un) plan/i.test(v)) problems.push(`es: ea.${p} uses an informal or ambiguous "compra" (write "usted compra")`);
   for (const p of ["extended.barAnnounce", "extended.noteAnnounce"]) { const v = nb(p.split(".").reduce((a, k) => a?.[k], ea) || ""); if (v.includes(nb(facts.extEvery)) || v.includes(nb(facts.noteEvery))) problems.push(`${locale}: ea.${p} must not say "for every store" (an announce build admits nobody)`); }
   for (const bad of FORBIDDEN_SENTENCES[locale]) for (const [p, v] of walk(ea, "", [])) if (v.includes(bad)) problems.push(`${locale}: ea.${p} must not say "${bad}" (the Plugin no longer shows a money-back message on a free grant)`);
   // no date token may be left unresolved in a resolved dictionary
-  for (const [p, v] of walk(ea, "", [])) if (/\{(lastDay|lastDayShort|endDate|firstLastDay)\}/.test(v)) problems.push(`${locale}: ea.${p} still contains an unresolved date token`);
+  for (const [p, v] of walk(ea, "", [])) if (/\{(lastDay|lastDayShort|endDate|firstLastDay|until)\}/.test(v)) problems.push(`${locale}: ea.${p} still contains an unresolved date token`);
+  // P36 (owner rule: global-first branding, UTC-based deadlines): no customer string names a country or a local time zone, none states the end as midnight, and none prints the day after the last day (the expiry is 22:00 UTC on the last day)
+  {
+    const GEO = /israel|israeli|jerusalem|ישראל|израил|asia\/jerusalem/i;
+    const MIDNIGHT = /\b00:00\b/;
+    const NEXTDAY = { en: /(?<!\d)january 1,? 2027/i, he: /(?<!\d)1 בינואר 2027/, es: /(?<!\d)1 de enero de 2027/i, ru: /(?<!\d)1 января 2027/i }[locale];
+    for (const [p, v] of walk(ea, "", [])) {
+      if (GEO.test(v)) problems.push(`${locale}: ea.${p} names a country or local time zone (the deadline is stated in UTC only)`);
+      if (MIDNIGHT.test(v)) problems.push(`${locale}: ea.${p} states a 00:00 end (the end instant is 22:00 UTC)`);
+      if (NEXTDAY && NEXTDAY.test(nb(v))) problems.push(`${locale}: ea.${p} prints the day after the last day without the UTC instant`);
+    }
+  }
   // every dictionary string must be non-empty
   for (const [p, v] of walk(ea, "", [])) if (!v.trim()) problems.push(`${locale}: ea.${p} is empty`);
   return problems;

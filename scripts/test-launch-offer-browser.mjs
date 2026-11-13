@@ -67,8 +67,8 @@ for (const mode of ["announce", "open"]) for (const l of LOCALES) for (const w o
       check(norm(g.h1) === norm(`${hero.titleLead} ${hero.titleAccent}`) && norm(g.lead) === norm(hero.lead), `${tag}: the Hero headline and subtitle are exactly the live P24 text`);
       const pillText = `${mode === "open" ? ea.hero.badgeTag : ea.hero.badgeTagAnnounce} ${ea.hero.badge}`;
       check(norm(g.badge).toLowerCase() === norm(pillText).toLowerCase(), `${tag}: the pill says "${pillText}" (tag, then the date line)`);
-      const want = mode === "open" ? [ea.hero.ctaOpen, hero.ctaPlans] : [ea.hero.ctaAnnounce, hero.ctaPlans];
-      check(g.acts.map((a) => norm(a.t)).join("|") === want.map(norm).join("|") && g.acts.every((a) => a.h >= 44) && g.acts.every((a) => a.bottom <= g.vh) && g.note === 0, `${tag}: Hero actions "${want.join('" and "')}" are above the fold, at least 44 px tall, and no old fine print (aicc-eanote)`);
+      const want = mode === "open" ? [ea.hero.ctaOpen, hero.ctaDemo, hero.ctaPlans] : [hero.ctaDemo, hero.ctaPlans]; // P36: Try Live Demo and See Pricing are the Hero actions in every mode
+      check(g.acts.map((a) => norm(a.t)).join("|") === want.map(norm).join("|") && g.acts.every((a) => a.h >= 44) && g.acts.every((a) => a.bottom <= g.vh) && g.acts.every((a) => a.tag === "A"), `${tag}: Hero actions "${want.join('" and "')}" are real links, above the fold and at least 44 px tall`);
       { // P34 (owner request, replacing the P32 "nothing after the action row"): the short support lines are the next element after the actions, one line each, above the fold
         const sp = await page.evaluate(() => {
           const acts = document.querySelector(".aicc-hero__copy > .aicc-hero-actions"), ul = acts.nextElementSibling;
@@ -77,18 +77,21 @@ for (const mode of ["announce", "open"]) for (const l of LOCALES) for (const w o
           const ar = acts.getBoundingClientRect(), ur = ul.getBoundingClientRect();
           return { lis, after: ur.top >= ar.bottom - 1, gap: Math.round(ur.top - ar.bottom), next: ul.nextElementSibling ? ul.nextElementSibling.className : null, fs: parseFloat(getComputedStyle(ul).fontSize), dir: getComputedStyle(ul).direction, iw: innerWidth };
         });
-        const wantS = [ea.hero.support.noCard, ea.hero.support.manual].map(norm);
-        check(sp && JSON.stringify(sp.lis.map((x) => norm(x.t))) === JSON.stringify(wantS) && sp.after && sp.next === null, `${tag}: right under the Hero actions (${sp ? sp.gap : "?"} px) the support lines "${wantS.join('", "')}" and nothing else`);
+        const wantS = [ea.hero.support.noCard, ea.hero.support.noAuto, ea.hero.support.approval].map(norm);
+        check(sp && JSON.stringify(sp.lis.map((x) => norm(x.t))) === JSON.stringify(wantS) && sp.after && sp.next === (mode === "announce" ? "aicc-eanote" : null), `${tag}: right under the Hero actions (${sp ? sp.gap : "?"} px) the support lines "${wantS.join('", "')}" and nothing else`);
         check(sp && sp.lis.every((x) => x.h <= x.lh * 1.5 + 2 && x.left >= 0 && x.right <= sp.iw) && sp.fs >= 13, `${tag}: each support line is a single line inside the viewport (${sp ? sp.lis.map((x) => Math.round(x.h)).join("/") : "?"} px, ${sp ? sp.fs : "?"} px text)`);
         check(sp && sp.lis.every((x) => x.bottom <= g.vh), `${tag}: the support lines are above the fold (${sp ? Math.round(Math.max(...sp.lis.map((x) => x.bottom))) : "?"} <= ${g.vh})`);
         if (l === "he") check(sp && sp.dir === "rtl", `${tag}: the support lines run right to left`);
       }
       check(g.reco, `${tag}: Reco and the Hero visual are present`);
       { // the date in the badge never breaks across lines (no-break spaces), at 390 px too
-        const lastNb = REQUIRED_DATES[l][0].last.replace(/ /g, "\u00a0");
+        const lastNb = REQUIRED_DATES[l][0].until.replace(/ /g, "\u00a0");
         const lines = await page.evaluate((d) => { const el = [...document.querySelectorAll(".aicc-eyebrow-pill")].find((e) => e.getClientRects().length); const w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT); for (let n = w.nextNode(); n; n = w.nextNode()) { const i = n.data.indexOf(d); if (i >= 0) { const r = document.createRange(); r.setStart(n, i); r.setEnd(n, i + d.length); return new Set([...r.getClientRects()].map((x) => Math.round(x.top))).size; } } return -1; }, lastNb);
         check(lines === 1, `${tag}: the date in the badge stays on one line (${lines === -1 ? "date not found" : lines + " line"})`); }
-      if (mode === "announce") check(g.acts[0].tag === "P", `${tag}: the announce request status is a plain paragraph, not a control`);
+      if (mode === "announce") {
+        const notes = await page.evaluate(() => [...document.querySelectorAll(".aicc-eanote")].filter((e) => e.getClientRects().length > 0).map((e) => ({ tag: e.tagName, cls: e.className, role: e.getAttribute("role"), tabindex: e.getAttribute("tabindex"), t: e.innerText.trim(), cursor: getComputedStyle(e).cursor, border: getComputedStyle(e).borderTopWidth, bg: getComputedStyle(e).backgroundColor })));
+        check(notes.length >= 2 && notes.every((n) => n.tag === "P" && !/aicc-btn/.test(n.cls) && !n.role && n.tabindex === null && norm(n.t) === norm(ea.hero.ctaAnnounce) && n.border === "0px" && n.bg === "rgba(0, 0, 0, 0)"), `${tag}: "${ea.hero.ctaAnnounce}" is plain text (${notes.length} places: no button class, no border, no fill, no role)`);
+      }
     }
     if (name === "pricing" || name === "home") { // P34: the card label and the support lines under the cards, visible; the Home guarantee line hidden while live
       const q = await page.evaluate(() => ({
@@ -96,9 +99,8 @@ for (const mode of ["announce", "open"]) for (const l of LOCALES) for (const w o
         sup: [...document.querySelectorAll('[data-ea-support="plans"] li')].filter((e) => e.getClientRects().length).map((e) => ({ t: e.innerText.trim(), h: e.getBoundingClientRect().height, lh: parseFloat(getComputedStyle(e).lineHeight) })),
         conf: [...document.querySelectorAll(".aicc-pricing-confidence")].some((e) => e.getClientRects().length > 0),
       }));
-      const wantP = [ea.pricing.support.noCard, ea.pricing.support.manual, ea.pricing.support.regular].map(norm);
       check(q.pills.length === 3 && q.pills.every((x) => norm(x) === norm(ea.plan.pill)), `${tag}: every card shows the label "${ea.plan.pill}"`);
-      check(JSON.stringify(q.sup.map((x) => norm(x.t))) === JSON.stringify(wantP), `${tag}: under the cards: "${wantP.join('", "')}"`);
+      check(q.sup.length === 0, `${tag}: no repeated support lines under the cards (P36: the cards carry the checks)`);
       check(q.sup.every((x) => x.h <= x.lh * (w === 390 ? 2.5 : 1.5) + 2), `${tag}: the support lines under the cards stay short (${q.sup.map((x) => Math.round(x.h)).join("/")} px)`);
       if (name === "home") check(!q.conf, `${tag}: the ordinary list with the 14-day guarantee line is not visible while the offer is live`);
     }
@@ -156,7 +158,7 @@ console.log("== hero parity: the launch hero against the ordinary P24 hero (only
     const heroCs = getComputedStyle(hero);
     // the skeleton: every class used inside the hero, minus the status variant of the announce button and the arrow icon of the request button
     // P34: and the classes of the two-part pill and of the support lines (the only additions the owner asked for; everything they do not touch is still compared)
-    const classes = [...new Set([...hero.querySelectorAll("*")].flatMap((e) => [...e.classList]))].filter((c) => !/^aicc-(btn--soon|eastatus|flip|eabadge|eabadge__tag|eabadge__text|easupport)$|^lucide/.test(c)).sort();
+    const classes = [...new Set([...hero.querySelectorAll("*")].flatMap((e) => [...e.classList]))].filter((c) => !/^aicc-(btn--soon|eastatus|flip|eabadge|eabadge__tag|eabadge__text|easupport|eanote)$|^lucide/.test(c)).sort();
     return {
       h1: { size: cs(h1, "fontSize"), lh: getComputedStyle(h1).lineHeight, mt: cs(h1, "marginTop"), ls: getComputedStyle(h1).letterSpacing }, lead: { size: cs(lead, "fontSize"), mt: cs(lead, "marginTop"), w: getComputedStyle(lead).maxWidth },
       actionsMt: cs(acts, "marginTop"), btnH: btns.map((b) => Math.round(r(b).height)), pb: heroCs.paddingBottom, minH: heroCs.minHeight === "0px" ? "0" : "set", display: heroCs.display, gridGap: getComputedStyle(grid).columnGap,
@@ -169,7 +171,8 @@ console.log("== hero parity: the launch hero against the ordinary P24 hero (only
   for (const l of ["en", "he", "ru"]) for (const [w, h] of VIEWS) for (const mode of ["open", "announce"]) {
     const o = await view("off", `${pre(l)}/`, w, { locale: l, h }); const a = await o.page.evaluate(probe); await o.ctx.close();
     const c = await view(mode, `${pre(l)}/`, w, { locale: l, h }); const b = await c.page.evaluate(probe); await c.ctx.close();
-    const same = JSON.stringify([a.h1, a.lead, a.actionsMt, a.btnH, a.pb, a.minH, a.display, a.gridGap, a.gapH1Lead, a.gapLeadActions, a.classes, a.ctaCount, a.secondaryBorder, a.anim, a.vis]) === JSON.stringify([b.h1, b.lead, b.actionsMt, b.btnH, b.pb, b.minH, b.display, b.gridGap, b.gapH1Lead, b.gapLeadActions, b.classes, b.ctaCount, b.secondaryBorder, b.anim, b.vis]);
+    const bOpen = mode === "open" ? { ...b, btnH: b.btnH.slice(1), ctaCount: b.ctaCount - 1 } : b; // P36: an OPEN Hero adds one real "Request Free Access" link before Try Live Demo and See Pricing; every other metric must equal the P24 Hero
+    const same = JSON.stringify([a.h1, a.lead, a.actionsMt, a.btnH, a.pb, a.minH, a.display, a.gridGap, a.gapH1Lead, a.gapLeadActions, a.classes, a.ctaCount, a.secondaryBorder, a.anim, a.vis]) === JSON.stringify([b.h1, b.lead, b.actionsMt, bOpen.btnH, b.pb, b.minH, b.display, b.gridGap, b.gapH1Lead, b.gapLeadActions, b.classes, bOpen.ctaCount, b.secondaryBorder, b.anim, b.vis]);
     check(same, `${mode} ${l} @${w}x${h}: the launch hero equals the P24 hero (headline ${b.h1.size}px/${b.h1.lh}, subtitle ${b.lead.size}px, gaps ${b.gapH1Lead}/${b.gapLeadActions}, buttons ${b.btnH.join("+")}, padding-bottom ${b.pb}, min-height ${b.minH})${same ? "" : " <> OFF " + JSON.stringify({ h1: a.h1, lead: a.lead, gaps: [a.gapH1Lead, a.gapLeadActions], btn: a.btnH, pb: a.pb, minH: a.minH })}`);
   }
 }
@@ -177,16 +180,22 @@ console.log("== hero parity: the launch hero against the ordinary P24 hero (only
 // ───────── P34: computed text contrast of the new elements (measured from the painted pixels: the text is made transparent, the background behind each text box is sampled) ─────────
 console.log("== P34 contrast: pill tag and date line, Hero support lines, card label, support lines under the cards (en, he; 1440 and 390; announce and open)");
 async function p34Contrast(page) {
-  const SEL = [".aicc-eabadge__tag", ".aicc-eabadge__text", '[data-ea-support="hero"] li span', ".aicc-plan [data-ea-pill] .aicc-badge", '[data-ea-support="plans"] li span'];
+  const SEL = [".aicc-eabadge__tag", ".aicc-eabadge__text", '[data-ea-support="hero"] li span', ".aicc-plan [data-ea-pill] .aicc-badge", ".aicc-plan__checks li span", ".aicc-plan__free-until", ".aicc-plan__regular-line", ".aicc-plan__regular-label", ".aicc-eanote span"];
   const items = await page.evaluate((SEL) => {
     const pf = (c) => { const p = c.match(/rgba?\(([^)]+)\)/)[1].split(/[ ,/]+/).filter(Boolean).map(Number); return [p[0], p[1], p[2], p[3] === undefined ? 1 : p[3]]; };
+    // P36: the opaque background colour behind an element, or null when a gradient/image paints behind it first (then the pixels are sampled instead)
+    const solidBg = (el) => { for (let n = el; n; n = n.parentElement) { const c = getComputedStyle(n); if (c.backgroundImage && c.backgroundImage !== "none") return null; const b = pf(c.backgroundColor); if (b[3] === 1) return b.slice(0, 3); if (b[3] > 0) return null; } return [255, 255, 255]; };
     // the boxes of the TEXT itself (a Range over the element's text), not the element box: the curved corners of a pill lie outside its painted background
-    return SEL.flatMap((sel) => [...document.querySelectorAll(sel)].filter((e) => e.getClientRects().length).flatMap((e) => { const cs = getComputedStyle(e); const rg = document.createRange(); rg.selectNodeContents(e); return [...rg.getClientRects()].filter((r) => r.width > 2 && r.height > 2).map((r) => ({ sel, t: e.innerText.trim().slice(0, 40), fg: pf(cs.color), fs: parseFloat(cs.fontSize), fw: parseInt(cs.fontWeight), y: r.top + scrollY, x: r.left + scrollX, w: r.width, h: r.height })); }));
+    return SEL.flatMap((sel) => [...document.querySelectorAll(sel)].filter((e) => e.getClientRects().length).flatMap((e) => { const cs = getComputedStyle(e); const rg = document.createRange(); rg.selectNodeContents(e); return [...rg.getClientRects()].filter((r) => r.width > 2 && r.height > 2).map((r) => ({ sel, t: e.innerText.trim().slice(0, 40), fg: pf(cs.color), bg: solidBg(e), fs: parseFloat(cs.fontSize), fw: parseInt(cs.fontWeight), y: r.top + scrollY, x: r.left + scrollX, w: r.width, h: r.height })); }));
   }, SEL);
-  await page.addStyleTag({ content: "*,*::before,*::after{color:transparent!important;-webkit-text-fill-color:transparent!important;text-shadow:none!important} svg{visibility:hidden!important}" });
+  // P36: the FREE word is gradient text (a clipped BACKGROUND, so transparent text does not remove it): it is measured separately below and hidden here so it cannot pollute a neighbouring sample
+  await page.addStyleTag({ content: "*,*::before,*::after{color:transparent!important;-webkit-text-fill-color:transparent!important;text-shadow:none!important} svg{visibility:hidden!important} .aicc-plan__free-word{background:none!important}" });
+  // P36: fixed and sticky layers (the header, the language hint) can sit over a measured text box at some scroll positions and corrupt the pixel sample: they are hidden for the measurement only
+  await page.evaluate(() => { for (const e of document.querySelectorAll("*")) { const p = getComputedStyle(e).position; if (p === "fixed" || p === "sticky") e.style.visibility = "hidden"; } });
   await page.waitForTimeout(150);
-  const out = [];
+  const out = [], direct = [];
   for (const it of items) {
+    if (it.bg) { direct.push({ sel: it.sel, t: it.t, fg: it.fg, bg: it.bg, fs: it.fs, fw: it.fw }); continue; }
     await page.evaluate((y) => scrollTo(0, Math.max(0, y - 200)), it.y);
     const sy = await page.evaluate(() => scrollY);
     const buf = await page.screenshot({ clip: { x: Math.max(0, it.x), y: it.y - sy, width: Math.max(2, it.w), height: Math.max(2, it.h) }, animations: "disabled" });
@@ -207,15 +216,26 @@ async function p34Contrast(page) {
     return r;
   }, out);
   await pg.close();
+  {
+    const lumv = ([r, g, b]) => { const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }; return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b); };
+    for (const d of direct) { const a = d.fg[3], fg = [0, 1, 2].map((i) => d.fg[i] * a + d.bg[i] * (1 - a)); const [x, y] = [lumv(fg), lumv(d.bg)].sort((p, q) => q - p); res.push({ sel: d.sel, t: d.t, ratio: +(((x + 0.05) / (y + 0.05)).toFixed(2)), large: d.fs >= 24 || (d.fs >= 18.66 && d.fw >= 700) }); }
+  }
   return res;
 }
 for (const mode of ["announce", "open"]) for (const l of ["en", "he"]) for (const w of [1440, 390]) for (const route of ["/", "/pricing/"]) {
   const { ctx, page } = await view(mode, `${pre(l)}${route}`, w, { locale: l, h: w === 390 ? 844 : 900 });
+  { // P36: the FREE word is brand-gradient TEXT (transparent fill), so it cannot be sampled from pixels: both ends of the gradient must reach 3:1 (large text) against the card background
+    const g = await page.evaluate(() => { const e = document.querySelector(".aicc-plan .aicc-plan__free-word"); if (!e || !e.getClientRects().length) return null; const cs = getComputedStyle(e); let bg = null; for (let n = e; n && !bg; n = n.parentElement) { const c = getComputedStyle(n).backgroundColor; if (c && c !== "rgba(0, 0, 0, 0)") bg = c; } return { img: cs.backgroundImage, fs: parseFloat(cs.fontSize), fw: Number(cs.fontWeight), bg }; });
+    const px = (c) => c.match(/rgba?\(([^)]+)\)/)[1].split(/[ ,/]+/).filter(Boolean).map(Number).slice(0, 3);
+    const lum = ([r, gg, b]) => { const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }; return 0.2126 * f(r) + 0.7152 * f(gg) + 0.0722 * f(b); };
+    const ratio = (a, b) => { const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p); return (x + 0.05) / (y + 0.05); };
+    if (g) { const ends = (g.img.match(/rgba?\([^)]+\)/g) || []).map(px); const worst = Math.min(...ends.map((c) => ratio(c, px(g.bg)))); check(ends.length >= 2 && g.fs >= 24 && worst >= 3, `${mode} ${l}${route} @${w}: the FREE gradient text keeps ${worst.toFixed(2)}:1 or more against the card (large text needs 3:1; ${g.fs}px)`); }
+  }
   const res = await p34Contrast(page);
-  const need = route === "/" ? 5 : 2; // Home: pill (2), Hero support, card label, plan support; Pricing: card label, plan support
+  const need = route === "/" ? [".aicc-eabadge__tag", ".aicc-eabadge__text", '[data-ea-support="hero"] li span', ".aicc-plan [data-ea-pill] .aicc-badge", ".aicc-plan__checks li span", ".aicc-plan__free-until", ".aicc-plan__regular-line", ".aicc-plan__regular-label"] : [".aicc-plan [data-ea-pill] .aicc-badge", ".aicc-plan__checks li span", ".aicc-plan__free-until", ".aicc-plan__regular-line", ".aicc-plan__regular-label"]; // the measured text kinds of the P36 design (the FREE word is a gradient: measured separately below)
   const kinds = new Set(res.map((r) => r.sel));
   const low = res.filter((r) => r.ratio < (r.large ? 3 : 4.5));
-  check(kinds.size === need && low.length === 0, `${mode} ${l}${route} @${w}: ${res.length} new text runs measured, lowest ${Math.min(...res.map((r) => r.ratio)).toFixed(2)}:1 (need 4.5:1)${low.length ? " -> " + low.slice(0, 3).map((r) => `${r.ratio} "${r.t}" ${r.sel}`).join(" | ") : ""}`);
+  check(need.every((k) => kinds.has(k)) && (mode !== "announce" || kinds.has(".aicc-eanote span")) && low.length === 0, `${mode} ${l}${route} @${w}: ${res.length} new text runs measured, lowest ${Math.min(...res.map((r) => r.ratio)).toFixed(2)}:1 (need 4.5:1)${low.length ? " -> " + low.slice(0, 3).map((r) => `${r.ratio} "${r.t}" ${r.sel}`).join(" | ") : ""}`);
   await ctx.close();
 }
 

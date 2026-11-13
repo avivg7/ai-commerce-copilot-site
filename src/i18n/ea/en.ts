@@ -9,7 +9,7 @@
  *
  * Every sentence states a fact that is true of the designed flow: no payment details are asked for, nothing converts or bills by itself, the end date is the same for
  * everyone, paid purchases are not open, and nothing promises that a paid plan will be available in 2027. Do not add a claim here before the Control Plane behaviour it describes is built and tested.
- * Dates are written out in words on purpose: the same instant is 2027-01-01 00:00 in Israel (UTC+2), which is why the last day is 31 December 2026 and access ends 1 January 2027.
+ * P36 (owner rule: global-first, UTC deadlines): customer copy states the deadline in UTC only ("{lastDay}" and "22:00 UTC"); the authoritative instant is 2026-12-31T22:00:00Z (src/lib/earlyAccess.ts). No local time zone and no 1 January date is ever written in customer copy.
  * The dates are TOKENS ({lastDay}, {lastDayShort}, {endDate}, {firstLastDay}), resolved per extension step (0 = initial end, 1, 2) from src/i18n/eaTokens.ts. There is ONE copy set;
  * an extended build says the new dates in the same sentences and adds `extended.*`. `reservation` is permanent and step-independent.
  */
@@ -20,40 +20,43 @@ export const eaEn = {
     pricingDescription: "Every plan has the full AICC product. Regular prices: Solo {priceSolo}, Studio {priceStudio}, Agency {priceAgency} per year, priced by store count. No automatic renewal.",
   },
   // The slim announcement bar under the header, on every page. P34 (owner wording): one short line. The bar names the last day only; its link leads to the explanation, and the plan
-  // cards and the explanation state the exact end instant (00:00 on {endDate}, Israel time = 22:00 UTC on {lastDayShort}) and that requests are reviewed.
+  // cards and the explanation state the exact end instant (22:00 UTC on {lastDay}) and that requests are reviewed.
   bar: {
     label: "Launch offer announcement",
-    live: "Launch Offer: Free for approved stores until {lastDay}",
-    announce: "Launch Offer coming soon: Free for approved stores until {lastDay}",
+    live: "Launch Offer: Free for approved stores until {until}",
+    announce: "Launch Offer: Free for approved stores until {until}",
     link: "How it works",
+    linkAnnounce: "Requests coming soon",
   },
   // Only an EXTENDED build: the bar line (OPEN mode) and one short paragraph in the explanation. Both name the clock, say that payment details are not taken and that nothing converts or is charged by itself.
   extended: {
-    bar: "The launch offer has been extended for every store: free until {lastDay}, Israel time.",
-    barAnnounce: "Launch offer coming soon and its end date has moved: free for approved stores until {lastDay}, Israel time.",
-    noteAnnounce: "The launch offer was first announced to end on {firstLastDay}, Israel time. The end date has moved. Nothing can be requested yet, no payment is taken and nothing converts or is charged automatically.",
-    barClosed: "The launch offer has been extended for every store already in it: free until {lastDay}, Israel time. New requests closed at the original end date.",
+    bar: "The launch offer has been extended for every store: free until {lastDay} at 22:00 UTC.",
+    barAnnounce: "Launch offer coming soon and its end date has moved: free for approved stores until {lastDay} at 22:00 UTC.",
+    noteAnnounce: "The launch offer was first announced to end on {firstLastDay} at 22:00 UTC. The end date has moved. Nothing can be requested yet, no payment is taken and nothing converts or is charged automatically.",
+    barClosed: "The launch offer has been extended for every store already in it: free until {lastDay} at 22:00 UTC. New requests closed at the original end date.",
     closedNote: "New requests closed at the original end date. The extension is for stores that were already in the launch offer.",
-    note: "The launch offer was first announced to end on {firstLastDay}, Israel time. We extended it for every launch-offer store. Nothing else changed: no payment is taken and nothing converts or is charged automatically.",
+    note: "The launch offer was first announced to end on {firstLastDay} at 22:00 UTC. We extended it for every launch-offer store. Nothing else changed: no payment is taken and nothing converts or is charged automatically.",
   },
   // Shown INSTEAD of the offer once the end date has passed (set by the page script; see EA_HEAD_SCRIPT).
   after: {
     title: "The launch offer has ended.",
-    body: "The launch offer ended on {endDate}, at 00:00 Israel time. Continued service needs an explicit renewal decision, and paid purchases are not open yet. Nothing is charged automatically.",
+    body: "The launch offer ended on {lastDay} at 22:00 UTC. Continued service needs an explicit renewal decision, and paid purchases are not open yet. Nothing is charged automatically.",
     cta: "See the plans",
   },
   // The Home hero in a campaign build. P34 (owner request): the pill reads [badgeTag] badge; under the buttons there are only the short support lines below (never a paragraph or a
   // disclaimer: the full facts are on the cards, in the bar link and in the explanation).
   hero: {
     badgeTag: "Launch Offer",
-    badgeTagAnnounce: "Launch Offer coming soon",
+    badgeTagAnnounce: "Launch Offer",
     // the pill is not next to the cards, so it carries the approved-stores qualifier itself (review P34-4)
-    badge: "Free for approved stores until {lastDay}",
+    badge: "FREE until {until}",
     ctaOpen: "Request Free Access",
-    ctaAnnounce: "Free access requests open soon",
+    ctaAnnounce: "Free access requests coming soon",
     supportLabel: "Launch offer at a glance",
     support: {
       noCard: "No credit card required",
+      noAuto: "No automatic renewal",
+      approval: "Approval required",
       // true: nothing renews or is charged by itself; continuing needs the merchant's explicit renewal decision
       manual: "Manual renewal only",
       // rendered ONLY with NEXT_PUBLIC_AICC_EA_LIMITED_NOTE=on (owner attestation required by launch:check): each request is reviewed, approvals are capped, the offer can close at any time
@@ -65,19 +68,21 @@ export const eaEn = {
   plan: {
     // the small label on every plan card (P34)
     pill: "Launch Offer",
-    free: "Free until {lastDay}, Israel time",
+    free: "Free until {lastDay}",
+    freeWord: "FREE",
+    freeUntil: "until {until}",
     // review P34-5: "planned", because no plan has ever been sold or charged at this price
-    regular: "Planned regular price, not charged during the launch offer:",
+    regular: "Planned regular price, not charged during the launch offer",
     // Used when the strike-through is off (the default): the regular price as a plain fact, never as a reduction.
-    planned: "Planned regular price:",
+    planned: "Planned regular price",
     regularPer: "a year",
-    approved: "Available to approved stores",
+    approved: "Approved stores only",
     noCard: "No credit card required",
     noAuto: "No automatic renewal",
-    term: "Launch offer term: until {lastDay}, Israel time",
-    ends: "Access ends at 00:00 on {endDate}, Israel time (22:00 UTC on {lastDayShort}).",
+    term: "Launch offer term: until {lastDay}",
+    ends: "Access ends {lastDay} at 22:00 UTC.",
     ctaOpen: "Request Free Access",
-    ctaAnnounce: "Free access requests open soon",
+    ctaAnnounce: "Free access requests coming soon",
     ctaClosed: "New requests are closed",
   },
   // The terms that apply to every plan, said once under the plan cards (Pricing) so the cards stay short.
@@ -95,12 +100,12 @@ export const eaEn = {
   },
   // The explanation block on the Pricing page (#early-access) and its short form on Home and in the Pricing hero.
   section: {
-    title: "Launch offer: free until {lastDay}, Israel time",
-    lead: "Use the full product on your WooCommerce store at no cost until {lastDay}. Access ends at 00:00 on {endDate}, Israel time (22:00 UTC on {lastDay}). Continued service after that needs your explicit renewal decision. Nothing is charged automatically.",
-    leadAnnounce: "When requests open, approved stores can use the full product on their WooCommerce store at no cost until {lastDay}. Access will end at 00:00 on {endDate}, Israel time (22:00 UTC on {lastDay}). Continued service after that will need your explicit renewal decision. Nothing is charged automatically.",
-    homeLead: "During the launch offer every plan is free for approved stores until {lastDay}, Israel time. Access ends on {endDate}, and continued service after that needs your explicit renewal decision.",
-    homeLeadAnnounce: "The launch offer is coming soon: every plan will be free for approved stores until {lastDay}, Israel time. Requests are not open yet. Access will end on {endDate}, and continued service after that will need your explicit renewal decision.",
-    homeLeadClosed: "The launch offer has been extended for stores already in it: every plan is free until {lastDay}, Israel time. Access ends on {endDate}, and continued service after that needs your explicit renewal decision. New requests closed at the original end date.",
+    title: "Launch Offer: Free Until {lastDay}",
+    lead: "Approved WooCommerce stores can use AICC at no cost through {lastDay}. Access ends at 22:00 UTC on that date. There is no automatic renewal or automatic charge. Continued access requires your explicit renewal decision.",
+    leadAnnounce: "Approved WooCommerce stores will be able to use AICC at no cost through {lastDay} once access requests open. Requests are not open yet. Access ends at 22:00 UTC on that date. There is no automatic renewal or automatic charge. Continued access will require your explicit renewal decision.",
+    homeLead: "During the launch offer every plan is free for approved stores until {lastDay}. Access ends at 22:00 UTC on that date, and continued service after that needs your explicit renewal decision.",
+    homeLeadAnnounce: "The launch offer is coming soon: every plan will be free for approved stores until {lastDay}. Requests are not open yet. Access will end at 22:00 UTC on that date, and continued service after that will need your explicit renewal decision.",
+    homeLeadClosed: "The launch offer has been extended for stores already in it: every plan is free until {lastDay}. Access ends at 22:00 UTC on that date, and continued service after that needs your explicit renewal decision. New requests closed at the original end date.",
     intakeCutoff: "Requests close 24 hours before it ends.",
     intakeCutoffExt: "Requests close 24 hours before the original end date.",
     link: "How the launch offer works",
@@ -108,22 +113,22 @@ export const eaEn = {
     steps: {
       request: { title: "Request access", body: "Ask for free access for your WooCommerce store. No credit card is needed. We review each request." },
       requestAnnounce: { title: "Requests open soon", body: "Free access requests are not open yet. When they open, you ask for access for your WooCommerce store. No credit card is needed. We review each request." },
-      requestClosed: { title: "New requests are closed", body: "Requests closed at the original end date. Stores already in the launch offer keep access until {lastDay}, Israel time." },
-      use: { title: "Use everything", body: "Connect your store and use the full product until {lastDay}, Israel time." },
-      useAnnounce: { title: "Use everything", body: "Once approved, connect your store and use the full product until {lastDay}, Israel time." },
-      decide: { title: "Decide at the end", body: "At 00:00 on {endDate}, Israel time, access ends and your store keeps selling as usual. Continued service needs your explicit renewal decision, and paid purchases are not open yet. Nothing is charged automatically." },
+      requestClosed: { title: "New requests are closed", body: "Requests closed at the original end date. Stores already in the launch offer keep access until {lastDay}." },
+      use: { title: "Use everything", body: "Connect your store and use the full product until {lastDay}." },
+      useAnnounce: { title: "Use everything", body: "Once approved, connect your store and use the full product until {lastDay}." },
+      decide: { title: "Decide at the end", body: "At 22:00 UTC on {lastDay}, access ends and your store keeps selling as usual. Continued service needs your explicit renewal decision, and paid purchases are not open yet. Nothing is charged automatically." },
     },
     whoTitle: "Who it is for",
     who: {
       a: "WooCommerce stores that can connect to AICC (WordPress 6.0, WooCommerce 7.0 and PHP 7.4 or newer).",
-      b: "Every approved store ends at the same moment, 00:00 on {endDate}, Israel time, whatever day it joined.",
+      b: "Every approved store ends at the same moment, 22:00 UTC on {lastDay}, whatever day it joined.",
       c: "One launch offer per account, and we may check that a store does not receive it twice. Store limits follow the plan you ask for: Solo 1 store, Studio up to 3, Agency up to 10. Before the end you can ask us to change the plan (see the questions below).",
       d: "We review each request and not every request will be approved. The launch offer can close to new requests at any time, and it is not granted in the final 24 hours before it ends.",
       dExtended: "We review each request and not every request will be approved. The launch offer can close to new requests at any time. It is not granted in the final 24 hours before the original end date, and new requests are closed from that date.",
       cClosed: "Store limits follow the plan: Solo 1 store, Studio up to 3, Agency up to 10. Before the end you can ask us to change the plan (see the questions below).",
       dClosed: "New requests are closed. The launch offer is no longer open to new stores.",
     },
-    endTitle: "What happens on {endDate}",
+    endTitle: "What happens when it ends",
     end: {
       a: "AICC stops showing on your storefront. Your store, orders and checkout carry on as usual.",
       b: "Your AICC data is kept under the retention rules on the Data & Trust page, not deleted on that day.",
@@ -135,15 +140,15 @@ export const eaEn = {
     reservation: "If we extend the launch offer, we do it for every launch-offer store at once and we say so on this page before the end date; where we can, we also tell you by e-mail. An extension never starts a charge. We cannot extend a single store's access.",
     faqTitle: "Launch offer questions",
     faq: {
-      free: { q: "Is the launch offer really free?", a: "Yes, for approved stores until {lastDay}, Israel time. We do not ask for payment details, and nothing is charged.", aAnnounce: "Yes, once requests open: approved stores will have access at no cost until {lastDay}, Israel time. We do not ask for payment details, and nothing is charged." },
+      free: { q: "Is the launch offer really free?", a: "Yes, for approved stores until {lastDay}. We do not ask for payment details, and nothing is charged.", aAnnounce: "Yes, once requests open: approved stores will have access at no cost until {lastDay}. We do not ask for payment details, and nothing is charged." },
       eligible: { q: "Who can get free access?", a: "A live WooCommerce store that you operate. We review each request, and not every request will be approved." },
-      end: { q: "What happens on {endDate}?", a: "Access ends for every launch-offer store at the same moment, 00:00 Israel time. AICC stops showing on your storefront and your store keeps working as usual. Continued service needs your explicit renewal decision, and paid purchases are not open yet." },
+      end: { q: "What happens on {lastDayShort}?", a: "Access ends for every launch-offer store at the same moment, 22:00 UTC. AICC stops showing on your storefront and your store keeps working as usual. Continued service needs your explicit renewal decision, and paid purchases are not open yet." },
       auto: { q: "Will I be charged automatically?", a: "No. There is no card on file, no automatic renewal and no automatic switch to a paid plan." },
       continue: { q: "How do I continue after the launch offer?", a: "After the offer ends, continued service requires an explicit renewal decision from you. Paid purchases are not open yet, so there is nothing to buy today, and we explain the steps before anything can be bought. To hold a different plan, ask us before the launch offer ends (see \"Can I change my plan?\")." },
       change: { q: "Can I change my plan?", a: "Yes, before the launch offer ends. Write to {contactEmail} from your account's e-mail address and we change the plan of your launch-offer store at no charge. The end date stays the same. Store limits follow the plan, so a smaller plan needs fewer connected stores." },
       extension: { q: "Could the launch offer be extended?", a: "If we extend the launch offer, we do it for every launch-offer store at once and we say so on this page before the end date; where we can, we also tell you by e-mail. An extension never starts a charge. We cannot extend a single store's access." },
       guarantee: { q: "Does the money-back guarantee apply to the launch offer?", a: "No. The 14-day money-back guarantee applies only to eligible paid purchases, as set out in the [Refund Policy](route:refund-policy), not to the free launch offer. No payment is taken during the launch offer, so there is nothing to refund. When paid purchases open, the [Refund Policy](route:refund-policy) applies to eligible paid purchases." },
-      plugin: { q: "What will I see in the plugin when the launch offer ends?", a: "At 00:00 on {endDate} (Israel time) the plugin shows that your plan has expired, with a \"Renew plan\" button, and AICC stops showing on your storefront. Your store keeps selling as usual. The plugin does not warn you beforehand, so note the date; your account page shows it too." },
+      plugin: { q: "What will I see in the plugin when the launch offer ends?", a: "At 22:00 UTC on {lastDay} the plugin shows that your plan has expired, with a \"Renew plan\" button, and AICC stops showing on your storefront. Your store keeps selling as usual. The plugin does not warn you beforehand, so note the date; your account page shows it too." },
     },
   },
   // The request pages (/request-access/ and /request-access/confirm/). They exist only in an OPEN build and talk only to the Control Plane routes of the intake contract.
@@ -152,7 +157,7 @@ export const eaEn = {
     verifyBanner: "Verification page, not public",
     pageTitle: "Request free access",
     title: "Request free access",
-    lead: "Tell us about your WooCommerce store. The launch offer is free for approved stores until {lastDay}, Israel time. We review each request, and nothing is granted automatically.",
+    lead: "Tell us about your WooCommerce store. The launch offer is free for approved stores until {lastDay}. We review each request, and nothing is granted automatically.",
     checking: "Checking whether requests are open...",
     closedTitle: "Requests are not open at the moment",
     closedBody: "Requests are not open at the moment. Please come back later.",

@@ -21,7 +21,7 @@ import { loadDictionaries, loadTs } from "./lib/load.mjs";
 const args = process.argv.slice(2);
 const arg = (n) => { const i = args.indexOf(`--${n}`); return i >= 0 ? path.resolve(args[i + 1]) : undefined; };
 const dirs = { off: arg("off"), announce: arg("announce"), open: arg("open"), verify: arg("verify") };
-const BASE = arg("base"), OFF_SUB = arg("off-subswitches"), LIMITED = arg("limited"), ANN_LIMITED = arg("announce-limited");
+const BASE = arg("base"), OFF_SUB = arg("off-subswitches"), LIMITED = arg("limited"), ANN_LIMITED = arg("announce-limited"), ANN_STRIKE = arg("announce-strike");
 if (!dirs.off || !dirs.announce || !dirs.open || !dirs.verify) { console.error("usage: --off <dir> --announce <dir> --open <dir> --verify <dir> [--base <dir>]"); process.exit(2); }
 
 const LOCALES = ["en", "he", "es", "ru"];
@@ -34,7 +34,8 @@ const check = (cond, msg) => { total++; if (!cond) { failed++; console.error("  
 
 const nb = (t) => String(t).replace(/ |&nbsp;/g, " ");
 const decode = (t) => t.replace(/&#x27;|&#39;/g, "'").replace(/&quot;/g, '"').replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&nbsp;/g, " ");
-const norm = (t) => nb(decode(String(t))).replace(/\s+/g, " ").trim();
+// P36: the renderer wraps Latin runs (UTC, AICC) in <bdi lang="en">; stripping tags to spaces leaves "UTC ." for "UTC.", so a space before punctuation is not a difference
+const norm = (t) => nb(decode(String(t))).replace(/\s+/g, " ").replace(/ ([.,;:!?])/g, "$1").trim();
 const htmlOf = (root, rel) => { const f = path.join(root, rel); return fs.existsSync(f) ? fs.readFileSync(f, "utf8") : null; };
 const visibleText = (h) => norm(h.replace(/<script[\s\S]*?<\/script>/g, " ").replace(/<style[\s\S]*?<\/style>/g, " ").replace(/<[^>]+>/g, " "));
 const segments = (h) => new Set(h.replace(/<script[\s\S]*?<\/script>/g, "<").replace(/<style[\s\S]*?<\/style>/g, "<").split(/<[^>]+>/).map(norm).filter((x) => x.length > 2));
@@ -124,24 +125,22 @@ function campaignChecks(mode, root) {
       check(norm(t1 || "") === norm(tag) && norm(t2 || "") === norm(e.hero.badge), `${l}: the Hero pill reads [${tag}] ${e.hero.badge} (${mode === "open" ? "the owner's line" : "the coming-soon tag: nothing reads as live"})`);
     }
     check(NAME[l].test(e.offerName) && NAME[l].test(norm(e.bar.live)) && NAME[l].test(norm(e.hero.badgeTag)) && NAME[l].test(norm(e.hero.badgeTagAnnounce)) && NAME[l].test(norm(e.plan.pill)) && NAME[l].test(norm(e.section.title)) && NAME[l].test(norm(e.section.faqTitle)), `${l}: one offer name (${e.offerName}) on the bar, the pill, the card label, the explanation title and the questions`);
-    check(!/aicc-eanote/.test(home) && !/aicc-eanote/.test(pricing), `${l}: no old fine print under the Hero buttons (aicc-eanote absent)`);
+    { // P36: while requests are not open the status is PLAIN TEXT (a <p class="aicc-eanote">: no button class, no role, not in a link); an OPEN build has none
+      const notes = [...nb(home).matchAll(/<p class="aicc-eanote"[^>]*>([\s\S]*?)<\/p>/g)].map((m) => ({ tag: m[0], text: norm(m[1].replace(/<[^>]+>/g, " ")) }));
+      if (mode === "announce") check(notes.length >= 2 && notes.every((n) => n.text === norm(e.hero.ctaAnnounce) && !/aicc-btn|role=|href=/.test(n.tag)), `${l}: the "requests coming soon" status is plain text (${notes.length} notes on Home: under the Hero actions and under the plan cards), never a button`);
+      else check(notes.length === 0, `${l}: an open build shows no "coming soon" status`);
+    }
     { // P34 (owner request, replacing the P32 "nothing under the buttons" decision): exactly the short support lines follow the Hero actions, inside the Hero copy, before the visual
       const h = nb(home), iA = h.indexOf('class="aicc-hero-actions'), iS = h.indexOf('data-ea-support="hero"'), iV = h.indexOf("aicc-hero__visual");
       const ul = h.slice(h.lastIndexOf("<ul", iS), h.indexOf("</ul>", iS));
       const items = [...ul.matchAll(/<li[^>]*>[\s\S]*?<span>([^<]*)<\/span><\/li>/g)].map((m) => norm(m[1]));
-      const want = [e.hero.support.noCard, e.hero.support.manual, ...(root === LIMITED ? [e.hero.support.limited] : [])].map(norm);
+      const want = [e.hero.support.noCard, e.hero.support.noAuto, e.hero.support.approval, ...(root === LIMITED ? [e.hero.support.limited] : [])].map(norm);
       check(iA > 0 && iS > iA && iS < iV && (h.match(/data-ea-support="hero"/g) || []).length === 1 && JSON.stringify(items) === JSON.stringify(want), `${l}: under the Hero buttons: ${want.map((x) => `"${x}"`).join(", ")} (one short list, nothing else)`);
       check(items.every((x) => x.length <= 64 && !/[.!;:]/.test(x) && !/\d/.test(x)), `${l}: every Hero support line is one short line with no number`);
       check(root === LIMITED ? /data-ea-limited/.test(ul) && /<li class="aicc-easupport__chip"><span>[^<]*<\/span><\/li>/.test(ul) : !/data-ea-limited/.test(h) && !th.includes(norm(e.hero.support.limited)), `${l}: "${e.hero.support.limited}" ${root === LIMITED ? "is shown as a plain chip without a check icon (NEXT_PUBLIC_AICC_EA_LIMITED_NOTE=on, OPEN)" : root === ANN_LIMITED ? "is absent from an ANNOUNCE build even with its switch on" : "is absent (its switch is off by default)"}`);
     }
-    { // P34: the three support lines under the plan cards, on Home and on Pricing; the card label on every card
-      const want = [e.pricing.support.noCard, e.pricing.support.manual, e.pricing.support.regular].map(norm);
-      for (const [name, page] of [["Home", home], ["Pricing", pricing]]) {
-        const h = nb(page), i = h.indexOf('data-ea-support="plans"');
-        const ul = i < 0 ? "" : h.slice(h.lastIndexOf("<ul", i), h.indexOf("</ul>", i));
-        const items = [...ul.matchAll(/<li>[\s\S]*?<span>([^<]*)<\/span><\/li>/g)].map((m) => norm(m[1]));
-        check(JSON.stringify(items) === JSON.stringify(want) && h.indexOf("<article") < i && (h.match(/data-ea-support="plans"/g) || []).length === 1, `${l}: ${name}: under the plan cards: ${want.map((x) => `"${x}"`).join(", ")}`);
-      }
+    { // P36: the three support lines under the cards are REMOVED (the cards carry the checks, the terms block the rest); the card label stays on every card
+      for (const [name, page] of [["Home", home], ["Pricing", pricing]]) check(!/data-ea-support="plans"/.test(page), `${l}: ${name}: no repeated support lines under the plan cards`);
       const pills = [...nb(pricing).matchAll(/data-ea-pill[^>]*>[\s\S]*?aicc-badge--success">([^<]*)</g)].map((m) => norm(m[1]));
       const homePills = [...nb(home).matchAll(/data-ea-pill[^>]*>[\s\S]*?aicc-badge--success">([^<]*)</g)].map((m) => norm(m[1]));
       check(pills.length === 3 && homePills.length === 3 && [...pills, ...homePills].every((x) => x === norm(e.plan.pill)), `${l}: every plan card (Home and Pricing) carries the label "${e.plan.pill}"`);
@@ -150,7 +149,7 @@ function campaignChecks(mode, root) {
       const after = hh.match(/<div data-ea-after="">\s*<ul class="aicc-pricing-confidence"[\s\S]*?<\/ul>\s*<\/div>/);
       check(!hh.includes(nb(g)) && !!after && !/display:contents/.test(after[0]) && after[0].includes(nb(D[l].home.pricing.confidence.renewal)), `${l}: Home: the guarantee line is absent from the page; the ended view's list (without it) is wrapped in a div data-ea-after`);
       // the short bar is backed by the exact end instant on every card and in the explanation (the owner's bar wording names no clock)
-      check(th.includes(norm(mode === "open" ? e.bar.live : e.bar.announce)) && norm(e.plan.ends).includes("22:00 UTC") && tp.includes(norm(e.plan.ends)) && tp.includes(norm(mode === "open" ? e.section.lead : e.section.leadAnnounce)), `${l}: the short bar "${mode === "open" ? e.bar.live : e.bar.announce}" is backed by the exact instant on the cards ("${e.plan.ends}") and in the explanation`);
+      check(th.includes(norm(mode === "open" ? e.bar.live : e.bar.announce)) && norm(e.plan.ends).includes("22:00 UTC") && tp.includes(norm(e.plan.ends)) && tp.includes(norm(mode === "open" ? e.section.lead : e.section.leadAnnounce)), `${l}: the short bar "${mode === "open" ? e.bar.live : e.bar.announce}" is backed by the exact instant in the terms block ("${e.plan.ends}") and in the explanation`);
     }
     // the old name only in the one linking sentence (P35: the P22 common.eaNotice legal string is not part of this line, so it is no longer an allowed exception)
     const allowedOld = [].map((x) => norm(x.replace(/\{contactEmail\}/g, "").replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")));
@@ -160,7 +159,7 @@ function campaignChecks(mode, root) {
     check(!/Early Access (is|are) (now )?(open|live|available)|now open/i.test(th + tp), `${l}: no page claims the launch offer or Early Access is open`);
     // Hero actions
     if (mode === "announce") {
-      check(th.includes(norm(e.hero.ctaAnnounce)) && !new RegExp(`<a[^>]*>[^<]*${e.hero.ctaAnnounce.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`).test(nb(home)), `${l}: the Hero request control is the status "${e.hero.ctaAnnounce}" and is not inside a link`);
+      check(th.includes(norm(e.hero.ctaAnnounce)) && !new RegExp(`<a[^>]*>[^<]*${e.hero.ctaAnnounce.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`).test(nb(home)), `${l}: the "${e.hero.ctaAnnounce}" status is not inside a link`);
       check(!requestWords.some((w) => th.includes(w) || tp.includes(w)), `${l}: no request button wording ("Request Free Access" in any language) on Home or Pricing`);
       check(!/Request Free Access/i.test(th + tp), `${l}: "Request Free Access" is not displayed`);
     } else {
@@ -176,11 +175,13 @@ function campaignChecks(mode, root) {
     const regular = [...pricing.matchAll(/<p class="aicc-plan__regular"[^>]*>([\s\S]*?)<\/p>/g)].map((m) => norm(m[1].replace(/<[^>]+>/g, " ")));
     check(regular.length === 3 && PLANS.every((pl, i) => regular[i].includes(formatPrice(pl.price, l)) && regular[i].startsWith(norm(e.plan.planned))), `${l}: Pricing: "${e.plan.planned}" with ${PLANS.map((p) => formatPrice(p.price, l)).join(", ")} from plans.ts on the three cards`);
     check(!/<s>|<del>|line-through/.test(pricing.slice(pricing.indexOf("<main"), pricing.indexOf("</main>"))), `${l}: no struck-through price without NEXT_PUBLIC_AICC_EA_STRIKE=on`);
-    check((tp.match(new RegExp(norm(e.plan.free).replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g")) || []).length >= 3, `${l}: every card says "${e.plan.free}"`);
+    { const arts = pricing.split("<article").slice(1).map((a) => norm(a.slice(0, a.indexOf("</article>")).replace(/<[^>]+>/g, " ")));
+      check(arts.length === 3 && arts.every((a, i) => a.includes(norm(e.plan.freeWord)) && a.includes(norm(e.plan.freeUntil)) && a.includes(formatPrice(PLANS[i].price, l))), `${l}: every card shows the regular price, "${e.plan.freeWord}" and "${e.plan.freeUntil}"`); }
     // cards: no guarantee line, the approved/no-card/no-renewal lines, the end instant
     const articles = pricing.split("<article").slice(1).map((a) => norm(a.slice(0, a.indexOf("</article>")).replace(/<[^>]+>/g, " ")));
     check(articles.length === 3 && articles.every((a) => !a.includes(norm(D[l].common.plan.guarantee))), `${l}: no plan card carries the 14-day guarantee line (not even hidden)`);
-    check(articles.every((a) => a.includes(norm(e.plan.approved)) && a.includes(norm(e.plan.noCard)) && a.includes(norm(e.plan.noAuto)) && a.includes(norm(e.plan.ends))), `${l}: every card says available to approved stores, no credit card, no automatic renewal and states the end instant`);
+    check(articles.every((a) => a.includes(norm(e.plan.approved)) && a.includes(norm(e.plan.noCard)) && a.includes(norm(e.plan.noAuto)) && !a.includes(norm(e.plan.ends))), `${l}: every card has the three short checks (approved stores, no credit card, no automatic renewal); the exact end instant is NOT repeated on the cards`);
+    check(tp.includes(norm(e.plan.ends)) && tp.includes("22:00 UTC"), `${l}: the exact end instant (Israel time and UTC) is stated in the terms block / explanation on Pricing`);
     check(tp.includes(norm(e.pricing.decision)) && tp.includes(norm(e.pricing.notOpen)) && tp.includes(norm(e.pricing.note)), `${l}: Pricing says an explicit renewal decision is needed, paid purchases are not open, accounts are created for approved requests`);
     {
       // the ordinary "Purchases and new accounts open soon" band belongs to the ended view only: while the offer is live it is present in the markup only inside a data-ea-after block
@@ -193,8 +194,8 @@ function campaignChecks(mode, root) {
     check(faq, `${l}: the FAQ (explanation) states the end instant ("${e.section.faq.end.q}") and the free offer`);
     check(home.includes(`Date.now()>=${EA_CUTOFF_UTC_MS}`) && pricing.includes('data-ea-cutoff="2026-12-31T22:00:00Z"'), `${l}: the page carries the end instant 2026-12-31T22:00:00Z (unix ${EA_CUTOFF_UTC_MS / 1000}) in its head script and the explanation`);
     // announce never reads as live: the present-tense variants exist only in an open build
-    if (mode === "announce") check(!th.includes(norm(e.section.homeLead)) && !tp.includes(norm(e.section.lead)) && !tp.includes(norm(e.section.steps.request.body)) && !tp.includes(norm(e.section.faq.free.a)), `${l}: an announce page carries none of the present-tense availability sentences (homeLead, lead, "Request access" step, "Is it free?" answer); the coming-soon variants are used`);
-    else check(th.includes(norm(e.section.homeLead)) && tp.includes(norm(e.section.faq.free.a)) && !tp.includes(norm(e.section.leadAnnounce)), `${l}: an open page uses the present-tense sentences and none of the announce variants`);
+    if (mode === "announce") check(!th.includes(norm(e.section.homeLead)) && !th.includes(norm(e.section.homeLeadAnnounce)) && !tp.includes(norm(e.section.lead)) && !tp.includes(norm(e.section.steps.request.body)) && !tp.includes(norm(e.section.faq.free.a)), `${l}: an announce page carries none of the present-tense availability sentences (homeLead, lead, "Request access" step, "Is it free?" answer); the coming-soon variants are used`);
+    else check(tp.includes(norm(e.section.faq.free.a)) && !tp.includes(norm(e.section.leadAnnounce)), `${l}: an open page uses the present-tense sentences and none of the announce variants`);
     // the Pricing description of a campaign build does not mention the 14-day guarantee (the cards do not)
     { const md = (pricing.match(/<meta name="description" content="([^"]*)"/) || [])[1] || ""; const od = (pricing.match(/<meta property="og:description" content="([^"]*)"/) || [])[1] || "";
       check(md && !/14[\s\u00a0-]*(-day|day|días|дн|ימים)|guarantee|garant|гаранти|ערבות/i.test(decode(md) + decode(od)) && decode(md).includes(formatPrice(99, l)), `${l}: the Pricing meta and Open Graph descriptions mention the plan prices and no money-back guarantee`); }
@@ -210,9 +211,69 @@ function campaignChecks(mode, root) {
   check(new Set(tokens).size === 1, "the four campaign dictionaries have the same structure (same offer naming keys, same terms)");
 }
 
+
+// ───────── P36 regression guards (owner UX correction): the launch offer is SUPPLEMENTARY and nothing inert may look like an action ─────────
+// The P35 build replaced the Hero's "Try Live Demo" with an inert status chip. These checks fail if the Live Demo CTA disappears or its destination changes, if "See Pricing" is lost, if an inert
+// button-looking element is visible while the offer is live, if the plan-card hierarchy is wrong (regular price large, FREE dominant), if a card has no single working action, or if a link is dead.
+const WP_ROUTES = new Set(["pricing", "my-account", "cart", "checkout", "privacy", "terms", "refund-policy", "data-processing-addendum", "accessibility"]); // served by WordPress at the edge, not part of the export
+const remOf = (css, selector) => { const m = css.match(new RegExp(selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\{[^}]*?font-size:([0-9.]+)rem")); return m ? parseFloat(m[1]) : NaN; };
+function p36Guards(mode, root) {
+  console.log(`== ${mode.toUpperCase()}: P36 regression guards (Live Demo, See Pricing, no inert CTA, card hierarchy, links) in four languages`);
+  for (const l of LOCALES) {
+    const P = pre(l), home = htmlOf(root, `${P}index.html`), pricing = htmlOf(root, `${P}pricing/index.html`), h = nb(home);
+    const i0 = h.indexOf('class="aicc-hero-actions'), hero = h.slice(i0, h.indexOf("</div>", i0));
+    const anchors = [...hero.matchAll(/<a\b([^>]*)href="([^"]*)"([^>]*)>([\s\S]*?)<\/a>/g)].map((m) => ({ href: m[2], cls: (m[1] + m[3]).match(/class="([^"]*)"/)?.[1] || "", text: norm(m[4].replace(/<[^>]+>/g, " ")) }));
+    const demo = anchors.find((a) => a.text === norm(D[l].home.hero.ctaDemo)), plans = anchors.find((a) => a.text === norm(D[l].home.hero.ctaPlans));
+    check(!!demo && demo.href === "#demo", `${l} ${mode}: the Hero has "${D[l].home.hero.ctaDemo}" as a LINK to #demo (the original destination; a change fails)`);
+    check(mode === "open" ? !!demo && /aicc-btn--secondary/.test(demo.cls) : !!demo && /aicc-btn--primary/.test(demo.cls), `${l} ${mode}: "${D[l].home.hero.ctaDemo}" is ${mode === "open" ? "the secondary" : "the primary"} Hero action`);
+    check(/\bid="demo"/.test(h), `${l} ${mode}: the #demo target (the interactive demo section) exists on the page`);
+    check(!!plans && plans.href === `/${P}pricing/`, `${l} ${mode}: the Hero has "${D[l].home.hero.ctaPlans}" as a link to /${P}pricing/`);
+    check(!/<p\b|aicc-btn--soon|data-ea-soon/.test(hero), `${l} ${mode}: no inert element inside the Hero actions`);
+    if (mode !== "off") {
+      // an inert button-looking element (<p class="aicc-btn ...">) may exist only in the hidden ended view (data-ea-after); never while the offer is live
+      const bad = [];
+      for (const [name, page] of [["Home", h], ["Pricing", nb(pricing)]]) for (const m of page.matchAll(/<p class="aicc-btn[^"]*"/g)) { const before = page.slice(Math.max(0, m.index - 900), m.index); const mk = [...before.matchAll(/data-ea-(live|after)/g)].map((x) => x[1]).pop(); if (mk !== "after") bad.push(`${name}@${m.index}`); }
+      check(bad.length === 0 && !/data-ea-soon|aicc-eastatus/.test(h + nb(pricing)), `${l} ${mode}: no inert button-looking element is visible while the offer is live${bad.length ? " -> " + bad.join(", ") : ""}`);
+      // the plan cards: name, then the LARGE regular price, then FREE, then ONE working action, then the three checks
+      const arts = nb(pricing).split("<article").slice(1).map((a) => a.slice(0, a.indexOf("</article>")));
+      const ok = arts.length === 3 && arts.every((a, i) => { const n = a.indexOf('class="aicc-plan__name"'), r = a.indexOf("aicc-plan__regular-line"), f = a.indexOf("aicc-plan__free-word"), c = a.search(/<a\b[^>]*class="aicc-btn/), k = a.indexOf("aicc-plan__checks"); return n >= 0 && n < r && r < f && f < c && c < k && (a.match(/<a\b[^>]*class="aicc-btn/g) || []).length === 1 && a.includes(formatPrice(PLANS[i].price, l)); });
+      check(ok, `${l} ${mode}: each card reads name, regular price, ${D[l] ? ea(l).plan.freeWord : "FREE"}, ONE working button, three checks, in that order`);
+      const want = mode === "open" ? /\/request-access\/\?plan=(solo|studio|agency)$/ : new RegExp(`^/${P}#demo$`);
+      const hrefs = arts.map((a) => (a.match(/<a\b[^>]*class="aicc-btn[^"]*"[^>]*href="([^"]*)"|<a\b[^>]*href="([^"]*)"[^>]*class="aicc-btn/) || []).slice(1).find(Boolean));
+      check(hrefs.length === 3 && hrefs.every((x) => want.test(x || "")), `${l} ${mode}: every card's one action is a real link (${mode === "open" ? "/request-access/?plan=" : "the live demo " + `/${P}#demo`}): ${hrefs.join(", ")}`);
+      // hierarchy from the real CSS the build emits: FREE must be larger than the regular price, which stays at least 2rem (never a footnote); smaller type on phones
+      const css = (home.match(/<style>([\s\S]*?)<\/style>/g) || []).join("\n");
+      const free = remOf(css, ".aicc-plan .aicc-plan__free-word"), reg = remOf(css, ".aicc-plan .aicc-plan__regular-line");
+      check(free > reg && reg >= 2 && free / reg >= 1.4, `${l} ${mode}: FREE (${free}rem) is dominant over the regular price (${reg}rem >= 2rem)`);
+      const mobile = (css.match(/@media \(max-width:39\.99rem\)\{\.aicc-plan \.aicc-plan__free-word\{font-size:([0-9.]+)rem/) || [])[1];
+      check(parseFloat(mobile) >= 2.5 && parseFloat(mobile) > reg, `${l} ${mode}: on phones FREE stays larger than the regular price (${mobile}rem)`);
+    }
+    // links: every internal link of Home and Pricing resolves to a page of the export or to a WordPress route; none leads to /request-access/ unless the build is OPEN
+    const dead = [];
+    for (const [name, page] of [["Home", home], ["Pricing", pricing]]) for (const m of page.matchAll(/<a\b[^>]*href="(\/[^"#?]*)/g)) {
+      const hp = m[1]; if (/^\/(_next|brand-kit|og|fonts|demo)\//.test(hp) || /\.[a-z0-9]{2,5}$/i.test(hp)) continue;
+      const seg = hp.replace(/^\/(he|es|ru)\//, "/").split("/").filter(Boolean)[0];
+      const exists = fs.existsSync(path.join(root, hp.replace(/^\//, ""), "index.html")) || (seg && WP_ROUTES.has(seg)) || hp === "/";
+      if (!exists) dead.push(`${name}:${hp}`);
+    }
+    check(dead.length === 0, `${l} ${mode}: no internal link leads to a missing page${dead.length ? " -> " + [...new Set(dead)].slice(0, 4).join(", ") : ""}`);
+    if (mode !== "open") check(![home, pricing].some((x) => /request-access/.test(x)), `${l} ${mode}: no link or text points at /request-access/ while requests are not open`);
+  }
+}
+
+p36Guards("off", dirs.off);
+if (ANN_STRIKE) {
+  console.log("\n== ANNOUNCE with NEXT_PUBLIC_AICC_EA_STRIKE=on (variant A, counsel-gated): the regular price struck through, FREE below");
+  for (const l of LOCALES) {
+    const pr = nb(htmlOf(ANN_STRIKE, `${pre(l)}pricing/index.html`)), arts = pr.split("<article").slice(1).map((a) => a.slice(0, a.indexOf("</article>")));
+    check(arts.length === 3 && arts.every((a, i) => /<s><bdi>/.test(a) && a.indexOf("<s>") < a.indexOf("aicc-plan__free-word") && a.includes(formatPrice(PLANS[i].price, l))), `${l}: variant A: the regular price is struck through on every card with FREE below it`);
+  }
+}
+
 // ───────── ANNOUNCE ─────────
 console.log("\n== ANNOUNCE: nothing to click");
 campaignChecks("announce", dirs.announce);
+p36Guards("announce", dirs.announce);
 {
   const root = dirs.announce, all = textFiles(root);
   check(all.every((f) => !/request-access/.test(fs.readFileSync(f, "utf8"))), "no file of the export (HTML, RSC payload, sitemap, robots) mentions /request-access/");
@@ -226,6 +287,7 @@ campaignChecks("announce", dirs.announce);
 // ───────── OPEN ─────────
 console.log("\n== OPEN: request buttons lead to /request-access/");
 campaignChecks("open", dirs.open);
+p36Guards("open", dirs.open);
 if (LIMITED) { console.log("\n== OPEN with NEXT_PUBLIC_AICC_EA_LIMITED_NOTE=on (P34): the same, plus \"Limited availability\" under the Hero buttons"); campaignChecks("open", LIMITED); }
 if (ANN_LIMITED) { console.log("\n== ANNOUNCE with NEXT_PUBLIC_AICC_EA_LIMITED_NOTE=on (review P34-5): no \"Limited availability\" (OPEN only)"); campaignChecks("announce", ANN_LIMITED); }
 {
@@ -294,6 +356,35 @@ console.log("\n== negative controls");
   const fakeB = fakeOff + "-b"; fs.cpSync(fakeOff, fakeB, { recursive: true }); fs.writeFileSync(path.join(fakeB, "a.html"), "<p>y</p>");
   check(compare(fakeOff, fakeB).diff.length === 1 && compare(fakeOff, fakeOff).diff.length === 0, "the equivalence probe reports one changed file and none for an identical tree");
   fs.rmSync(fakeOff, { recursive: true, force: true }); fs.rmSync(fakeB, { recursive: true, force: true });
+}
+
+
+// ───────── P36 owner rule: global-first branding, UTC-based deadlines ─────────
+// No page of any mode (the ordinary site, announce, open, verify) names a country or a local time zone, states the end as 00:00 or prints the day after the last day without the UTC instant; the
+// authoritative expiry instant stays exactly 2026-12-31T22:00:00Z (unix 1798754400) in the code and on the pages.
+console.log("\n== UTC and geographic neutrality: every mode, every language");
+{
+  const GEO = /israel|israeli|jerusalem|ישראל|израил/i;
+  const NEXT = /(?<!\d)(january 1,? 2027|1 בינואר 2027|1 de enero de 2027|1 января 2027)/i;
+  for (const [name, root] of [["off", dirs.off], ["announce", dirs.announce], ["open", dirs.open], ["verify", dirs.verify], ...(ANN_STRIKE ? [["announce-strike", ANN_STRIKE]] : [])]) {
+    const bad = [], mid = [], next = [];
+    for (const f of htmlFiles(root)) {
+      const raw = fs.readFileSync(f, "utf8"), t = visibleText(raw), rel = path.relative(root, f);
+      const meta = [...raw.matchAll(/<meta[^>]+content="([^"]*)"/g)].map((m) => decode(m[1])).join(" ") + " " + [...raw.matchAll(/<script type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/g)].map((m) => m[1]).join(" ") + " " + ((raw.match(/<title>([^<]*)<\/title>/) || [])[1] || "");
+      if (GEO.test(t) || GEO.test(meta)) bad.push(rel);
+      if (/\b00:00\b/.test(t)) mid.push(rel);
+      if (NEXT.test(norm(t))) next.push(rel);
+    }
+    check(bad.length === 0, `${name}: no page (text, meta description, structured data, title) names a country or a local time zone${bad.length ? " -> " + bad.slice(0, 3).join(", ") : ""}`);
+    check(mid.length === 0 && next.length === 0, `${name}: no page states the end as 00:00 or prints January 1, 2027 (in any language)${mid.length + next.length ? " -> " + [...mid, ...next].slice(0, 3).join(", ") : ""}`);
+  }
+  check(EA_CUTOFF_UTC_MS === 1798754400000 && new Date(EA_CUTOFF_UTC_MS).toISOString() === "2026-12-31T22:00:00.000Z", "the expiry instant in the code is exactly 2026-12-31T22:00:00Z (unix 1798754400), not midnight UTC and not moved");
+  for (const l of LOCALES) {
+    const e = ea(l), P = pre(l);
+    const tp = visibleText(htmlOf(dirs.announce, `${P}pricing/index.html`));
+    check(tp.includes("22:00 UTC") && /UTC/.test(norm(e.plan.ends)) && !/00:00/.test(norm(e.plan.ends)), `${l}: the exact end is stated once in UTC ("${norm(e.plan.ends)}")`);
+    check(/data-ea-cutoff="2026-12-31T22:00:00Z"/.test(htmlOf(dirs.announce, `${P}pricing/index.html`)), `${l}: the Pricing explanation carries data-ea-cutoff="2026-12-31T22:00:00Z"`);
+  }
 }
 
 console.log(`\n${total - failed}/${total} checks passed`);

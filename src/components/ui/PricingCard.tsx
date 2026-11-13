@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { Badge } from "./Primitives";
 import { Button } from "./Button";
 import { cn } from "@/lib/cn";
+import { localePath } from "@/lib/routes";
 import { currencySuffix, formatPrice } from "@/data/plans";
 import { COMMERCE_OPEN, planUrl, type PlanId } from "@/lib/site";
 import { EA_ON, EA_OPEN, EA_STRIKE, EA_INTAKE_CLOSES, eaUrl } from "@/lib/earlyAccess";
@@ -28,7 +29,9 @@ export interface PricingCardProps {
   headingLevel?: 2 | 3;
   extra?: ReactNode;
   /** Early Access strings (t.ea.plan). Rendered only by an Early Access build; a normal build ignores them. */
-  ea?: { pill: string; free: string; regular: string; planned: string; regularPer: string; approved: string; noCard: string; noAuto: string; term: string; ends: string; ctaOpen: string; ctaAnnounce: string; ctaClosed: string };
+  ea?: { pill: string; free: string; freeWord: string; freeUntil: string; regular: string; planned: string; regularPer: string; approved: string; noCard: string; noAuto: string; term: string; ends: string; ctaOpen: string; ctaAnnounce: string; ctaClosed: string };
+  /** P36: the label of the one working action on a launch-offer card while requests are not open ("Try Live Demo", the Hero's own string). */
+  demoLabel?: string;
 }
 
 /**
@@ -62,31 +65,28 @@ export function PricingCard(p: PricingCardProps) {
         </H>
         <p className="aicc-muted aicc-small aicc-plan__fit" style={{ marginBlockStart: 4 }} {...A("pricing.plans")}>{p.fit}</p>
       </div>
+      {ea ? <p className="aicc-plan__stores" data-ea-live {...A(storesPath)}>{p.storesLabel}</p> : null}
       <p className="aicc-plan__price" {...(ea ? { "data-ea-hide-live": "" } : {})}>
         <span className="aicc-plan__amount"><bdi>{formatPrice(p.price, p.locale)}</bdi></span>
         <span className="aicc-plan__per" {...A("common.plan.perYear")}>{p.perYear}{currencySuffix(p.locale ?? "en")}</span>
       </p>
       {ea ? (
         <div className="aicc-plan__offer" data-ea-live>
-          {/* P34: with the strike-through switch (counsel-gated in launch:check) the labelled, crossed-out regular price comes first and "Free until ..." follows it; without it the order is unchanged */}
-          {EA_STRIKE ? null : <p className="aicc-plan__free" {...E("ea.plan")}>{ea.free}</p>}
+          {/* P36 hierarchy: the regular yearly price LARGE (struck through only in the counsel-gated variant, never as a footnote), then FREE, dominant, with "until <date>" */}
           <p className={EA_STRIKE ? "aicc-plan__regular aicc-plan__regular--strike" : "aicc-plan__regular"} {...E("ea.plan")}>
-            <span className="aicc-plan__regular-label">{EA_STRIKE ? ea.regular : ea.planned}</span>{" "}
-            {EA_STRIKE ? <s><bdi>{formatPrice(p.price, p.locale)}</bdi></s> : <bdi>{formatPrice(p.price, p.locale)}</bdi>}
-            <span className="aicc-plan__regular-per"> {ea.regularPer}{currencySuffix(p.locale ?? "en")}</span>
+            <span className="aicc-plan__regular-label">{EA_STRIKE ? ea.regular : ea.planned}</span>
+            <span className="aicc-plan__regular-line">
+              {EA_STRIKE ? <s><bdi>{formatPrice(p.price, p.locale)}</bdi></s> : <bdi>{formatPrice(p.price, p.locale)}</bdi>}
+              <span className="aicc-plan__regular-per"> {ea.regularPer}{currencySuffix(p.locale ?? "en")}</span>
+            </span>
           </p>
-          {EA_STRIKE ? <p className="aicc-plan__free" {...E("ea.plan")}>{ea.free}</p> : null}
+          <p className="aicc-plan__free" {...E("ea.plan")}>
+            <span className="aicc-plan__free-word">{ea.freeWord}</span>
+            <span className="aicc-plan__free-until">{ea.freeUntil}</span>
+          </p>
         </div>
       ) : null}
-      <p className="aicc-plan__stores" {...A(storesPath)}>{p.storesLabel}</p>
-      {ea ? (
-        <ul className="aicc-plan__list" data-ea-live>
-          <li><Check size={18} aria-hidden="true" /><span {...E("ea.plan")}>{ea.approved}</span></li>
-          <li><Check size={18} aria-hidden="true" /><span {...E("ea.plan")}>{ea.noCard}</span></li>
-          <li><Check size={18} aria-hidden="true" /><span {...E("ea.plan")}>{ea.noAuto}</span></li>
-          <li><Check size={18} aria-hidden="true" /><span {...E("ea.plan")}>{ea.term}</span></li>
-        </ul>
-      ) : null}
+      <p className="aicc-plan__stores" {...(ea ? { "data-ea-hide-live": "" } : {})} {...A(storesPath)}>{p.storesLabel}</p>
       {!p.compact ? (
         <ul className="aicc-plan__list" {...(ea ? { "data-ea-after": "" } : {})}>
           {p.features.map((f, i) => (
@@ -103,19 +103,22 @@ export function PricingCard(p: PricingCardProps) {
       {p.extra}
       {ea ? (
         <>
-          <p className="aicc-plan__ends aicc-muted aicc-small" data-ea-live {...E("ea.plan")}>{ea.ends}</p>
           <div data-ea-live {...(EA_INTAKE_CLOSES ? { "data-ea-intake": "" } : {})}>
             {EA_OPEN ? (
               <Button href={eaUrl(loc, p.id)} variant={p.featuredLabel ? "primary" : "outline"} block size="lg" {...E("ea.plan")}>{ea.ctaOpen}<span className="aicc-sr-only"> ({p.name})</span></Button>
             ) : (
-              <p className="aicc-btn aicc-btn--lg aicc-btn--block aicc-btn--soon" data-ea-soon {...E("ea.plan")}>{ea.ctaAnnounce}</p>
+              /* P36: ONE working action while requests are not open: the live demo (never an inert button; the "coming soon" status is plain text under the cards) */
+              <Button href={`${localePath(loc)}#demo`} variant={p.featuredLabel ? "primary" : "outline"} block size="lg">{p.demoLabel}<span className="aicc-sr-only"> ({p.name})</span></Button>
             )}
           </div>
           {EA_INTAKE_CLOSES ? (
             <div data-ea-live data-ea-closed-only>
-              <p className="aicc-btn aicc-btn--lg aicc-btn--block aicc-btn--soon" data-ea-soon {...E("ea.plan")}>{ea.ctaClosed}</p>
+              <p className="aicc-eanote" data-ea-status {...E("ea.plan")}>{ea.ctaClosed}</p>
             </div>
           ) : null}
+          <ul className="aicc-plan__checks" data-ea-live>
+            {[ea.noCard, ea.noAuto, ea.approved].map((x) => (<li key={x}><Check size={16} aria-hidden="true" /><span {...E("ea.plan")}>{x}</span></li>))}
+          </ul>
           <div data-ea-after>{standardCta}</div>
         </>
       ) : standardCta}

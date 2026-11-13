@@ -56,14 +56,27 @@ export const EA_P34_CSS = [
   ".aicc-easupport li{display:inline-flex;align-items:center;gap:0.375rem}",
   ".aicc-easupport svg{flex:none;color:var(--aicc-success)}",
   ".aicc-easupport__chip{padding:0.0625rem 0.5rem;border:1px solid var(--aicc-border);border-radius:9999px;background:var(--aicc-surface)}",
-  ".aicc-easupport--plans{margin-block-start:1.5rem}",
-  // P35 (review L3): the inert "requests open soon" status must not look like a button: dashed outline, pill shape, regular weight, no fill (still a <p>, no role)
-  ".aicc-btn--soon.aicc-eastatus[data-ea-soon]{border-style:dashed;border-radius:9999px;background:transparent;font-weight:500;box-shadow:none;white-space:normal;text-align:center;line-height:1.25;block-size:auto;min-block-size:3.5rem;padding-block:0.25rem}",
-  ".aicc-plans>.aicc-easupport{grid-column:1/-1;margin-block-start:0.25rem}",
   "@media (max-width:39.99rem){.aicc-easupport{gap:0.375rem 1rem;margin-block-start:0.875rem}}",
   ".aicc-plan__badgerow{gap:0.5rem;flex-wrap:wrap}",
-  ".aicc-plan__regular--strike .aicc-plan__regular-label{display:block;font-size:var(--aicc-text-sm);line-height:1.35}",
-  ".aicc-plan__regular--strike s{font-size:1.5rem}",
+  // P36 (owner UX correction): plan card hierarchy while the offer is live = plan name and stores, the LARGE regular yearly price (2.25rem; struck through only in the counsel-gated variant), then FREE as the dominant figure
+  // (3.5rem, brand gradient with a solid fallback), "until <date>", one working action and three short checks. Selectors are prefixed with .aicc-plan so they win over the global rules without touching aicc.css.
+  ".aicc-plan .aicc-plan__offer{display:grid;gap:0.5rem;margin-block:0.25rem}",
+  ".aicc-plan .aicc-plan__regular{display:grid;gap:0.125rem;margin:0}",
+  ".aicc-plan .aicc-plan__regular-label{display:block;font-size:var(--aicc-text-sm);font-weight:500;line-height:1.35;color:var(--aicc-text-muted)}",
+  ".aicc-plan .aicc-plan__regular-line{font-size:2.25rem;font-weight:700;line-height:1.05;letter-spacing:-0.02em;color:var(--aicc-text-muted);font-variant-numeric:tabular-nums}",
+  ".aicc-plan .aicc-plan__regular-line s{font-size:inherit;text-decoration-thickness:2px}",
+  ".aicc-plan .aicc-plan__regular-per{font-size:1rem;font-weight:500;letter-spacing:0}",
+  ".aicc-plan .aicc-plan__free{display:grid;gap:0.125rem;margin:0;font-size:1rem;line-height:1}",
+  ".aicc-plan .aicc-plan__free-word{font-size:3.5rem;font-weight:800;line-height:1;letter-spacing:-0.03em;color:var(--aicc-success);background:linear-gradient(100deg,var(--aicc-blue-700,#1d4ed8),var(--aicc-emerald-600,#059669));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}",
+  ".aicc-plan .aicc-plan__free-until{font-size:1.0625rem;font-weight:600;line-height:1.3;color:var(--aicc-success)}",
+  ".aicc-plan__checks{list-style:none;padding:0;margin:0;display:grid;gap:0.375rem;font-size:var(--aicc-text-sm);color:var(--aicc-text-muted)}",
+  ".aicc-plan__checks li{display:flex;align-items:center;gap:0.5rem}",
+  ".aicc-plan__checks svg{flex:none;color:var(--aicc-success)}",
+  ".aicc-eanote{display:flex;align-items:center;gap:0.5rem;margin:0.875rem 0 0;font-size:var(--aicc-text-sm);font-weight:600;color:var(--aicc-success)}",
+  ".aicc-eanote svg{flex:none}",
+  ".aicc-plans+.aicc-eanote{margin-block-start:1.25rem;justify-content:center}",
+  "@media (max-width:39.99rem){.aicc-plan .aicc-plan__free-word{font-size:3rem}}",
+  "@media (forced-colors:active){.aicc-plan .aicc-plan__free-word{background:none;-webkit-text-fill-color:CanvasText;color:CanvasText}}",
   "@media (forced-colors:active){.aicc-eabadge__tag{border:1px solid CanvasText}}",
 ].join("");
 
@@ -87,7 +100,7 @@ export function EaBar({ locale, t }: { locale: Locale; t: Dictionary }) {
           {/* in the closed phase the header button and the hero action already lead to the same place: one tab stop fewer */}
           <span {...INTAKE} style={{ display: "contents" }}>
             <LocaleLink locale={locale} route="pricing" hash="early-access" className="aicc-eabar__link">
-              <span {...A(locale, "ea.bar")}>{e.link}</span>
+              <span {...A(locale, "ea.bar")}>{EA_OPEN ? e.link : e.linkAnnounce}</span>
             </LocaleLink>
           </span>
         </p>
@@ -104,29 +117,35 @@ export function EaHeroSupport({ locale, t }: { locale: Locale; t: Dictionary }) 
   if (!EA_ON) return null;
   const s = t.ea.hero.support;
   return (
-    <ul className="aicc-easupport aicc-fade-up" style={{ ["--i" as string]: 4 }} data-ea-live data-ea-support="hero" {...(EA_LIMITED ? { "data-ea-limited": "" } : {})} aria-label={t.ea.hero.supportLabel} {...A(locale, "ea.hero")}>
-      {[s.noCard, s.manual].map((x) => (<li key={x}><Check size={16} aria-hidden="true" /><span>{x}</span></li>))}
-      {/* review P34-5: a plain text chip, no check icon (it is a condition of the offer, not a benefit); OPEN builds only */}
-      {EA_LIMITED ? <li className="aicc-easupport__chip"><span>{s.limited}</span></li> : null}
-    </ul>
+    <>
+      <ul className="aicc-easupport aicc-fade-up" style={{ ["--i" as string]: 4 }} data-ea-live data-ea-support="hero" {...(EA_LIMITED ? { "data-ea-limited": "" } : {})} aria-label={t.ea.hero.supportLabel} {...A(locale, "ea.hero")}>
+        {[s.noCard, s.noAuto, s.approval].map((x) => (<li key={x}><Check size={16} aria-hidden="true" /><span>{x}</span></li>))}
+        {/* review P34-5: a plain text chip, no check icon (it is a condition of the offer, not a benefit); OPEN builds only */}
+        {EA_LIMITED ? <li className="aicc-easupport__chip"><span>{s.limited}</span></li> : null}
+      </ul>
+      <EaStatusNote locale={locale} t={t} />
+    </>
   );
 }
 
-/** P34 (owner list): the three short lines right under the plan cards (Home and Pricing), while the offer is live. */
-export function EaPlanSupport({ locale, t }: { locale: Locale; t: Dictionary }) {
-  if (!EA_ON) return null;
-  const s = t.ea.pricing.support;
+/**
+ * P36: while requests are not open the status is PLAIN INFORMATIONAL TEXT ("Free access requests coming soon"): no button class, no border, no fill, no role. Nothing that can be
+ * mistaken for an action is ever inert. Renders nothing in an OPEN build (the request buttons are real links there) and in an ordinary build.
+ */
+export function EaStatusNote({ locale, t }: { locale: Locale; t: Dictionary }) {
+  if (!EA_ON || EA_OPEN) return null;
   return (
-    <ul className="aicc-easupport aicc-easupport--plans" data-ea-live data-ea-support="plans" aria-label={t.ea.hero.supportLabel} {...A(locale, "ea.pricing")}>
-      {[s.noCard, s.manual, s.regular].map((x) => (<li key={x}><Check size={16} aria-hidden="true" /><span>{x}</span></li>))}
-    </ul>
+    <p className="aicc-eanote" data-ea-live data-ea-status {...A(locale, "ea.hero")}>
+      <Sparkles size={16} aria-hidden="true" />
+      <span>{t.ea.hero.ctaAnnounce}</span>
+    </p>
   );
 }
 
 /** The badge text with the date made no-break (the dates of the build's step, in the language the string is written in). */
 function nbBadge(text: string, locale: Locale): string {
   const d = EA_DATES[locale][EA_EXTENSION_STEP];
-  return text.split(d.lastDay).join(nbDate(d.lastDay));
+  return text.split(d.until).join(nbDate(d.until)).split(d.lastDay).join(nbDate(d.lastDay));
 }
 
 /** The hero badge (the pill above the headline): [Launch offer] Free until <last day> while the offer is live (P34: a tag plus the date line); the ordinary "Available for WooCommerce" returns after the end date. */
@@ -145,25 +164,24 @@ export function EaHeroBadge({ locale, t, ordinary }: { locale: Locale; t: Dictio
 }
 
 /**
- * The request button. OPEN: a link to /request-access/ (this site). ANNOUNCE: a NON-CLICKABLE status ("Free access requests open soon"): no link, nothing to click, so no
- * page can be read as saying that requests are open. In the closed phase of an extended OPEN build the status says that new requests are closed.
+ * The request button: rendered ONLY when the intake is really open (a link to /request-access/ on this site). In ANNOUNCE builds it renders NOTHING (P36: the P35 "status chip" was an inert
+ * <p class="aicc-btn"> in the primary slot and replaced Try Live Demo). The announce status is the plain text of EaStatusNote. In the closed phase of an extended OPEN build the status says that new requests are closed.
  */
 export function EaCta({ locale, t, size = "lg", variant = "primary", plan }: { locale: Locale; t: Dictionary; size?: "md" | "lg"; variant?: "primary" | "secondary"; plan?: "solo" | "studio" | "agency" }) {
-  if (!EA_ON) return null;
+  if (!EA_ON || !EA_OPEN) return null;
   const arrow = <ArrowRight size={18} className="aicc-flip" aria-hidden="true" />;
-  const status = (text: string, extra: Record<string, string> = {}) => (
-    <span data-ea-live {...extra} style={{ display: "contents" }}>
-      <p className={`aicc-btn aicc-btn--${size} aicc-btn--soon aicc-eastatus`} data-ea-soon {...A(locale, "ea.hero")}>{text}</p>
-    </span>
-  );
-  return EA_OPEN ? (
+  return (
     <>
       <span data-ea-live {...INTAKE} style={{ display: "contents" }}>
         <Button href={eaUrl(locale, plan)} variant={variant} size={size} icon={arrow} {...A(locale, "ea.hero")}>{t.ea.hero.ctaOpen}</Button>
       </span>
-      {EA_INTAKE_CLOSES ? status(t.ea.plan.ctaClosed, CLOSED_ONLY) : null}
+      {EA_INTAKE_CLOSES ? (
+        <span data-ea-live {...CLOSED_ONLY} style={{ display: "contents" }}>
+          <p className="aicc-eanote" data-ea-status {...A(locale, "ea.hero")}>{t.ea.plan.ctaClosed}</p>
+        </span>
+      ) : null}
     </>
-  ) : status(t.ea.hero.ctaAnnounce);
+  );
 }
 
 /** What replaces the offer once the end date has passed. Hidden until the page script marks the document. */
@@ -180,41 +198,12 @@ export function EaAfterNote({ locale, t }: { locale: Locale; t: Dictionary }) {
   );
 }
 
-/** The offer sentence (Home, Pricing hero line, closing bands): the request wording, plus the "already in Early Access" wording once new requests have closed (extended OPEN builds). */
-export function EaLeadText({ locale, t }: { locale: Locale; t: Dictionary }) {
-  // OPEN builds say when requests stop (the Control Plane grants nothing in the final 24 hours): next to the offer, not only in the list below
-  // an ANNOUNCE build says the offer is coming (never present tense: nothing can be requested yet)
-  if (!EA_INTAKE_CLOSES) return <>{EA_OPEN ? `${t.ea.section.homeLead} ${t.ea.section.intakeCutoff}` : t.ea.section.homeLeadAnnounce}</>;
-  return (
-    <>
-      <span {...INTAKE} {...A(locale, "ea.section")}>{t.ea.section.homeLead} {t.ea.section.intakeCutoffExt}</span>
-      <span {...CLOSED_ONLY} {...A(locale, "ea.section")}>{t.ea.section.homeLeadClosed}</span>
-    </>
-  );
-}
-
-/** The paragraph version used by the closing bands. */
+/** P36: the closing band says the offer in ONE short line (the bar's text) and, while requests are not open, the plain status note; the long lead was the third repetition of the same sentence. */
 export function EaClosingLead({ locale, t }: { locale: Locale; t: Dictionary }) {
-  return <p className="aicc-lead" {...A(locale, "ea.section")}><EaLeadText locale={locale} t={t} /></p>;
-}
-
-/** The short Home version of the offer, above the plan cards. */
-export function EaHomeLead({ locale, t }: { locale: Locale; t: Dictionary }) {
-  if (!EA_ON) return null;
   return (
     <>
-      <p className="aicc-ealead" data-ea-live {...A(locale, "ea.section")}>
-        <Sparkles size={18} aria-hidden="true" />
-        <span><EaLeadText locale={locale} t={t} />{" "}
-          <LocaleLink locale={locale} route="pricing" hash="early-access" className="aicc-link">{t.ea.section.link}</LocaleLink>
-        </span>
-      </p>
-      {EA_EXTENDED ? (
-        <p className="aicc-ealead aicc-eaextended" data-ea-live data-ea-extended-note {...A(locale, "ea.extended")}>
-          <Sparkles size={18} aria-hidden="true" />
-          <span>{EA_OPEN ? t.ea.extended.note : t.ea.extended.noteAnnounce}</span>
-        </p>
-      ) : null}
+      <p className="aicc-lead" {...A(locale, "ea.bar")}>{t.ea.bar.live}</p>
+      <EaStatusNote locale={locale} t={t} />
     </>
   );
 }
@@ -326,8 +315,8 @@ export function EaHeaderCta({ locale, t, className, hidden = false }: { locale: 
 export function EaPlanTerms({ locale, t }: { locale: Locale; t: Dictionary }) {
   if (!EA_ON) return null;
   const e = t.ea;
-  // approved stores, no card and no automatic renewal are already on every card; this block carries the two statements that apply to all plans at once
-  const items = [e.pricing.decision, e.pricing.notOpen];
+  // P36: the exact end instant (Israel time and UTC) is said ONCE here, not on every card; then the renewal decision and the purchases line. No card / no automatic renewal / approved stores are the three checks on each card.
+  const items = [e.plan.ends, e.pricing.decision, `${e.pricing.notOpen} ${e.pricing.support.regular}.`];
   return (
     <div className="aicc-eaterms" data-ea-live data-ea-terms style={{ gridColumn: "1 / -1", marginBlockStart: "0.5rem" }} {...A(locale, "ea.pricing")}>
       <h3 className="aicc-eah3">{e.pricing.label}</h3>
@@ -346,19 +335,6 @@ export function EaPricingNote({ locale, t, ordinary }: { locale: Locale; t: Dict
       <span data-ea-live {...A(locale, "ea.pricing")}>{t.ea.pricing.note}</span>
       <span data-ea-after>{ordinary}</span>
     </>
-  );
-}
-
-/** One line under the Pricing headline so the offer is on the first screen, not only after the plan cards. */
-export function EaPricingLine({ locale, t }: { locale: Locale; t: Dictionary }) {
-  if (!EA_ON) return null;
-  return (
-    <p className="aicc-ealead" data-ea-live {...A(locale, "ea.section")}>
-      <Sparkles size={18} aria-hidden="true" />
-      <span><EaLeadText locale={locale} t={t} />{" "}
-        <LocaleLink locale={locale} route="pricing" hash="early-access" className="aicc-link">{t.ea.section.link}</LocaleLink>
-      </span>
-    </p>
   );
 }
 

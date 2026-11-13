@@ -255,6 +255,12 @@ const flat = (o, pre = "", out = []) => { if (typeof o === "string") out.push([p
       check(nbn(row.lastDay).replace(/ г\.$/, "") === nbn(want.last) && nbn(row.endDate).replace(/ г\.$/, "") === nbn(want.end) && nbn(want.utc).endsWith(nbn(row.lastDayShort)), `${l} step ${step}: the token table equals the independent literals (${nbn(row.lastDay)} / ${nbn(row.endDate)} / ${nbn(row.lastDayShort)})`);
       check(nbn(row.lastDay).replace(/ г\.$/, "") === fmt(days.last, true) && nbn(row.endDate).replace(/ г\.$/, "") === fmt(days.end, true) && nbn(row.lastDayShort) === fmt(days.last, false), `${l} step ${step}: the dates are what Intl prints for the Israel calendar days ${days.last} and ${days.end}`);
     }
+    // P36: {until} (short date with the year: the bar, the Hero pill, the cards) is what Intl prints for the Israel calendar day of each step (short month; Hebrew keeps the long month)
+    const fmtUntil = (iso) => nbn(new Intl.DateTimeFormat(tag, { timeZone: "Asia/Jerusalem", year: "numeric", month: l === "he" ? "long" : "short", day: "numeric" }).format(Date.parse(`${iso}T12:00:00Z`))).replace(/ г\.$/, "");
+    for (const step of [0, 1, 2]) {
+      const row = toks.EA_DATES[l][step], days = ea.EA_STEP_DAYS[step];
+      check(nbn(row.until).replace(/ г\.$/, "") === fmtUntil(days.last), `${l} step ${step}: {until} "${nbn(row.until)}" is what Intl prints for the Israel calendar day ${days.last}`);
+    }
     // no date of another step is ever rendered in a step's text (the one exception: the extension note names the INITIAL last day, on purpose)
     for (const step of [0, 1, 2]) {
       const strings = flat(idx.getEaDictionary(l, step)).filter(([p]) => !(step > 0 && (p === "extended.note" || p === "extended.noteAnnounce")));

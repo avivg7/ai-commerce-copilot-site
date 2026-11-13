@@ -5,14 +5,15 @@ import { fbProps, txProps } from "@/i18n";
 import { Rich, type RichCtx } from "@/lib/rich";
 import { PLANS } from "@/data/plans";
 import { COMMERCE_OPEN, getStartedUrl } from "@/lib/site";
-import { EA_ON } from "@/lib/earlyAccess";
+import { EA_ON, EA_OPEN } from "@/lib/earlyAccess";
 
-import { EaAfterNote, EaClosingLead, EaCta, EaPlanSupport, EaPlanTerms, EaPricingLine, EaPricingNote, EaSection } from "@/components/ea/Ea";
+import { EaAfterNote, EaClosingLead, EaCta, EaPlanTerms, EaPricingNote, EaSection, EaStatusNote } from "@/components/ea/Ea";
 import { SoonBandActions } from "@/components/ui/Soon";
 import { Container, Section, SectionHeading } from "@/components/ui/Primitives";
 import { PricingCard } from "@/components/ui/PricingCard";
 import { LocaleLink } from "@/components/ui/LocaleLink";
 import { Button } from "@/components/ui/Button";
+import { localePath } from "@/lib/routes";
 import { PlanFinder } from "@/components/home/PlanFinder";
 import { Fb } from "@/components/blocks/Blocks";
 import { Faq, JsonLd, PageHead } from "./shared";
@@ -37,7 +38,7 @@ export function PricingPage({ locale, t }: { locale: Locale; t: Dictionary }) {
 
       {/* 1. Hero */}
       <div>
-        <PageHead locale={locale} t={t} pageName={t.common.pageNames.pricing} title={<span {...fb("pricing.hero")}>{p.hero.title}</span>} lead={<span {...fb("pricing.hero")}>{R(p.hero.lead)}</span>}><EaPricingLine locale={locale} t={t} /></PageHead>
+        <PageHead locale={locale} t={t} pageName={t.common.pageNames.pricing} title={<span {...fb("pricing.hero")}>{p.hero.title}</span>} lead={<span {...fb("pricing.hero")}>{R(p.hero.lead)}</span>}/>
       </div>
 
       <EaAfterNote locale={locale} t={t} />
@@ -77,11 +78,12 @@ export function PricingPage({ locale, t }: { locale: Locale; t: Dictionary }) {
                 soon={t.common.soon.label}
                 headingLevel={3}
                 ea={t.ea.plan}
+                demoLabel={t.home.hero.ctaDemo}
               />
             ))
               // the terms every plan shares take the full width under the three cards (a campaign build only; an ordinary build adds nothing here, so its page is byte-identical);
               // P34 (owner list): the three short support lines come first, right under the cards
-              .concat(EA_ON ? [<EaPlanSupport key="ea-support" locale={locale} t={t} />, <EaPlanTerms key="ea-terms" locale={locale} t={t} />] : [])}
+              .concat(EA_ON ? [<EaStatusNote key="ea-status" locale={locale} t={t} />, <EaPlanTerms key="ea-terms" locale={locale} t={t} />] : [])}
           </div>
           <p className="aicc-countline" style={{ marginBlockStart: "1.5rem" }}>{EA_ON ? <EaPricingNote locale={locale} t={t} ordinary={p.plansSection.note} /> : p.plansSection.note} {t.common.plan.renewal}</p>
           <p className="aicc-countline" style={{ marginBlockStart: "0.5rem" }} {...tx("pricing.teaser")}>
@@ -181,6 +183,7 @@ export function PricingPage({ locale, t }: { locale: Locale; t: Dictionary }) {
                   <EaClosingLead locale={locale} t={t} />
                   <div className="aicc-hero-actions">
                     <EaCta locale={locale} t={t} variant="primary" />
+                    {EA_OPEN ? null : <Button href={`${localePath(locale)}#demo`} variant="primary" size="lg">{t.home.hero.ctaDemo}</Button>}
                   </div>
                 </div>
               ) : null}
