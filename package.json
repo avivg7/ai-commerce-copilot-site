@@ -68,7 +68,10 @@
     "test:public-truth": "node scripts/public-truth-gate.mjs",
     "ea:check": "node scripts/ea-check.mjs",
     "test:early-access": "node scripts/test-early-access.mjs",
-    "ea:live": "node scripts/ea-live-check.mjs"
+    "ea:live": "node scripts/ea-live-check.mjs",
+    "test:launch-offer": "node scripts/test-launch-offer.mjs",
+    "test:launch-offer-browser": "node scripts/test-launch-offer-browser.mjs",
+    "test:request-form": "node scripts/test-request-form.mjs"
   },
   "dependencies": {
     "clsx": "^2.1.1",

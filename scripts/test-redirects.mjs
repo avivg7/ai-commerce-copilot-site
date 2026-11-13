@@ -127,6 +127,9 @@ function genRouting(operator = false) {
   L.push(`\thandle @static_demo {`, `\t\theader Cache-Control "public, max-age=0, must-revalidate"`, `\t\timport static_csp`, `\t\timport to_static`, `\t}`);
   named("static_assets", M.STATIC_ASSET_RE);
   L.push(`\thandle @static_assets {`, `\t\theader Cache-Control "public, max-age=86400"`, `\t\timport static_csp`, `\t\timport to_static`, `\t}`);
+  // the launch-offer intake: the machine path with a 4 KB body cap (P32); before wp_machine (first match wins), and only for this one route family
+  named("wp_intake", M.WP_INTAKE_RE);
+  L.push(`\thandle @wp_intake {`, `\t\timport to_wordpress_intake${ENV}`, `\t}`);
   named("wp_machine", M.WP_MACHINE_RE);
   L.push(`\thandle @wp_machine {`, `\t\timport to_wordpress_nocache${ENV}`, `\t}`);
   named("wp_assets", M.WP_ASSETS_RE);
@@ -141,6 +144,9 @@ function genRouting(operator = false) {
   L.push(`\thandle @wp_nocache {`, `\t\timport to_wordpress_nocache${ENV}`, `\t}`);
   named("wp_pages", M.WP_PAGES_RE);
   L.push(`\thandle @wp_pages {`, `\t\timport to_wordpress${ENV}`, `\t}`);
+  // the launch-offer request pages: static, with the request-page CSP (P32); before the default handler, after every WordPress rule
+  named("request_access", M.REQUEST_ACCESS_RE);
+  L.push(`\thandle @request_access {`, `\t\theader Cache-Control "public, max-age=0, must-revalidate"`, `\t\timport static_csp_request`, `\t\timport to_static`, `\t}`);
   L.push(`\thandle {`, `\t\theader Cache-Control "public, max-age=0, must-revalidate"`, `\t\timport static_csp`, `\t\timport to_static`, `\t}`);
   return L;
 }
@@ -202,12 +208,13 @@ function parseMatchers(lines) {
       const act = { origin: null, cache: null };
       for (i++; lines[i] !== "}"; i++) {
         let n;
-        if ((n = /^import (to_wordpress(?:_admin|_nocache)?)( env AICC_EDGE_LISTENER operator)?$/.exec(lines[i]))) {
+        if ((n = /^import (to_wordpress(?:_admin|_nocache|_intake)?)( env AICC_EDGE_LISTENER operator)?$/.exec(lines[i]))) {
           act.origin = "wordpress"; act.listenerEnv = Boolean(n[2]);
           if (n[1] !== "to_wordpress") act.cache = "private, no-store, max-age=0";
         }
         else if (lines[i] === "import to_static") act.origin = "static";
         else if (lines[i] === "import static_csp") act.csp = true;
+        else if (lines[i] === "import static_csp_request") act.csp = "request";
         else if (lines[i] === "error 404") act.origin = "404";
         else if ((n = /^respond "([^"]*)" (\d{3})$/.exec(lines[i]))) { act.origin = "deny"; act.status = Number(n[2]); }
         else if ((n = /^header Cache-Control "(.+)"$/.exec(lines[i]))) act.cache = n[1];
@@ -346,7 +353,7 @@ function resolve(req) {
     const a = it.act;
     if (a.origin === "static") {
       if (!staticExists(req.path)) return { status: 404, origin: "404", by: it.matcher || "default", hdr };
-      return { status: 200, origin: "static", cache: a.cache, csp: !!a.csp, by: it.matcher || "default", hdr };
+      return { status: 200, origin: "static", cache: a.cache, csp: a.csp === "request" ? "request" : !!a.csp, by: it.matcher || "default", hdr };
     }
     if (a.origin === "deny") return { status: a.status, origin: "edge-deny", cache: a.cache, by: it.matcher, hdr };
     if (a.origin === "wordpress") return { status: 200, origin: "wordpress", cache: a.cache, by: it.matcher, hdr };
@@ -467,11 +474,11 @@ if (!QUIET) console.log(`test-redirects: ${CASES.length} cases, stand-in edge on
     const pubR = code(regenerated.split("# BEGIN GENERATED: routing\n")[1]?.split("# END GENERATED: routing\n")[0] || "");
     const imports = (t) => t.split("\n").map((l) => l.trim()).filter((l) => /^import to_wordpress/.test(l));
     ok(opR.length > 100 && pubR.length > 100, "AICC_EDGE_LISTENER: both generated routing blocks must be found");
-    ok(imports(opR).length >= 4 && imports(opR).every((l) => /^import to_wordpress(?:_admin|_nocache)? env AICC_EDGE_LISTENER operator$/.test(l)), `every WordPress import of the OPERATOR routing must pass \`env AICC_EDGE_LISTENER operator\` (${imports(opR).join(" | ")})`);
-    ok(imports(pubR).length >= 3 && imports(pubR).every((l) => /^import to_wordpress(?:_admin|_nocache)?$/.test(l)), `the PUBLIC routing must import the WordPress snippets WITHOUT arguments (${imports(pubR).join(" | ")})`);
+    ok(imports(opR).length >= 4 && imports(opR).every((l) => /^import to_wordpress(?:_admin|_nocache|_intake)? env AICC_EDGE_LISTENER operator$/.test(l)), `every WordPress import of the OPERATOR routing must pass \`env AICC_EDGE_LISTENER operator\` (${imports(opR).join(" | ")})`);
+    ok(imports(pubR).length >= 3 && imports(pubR).every((l) => /^import to_wordpress(?:_admin|_nocache|_intake)?$/.test(l)), `the PUBLIC routing must import the WordPress snippets WITHOUT arguments (${imports(pubR).join(" | ")})`);
     ok(!/AICC_EDGE_LISTENER/.test(pubR), "the PUBLIC routing block must not mention AICC_EDGE_LISTENER at all");
     const all = code(regenerated);
-    ok(all.split("\n").filter((l) => /AICC_EDGE_LISTENER/.test(l)).every((l) => /^\s*import to_wordpress(?:_admin|_nocache)? env AICC_EDGE_LISTENER operator$/.test(l)), "AICC_EDGE_LISTENER may appear in the Caddyfile only as the argument of an operator-routing `import to_wordpress*` (never as a literal env line of a shared snippet, never on the public listener)");
+    ok(all.split("\n").filter((l) => /AICC_EDGE_LISTENER/.test(l)).every((l) => /^\s*import to_wordpress(?:_admin|_nocache|_intake)? env AICC_EDGE_LISTENER operator$/.test(l)), "AICC_EDGE_LISTENER may appear in the Caddyfile only as the argument of an operator-routing `import to_wordpress*` (never as a literal env line of a shared snippet, never on the public listener)");
     const fcb = code(snipText("wp_proxy_fastcgi"));
     ok(/^\s*\{args\[:\]\}\s*$/m.test(fcb.split("php_fastcgi")[1]?.split("file_server")[0] || ""), "the php_fastcgi block of wp_proxy_fastcgi must expand the snippet arguments ({args[:]}) - the only way the operator listener's env parameter reaches PHP");
     ok(/^\s*header_up -Aicc-\*\s*$/m.test(fcb), "wp_proxy_fastcgi must strip the Aicc-* request-header family (a client cannot forge the Control Plane's edge signal)");
@@ -619,6 +626,48 @@ ok(/Strict-Transport-Security "max-age=300"/.test(regenerated), "HSTS ramp must 
   ok(!/header_up\s+X-Forwarded/i.test(body("wp_proxy_fastcgi")), "the php_fastcgi form must not SET any X-Forwarded-* header (PHP reads REMOTE_ADDR and HTTPS; AICC_LM_TRUSTED_PROXIES stays empty)");
   ok(!/trusted_proxies/.test(regenerated.split("\n").filter((l) => !/^\s*#/.test(l)).join("\n")), "trusted_proxies must not be set on the public edge (a client-supplied X-Forwarded-For would be believed)");
 }
+// P32 launch-offer request pages: routing and Content-Security-Policy. The request pages are the ONLY pages that may load anything from Cloudflare (Turnstile), and only from challenges.cloudflare.com.
+{
+  const body = (n) => (structure.snippets.get(n)?.body || []).join("\n");
+  const CF = "https://challenges.cloudflare.com";
+  const global = body("static_csp"), request = body("static_csp_request");
+  const dirs = (t) => Object.fromEntries([...t.matchAll(/(?:^|[";\s])((?:default|script|style|img|font|media|connect|frame|object|worker|manifest)-src|frame-ancestors|base-uri|form-action) ([^;"]+)/g)].map((m) => [m[1], m[2].trim()]));
+  const G = dirs(global), R = dirs(request);
+  ok(/Content-Security-Policy-Report-Only/.test(request) && /Content-Security-Policy-Report-Only/.test(global), "both CSP snippets are Report-Only like the existing one (enforcement is a separate, later decision)");
+  ok(!/cloudflare/i.test(global), "static_csp (every static page but the request pages) must not allow Cloudflare: Turnstile loads only on /request-access/");
+  for (const d of ["script-src", "connect-src", "frame-src"]) ok((R[d] || "").split(/\s+/).includes(CF), `static_csp_request must allow ${CF} in ${d} (Turnstile)`);
+  ok(!("frame-src" in G) && (R["frame-src"] || "") === CF, "frame-src exists only on the request pages and names only the Turnstile origin (the global policy falls back to default-src 'self')");
+  ok([...request.matchAll(/https?:\/\/[^\s;"']+/g)].every((m) => m[0] === CF), "the request-page CSP names no origin but challenges.cloudflare.com");
+  ok(!/\*|\bdata:[^;]*script|unsafe-eval|\bhttps?:(?=[\s;"])|\bwss?:/.test(request), "the request-page CSP has no wildcard, no scheme-wide source, no unsafe-eval and no websocket source");
+  for (const d of ["default-src", "style-src", "img-src", "font-src", "media-src", "frame-ancestors", "base-uri", "form-action"]) ok(G[d] === R[d] && !!R[d], `the request-page CSP keeps ${d} exactly as the global policy (${G[d]})`);
+  ok(R["script-src"] === `${G["script-src"]} ${CF}` && R["connect-src"] === `${G["connect-src"]} ${CF}`, "script-src and connect-src are the global values plus the one Turnstile origin, nothing else");
+  const first = (set, p, method = "GET") => { const req = { path: p, cleanPath: cleanPath(p), query: "", method }; for (const it of set.items) { if (it.kind !== "handle") continue; const caps = it.matcher ? matches(set, it.matcher, req) : {}; if (caps) return it; } return null; };
+  for (const [label, set] of [["public", routingSrc], ["operator", routingOpSrc]]) {
+    for (const p of ["/request-access/", "/request-access", "/he/request-access/", "/es/request-access/confirm/", "/ru/request-access/confirm/", "/request-access/index.txt"]) {
+      const it = first(set, p);
+      ok(it && it.matcher === "request_access" && it.act.origin === "static" && it.act.csp === "request" && it.act.cache === "public, max-age=0, must-revalidate", `${label} listener: ${p} is STATIC with the request-page CSP and revalidating cache (matched ${it?.matcher || "default"})`);
+    }
+    for (const p of ["/", "/pricing/", "/he/", "/product/", "/questions/", "/data-and-trust/", "/privacy/", "/es/privacy/", "/my-account/", "/checkout/", "/cart/", "/wp-admin/admin-ajax.php", "/wp-json/aicc-license/v1/plans"]) {
+      const it = first(set, p);
+      ok(!(it && it.matcher === "request_access") && !(it && it.act.csp === "request"), `${label} listener: ${p} never gets the request-page policy (Turnstile origin) and never the request handler`);
+    }
+    // the ONE new API surface of the intake: /wp-json/aicc/v1/access-requests* is the existing machine path (WordPress, never cached, never static); the request handler cannot capture it
+    for (const p of ["/wp-json/aicc/v1/access-requests", "/wp-json/aicc/v1/access-requests/status", "/wp-json/aicc/v1/access-requests/confirm"]) {
+      const it = first(set, p, p.endsWith("/status") ? "GET" : "POST");
+      ok(it && it.act.origin === "wordpress" && it.act.cache === "private, no-store, max-age=0" && it.matcher !== "request_access", `${label} listener: ${p} is WordPress, never cached, not the static request handler (matched ${it?.matcher})`);
+    }
+  }
+  // the request intake: a 4 KB body cap on exactly this route family, the same no-store and header stripping as every machine path, the ordinary 2 MB cap and the 64 MB admin cap untouched
+  { const sn = body("to_wordpress_intake");
+    ok(/max_size 4KB/.test(sn) && /private, no-store, max-age=0/.test(sn) && /import wp_proxy \{args\[:\]\}/.test(sn) && !/wp_body_cap/.test(sn), "to_wordpress_intake: 4 KB request body cap, never cached, through wp_proxy (the same stripping of forwarding headers; no X-Forwarded-For is ever set)");
+    ok(/max_size 2MB/.test(body("wp_body_cap")) && /max_size 64MB/.test(body("to_wordpress_admin")), "the ordinary public cap (2 MB) and the operator cap (64 MB) are unchanged");
+    for (const [label, set] of [["public", routingSrc], ["operator", routingOpSrc]]) {
+      for (const p of ["/wp-json/aicc/v1/access-requests", "/wp-json/aicc/v1/access-requests/status", "/wp-json/aicc/v1/access-requests/confirm", "/wp-json/aicc/v1/Access-Requests", "/wp-json/aicc/v1/ACCESS-REQUESTS/confirm", "/wp-json/AICC/V1/access-requests/Status", "/wp-json/aicc/v1/access-requests/"]) { const it = first(set, p, "POST"); ok(it && it.matcher === "wp_intake" && it.act.origin === "wordpress", `${label} listener: ${p} takes the 4 KB intake handler (matched ${it?.matcher})`); }
+      for (const p of ["/wp-json/aicc-license/v1/activate", "/wp-json/aicc/v1/other", "/wp-json/aicc/v1/access-requestsX", "/wp-json/wc/store/v1/cart", "/wp-json/aicc/v1/access-requests-evil/x", "/my-account/", "/wc-api/x"]) { const it = first(set, p, "POST"); ok(!(it && it.matcher === "wp_intake"), `${label} listener: ${p} does NOT take the intake handler (matched ${it?.matcher})`); }
+    }
+    ok(!/trusted_proxies/.test(regenerated.split("\n").filter((l) => !/^\s*#/.test(l)).join("\n")) && /header_up -X-Forwarded-For/.test(body("wp_proxy_fastcgi")), "the intake keeps the existing client-address rule: X-Forwarded-For is stripped, PHP reads REMOTE_ADDR, trusted_proxies stays unset"); }
+  ok(/\^\$\{LOC\}\/request-access/.test("^${LOC}/request-access") && M.REQUEST_ACCESS_RE.includes("request-access") && !/pricing|checkout|my-account/.test(M.REQUEST_ACCESS_RE), "the request-access matcher names only the request pages (no WordPress or commerce path)");
+}
 ok(!/header_up\s+(-?Cookie|-?Set-Cookie)/i.test(regenerated) && !/header_down\s+-?Set-Cookie/i.test(regenerated), "Cookie / Set-Cookie must pass through untouched");
 
 server.close();
@@ -710,6 +759,20 @@ async function selfTest() {
     ["AICC_EDGE_LISTENER: wp_proxy stops passing its arguments", (t) => t.replace("(wp_proxy) {\n\timport wp_proxy_fastcgi {args[:]}\n}", "(wp_proxy) {\n\timport wp_proxy_fastcgi\n}")],
     ["AICC_EDGE_LISTENER: the php_fastcgi block no longer expands the arguments", (t) => afterHead(t, "(wp_proxy_fastcgi) {", "\t\t{args[:]}\n", "")],
     ["AICC_EDGE_LISTENER: the Aicc-* request header family is no longer stripped", (t) => afterHead(t, "(wp_proxy_fastcgi) {", "\t\theader_up -Aicc-*\n", "")],
+    // ---- P32: launch-offer request pages (CSP and routing)
+    ["P32: the request-page CSP loses the Turnstile frame (the widget cannot render)", (t) => t.replace("frame-src https://challenges.cloudflare.com; ", "")],
+    ["P32: the request-page CSP loses the Turnstile script origin", (t) => t.replace("script-src 'self' 'unsafe-inline' https://challenges.cloudflare.com;", "script-src 'self' 'unsafe-inline';")],
+    ["P32: the GLOBAL static CSP gains the Cloudflare origin (every page may load it)", (t) => t.replace("(static_csp) {\n\theader Content-Security-Policy-Report-Only \"default-src 'self'; script-src 'self' 'unsafe-inline';", "(static_csp) {\n\theader Content-Security-Policy-Report-Only \"default-src 'self'; script-src 'self' 'unsafe-inline' https://challenges.cloudflare.com;")],
+    ["P32: the request-page CSP gets a wildcard source", (t) => t.replace("connect-src 'self' https://challenges.cloudflare.com;", "connect-src 'self' https://challenges.cloudflare.com https://*.cloudflare.com;")],
+    ["P32: the request-page CSP allows any https source for scripts", (t) => t.replace("script-src 'self' 'unsafe-inline' https://challenges.cloudflare.com;", "script-src 'self' 'unsafe-inline' https:;")],
+    ["P32: the intake loses its 4 KB body cap", (t) => t.replace("\t\tmax_size 4KB\n", "\t\tmax_size 2MB\n")],
+    ["P32: the intake handler is removed (generated drift)", (t) => t.replace(/\t@wp_intake path_regexp [^\n]*\n\thandle @wp_intake \{\n(?:\t\t[^\n]*\n)*\t\}\n/g, "")],
+    ["P32: the intake matcher is widened to every wp-json route (generated drift)", (t) => t.replace("wp_intake (?i)^/wp-json/aicc/v1/access-requests(?:/.*)?$", "wp_intake (?i)^/wp-json(?:/.*)?$")],
+    ["P32: the intake matcher becomes case-sensitive again (a case variant escapes the 4 KB cap; generated drift)", (t) => t.replace("wp_intake (?i)^/wp-json/aicc", "wp_intake ^/wp-json/aicc")],
+    ["P32: the intake loses no-store", (t) => afterHead(t, "(to_wordpress_intake) {", "\t\tCache-Control \"private, no-store, max-age=0\"\n", "")],
+    ["P32: the request handler is removed (generated drift)", (t) => t.replace(/\t@request_access path_regexp [^\n]*\n\thandle @request_access \{\n(?:\t\t[^\n]*\n)*\t\}\n/g, "")],
+    ["P32: the request handler imports the global CSP (Turnstile would be blocked once enforced; generated drift)", (t) => t.replace(/import static_csp_request\n/g, "import static_csp\n")],
+    ["P32: the request matcher is widened to a WordPress page (generated drift)", (t) => t.replace("/request-access(?:/.*)?$", "/(?:request-access|my-account)(?:/.*)?$")],
     ["the ACME CA default is no longer Let's Encrypt production", (t) => t.replace("https://acme-v02.api.letsencrypt.org/directory", "https://acme.zerossl.com/v2/DV90")],
   ];
   const tmp = fs.mkdtempSync(path.join(process.env.TMPDIR || "/tmp", "aicc-redirect-mutants-"));

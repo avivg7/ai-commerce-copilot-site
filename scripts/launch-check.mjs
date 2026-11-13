@@ -81,7 +81,47 @@ if (env.NEXT_PUBLIC_LEGAL_DRAFT_NOTICE === "off" && !approved) problems.push("NE
 // Early Access (Production 20): a SEPARATE switch from checkout. It never opens paid purchases; it publishes a fixed-end free-access offer.
 {
   const ea = await loadTs("src/lib/earlyAccess.ts");
+  const eaRefIsPlaceholder = ea.eaRefIsPlaceholder;
+  // The campaign the BUILT export carries counts as much as this shell's environment (security review H1): an open export checked from another shell used to print "switch: OFF" and raise nothing.
+  const artDir = path.resolve(ROOT, process.env.AICC_OUT_DIR || "out");
+  const art = (() => {
+    const f = path.join(artDir, "index.html");
+    if (!fs.existsSync(f)) return { mode: null, verify: false };
+    const mode = fs.readFileSync(f, "utf8").match(/<html[^>]*\sdata-ea-mode="(\w+)"/)?.[1] || "off";
+    const rp = path.join(artDir, "request-access/index.html");
+    return { mode, verify: mode === "off" && fs.existsSync(rp) && fs.readFileSync(rp, "utf8").includes("data-req-verify") };
+  })();
+  const effMode = ea.EA_ON ? ea.EA_MODE : (art.mode && art.mode !== "off" ? art.mode : "off");
+  const effOn = effMode !== "off", effOpen = effMode === "open", effVerify = ea.EA_VERIFY || art.verify;
+  const M = effMode.toUpperCase();
+  if (art.mode !== null && (art.mode !== ea.EA_MODE || art.verify !== ea.EA_VERIFY)) problems.push(`launch offer: this shell's environment says mode "${ea.EA_MODE}"${ea.EA_VERIFY ? " (verify)" : ""} but the built export in ${path.relative(ROOT, artDir) || "."} says "${art.mode}"${art.verify ? " (verify)" : ""}: the stricter reading applies below, and the export must be rebuilt or checked with the environment it was built with`);
+  // An attestation is a REFERENCE to evidence, recorded and never verified here: either the path of an existing evidence file, or a token of the shape "letters, a separator, ..., at least one digit"
+  // (cp-dark/p33/intake-evidence, counsel-2026-11-30, TICKET-114). No spaces; not a placeholder or answer word (pending, false, later, unknown, "not done", "yes yes", digits only, ok-1 ...).
+  const BAD_WORDS = new Set(["pending", "false", "true", "yes", "no", "later", "unknown", "none", "not", "done", "todo", "tbd", "tba", "na", "ref", "test", "xxx", "placeholder", "verified", "approved", "signed", "ok", "soon", "waiting", "wip"]);
+  // Review P34-3: a FILE reference counts only when it is a regular file (no symlink) inside the evidence directory (AICC_EVIDENCE_DIR, default the owner's launch-evidence folder);
+  // any other existing file (package.json, README.md, /etc/hosts) clears nothing. A token is at least 8 characters, and a placeholder word with a numeric or one-letter suffix
+  // (approved-1, todo1-x, yes_2026, ok-1, true-2026, x-1) is refused.
+  const EVIDENCE_DIR = path.resolve(env.AICC_EVIDENCE_DIR || path.join(env.HOME || "", "aviv_files/AICC/commerce_copilot_images/AICC-launch-evidence"));
+  const PLACEHOLDER_SUFFIXED = /^(?=.{0,200}$)(?:yes|no|true|false|ok|okay|todo|tbd|tba|na|x+|test|pending|approved|verified|signed|done|ref|wip|placeholder)(?:\d*)(?:[-_.:/#@](?:[a-z]|\d+|yes|no|true|ok|x+|todo|tbd))*$/i;
+  const attested = (v) => {
+    if (typeof v !== "string") return false;
+    const t = v.trim();
+    if (t.length < 8 || t.length > 200 || /[\r\n]/.test(t)) return false;
+    if (path.isAbsolute(t) || /^[.~]/.test(t) || /\.(md|txt|pdf|json|log|png|jpe?g|html?)$/i.test(t)) {
+      try { const real = fs.realpathSync(t); const st = fs.lstatSync(t); return st.isFile() && !st.isSymbolicLink() && real.startsWith(fs.realpathSync(EVIDENCE_DIR) + path.sep); } catch { return false; }
+    }
+    if (!/^[A-Za-z]{2,}[-_:#/][A-Za-z0-9._:/#@-]*[0-9][A-Za-z0-9._:/#@-]*$/.test(t) || eaRefIsPlaceholder(t) || PLACEHOLDER_SUFFIXED.test(t)) return false;
+    const words = t.split(/[-_:#/.@]+/).map((w) => w.toLowerCase().replace(/^\d+|\d+$/g, "")).filter(Boolean);
+    return words.length > 0 && !words.every((w) => BAD_WORDS.has(w) || w.length === 1);
+  };
   console.log(`early access switch (NEXT_PUBLIC_AICC_EARLY_ACCESS): ${ea.EA_MODE.toUpperCase()}${ea.EA_REQUESTED !== ea.EA_MODE ? ` (requested "${ea.EA_REQUESTED}", ignored: this build is at or after the end ${ea.EA_END_ISO_UTC})` : ""}; end ${ea.EA_END_ISO_UTC}${ea.EA_EXTENDED ? ` = EXTENSION STEP ${ea.EA_EXTENSION_STEP} (the initial published end was ${ea.EA_CUTOFF_ISO_UTC})` : ` = 2027-01-01 00:00 Asia/Jerusalem (initial published end)`}`);
+  // VERIFY mode (P32): the ordinary site plus UNLISTED request pages, to test the live destination before any button exists. It may be built anywhere, but a PRODUCTION run refuses it without the owner's explicit word.
+  if (env.NEXT_PUBLIC_AICC_EARLY_ACCESS === "verify" || art.verify) {
+    console.log(`launch offer VERIFY build: ${ea.EA_VERIFY ? "the ordinary site plus the unlisted, noindex request pages (/request-access/, /request-access/confirm/) with a \"Verification page, not public\" banner; no campaign text or button anywhere" : "IGNORED (this build is at or after the end)"}`);
+    if (effVerify && env.AICC_PRODUCTION === "1" && env.AICC_EA_VERIFY_BUILD !== "owner-approved") problems.push("launch offer VERIFY with a production deploy flag (AICC_PRODUCTION=1): a verify build puts the unlisted request pages on the live host, which is the owner's decision; set AICC_EA_VERIFY_BUILD=owner-approved only when the owner has approved exactly this deployment");
+    else if (effVerify && env.AICC_EA_VERIFY_BUILD === "owner-approved") console.log("launch offer VERIFY: AICC_EA_VERIFY_BUILD=owner-approved is set (recorded, not verified by this command)");
+  }
+  if (env.AICC_EA_VERIFY_BUILD && env.AICC_EA_VERIFY_BUILD !== "owner-approved") problems.push(`AICC_EA_VERIFY_BUILD is "${env.AICC_EA_VERIFY_BUILD}": the only accepted value is the exact word owner-approved`);
   if (ea.EA_EXPIRED_REQUEST) problems.push(`early access: the switch is "${ea.EA_REQUESTED}" but this build is made at or after the end (${ea.EA_END_ISO_UTC}), so the campaign was NOT published; remove NEXT_PUBLIC_AICC_EARLY_ACCESS from the release environment${ea.EA_EXTENSION_REQUESTED && !ea.EA_EXTENDED ? " (an extension was requested but ignored, see the next line)" : ""}`);
   // Extension (Production 21): a step needs its decision reference; without it the build silently keeps the initial end, which is the conservative side, but the operator must be told.
   if (ea.EA_EXTENSION_REQUESTED && !ea.EA_EXTENDED) problems.push(`early access extension: NEXT_PUBLIC_AICC_EA_EXTENSION_STEP is "${env.NEXT_PUBLIC_AICC_EA_EXTENSION_STEP}" but the extension was IGNORED (${ea.EA_EXTENSION_REJECTED}); this build keeps the initial end ${ea.EA_CUTOFF_ISO_UTC}`);
@@ -96,11 +136,10 @@ if (env.NEXT_PUBLIC_LEGAL_DRAFT_NOTICE === "off" && !approved) problems.push("NE
   }
   // Plugin identity gate (Production 21): the release being distributed must be the corrected Plugin (no 14-day money-back message on a free grant), recorded by its hash.
   // The hash must be in the committed allow-list (scripts/data/ea-plugin-releases.json): adding an entry is a conscious act when a new Plugin build is attested.
-  if (ea.EA_ON) {
+  if (effOn) {
     const reg = JSON.parse(fs.readFileSync(path.join(ROOT, "scripts/data/ea-plugin-releases.json"), "utf8"));
     const v = env.AICC_EA_PLUGIN_RELEASE_SHA256;
     const why = "it records that the Plugin release distributed with Early Access is the corrected one that no longer shows a 14-day money-back message on a free grant (the superseded 1.1.0 candidate does); the Site build never reads it; the hash must be in scripts/data/ea-plugin-releases.json, and adding an entry there is a conscious act when a new Plugin build is attested";
-    const M = ea.EA_MODE.toUpperCase();
     if (!v) problems.push(`early access ${M}: AICC_EA_PLUGIN_RELEASE_SHA256 is not set: ${why}`);
     else if (!/^[0-9a-f]{64}$/.test(v)) problems.push(`early access ${M}: AICC_EA_PLUGIN_RELEASE_SHA256 must be 64 lower-case hex characters (the sha256 of the Plugin release ZIP): ${why}`);
     else if (reg.superseded.some((x) => x.sha256 === v)) problems.push(`early access ${M}: AICC_EA_PLUGIN_RELEASE_SHA256 is a SUPERSEDED candidate (${v.slice(0, 8)}...): that Plugin shows the money-back message on free grants and must not be distributed with Early Access; ${why}`);
@@ -108,11 +147,32 @@ if (env.NEXT_PUBLIC_LEGAL_DRAFT_NOTICE === "off" && !approved) problems.push("NE
     else if (!reg.allowed.some((x) => x.sha256 === v)) problems.push(`early access ${M}: AICC_EA_PLUGIN_RELEASE_SHA256 (${v.slice(0, 12)}...) is not in the allow-list scripts/data/ea-plugin-releases.json: ${why}`);
     else { const e = reg.allowed.find((x) => x.sha256 === v); console.log(`early access Plugin release identity (AICC_EA_PLUGIN_RELEASE_SHA256): ${v.slice(0, 12)}... allow-listed (${e.status}); recorded, not verified against any file`); if (/unsigned/i.test(e.status)) problems.push(`early access ${M}: the allow-listed Plugin release ${v.slice(0, 12)}... is an UNSIGNED candidate: do not publish until the signed release hash replaces it in scripts/data/ea-plugin-releases.json`); }
   }
-  if (ea.EA_OPEN && !ea.EA_URL_OVERRIDE) problems.push("early access OPEN: NEXT_PUBLIC_AICC_EARLY_ACCESS_URL is not set, so the buttons lead to the plain account page: the Early Access request flow on the Control Plane must exist and be approved first");
-  if (ea.EA_STRIKE) problems.push("early access: NEXT_PUBLIC_AICC_EA_STRIKE=on shows the plan price struck through next to the free offer: counsel must approve that presentation first (no plan has ever been sold at that price)");
-  if (ea.EA_OPEN && ea.EA_URL_OVERRIDE && !/^https:\/\//.test(ea.EA_URL_OVERRIDE)) problems.push(`early access OPEN: NEXT_PUBLIC_AICC_EARLY_ACCESS_URL ("${ea.EA_URL_OVERRIDE}") must be an https address`);
-  if (ea.EA_ON) problems.push("early access: the request flow behind the buttons (a Control Plane intake with operator approval) does not exist yet: the buttons must not be published until it is built and independently reviewed");
-  if (ea.EA_OPEN && !commerceOpen) console.log("early access OPEN with checkout CLOSED: a valid state (free access does not need checkout); after the end date the pages return to \"Purchases open soon\"");
+  // Strike-through (P32): off by default (`EA_STRIKE` is false unless the build says "on"); when it is on it stays a blocker until counsel's approval is attested with a real reference.
+  // Review P34-2: the BUILT export counts too (Home and Pricing in every language): a struck price there raises the same blocker whatever this shell's switch says.
+  const strikeBuilt = ["", "he/", "es/", "ru/"].flatMap((l) => [`${l}index.html`, `${l}pricing/index.html`]).filter((rel) => { const f = path.join(artDir, rel); if (!fs.existsSync(f)) return false; const h = fs.readFileSync(f, "utf8"); return /class="[^"]*aicc-plan__regular--strike/.test(h) || /<(s|del)>/.test(h); }); // the markup, not the inline stylesheet every campaign build carries
+  if (ea.EA_STRIKE || strikeBuilt.length) {
+    if (!attested(env.AICC_EA_STRIKE_COUNSEL_APPROVED)) problems.push(`early access: NEXT_PUBLIC_AICC_EA_STRIKE=on shows the plan price struck through next to the free offer${strikeBuilt.length && !ea.EA_STRIKE ? ` (found in the built export: ${strikeBuilt.join(", ")})` : ""}: counsel must approve that presentation first (no plan has ever been sold at that price); attest it with AICC_EA_STRIKE_COUNSEL_APPROVED=<counsel approval reference>`);
+    else console.log(`early access strike-through: ON, counsel approval attested (${env.AICC_EA_STRIKE_COUNSEL_APPROVED.trim()}); recorded, not verified`);
+  }
+  // "Limited availability" (P34): off by default; on, it is a blocker until the owner attests the facts that make it true (the built export counts as much as this shell's switch).
+  const limitedBuilt = (() => { const f = path.join(artDir, "index.html"); return fs.existsSync(f) && fs.readFileSync(f, "utf8").includes("data-ea-limited"); })();
+  if (ea.EA_LIMITED || limitedBuilt) {
+    if (!attested(env.AICC_EA_LIMITED_ATTESTED)) problems.push(`launch offer: the Hero says "Limited availability" (NEXT_PUBLIC_AICC_EA_LIMITED_NOTE=on${limitedBuilt && !ea.EA_LIMITED ? ", found in the built export" : ""}): the owner must attest that it is true (every request is reviewed by hand, approvals are capped by AICC_EA_REQUESTS_CAPACITY on the Control Plane, and the offer can close to new requests at any time); attest it with AICC_EA_LIMITED_ATTESTED=<reference>`);
+    else console.log(`launch offer "Limited availability": ON, owner attestation (AICC_EA_LIMITED_ATTESTED=${env.AICC_EA_LIMITED_ATTESTED.trim()}); recorded, not verified`);
+  } else if (ea.EA_LIMITED_REQUESTED) console.log("launch offer \"Limited availability\": NEXT_PUBLIC_AICC_EA_LIMITED_NOTE=on has no effect in this build (the campaign is off)");
+  if (env.NEXT_PUBLIC_AICC_EARLY_ACCESS_URL) problems.push(`early access: NEXT_PUBLIC_AICC_EARLY_ACCESS_URL is set ("${env.NEXT_PUBLIC_AICC_EARLY_ACCESS_URL}") but is IGNORED since the launch offer (P32): the request buttons lead only to this site's /request-access/ page; remove the variable so nobody believes it decides anything`);
+  if (effOn) problems.push(`launch offer ${M}: publishing a campaign build needs the owner's explicit approval (a separate decision from this build); the Control Plane intake (the request-access routes) must be deployed and independently reviewed, and the legal pages must carry the launch-offer terms and the new processors before ${ea.EA_OPEN ? "this build is" : "any build is"} published`);
+  // OPEN mode (P32): the buttons lead to a real form. Two explicit attestations are required, each a non-empty reference to evidence (a path, ticket or decision id), never a bare "yes" or a placeholder.
+  if (effOpen) {
+    if (!attested(env.AICC_EA_INTAKE_VERIFIED)) problems.push(`launch offer OPEN: AICC_EA_INTAKE_VERIFIED is ${env.AICC_EA_INTAKE_VERIFIED ? `"${env.AICC_EA_INTAKE_VERIFIED}", which is not a real evidence reference` : "not set"}: set it to the reference of the evidence that the destination works end to end (the Control Plane request-access routes are deployed, a request arrives, the confirmation e-mail is delivered and confirmed, a rejected request and a closed state behave); an OPEN build must not be published without it`);
+    else console.log(`launch offer OPEN: intake verified (AICC_EA_INTAKE_VERIFIED=${env.AICC_EA_INTAKE_VERIFIED.trim()}); recorded, not verified by this command`);
+    if (!attested(env.AICC_EA_LEGAL_SIGNOFF)) problems.push(`launch offer OPEN: AICC_EA_LEGAL_SIGNOFF is ${env.AICC_EA_LEGAL_SIGNOFF ? `"${env.AICC_EA_LEGAL_SIGNOFF}", which is not a real sign-off reference` : "not set"}: set it to the reference of the legal sign-off that the Privacy Policy and Terms cover the new data collection (e-mail, store address, plan, and the short-lived abuse counters keyed by a hash of the connection, which are the only IP-derived data kept) and the new processors (Cloudflare Turnstile and the e-mail delivery provider); the legal pages are the owner's and counsel's gate and this build does not edit them`);
+    else console.log(`launch offer OPEN: legal sign-off (AICC_EA_LEGAL_SIGNOFF=${env.AICC_EA_LEGAL_SIGNOFF.trim()}); recorded, not verified by this command`);
+    const mp = ea.EA_MAIL_PROVIDER;
+    if (!mp || eaRefIsPlaceholder(mp) || /to be confirmed|\btbd\b|\btodo\b|placeholder|example|\bn\/a\b|replace/i.test(mp)) problems.push(`launch offer OPEN: NEXT_PUBLIC_AICC_EA_MAIL_PROVIDER is ${mp ? `"${mp}", a placeholder` : "not set"}: the request form's privacy notice names the e-mail delivery provider, and the owner has not chosen one; until a real provider name is given the page shows a visible placeholder and this build must not be published`);
+    else console.log(`launch offer OPEN: the request form names the e-mail delivery provider "${mp}"`);
+  }
+  if (effOpen && !commerceOpen) console.log("early access OPEN with checkout CLOSED: a valid state (free access does not need checkout); after the end date the pages return to \"Purchases open soon\"");
 }
 
 // If a build exists, look at what it really contains.
@@ -162,6 +222,58 @@ if (fs.existsSync(out)) {
     for (const r of LEGAL_ROUTES) { const f = path.join(out, r, "index.html"); if (fs.existsSync(f) && fs.readFileSync(f, "utf8").includes('data-translation-draft="true"')) leaked.push(`en/${r}`); }
     if (missing.length) problems.push(`built output lacks the machine-translation disclosure on ${missing.join(", ")} (NEXT_PUBLIC_LEGAL_TRANSLATIONS_REVIEWED is not true)`);
     if (leaked.length) problems.push(`built output carries the machine-translation disclosure where it should not be: ${leaked.join(", ")}`);
+  }
+  {
+    // Launch offer (P32): what the built pages say must match the mode they were built in. The mode of the BUILD is read from the export itself (data-ea-mode on <html>), not from this
+    // process's environment, so a stale `out/` is judged for what it is.
+    const read = (rel) => (fs.existsSync(path.join(out, rel)) ? fs.readFileSync(path.join(out, rel), "utf8") : null);
+    const home = read("index.html") || "";
+    const builtMode = home.match(/<html[^>]*\sdata-ea-mode="(\w+)"/)?.[1] || "off";
+    const htmlFiles = []; const walkL = (d) => { for (const e of fs.readdirSync(d, { withFileTypes: true })) { const q = path.join(d, e.name); if (e.isDirectory()) { if (!["_next", "brand-kit", "og", "fonts"].includes(e.name)) walkL(q); } else if (e.name.endsWith(".html")) htmlFiles.push(q); } }; walkL(out);
+    // 1. the old hero fine print must be gone in every mode
+    const notes = htmlFiles.filter((f) => fs.readFileSync(f, "utf8").includes("aicc-eanote")).map((f) => path.relative(out, f));
+    if (notes.length) problems.push(`launch offer: ${notes.length} built page(s) still carry the fine print under the hero buttons (class aicc-eanote; the owner removed it): ${notes.slice(0, 3).join(", ")}`);
+    // 2. the request pages exist in an OPEN build, in all four languages, and in no other build
+    const REQ = ["request-access/index.html", "request-access/confirm/index.html", ...["he", "es", "ru"].flatMap((l) => [`${l}/request-access/index.html`, `${l}/request-access/confirm/index.html`])];
+    const present = REQ.filter((r) => fs.existsSync(path.join(out, r)));
+    // a VERIFY build is an ordinary (mode off) site whose request pages all carry the verification banner (data-req-verify)
+    const bannered = present.filter((r) => fs.readFileSync(path.join(out, r), "utf8").includes("data-req-verify"));
+    const builtVerify = builtMode === "off" && present.length > 0 && bannered.length === present.length;
+    if (builtVerify && present.length !== REQ.length) problems.push(`launch offer VERIFY: the export lacks request pages (${REQ.filter((r) => !present.includes(r)).join(", ")})`);
+    if (builtMode === "open" && bannered.length) problems.push(`launch offer OPEN: ${bannered.length} request page(s) carry the verification banner (an open build must not say "not public")`);
+    if (builtMode === "open" && present.length !== REQ.length) problems.push(`launch offer OPEN: the export lacks request pages (${REQ.filter((r) => !present.includes(r)).join(", ")})`);
+    if (builtMode !== "open" && present.length && !builtVerify) problems.push(`launch offer: the export was built in mode "${builtMode}" but contains request pages (${present.join(", ")}): they may exist only in an OPEN build`);
+    // 3. the words of the request button exist only in an OPEN build (never in an OFF or announce build, not even hidden), in any language
+    const isReq = (f) => /(^|\/)request-access\//.test(path.relative(out, f).replace(/\\/g, "/"));
+    if (builtVerify) {
+      // every NON-request page of a verify build is the ordinary site: no campaign text, no link to the request pages; every request page is noindex
+      const nonReq = htmlFiles.filter((f) => !isReq(f));
+      const lk = nonReq.filter((f) => /request-access/.test(fs.readFileSync(f, "utf8"))).map((f) => path.relative(out, f));
+      if (lk.length) problems.push(`launch offer VERIFY: ${lk.length} ordinary page(s) mention /request-access/ (the pages must be unlisted): ${lk.slice(0, 3).join(", ")}`);
+      const noidx = present.filter((r) => !/<meta name="robots" content="noindex,nofollow"\/?>/.test(fs.readFileSync(path.join(out, r), "utf8")));
+      if (noidx.length) problems.push(`launch offer VERIFY: request page(s) without <meta name="robots" content="noindex,nofollow">: ${noidx.slice(0, 3).join(", ")}`);
+      for (const f of ["sitemap.xml", "robots.txt"]) { const t = read(f); if (t && /request-access/.test(t)) problems.push(`launch offer VERIFY: ${f} names the request pages (they must be unlisted)`); }
+    }
+    if (builtMode !== "open") {
+      const dicts = await (await import("./lib/load.mjs")).loadDictionaries();
+      const words = [...new Set(Object.values(dicts).flatMap((d) => [d.ea.hero.ctaOpen, d.ea.plan.ctaOpen, d.ea.header.cta]))];
+      const leaks = [];
+      for (const f of htmlFiles.filter((x) => !isReq(x))) { const h = fs.readFileSync(f, "utf8").replace(/&nbsp;|\u00a0/g, " "); for (const w of words) if (h.includes(w)) leaks.push(`${path.relative(out, f)} ("${w}")`); }
+      if (leaks.length) problems.push(`launch offer: the request button wording appears in a build that is not OPEN (mode ${builtMode}): ${leaks.slice(0, 3).join(", ")}${leaks.length > 3 ? ` and ${leaks.length - 3} more` : ""}`);
+      if (htmlFiles.filter((x) => !isReq(x)).some((f) => /href="[^"]*request-access/.test(fs.readFileSync(f, "utf8")))) problems.push(`launch offer: a link to /request-access/ exists in a build that is not OPEN (mode ${builtMode})`);
+    }
+    // 4. an OPEN build: nothing in the request pages or their code may reach a payment, checkout, licence or grant route; the only API surface is /wp-json/aicc/v1/access-requests*
+    if ((builtMode === "open" || builtVerify) && present.length) {
+      const bad = [];
+      for (const r of present) { const h = fs.readFileSync(path.join(out, r), "utf8"); const m = h.match(/(?:href|action)="[^"]*(?:checkout|cart|\/pay\b|payment|licen[cs]e|\/grant|wp-admin|wp-login|my-account\/?\?(?:[^"]*&)?plan=|offer=early-access)[^"]*"/gi); if (m) bad.push(`${r}: ${m[0]}`); }
+      const chunks = path.join(out, "_next/static/chunks"); const apiRefs = new Set();
+      const walkC = (d) => { for (const e of fs.readdirSync(d, { withFileTypes: true })) { const q = path.join(d, e.name); if (e.isDirectory()) walkC(q); else if (e.name.endsWith(".js")) { const t = fs.readFileSync(q, "utf8"); if (t.includes("access-requests")) for (const m of t.matchAll(/\/wp-json\/[^"'`\s\\)]*/g)) apiRefs.add(m[0]); } } };
+      if (fs.existsSync(chunks)) walkC(chunks);
+      for (const a of apiRefs) if (!/^\/wp-json\/aicc\/v1\/access-requests(\/status|\/confirm)?$/.test(a)) bad.push(`client code names the API route ${a}`);
+      if (bad.length) problems.push(`launch offer OPEN: the request pages reach beyond the intake routes: ${bad.slice(0, 3).join(" | ")}`);
+      if (!apiRefs.size) problems.push("launch offer OPEN: the client code of the request page names no intake route (the form would talk to nothing); rebuild");
+    }
+    console.log(`launch offer built output: mode ${builtVerify ? "verify (off + unlisted request pages)" : builtMode}; request pages ${present.length}/${REQ.length}; hero fine print in ${notes.length} page(s)`);
   }
   // Origin / SEO gate (same audit as `npm run seo:check`): canonical host, sitemap, robots, hreflang, no apex / http / localhost / GitHub Pages.
   const seo = auditBuild({ outDir: out });

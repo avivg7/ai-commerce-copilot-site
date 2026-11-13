@@ -124,6 +124,14 @@ export const WP_REST_INDEX_QUERY = `(^|&)${[..."rest"].map(pctLetter).join("")}(
 export const RSC_UNDER_WP_RE = `^${LOC}/(?:pricing|privacy|terms|refund-policy|accessibility)/(?:__next[^/]*|index)\\.txt$`;
 /** Next's client-navigation payloads of the static routes. They sit under /product/ too, which WooCommerce's /product/<slug>/ would otherwise swallow. */
 export const STATIC_RSC_RE = `^${LOC}(?:/(?:product|questions|data-and-trust))?/(?:__next[^/]*|index)\\.txt$`;
+/**
+ * The launch-offer request pages (P32): /request-access/ and /request-access/confirm/ (and anything below), in every language. STATIC (the Next export, only in an OPEN campaign build), answered with the
+ * request-page CSP (static_csp_request: the one extra origin is challenges.cloudflare.com, for Cloudflare Turnstile). They sit BEFORE the default static handler and after every WordPress rule, so no
+ * WordPress page can shadow them and they can never reach WordPress. The API they call (/wp-json/aicc/v1/access-requests*) is the existing WordPress machine path (WP_MACHINE_RE, never cached).
+ */
+export const REQUEST_ACCESS_RE = `^${LOC}/request-access(?:/.*)?$`;
+/** The launch-offer request intake (P32): ONLY /wp-json/aicc/v1/access-requests and below. It gets the 4 KB body cap (to_wordpress_intake); every other REST route keeps the ordinary machine-path handling. */
+export const WP_INTAKE_RE = "(?i)^/wp-json/aicc/v1/access-requests(?:/.*)?$"; // case-insensitive: WordPress dispatches REST routes case-insensitively, so a case variant must not escape the 4 KB cap
 export const WP_NOCACHE_RE = `^${LOC}/(?:cart|checkout|my-account)(?:/.*)?$|^/wp-(?:json|admin|login\\.php)(?:/.*)?$|^/wc-(?:ajax|api)(?:/.*)?$`;
 export const WP_PAGES_RE = `^${LOC}/(?:pricing|privacy|terms|refund-policy|data-processing-addendum|accessibility|cart|checkout|my-account|product-category|shop)(?:/.*)?$|^${LOC}/product/.+$`;
 

@@ -124,6 +124,12 @@ export function auditBuild({ outDir, origin = process.env.SEO_EXPECTED_ORIGIN ||
     const ha = attrs(htmlTag.replace(/^<html/i, ""));
     const title = (/<title>([\s\S]*?)<\/title>/i.exec(html)?.[1] || "").trim();
 
+    // P32 launch offer: the request pages (open and verify builds) are deliberately unlisted: they must be noindex,nofollow and are exempt from the indexable-page rules (no canonical, hreflang or Open Graph)
+    if (/(^|\/)request-access\//.test(f)) {
+      if (!noindex || !/nofollow/.test(robots)) err(where, `a request page must carry <meta name="robots" content="noindex,nofollow"> (found "${robots}")`);
+      if (canon.length) err(where, "a request page carries a canonical (it is unlisted)");
+      continue;
+    }
     if (isError) {
       if (!noindex) err(where, "error page is indexable (needs <meta name=\"robots\" content=\"noindex\">)");
       if (canon.length) err(where, `error page carries a canonical (${canon[0].href})`);

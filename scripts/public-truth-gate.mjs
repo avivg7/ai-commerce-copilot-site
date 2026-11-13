@@ -28,7 +28,7 @@ const LOCALES = ["", "he/", "es/", "ru/"];
 const SITE_PATHS = ["", "product/", "pricing/", "questions/", "data-and-trust/", "privacy/", "terms/", "refund-policy/", "accessibility/"];
 const CP_PATHS = ["pricing/", "privacy/", "terms/", "refund-policy/", "data-processing-addendum/", "accessibility/", "cart/", "checkout/", "my-account/", "my-account/lost-password/", "shop/"];
 /** Pages that are legitimately noindex (transactional and account pages, error pages). */
-const NOINDEX_OK = [/^(?:\/(?:he|es|ru))?\/(?:cart|checkout|my-account)(?:\/|$)/, /^\/(?:404|_not-found|50x)(?:\.html|\/|$)/];
+const NOINDEX_OK = [/^(?:\/(?:he|es|ru))?\/(?:cart|checkout|my-account)(?:\/|$)/, /^(?:\/(?:he|es|ru))?\/request-access(?:\/|$)/, /^\/(?:404|_not-found|50x)(?:\.html|\/|$)/];
 const noindexAllowed = (p) => NOINDEX_OK.some((re) => re.test(p));
 /** Canonical may point at the page a redirect lands on (/checkout/ -> /cart/) or at the account root (WooCommerce endpoints). */
 const isErrorPath = (p) => /(^|\/)(404|_not-found|50x)(\.html|\/|$)/.test(p);

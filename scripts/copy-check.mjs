@@ -4,7 +4,7 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { ROOT } from "./lib/load.mjs";
 import { truthProblems, selfTestProblems, TRUTH_RULES } from "./lib/launch-truth.mjs";
-import { ALLOWED_WHY, EA_EXTRA_RULES, EA_EXEMPT_LINE, isCampaignFile } from "./lib/early-access-truth.mjs";
+import { ALLOWED_WHY, EA_EXTRA_RULES, EA_EXEMPT_LINE, isCampaignFile, eaExtraRulesProbe, EA_LIMITED_PHRASE, EA_MANUAL_PHRASE } from "./lib/early-access-truth.mjs";
 
 // "Watch demo" is allowed since the owner visual pass: the modal is an honest labelled placeholder until a real video is configured,
 // and `npm run launch:check` blocks a production launch while the placeholder is active.
@@ -161,6 +161,18 @@ function stripComments(src) {
   const missed = badInCampaign.filter((t) => !rules(t, true)), wrong = okInCampaign.filter((t) => rules(t, true)), leaked = onlyHere.filter((t) => t !== "Free until December 31, 2026" && !rules(t, false)); // English "free until ..." was never banned on its own: only "start free", "free trial", "free plan/tier ..."
   if (missed.length || wrong.length || leaked.length) { console.error(`FAIL: self-test of the Early Access allowance: not caught in campaign files [${missed}] wrongly flagged [${wrong}] allowed outside the campaign files [${leaked}]`); process.exit(1); }
 }
+// Self-test of the P34 allowances: the owner's "Manual renewal only" and the exact "Limited availability" phrase (only as the whole value of a `limited:` line) pass in the campaign
+// files; every other scarcity or renewal wording is still caught, on a `limited:` line too.
+{
+  const extra = (line) => EA_EXTRA_RULES.some(([re]) => re.test(eaExtraRulesProbe(line)));
+  const ok = [...Object.values(EA_LIMITED_PHRASE).map((v) => `      limited: "${v}",`), ...Object.values(EA_MANUAL_PHRASE).map((v) => `      manual: "${v}",`), '      regular: "Regular pricing applies once purchases open",'];
+  const bad = ['      limited: "Limited availability: only 5 left",', '      limited: "Only a few places left",', '      noCard: "Limited availability",', '      limited: "Disponibilidad limitada, quedan 3 plazas",', '      limited: "Осталось 3 места",', '      limited: "זמינות מוגבלת - נשארו 5 מקומות",',
+    '      limited: "Limited availability, hurry",', '      x: "Su renovación es anual",',
+    // review P34-1: "renovación manual" is NOT a free pass; only the exact approved line is exempt
+    '      manual: "Renovación manual o automática",', '      manual: "Renovación manual y luego automática",', '      manual: "Renovación manual anual con cargo automático",', '      x: "Solo renovación manual",', '      manual: "Solo renovación manual, después automática",', '      x: "Renovación automática al final",', '      x: "Your plan renews every year",', '      x: "Подписка с автопродлением",', '      x: "המנוי מתחדש",'];
+  const wrong = ok.filter(extra), missed = bad.filter((t) => !extra(t));
+  if (wrong.length || missed.length) { console.error(`FAIL: self-test of the P34 allowances: wrongly flagged [${wrong}] not caught [${missed}]`); process.exit(1); }
+}
 // Launch-truth rules (scripts/lib/launch-truth.mjs, shared with content:check): self-tested here on every run, applied to every source line below.
 {
   const bad = selfTestProblems();
@@ -175,7 +187,7 @@ for (const f of [...files(path.join(ROOT, "src")), ...files(path.join(ROOT, "doc
     // The Early Access campaign copy (src/i18n/ea/) is the ONLY place the plain words "free" / "no credit card" are allowed (owner decision, Production 20); it gets extra bans instead.
     const campaign = isCampaignFile(path.relative(ROOT, f));
     for (const [re, why] of RULES) if (re.test(line) && !(campaign && ALLOWED_WHY.has(why))) hits.push(`${path.relative(ROOT, f)}:${i + 1}  [${why}]  ${line.trim().slice(0, 110)}`);
-    if (campaign && !EA_EXEMPT_LINE.test(line)) for (const [re, why] of EA_EXTRA_RULES) if (re.test(line)) hits.push(`${path.relative(ROOT, f)}:${i + 1}  [${why}]  ${line.trim().slice(0, 110)}`);
+    if (campaign && !EA_EXEMPT_LINE.test(line)) for (const [re, why] of EA_EXTRA_RULES) if (re.test(eaExtraRulesProbe(line))) hits.push(`${path.relative(ROOT, f)}:${i + 1}  [${why}]  ${line.trim().slice(0, 110)}`);
     for (const p of truthProblems(line, { publicCopy: /^src\//.test(path.relative(ROOT, f)) })) hits.push(`${path.relative(ROOT, f)}:${i + 1}  [${p.why}]  ${line.trim().slice(0, 110)}`);
   });
 }

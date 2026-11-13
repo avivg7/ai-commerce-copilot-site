@@ -10,7 +10,7 @@ import { REPLICA_LABELS, HE_ADMIN_LABELS } from "./lib/replica-labels.mjs";
 const STRICT = process.argv.includes("--strict");
 
 const LOCALES = ["en", "he", "es", "ru"];
-const BRAND = ["WP Consent API", "aicc_lang_dismissed", "AI Commerce Copilot", "Ask Reco", "AICC", "Reco", "WooCommerce", "WordPress", "Solo", "Studio", "Agency", "Storefront", "cookie", "cookies", "Cookie", "http", "https", "HTTP", "HTTPS", "CSV", "WCAG", "HTTPS", "USD", "Plans & Stores", "aicc_lang", "aci_vid", "aci_sid"];
+const BRAND = ["WP Consent API", "aicc_lang_dismissed", "AI Commerce Copilot", "Ask Reco", "AICC", "Reco", "WooCommerce", "WordPress", "Solo", "Studio", "Agency", "Storefront", "cookie", "cookies", "Cookie", "http", "https", "HTTP", "HTTPS", "CSV", "WCAG", "HTTPS", "USD", "Plans & Stores", "aicc_lang", "aci_vid", "aci_sid", "Cloudflare Turnstile", "Cloudflare", "Turnstile"];
 const allow = JSON.parse(fs.readFileSync(path.join(ROOT, "scripts/i18n-allowlist.json"), "utf8"));
 
 const dicts = await loadDictionaries();       // as rendered: English fills every untranslated unit

@@ -4,7 +4,7 @@
 // It serves each export itself (scripts/serve-out.mjs on free ports), pins the browser clock, and asserts what a visitor SEES: visibility, not just markup.
 //  * time matrix: 40 days before, 1 s before, 1 ms before, AT the end, 1 ms after, 1 s after, 15 days after (the end of the build's step: the initial cutoff, or step 1 / step 2); each in 6 visitor time zones
 //    (UTC, Los Angeles, Jerusalem, Kiritimati +14, Auckland, Pago Pago -11): the offer is live iff the clock is before the instant, whatever the zone; an extended page stays live at the INITIAL cutoff;
-//  * live view: bar, struck regular price with its label, "Free until December 31, 2026", the end date, one primary action per plan, CTA href (open) or "opens soon" (announce);
+//  * live view (P32 launch offer): bar, the regular price with its label (struck through only with --strike), "Free until December 31, 2026", the end date, one action per plan, CTA href /request-access/ (open) or the non-clickable "Free access requests open soon" status (announce), no fine print under the Hero buttons;
 //  * ended view: no bar, no offer, no struck price, the ordinary price and "Purchases open soon" are back, the "ended" note is shown;
 //  * a normal build never shows any of it; layout: no horizontal overflow at 320/390/768/1280 in the live view; the bar link is reachable by keyboard; he is right-to-left.
 import { spawn } from "node:child_process";
@@ -35,6 +35,7 @@ const D1 = 86400e3;
 // The phases of a build while it is live: only an extended OPEN build has two (new requests are open until the INITIAL end, then closed until the extended end: the Control Plane grants only before the initial end).
 for (const v of VARIANTS) v.phases = v.step > 0 && v.mode === "open" ? [{ name: "requests open", t: C - D1, closed: false }, { name: "requests closed", t: ENDS[v.step] - D1, closed: true }] : [{ name: "live", t: ENDS[v.step] - D1, closed: false }];
 const D = await loadDictionaries();
+const ea0 = D.en.ea;
 const { getEaDictionary } = await loadTs("src/i18n/index.ts");
 const EAD = (loc, step) => getEaDictionary(loc, step);
 const norm = (t) => String(t).replace(/\s+/g, " ").replace(/\u00a0/g, " ").trim();
@@ -89,12 +90,12 @@ for (const { key: mode0, mode, step, phases } of VARIANTS) {
       const ordinary = await vis(p, ".aicc-plan__price");
       const soon = (await p.locator(".aicc-plan [data-commerce=closed]").evaluateAll((els) => els.filter((e) => e.getClientRects().length > 0).map((e) => e.textContent).join(" "))).includes("Purchases open soon");
       const ended = await vis(p, ".aicc-eaafter");
-      const section = await vis(p, "#early-access"), heroLine = await vis(p, ".aicc-ealead"), band = await vis(p, "#pricing-final ~ div [data-ea-live]") || (await p.locator("[data-ea-live] .aicc-hero-actions a.aicc-btn, .aicc-section--inverse [data-ea-live] a.aicc-btn").evaluateAll((els) => els.some((e) => e.getClientRects().length > 0)));
+      const section = await vis(p, "#early-access"), heroLine = await vis(p, ".aicc-ealead"), band = await vis(p, "#pricing-final ~ div [data-ea-live]") || (await p.locator("[data-ea-live] .aicc-hero-actions .aicc-btn, .aicc-section--inverse [data-ea-live] .aicc-btn").evaluateAll((els) => els.some((e) => e.getClientRects().length > 0)));
       const features = await vis(p, ".aicc-plan__list[data-ea-after]"), eaFeatures = await vis(p, ".aicc-plan__list[data-ea-live]");
-      const hdr = mode === "open" ? (await vis(p, ".aicc-site-header a[href*='offer=early-access']")) : false;
+      const hdr = mode === "open" ? (await vis(p, ".aicc-site-header a[href*='request-access']")) : false;
       // an extended OPEN build closes new requests at the INITIAL end: from then on no request link is visible anywhere on the page, and <html data-ea-closed> is set
       const closedPhase = mode === "open" && step > 0 && t >= C && t < E;
-      const reqLinks = await p.locator("a[href*='offer=early-access']").evaluateAll((a) => a.filter((x) => x.getClientRects().length > 0).length);
+      const reqLinks = await p.locator("a[href*='request-access']").evaluateAll((a) => a.filter((x) => x.getClientRects().length > 0).length);
       const closedAttr = await p.evaluate(() => document.documentElement.hasAttribute("data-ea-closed"));
       const closedOk = (step === 0 || mode !== "open") ? !closedAttr : closedAttr === (t >= C);
       const reqOk = mode !== "open" ? reqLinks === 0 : live ? (closedPhase ? reqLinks === 0 : reqLinks >= 4) : reqLinks === 0;
@@ -113,40 +114,42 @@ for (const { key: mode0, mode, step, phases } of VARIANTS) {
     check(/\$99/.test(await text(p, ".aicc-plan__regular")) && /\$199/.test(await text(p, ".aicc-plan__regular")) && /\$499/.test(await text(p, ".aicc-plan__regular")), "the plan prices shown next to the free offer are $99, $199 and $499 (the real list prices)");
     if (STRIKE) {
       check((await p.locator(".aicc-plan__regular s").count()) === 3, "strike-through ON: exactly three struck-through prices (one per plan)");
-      check(/Regular price, not charged during Early Access:/.test(await text(p, ".aicc-plan__regular-label")), "strike-through ON: the label is 'Regular price, not charged during Early Access:'");
+      check(/Planned regular price, not charged during the launch offer:/.test(await text(p, ".aicc-plan__regular-label")), "strike-through ON: the label is 'Planned regular price, not charged during the launch offer:' (review P34-5: the price has never been charged)");
+      check(await p.locator(".aicc-plan__offer").first().evaluate((o) => { const r = o.querySelector(".aicc-plan__regular"), f = o.querySelector(".aicc-plan__free"); return !!r && !!f && r.getBoundingClientRect().bottom <= f.getBoundingClientRect().top + 1; }), "strike-through ON (P34): the labelled, crossed-out regular price comes first and 'Free until ...' follows below it");
     } else {
       check((await p.locator(".aicc-plan__regular s, .aicc-plan s, .aicc-plan del").count()) === 0, "strike-through OFF (the default): no struck-through price anywhere on the cards");
-      check((await text(p, ".aicc-plan__regular-label")).split("|").every((x) => /Planned price when purchases open:/.test(x)) && (await p.locator(".aicc-plan__regular-label").count()) === 3, "strike-through OFF: each price is labelled 'Planned price when purchases open:'");
+      check((await text(p, ".aicc-plan__regular-label")).split("|").every((x) => norm(x) === norm(ea.plan.planned)) && (await p.locator(".aicc-plan__regular-label").count()) === 3, `strike-through OFF: each price is labelled '${ea.plan.planned}'`);
     }
-    check(countIn(t, norm(ea.plan.ends.split(" A paid plan")[0])) === 3, `every card states the end as an instant: ${norm(ea.plan.ends.split(" A paid plan")[0])}`);
+    check(countIn(t, norm(ea.plan.ends)) === 3, `every card states the end as an instant: ${norm(ea.plan.ends)}`);
     check((t.match(/No credit card required/g) || []).length === 3 && countIn(t, norm(ea.plan.term)) === 3, "every card says no credit card is required and states the term with its time zone");
-    check(!(await vis(p, ".aicc-plan__list[data-ea-after]")), "the paid-plan bullets (365-day term, 14-day guarantee) are NOT shown next to the free offer");
-    check(/paid plan starts only if you choose to buy one/.test(t), "every card says a paid plan starts only if the merchant chooses to buy");
+    check(!(await vis(p, ".aicc-plan__list[data-ea-after]")), "the paid-plan bullets (365-day term) are NOT shown next to the free offer");
+    check(countIn(t, norm(ea.plan.approved)) === 3 && countIn(t, norm(ea.plan.noAuto)) === 3, "every card says it is available to approved stores and has no automatic renewal");
+    check(!/14-day|money-back|guarantee/i.test(await p.locator(".aicc-plan").evaluateAll((a) => a.map((x) => x.textContent).join(" "))), "no card carries the 14-day money-back guarantee line, not even hidden (it lives in the FAQ and the Refund Policy for paid purchases)");
     check(!/(subscription|automatically (charged|renew)|trial|discount|% off|limited time|hurry|countdown)/i.test(await text(p, "#early-access, .aicc-plan, .aicc-eabar, .aicc-ealead")), "no trial / subscription / automatic-charge / discount / urgency wording in the campaign blocks");
     const sectFull = ((await p.locator("#early-access").textContent()) || "").replace(/\s+/g, " ");
     const sect = sectFull;
     check(/No automatic conversion and no automatic charge|no automatic conversion/.test(sect) && /no card on file/.test(sect), "the explanation says: no automatic conversion, no automatic charge, no card on file");
     // guarantee (Production 21): paid purchases only; the Plugin's money-back message is NOT mentioned; the plugin question keeps the "Renew plan" wording and the missing warning
-    check(/Does the money-back guarantee apply to Early Access\?/.test(sectFull) && /applies to eligible paid purchases/.test(sectFull) && /nothing to refund/.test(sectFull) && !/may show a 14-day|money-back message/i.test(sectFull), "the guarantee answer: it applies to eligible paid purchases, nothing to refund in Early Access, and the Plugin's money-back message is no longer mentioned");
-    check(/What will I see in the plugin when Early Access ends\?/.test(sectFull) && /"Renew plan"/.test(sectFull) && /does not warn you beforehand/.test(sectFull), "the plugin answer keeps the \"Renew plan\" wording and says the plugin gives no warning");
-    check(norm(sectFull).includes(norm(ea.section.lead.split(" If ")[0])) && sect.includes(`Israel time (22:00 UTC on ${lit("en", step).last})`), "the explanation states the instant in Israel time and UTC (the dates of this step)");
+    check(/Does the money-back guarantee apply to the launch offer\?/.test(sectFull) && /applies only to eligible paid purchases/.test(sectFull) && /nothing to refund/.test(sectFull) && !/may show a 14-day|money-back message/i.test(sectFull), "the guarantee answer: it applies to eligible paid purchases, nothing to refund in Early Access, and the Plugin's money-back message is no longer mentioned");
+    check(/What will I see in the plugin when the launch offer ends\?/.test(sectFull) && /"Renew plan"/.test(sectFull) && /does not warn you beforehand/.test(sectFull), "the plugin answer keeps the \"Renew plan\" wording and says the plugin gives no warning");
+    check(norm(sectFull).includes(norm(mode === "open" ? ea.section.lead : ea.section.leadAnnounce)) && sect.includes(`Israel time (22:00 UTC on ${lit("en", step).last})`), "the explanation states the instant in Israel time and UTC (the dates of this step)");
     // the extension reservation is permanent: in the terms line and as a question, in every build; the plan-change question is answered (Production 21)
-    check(countIn(sectFull, norm(ea.section.reservation)) === 2 && /Could Early Access be extended\?/.test(sectFull), "the extension reservation is in the terms line AND in the questions (twice), in every build");
-    check(/Can I change my plan\?/.test(sectFull) && /Yes, before Early Access ends\. Write to support@copilt\.org from your account's e-mail address and we change the plan of your Early Access store at no charge\. The end date stays the same\./.test(sectFull) && /a smaller plan needs fewer connected stores/.test(sectFull), "the plan-change question is answered (before the end, from the account's e-mail, no charge, same end date, limits follow the plan)");
-    check(/ask us to change it \(see the questions below\)/.test(sectFull) && /you buy the plan your store holds at that time/.test(sectFull) && !/same plan you used/.test(sectFull), "who-it-is-for and the end blocks agree with the plan change (the plan the store holds at the end; no contradiction of the explicit purchase)");
+    check(countIn(sectFull, norm(ea.section.reservation)) === 2 && /Could the launch offer be extended\?/.test(sectFull), "the extension reservation is in the terms line AND in the questions (twice), in every build");
+    check(/Can I change my plan\?/.test(sectFull) && /Yes, before the launch offer ends\. Write to support@copilt\.org from your account's e-mail address and we change the plan of your launch-offer store at no charge\. The end date stays the same\./.test(sectFull) && /a smaller plan needs fewer connected stores/.test(sectFull), "the plan-change question is answered (before the end, from the account's e-mail, no charge, same end date, limits follow the plan)");
+    check(/ask us to change the plan \(see the questions below\)/.test(sectFull) && /explicit renewal decision/.test(sectFull) && !/you buy the plan your store holds/.test(sectFull) && !/from 2027/i.test(sectFull), "who-it-is-for and the end blocks agree with the plan change and promise no paid continuation (an explicit renewal decision, paid purchases not open, never 'from 2027')");
     // the requests cutoff next to the offer (R7-F6): OPEN builds say when requests stop; announce builds have no request
     { const offer = norm(await text(p, ".aicc-ealead"));
       check(mode === "open" ? offer.includes(norm(step > 0 ? ea.section.intakeCutoffExt : ea.section.intakeCutoff)) : !offer.includes(norm(ea.section.intakeCutoff)) && !offer.includes(norm(ea.section.intakeCutoffExt)), `${mode === "open" ? "the offer line says requests close 24 hours before " + (step > 0 ? "the original end date" : "it ends") : "no requests cutoff in an announce build"}`); }
     if (step > 0) {
       const note = norm(await p.locator("[data-ea-extended-note]").first().textContent());
       check(note === norm(mode === "open" ? ea.extended.note : ea.extended.noteAnnounce) && /first announced to end on December 31, 2026/.test(note) && /no payment is taken and nothing converts or is charged automatically/.test(note), "the extension note is in the explanation: first announced end, the end date moved, nothing else changed");
-      if (mode === "announce") check(!/every (Early Access )?store/.test(note) && !/every store/.test(norm(await text(p, ".aicc-eabar"))), "announce + extended: neither the bar nor the note says 'for every store' (an announce build admits nobody, the cards say Early Access opens soon)");
+      if (mode === "announce") check(!/every (launch-offer )?store/.test(note) && !/every store/.test(norm(await text(p, ".aicc-eabar"))), "announce + extended: neither the bar nor the note says 'for every store' (an announce build admits nobody, the cards say free access requests open soon)");
       check(norm(await text(p, ".aicc-eabar")).includes(norm(mode === "open" ? ea.extended.bar : ea.extended.barAnnounce)), `the bar says: ${mode === "open" ? ea.extended.bar : ea.extended.barAnnounce} (the moved date is never silent, in announce builds too)`);
       check(norm(sectFull).includes(norm(ea.section.who.dExtended)) && !norm(sectFull).includes(norm(ea.section.who.d)), "who-it-is-for says what the Control Plane does: nothing is granted in the final 24 hours before the ORIGINAL end date, and new requests are closed from that date");
     } else check((await p.locator("[data-ea-extended-note]").count()) === 0, "a step-0 build has no extension note");
     const hrefs = await p.locator(".aicc-plan a.aicc-btn").evaluateAll((a) => a.map((x) => x.getAttribute("href")));
-    if (mode === "open") check(hrefs.length === 3 && hrefs.every((h) => /offer=early-access/.test(h) && /plan=(solo|studio|agency)/.test(h)), `open: each plan button leads to Early Access with its plan (${hrefs.join(" ")})`);
-    else { check(hrefs.length === 0, "announce: no plan button leads anywhere (nothing to sign up for yet)"); check((await text(p, ".aicc-plan [data-ea-soon]")).split("|").length === 3, "announce: each card says 'Early Access opens soon'"); }
+    if (mode === "open") check(hrefs.length === 3 && hrefs.every((h) => /\/request-access\/\?plan=(solo|studio|agency)$/.test(h)), `open: each plan button leads to /request-access/ with its plan (${hrefs.join(" ")})`);
+    else { check(hrefs.length === 0, "announce: no plan button leads anywhere (nothing to sign up for yet)"); check((await text(p, ".aicc-plan [data-ea-soon]")).split("|").every((x) => norm(x) === norm(ea.plan.ctaAnnounce)) && (await p.locator(".aicc-plan [data-ea-soon]").count()) === 3, `announce: each card says '${ea.plan.ctaAnnounce}' (a status, not a control)`); }
     // one primary action per card while live
     check((await p.locator(".aicc-plan [data-ea-live] a.aicc-btn, .aicc-plan [data-ea-live] p.aicc-btn").evaluateAll((a) => a.filter((x) => x.getClientRects().length > 0).length)) === 3, "exactly one (visible) action per plan card");
     await ctx.close();
@@ -158,9 +161,14 @@ for (const { key: mode0, mode, step, phases } of VARIANTS) {
     check(norm(await text(p, "h1")) === "Sell More From Every Visit", "hero headline (P24, owner decision)");
     check(norm(await text(p, ".aicc-hero-lead")) === "Automate your merchandising and uncover hidden revenue with an AI copilot you fully control." && !/\d|%|guarantee[sd]?\b|\b(boost|lift|conversion|buyers?)\b/i.test(await text(p, "h1, .aicc-hero-lead")) && (await p.locator(".aicc-hero-disclosure").count()) === 0, "hero: exactly the owner-approved headline and one-sentence subtitle (P24), no number, percent, guarantee or other result word in them ('revenue' is in the approved subtitle), and no disclosure line");
     const visActions = (await p.locator(".aicc-hero .aicc-hero-actions .aicc-btn").evaluateAll((els) => els.filter((e) => e.getClientRects().length > 0).map((e) => e.textContent.trim()))).join(" | ");
-    check(mode === "open" ? visActions === "Request free Early Access | Try Live Demo" : visActions === "How Early Access works | Try Live Demo", `hero actions while live (${visActions})`);
-    check(norm(await text(p, ".aicc-eanote")) === norm(ea.hero.note) && /No credit card required\. Access ends at 00:00 on .*, Israel time, and nothing is charged automatically\./.test(await text(p, ".aicc-eanote")), `hero fine print: no card, the end instant with its time zone, nothing charged automatically (${norm(ea.hero.note)})`);
-    if (mode === "open") check(/Request Early Access/.test(await p.locator(".aicc-site-header a[data-ea-live]").first().textContent()), "open: the header button says the same thing as the hero button");
+    check(mode === "open" ? visActions === `${ea.hero.ctaOpen} | See Pricing` : visActions === `${ea.hero.ctaAnnounce} | See Pricing`, `hero actions while live (${visActions})`);
+    // P34 (owner request, replacing the P32 "nothing after the action row"): no old fine print; the ONLY thing after the action row is the short support list
+    const after = await p.locator(".aicc-hero__copy > .aicc-hero-actions").evaluate((e) => { const n = e.nextElementSibling; return n ? { ul: n.matches("ul.aicc-easupport"), items: [...n.querySelectorAll("li")].map((li) => li.textContent.trim()), more: !!n.nextElementSibling } : null; });
+    check((await p.locator(".aicc-eanote").count()) === 0 && after && after.ul && !after.more && JSON.stringify(after.items) === JSON.stringify([ea.hero.support.noCard, ea.hero.support.manual]), `no fine print under the hero buttons, only the owner's support lines (${after ? after.items.join(" | ") : "none"})`);
+    const pill = `${mode === "open" ? ea.hero.badgeTag : ea.hero.badgeTagAnnounce} ${ea.hero.badge}`;
+    check(norm(await text(p, ".aicc-eyebrow-pill")).toLowerCase() === norm(pill).toLowerCase(), `the hero pill says '${pill}' (the ordinary 'Available for WooCommerce' is hidden)`);
+    if (mode === "announce") check((await p.locator(".aicc-hero [data-ea-soon]").evaluate((e) => e.tagName === "P" && !e.closest("a") && !e.hasAttribute("href") && !e.hasAttribute("tabindex"))), "announce: the hero request status is plain text (not a link, not focusable)");
+    if (mode === "open") check(norm(await p.locator(".aicc-site-header a[data-ea-live]").first().textContent()) === norm(ea.hero.ctaOpen), "open: the header button says the same thing as the hero button (Request Free Access)");
     check(await vis(p, ".aicc-eabar"), "the announcement bar is visible");
     if (step > 0) check(norm(await text(p, "[data-ea-extended-note]")) === norm(mode === "open" ? ea.extended.note : ea.extended.noteAnnounce), "Home carries the extension note too (the moved date is never silent beyond Pricing)");
     // the bar sits under the header and above the hero (no overlap)
@@ -180,7 +188,7 @@ for (const { key: mode0, mode, step, phases } of VARIANTS) {
     const visCount = (p, sel) => p.locator(sel).evaluateAll((a) => a.filter((x) => x.getClientRects().length > 0).length);
     { const { ctx, p } = await view(mode0, "/pricing/", "Asia/Jerusalem", TC);
       check(await p.evaluate(() => document.documentElement.hasAttribute("data-ea-closed") && !document.documentElement.hasAttribute("data-ea-over")), "requests closed: <html data-ea-closed> is set and the page is still live (not ended)");
-      check((await visCount(p, "a[href*='offer=early-access']")) === 0, "requests closed: no visible link anywhere on Pricing leads to the request flow (header, plan cards, closing band)");
+      check((await visCount(p, "a[href*='request-access']")) === 0, "requests closed: no visible link anywhere on Pricing leads to the request flow (header, plan cards, closing band)");
       const hdr = await p.locator(".aicc-site-header a.aicc-btn--primary").evaluateAll((a) => a.filter((x) => x.getClientRects().length > 0).map((x) => [x.textContent.trim(), x.getAttribute("href")]));
       check(hdr.length === 1 && hdr[0][0] === ea.bar.link && /\/pricing\/#early-access$/.test(hdr[0][1]), `requests closed: exactly one primary header button, "${ea.bar.link}", leading to the explanation (${JSON.stringify(hdr)})`);
       const cards = await p.locator(".aicc-plan").evaluateAll((a) => a.map((c) => ({ closed: [...c.querySelectorAll("p.aicc-btn")].filter((x) => x.getClientRects().length > 0).map((x) => x.textContent.trim()), links: [...c.querySelectorAll("a.aicc-btn")].filter((x) => x.getClientRects().length > 0).length })));
@@ -189,19 +197,19 @@ for (const { key: mode0, mode, step, phases } of VARIANTS) {
       check(tx.includes(norm(ea.extended.barClosed)) && tx.includes(norm(ea.extended.closedNote)) && tx.includes(norm(ea.section.homeLeadClosed)) && tx.includes(norm(ea.section.steps.requestClosed.title)) && tx.includes(norm(ea.section.steps.requestClosed.body)) && tx.includes(norm(ea.section.who.dClosed)), "requests closed: the bar, the second note, the offer line, the request step and who-it-is-for all say the extension is for stores already in Early Access and that requests closed at the original end date");
       check(tx.includes(norm(ea.section.who.cClosed)) && tx.includes(norm(ea.section.who.dClosed)) && !tx.includes(norm(ea.section.who.c)) && !tx.includes(norm(ea.section.who.a)) && !tx.includes("Ask for the plan you would want") && !tx.includes("We review each request") && !tx.includes(norm(ea.section.intakeCutoffExt)), "requests closed: the Pricing explanation no longer says 'Ask for the plan you would want to keep', 'We review each request' or the eligibility line; it says requests are closed and keeps the plan-change line for stores already in");
       check(!(await vis(p, ".aicc-eabar__link")), "requests closed: the bar link is gone (the header button and the hero action lead to the same place: one tab stop fewer)");
-      check(!tx.includes(norm(ea.section.steps.request.title)) && !tx.includes(norm(ea.hero.ctaOpen)) && !tx.includes(norm(ea.header.cta)) && !tx.includes(norm(ea.section.homeLead)) && !tx.includes(norm(ea.extended.bar)), "requests closed: no request sentence is on the page (no 'Request access', no 'Request free Early Access', no 'Request Early Access', no 'for approved stores' offer line)");
-      const band = await p.locator("#pricing-final").evaluate((e) => { const sec = e.closest("section"); return [...sec.querySelectorAll("[data-ea-live] a.aicc-btn")].filter((x) => x.getClientRects().length > 0).map((x) => x.textContent.trim()); });
-      check(band.length === 1 && band[0] === ea.hero.ctaAnnounce, `requests closed: the closing band offers only "${ea.hero.ctaAnnounce}" (${JSON.stringify(band)})`);
+      check(!tx.includes(norm(ea.section.steps.request.title)) && !tx.includes(norm(ea.hero.ctaOpen)) && !tx.includes(norm(ea.header.cta)) && !tx.includes(norm(ea.section.homeLead)) && !tx.includes(norm(ea.extended.bar)), "requests closed: no request sentence is on the page (no 'Request access', no 'Request Free Access', no 'for approved stores' offer line)");
+      const band = await p.locator("#pricing-final").evaluate((e) => { const sec = e.closest("section"); return [...sec.querySelectorAll("[data-ea-live] .aicc-btn")].filter((x) => x.getClientRects().length > 0).map((x) => x.textContent.trim()); });
+      check(band.length === 1 && band[0] === ea.plan.ctaClosed, `requests closed: the closing band offers only the status "${ea.plan.ctaClosed}" (${JSON.stringify(band)})`);
       await ctx.close(); }
     { const { ctx, p } = await view(mode0, "/", "Asia/Jerusalem", TC);
       const acts = await p.locator(".aicc-hero .aicc-hero-actions .aicc-btn").evaluateAll((els) => els.filter((e) => e.getClientRects().length > 0).map((e) => [e.textContent.trim(), e.classList.contains("aicc-btn--primary"), e.getAttribute("href")]));
-      check(acts.length === 2 && acts[0][0] === ea.hero.ctaAnnounce && acts[0][1] && /\/pricing\/#early-access$/.test(acts[0][2]) && acts[1][0] === "Try Live Demo" && !acts[1][1], `requests closed: the hero has one primary action "${ea.hero.ctaAnnounce}" and "Try Live Demo" (${JSON.stringify(acts.map((a) => a[0]))})`);
-      check(norm(await text(p, ".aicc-eanote")) === norm(ea.hero.noteClosed), `requests closed: the fine print says ${norm(ea.hero.noteClosed)}`);
-      check((await visCount(p, "a[href*='offer=early-access']")) === 0, "requests closed: no visible link on Home leads to the request flow");
+      check(acts.length === 2 && acts[0][0] === ea.plan.ctaClosed && acts[0][2] === null && acts[1][0] === "See Pricing", `requests closed: the hero shows the status "${ea.plan.ctaClosed}" (not a link) and "See Pricing" (${JSON.stringify(acts.map((a) => a[0]))})`);
+      check((await p.locator(".aicc-eanote").count()) === 0, "requests closed: no fine print under the hero buttons");
+      check((await visCount(p, "a[href*='request-access']")) === 0, "requests closed: no visible link on Home leads to the request flow");
       await ctx.close(); }
     { const { ctx, p } = await view(mode0, "/", "Asia/Jerusalem", C - D1);
       const acts = await p.locator(".aicc-hero .aicc-hero-actions .aicc-btn").evaluateAll((els) => els.filter((e) => e.getClientRects().length > 0).map((e) => e.textContent.trim()));
-      check(acts.join(" | ") === `${ea.hero.ctaOpen} | Try Live Demo`, `requests open (before the initial end): the hero offers the request as before (${acts.join(" | ")})`);
+      check(acts.join(" | ") === `${ea.hero.ctaOpen} | See Pricing`, `requests open (before the initial end): the hero offers the request as before (${acts.join(" | ")})`);
       await ctx.close(); }
   }
   // ── the extension note never sits under the mascot (R4-F1: the wrapped figure overhung the note by 32 px on phones in every extended build) ──
@@ -223,21 +231,21 @@ for (const { key: mode0, mode, step, phases } of VARIANTS) {
     }
   }
 
-  console.log(`== ${tag}: above the fold (Production 21): the whole headline, the primary action and the fine print without scrolling`);
+  console.log(`== ${tag}: above the fold: the whole headline and the primary action without scrolling`);
   for (const ph of phases) for (const [w, h] of [[1280, 720], [1280, 680], [390, 844]]) { // 1280x680: stricter than the brief (1280x720); the compaction of an Early Access hero is what makes it fit
     const { ctx, p } = await view(mode0, "/", "Asia/Jerusalem", ph.t, w, "en", h);
     const m = await p.evaluate(() => {
       const vq = (q) => [...document.querySelectorAll(q)].find((e) => e.getClientRects().length > 0);
       const r = (s) => { const e = vq(s); const b = e.getBoundingClientRect(); return { top: b.top, bottom: b.bottom, right: b.right, left: b.left }; };
-      const prim = [...document.querySelectorAll(".aicc-hero .aicc-hero-actions .aicc-btn--primary")].find((e) => e.getClientRects().length > 0).getBoundingClientRect();
+      const prim = [...document.querySelectorAll(".aicc-hero .aicc-hero-actions .aicc-btn--primary, .aicc-hero .aicc-hero-actions [data-ea-soon]")].find((e) => e.getClientRects().length > 0).getBoundingClientRect();
       const h1 = document.querySelector("h1");
       // a word wider than the headline's own box is broken in the middle (or clipped)
       const probe = document.createElement("span"); probe.style.cssText = "position:absolute;visibility:hidden;white-space:nowrap"; const cs = getComputedStyle(h1); probe.style.font = cs.font; probe.style.letterSpacing = cs.letterSpacing; document.body.appendChild(probe);
       let longest = 0; for (const word of h1.textContent.trim().split(/\s+/)) { probe.textContent = word; longest = Math.max(longest, probe.getBoundingClientRect().width); } probe.remove();
       const hdr = document.querySelector(".aicc-site-header").getBoundingClientRect();
-      return { h1: r("h1"), prim: { top: prim.top, bottom: prim.bottom }, note: r(".aicc-eanote"), vh: innerHeight, vw: innerWidth, longest, h1w: h1.clientWidth, h1scroll: h1.scrollWidth, hdr: hdr.height, noteLines: Math.round(vq(".aicc-eanote").getBoundingClientRect().height / parseFloat(getComputedStyle(vq(".aicc-eanote")).lineHeight || "20")) };
+      return { h1: r("h1"), prim: { top: prim.top, bottom: prim.bottom }, vh: innerHeight, vw: innerWidth, longest, h1w: h1.clientWidth, h1scroll: h1.scrollWidth, hdr: hdr.height };
     });
-    check(m.h1.bottom <= m.vh && m.prim.bottom <= m.vh && m.note.bottom <= m.vh, `${tag}${phases.length > 1 ? ` [${ph.name}]` : ""} @${w}x${h}: the full headline (bottom ${Math.round(m.h1.bottom)}), the primary action (bottom ${Math.round(m.prim.bottom)}) and the fine print (bottom ${Math.round(m.note.bottom)}) are all above the fold (${m.vh}px)`);
+    check(m.h1.bottom <= m.vh && m.prim.bottom <= m.vh, `${tag}${phases.length > 1 ? ` [${ph.name}]` : ""} @${w}x${h}: the full headline (bottom ${Math.round(m.h1.bottom)}) and the primary action (bottom ${Math.round(m.prim.bottom)}) are above the fold (${m.vh}px)`);
     check(m.longest <= m.h1w + 0.5 && m.h1scroll <= m.h1w + 1 && m.h1.left >= 0 && m.h1.right <= m.vw, `${tag} @${w}x${h}: nothing in the headline is clipped or broken mid-word (longest word ${Math.round(m.longest)}px in ${m.h1w}px)`);
     check(m.hdr >= 70 && m.hdr <= 80, `${tag}${phases.length > 1 ? ` [${ph.name}]` : ""} @${w}x${h}: the header keeps its token height (${Math.round(m.hdr)}px, token 76)`);
     await ctx.close();
@@ -313,14 +321,14 @@ console.log("\n== the hero headline: no word breaks mid-word (phone widths, four
 console.log("\n== the ended view elsewhere");
 for (const { key, step } of VARIANTS.filter((v) => v.mode === "open")) {
   const { ctx, p } = await view(key, "/", "UTC", ENDS[step] + 5 * 86400e3);
-  check(!(await vis(p, ".aicc-eanote")) && !(await vis(p, ".aicc-eabar")) && !(await vis(p, ".aicc-ealead")), `${key}: Home after the end: no campaign text visible`);
+  check(!(await vis(p, ".aicc-eabar")) && !(await vis(p, ".aicc-ealead")) && !(await vis(p, ".aicc-hero [data-ea-soon]")), `${key}: Home after the end: no campaign text visible`);
   check(/Plans and prices are final\. Purchases and new accounts open soon\./.test(await text(p, "#final-title ~ div [data-ea-after], [data-ea-after] .aicc-lead")), `${key}: Home after the end: the ordinary closing band (purchases open soon) is back`);
   const endedActions = (await p.locator(".aicc-hero .aicc-hero-actions .aicc-btn").evaluateAll((els) => els.filter((e) => e.getClientRects().length > 0).map((e) => e.textContent.trim()))).join(" | ");
-  check(endedActions === "Try Live Demo | See Pricing", `${key}: Home after the end: the hero offers the demo and the plans, not Early Access (${endedActions})`);
+  check(endedActions === "Try Live Demo | See Pricing", `${key}: Home after the end: the hero offers the demo and the plans, not the launch offer (${endedActions})`);
   await ctx.close();
   { const { ctx: c3, p: p3 } = await view(key, "/pricing/", "UTC", ENDS[step] + 5 * 86400e3);
     const ended = norm(await text(p3, ".aicc-eaafter"));
-    check(ended.includes(`Early Access ended on ${lit("en", step).end}, at 00:00 Israel time`), `${key}: the ended note names this build's end (${lit("en", step).end})`);
+    check(ended.includes(`The launch offer ended on ${lit("en", step).end}, at 00:00 Israel time`), `${key}: the ended note names this build's end (${lit("en", step).end})`);
     await c3.close(); }
 }
 
@@ -328,7 +336,7 @@ console.log("\n== a normal build never shows the campaign");
 for (const [route, tz, t] of [["/", "UTC", C - 86400e3], ["/pricing/", "Asia/Jerusalem", C - 86400e3], ["/pricing/", "UTC", C + 86400e3], ["/pricing/", "UTC", ENDS[1] - 86400e3]]) {
   const { ctx, p } = await view("off", route, tz, t);
   const html = await p.content();
-  check(!/Early Access|data-ea-|aicc-eabar/.test(html), `off build ${route} (${new Date(t).toISOString().slice(0, 10)}): no trace of the campaign in the rendered page`);
+  check(!/Early Access|launch offer|Launch Offer|Request Free Access|request-access|data-ea-|aicc-eabar/.test(html), `off build ${route} (${new Date(t).toISOString().slice(0, 10)}): no trace of the campaign in the rendered page`);
   check(!(await vis(p, ".aicc-plan__regular")), `off build ${route}: no struck-through price`);
   await ctx.close();
 }
@@ -336,17 +344,20 @@ for (const [route, tz, t] of [["/", "UTC", C - 86400e3], ["/pricing/", "Asia/Jer
 console.log("\n== every language: the zone is stated, the bar is not clipped, the ended view works");
 {
   const TOK = { en: ["Israel time", "automatically"], he: ["שעון ישראל", "אוטומטית"], es: ["hora de Israel", "automáticamente"], ru: ["по израильскому времени", "автоматически"] };
-  for (const { key, mode, step, phases } of VARIANTS) for (const [loc, [zone, auto]] of Object.entries(TOK)) {
+  for (const { key, mode, step, phases } of VARIANTS) for (const [loc, [zone]] of Object.entries(TOK)) {
     const prefix = loc === "en" ? "" : `/${loc}`, E = ENDS[step];
     for (const ph of phases) for (const w of QUICK ? [320, 768, 1280] : [320, 360, 390, 480, 640, 768, 1024, 1280]) {
       const { ctx, p } = await view(key, `${prefix}/pricing/`, "UTC", ph.t, w, loc);
       const bar = await p.evaluate(() => { const b = document.querySelector(".aicc-eabar"); return { clipped: b.scrollHeight > b.clientHeight + 1, text: b.innerText }; });
       const e = EAD(loc, step);
       const want = norm(step > 0 ? (ph.closed ? e.extended.barClosed : mode === "open" ? e.extended.bar : e.extended.barAnnounce) : mode === "open" ? e.bar.live : e.bar.announce);
-      check(!bar.clipped && bar.text.includes(zone) && norm(bar.text).includes(want), `${key} ${loc}${phases.length > 1 ? ` [${ph.name}]` : ""} at ${w}px: the bar is not clipped, says the time zone (${zone}) and the sentence of step ${step}`);
+      // P34 (owner wording): the step-0 bar is the short "Launch Offer: Free until <last day>" and names no clock; the cards on the same page then state the instant with its clock.
+      // The extension bars (step 1 and 2) still name the clock in the bar itself.
+      const cardsZone = step > 0 ? true : (await p.locator(".aicc-plan__ends").evaluateAll((els) => els.filter((x) => x.getClientRects().length).map((x) => x.innerText))).every((x, i, a) => a.length === 3 && x.includes(zone));
+      check(!bar.clipped && (step > 0 ? bar.text.includes(zone) : cardsZone) && norm(bar.text).includes(want), `${key} ${loc}${phases.length > 1 ? ` [${ph.name}]` : ""} at ${w}px: the bar is not clipped and says the sentence of step ${step}; the time zone (${zone}) is ${step > 0 ? "in the bar" : "on all three cards"}`);
       await ctx.close();
     }
-    for (const ph of phases) { const { ctx, p } = await view(key, `${prefix}/`, "UTC", ph.t, 1280, loc); const note = (await text(p, ".aicc-eanote")); check(norm(note) === norm(ph.closed ? EAD(loc, step).hero.noteClosed : EAD(loc, step).hero.note) && note.includes(zone) && note.toLowerCase().includes(auto.toLowerCase()), `${key} ${loc}${phases.length > 1 ? ` [${ph.name}]` : ""}: the hero fine print states the zone and that nothing is charged automatically (step ${step})`); await ctx.close(); }
+    for (const ph of phases) { const { ctx, p } = await view(key, `${prefix}/`, "UTC", ph.t, 1280, loc); const badge = norm(await text(p, ".aicc-eyebrow-pill")); const want = `${mode === "open" ? EAD(loc, step).hero.badgeTag : EAD(loc, step).hero.badgeTagAnnounce} ${EAD(loc, step).hero.badge}`; check((await p.locator(".aicc-eanote").count()) === 0 && badge.toLowerCase() === norm(want).toLowerCase(), `${key} ${loc}${phases.length > 1 ? ` [${ph.name}]` : ""}: the hero pill says "${want}" (names the offer and states the last day, step ${step}); no old fine print under the buttons`); await ctx.close(); }
     { const { ctx, p } = await view(key, `${prefix}/pricing/`, "Pacific/Kiritimati", E + 1000, 1280, loc);
       const over = await p.evaluate(() => document.documentElement.hasAttribute("data-ea-over"));
       check(over && !(await vis(p, ".aicc-plan__free")) && !(await vis(p, ".aicc-plan__regular")) && (await vis(p, ".aicc-plan__price")) && !(await vis(p, "#early-access")) && !(await vis(p, ".aicc-eabar")) && (await vis(p, ".aicc-eaafter")), `${key} ${loc}: the ended view after the end (offer, struck price, explanation and bar hidden; ordinary price and the ended note shown)`);
@@ -369,7 +380,7 @@ console.log("\n== no stale or leaked campaign element, in any mode, page, langua
       check(l === 0 && (!needsAfter || a > 0), `${tg}: ENDED view shows no live campaign element (${l} live visible) and the ended counterparts are present (${a})${w === 390 ? " (mobile menu open)" : ""}`);
       // Text-based probe (does not depend on the markers): none of the campaign's own sentences may be rendered after the end, whatever element carries them.
       const inner = norm(await p.evaluate(() => document.body.innerText));
-      const live = [ead.hero.ctaOpen, ead.header.cta, ead.hero.ctaAnnounce, ead.section.homeLead, ead.plan.free, ead.plan.ctaAnnounce, ead.hero.note, ead.bar.live, ead.bar.announce, ead.extended.bar, ead.extended.note, ead.section.reservation, ead.section.faq.change.q, ead.extended.barClosed, ead.extended.closedNote, ead.hero.noteClosed, ead.plan.ctaClosed, ead.section.homeLeadClosed, ead.section.steps.requestClosed.title, ead.section.who.dExtended, ead.extended.barAnnounce, ead.extended.noteAnnounce, ead.section.who.cClosed, ead.section.who.dClosed, ead.section.intakeCutoff, ead.section.intakeCutoffExt].map(norm);
+      const live = [ead.hero.ctaOpen, ead.header.cta, ead.hero.ctaAnnounce, ead.section.homeLead, ead.section.homeLeadAnnounce, ead.hero.badgeTagAnnounce, ead.hero.support.manual, ead.pricing.support.regular, ead.plan.free, ead.plan.ctaAnnounce, ead.hero.badge, ead.bar.live, ead.bar.announce, ead.extended.bar, ead.extended.note, ead.section.reservation, ead.section.faq.change.q, ead.extended.barClosed, ead.extended.closedNote, ead.plan.ctaClosed, ead.section.homeLeadClosed, ead.section.steps.requestClosed.title, ead.section.who.dExtended, ead.extended.barAnnounce, ead.extended.noteAnnounce, ead.section.who.cClosed, ead.section.who.dClosed, ead.section.intakeCutoff, ead.section.intakeCutoffExt].map(norm);
       const seen = live.filter((t) => inner.includes(t));
       check(seen.length === 0, `${tg}: no campaign sentence is rendered after the end${seen.length ? " -> " + seen[0].slice(0, 60) : ""}`);
       // after the end of THIS build no date of the campaign is on the page (the ended note names the end of the build; the initial last day is nowhere, even in an extended build)
@@ -388,24 +399,24 @@ console.log("\n== no stale or leaked campaign element, in any mode, page, langua
       // Request wording per phase (an extended OPEN build; the Control Plane grants only before the INITIAL end): the request sentences are on the page while requests are open and nowhere afterwards,
       // the requests-closed sentences only afterwards. Text-based (innerText), not marker-based, in four languages.
       if (step > 0 && mode === "open") {
-        const intake = [ead.hero.ctaOpen, ead.header.cta, ead.plan.ctaOpen, ead.section.homeLead, ead.hero.note, ead.section.steps.request.title, ead.section.who.d, ead.section.who.dExtended, ead.section.who.a, ead.section.who.c, ead.section.intakeCutoffExt].map(norm);
-        const closedS = [ead.extended.barClosed, ead.extended.closedNote, ead.hero.noteClosed, ead.section.homeLeadClosed, ead.section.who.cClosed, ead.section.who.dClosed].map(norm); // the short titles are checked by marker below: he "בקשות חדשות סגורות" is also inside a legitimate longer sentence
+        const intake = [ead.hero.ctaOpen, ead.header.cta, ead.plan.ctaOpen, ead.section.homeLead, ead.section.steps.request.title, ead.section.who.d, ead.section.who.dExtended, ead.section.who.a, ead.section.who.c, ead.section.intakeCutoffExt].map(norm);
+        const closedS = [ead.extended.barClosed, ead.extended.closedNote, ead.section.homeLeadClosed, ead.section.who.cClosed, ead.section.who.dClosed].map(norm); // the short titles are checked by marker below: he "בקשות חדשות סגורות" is also inside a legitimate longer sentence
         const wrongWording = (ph.closed ? intake : closedS).filter((t) => innerLive.includes(t));
         check(wrongWording.length === 0, `${tgp}: ${ph.closed ? "no request wording" : "no requests-closed wording"} is rendered${wrongWording.length ? " -> " + wrongWording[0].slice(0, 60) : ""}`);
         check(innerLive.includes(norm(ph.closed ? ead.extended.barClosed : ead.extended.bar)), `${tgp}: the bar says the ${ph.closed ? "requests-closed" : "extended"} sentence`);
-        const must = route === "/" ? (ph.closed ? [ead.hero.noteClosed, ead.section.homeLeadClosed, ead.plan.ctaClosed] : [ead.hero.note, ead.section.homeLead, ead.hero.ctaOpen]) : route === "/pricing/" ? (ph.closed ? [ead.extended.closedNote, ead.section.homeLeadClosed, ead.plan.ctaClosed, ead.section.steps.requestClosed.title, ead.section.who.cClosed, ead.section.who.dClosed] : [ead.section.homeLead, ead.plan.ctaOpen, ead.section.steps.request.title, ead.section.who.a, ead.section.who.c, ead.section.intakeCutoffExt]) : [];
-        const absent = must.map(norm).filter((t) => !innerLive.includes(t));
+        const must = route === "/" ? (ph.closed ? [ead.section.homeLeadClosed, ead.plan.ctaClosed] : [ead.hero.badge, ead.section.homeLead, ead.hero.ctaOpen]) : route === "/pricing/" ? (ph.closed ? [ead.extended.closedNote, ead.section.homeLeadClosed, ead.plan.ctaClosed, ead.section.steps.requestClosed.title, ead.section.who.cClosed, ead.section.who.dClosed] : [ead.section.homeLead, ead.plan.ctaOpen, ead.section.steps.request.title, ead.section.who.a, ead.section.who.c, ead.section.intakeCutoffExt]) : [];
+        const absent = must.map(norm).filter((t) => !innerLive.toLowerCase().includes(t.toLowerCase())); // the badge is upper-cased by CSS
         check(absent.length === 0, `${tgp}: the ${ph.closed ? "requests-closed" : "request"} sentences of this page are rendered${absent.length ? " -> missing " + absent[0].slice(0, 60) : ""}`);
         const wrongMarked = await p.evaluate((closed) => [...document.querySelectorAll(closed ? "[data-ea-intake]" : "[data-ea-closed-only]")].filter((e) => e.getClientRects().length > 0).length, ph.closed);
         check(wrongMarked === 0, `${tgp}: no ${ph.closed ? "request (data-ea-intake)" : "requests-closed (data-ea-closed-only)"} block is visible (${wrongMarked})`);
-        const reqLinks = await p.locator("a[href*='offer=early-access']").evaluateAll((a) => a.filter((x) => x.getClientRects().length > 0).length);
+        const reqLinks = await p.locator("a[href*='request-access']").evaluateAll((a) => a.filter((x) => x.getClientRects().length > 0).length);
         check(ph.closed ? reqLinks === 0 : reqLinks >= 1 || w === 390 && route !== "/" && route !== "/pricing/", `${tgp}: ${ph.closed ? "no visible link leads to the request flow" : "the request flow is linked"} (${reqLinks})`);
       }
       // The initial-end leak probe (Production 21), text-based: in an extended build, after the INITIAL cutoff but before the step's end, no sentence or date of the initial end is rendered
       // anywhere, on any page, in any language (the one allowed mention is the extension note on the pricing page: "first announced to end on ..."), and the campaign sentences ARE the step's.
       if (step > 0) {
         const first = EAD(loc, 0);
-        const stale = [first.bar.live, first.bar.announce, first.hero.note, first.plan.free, first.plan.term, first.plan.ends, first.section.homeLead, first.section.title, first.section.lead, first.after.body, first.section.endTitle].map(norm).filter((t) => innerLive.includes(t));
+        const stale = [first.bar.live, first.bar.announce, first.hero.badge, first.plan.free, first.plan.term, first.plan.ends, first.section.homeLead, first.section.title, first.section.lead, first.after.body, first.section.endTitle].map(norm).filter((t) => innerLive.includes(t));
         check(stale.length === 0, `${tgp}: no initial-end sentence is rendered in the extended build${stale.length ? " -> " + stale[0].slice(0, 70) : ""}`);
         const allowed = route === "/pricing/" || route === "/" ? 1 : 0;
         check(dateCount(innerLive, loc, 0) === allowed, `${tgp}: dates of the initial end appear ${dateCount(innerLive, loc, 0)} time(s) (allowed ${allowed}: only the extension note names the initial last day)`);
@@ -417,20 +428,20 @@ console.log("\n== no stale or leaked campaign element, in any mode, page, langua
   for (const { key, mode } of VARIANTS) {
     const { ctx, p } = await view(key, "/", "UTC", C - D1, 1280);
     const hrefs = await p.locator("a[href]").evaluateAll((a) => a.filter((x) => x.getClientRects().length > 0).map((x) => x.getAttribute("href")));
-    const signup = hrefs.filter((h) => /offer=early-access/.test(h));
+    const signup = hrefs.filter((h) => /request-access/.test(h));
     if (mode === "announce") check(signup.length === 0, `${key}: no visible link on Home leads to the sign-up (nothing to sign up for yet)`);
     else check(signup.length >= 2, `${key}: the header and the hero lead to the sign-up (${signup.length} links)`);
     const hdr = await p.locator(".aicc-site-header a[data-ea-live]").count();
     check(mode === "open" ? hdr >= 1 : hdr === 0, `${key}: the Early Access header button ${mode === "open" ? "exists" : "does not exist"}`);
     const ordinary = await p.locator(".aicc-site-header a.aicc-btn--primary").evaluateAll((a) => a.filter((x) => x.getClientRects().length > 0).map((x) => x.textContent.trim()));
-    check(mode === "open" ? ordinary.length === 1 && /Request Early Access/.test(ordinary[0]) : ordinary.length === 1 && /Get started/.test(ordinary[0]), `${key}: exactly one primary header button is visible (${ordinary.join(" | ")})`);
+    check(mode === "open" ? ordinary.length === 1 && ordinary[0] === ea0.header.cta : ordinary.length === 1 && /Get started/.test(ordinary[0]), `${key}: exactly one primary header button is visible (${ordinary.join(" | ")})`);
     const bar = await p.evaluate(() => { const b = document.querySelector(".aicc-eabar"); const a = b.querySelector("a"); return { name: b.getAttribute("aria-label"), role: b.getAttribute("role"), href: a.getAttribute("href") }; });
     check(bar.role === "region" && !!bar.name && /\/pricing\/#early-access$/.test(bar.href), `${key}: the bar is a named region and its link goes to /pricing/#early-access (${bar.href})`);
     const heroHref = await p.locator(".aicc-hero .aicc-hero-actions a.aicc-btn").first().getAttribute("href");
-    check(mode === "open" ? /offer=early-access/.test(heroHref) : /\/pricing\/#early-access$/.test(heroHref), `${key}: the first hero button goes to ${mode === "open" ? "the sign-up" : "the explanation"} (${heroHref})`);
-    // one primary action per state: open = "Request free Early Access", announce = "How Early Access works"
+    check(mode === "open" ? /\/request-access\/$/.test(heroHref) : /\/pricing\/$/.test(heroHref), `${key}: the first hero ${mode === "open" ? "button goes to /request-access/" : "link is See Pricing (the announce request status is not a link)"} (${heroHref})`);
+    // one primary action per state: open = "Request Free Access" (a link); announce = a plain status, no primary link at all
     const prim = await p.locator(".aicc-hero .aicc-hero-actions a.aicc-btn--primary").evaluateAll((a) => a.filter((x) => x.getClientRects().length > 0).map((x) => x.textContent.trim()));
-    check(prim.length === 1 && prim[0] === (mode === "open" ? "Request free Early Access" : "How Early Access works"), `${key}: exactly one primary hero action (${prim.join(" | ")})`);
+    check(mode === "open" ? prim.length === 1 && prim[0] === ea0.hero.ctaOpen : prim.length === 0, `${key}: ${mode === "open" ? `exactly one primary hero action (${prim.join(" | ")})` : "no primary hero link (the request status is not clickable)"}`);
     await ctx.close();
   }
   { const { ctx: c0, p: p0 } = await view("off", "/", "UTC", C - 86400e3, 1280);

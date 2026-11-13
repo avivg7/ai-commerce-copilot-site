@@ -1,5 +1,5 @@
 // npm run ea:check: the Early Access campaign's time logic, copy contract and build guard (Production 20). Offline; no browser (the browser side is `npm run test:early-access`).
-//   node scripts/ea-check.mjs [--out <dir>] [--expect off|announce|open] [--expect-step 0|1|2] [--compare-off <dir>] [--strike]
+//   node scripts/ea-check.mjs [--out <dir>] [--expect off|announce|open] [--expect-step 0|1|2] [--compare-off <dir>] [--strike] [--limited]
 //     (--out: also audit a BUILT export; --expect: which mode it was built with; --expect-step: which extension step (Production 21); --compare-off: a normal build whose head metadata must be identical)
 //
 // What it proves:
@@ -32,6 +32,9 @@ const check = (cond, m) => (cond ? ok(m) : bad(m));
 // --exports-only: skip the sections that need no export (the IANA derivation, the child-process matrices, the gates): used by the mutation runner and when auditing a build, after a full run has passed
 const SKIP_STATIC = args.includes("--exports-only");
 const SKIP_LIVE = args.includes("--no-live"); // the mutation runner may skip the local-server check
+// AICC_TEST_PORT_BASE (optional): the local fixture servers listen on base, base+1, base+2 in turn instead of an ephemeral port (for machines where only a fixed port range may be used)
+let portTurn = 0;
+const testPort = () => (process.env.AICC_TEST_PORT_BASE ? Number(process.env.AICC_TEST_PORT_BASE) + (portTurn++ % 3) : 0);
 const ea = await loadTs("src/lib/earlyAccess.ts");
 const C = ea.EA_CUTOFF_UTC_MS;
 const S1 = ea.EA_EXTENSION_STEPS[0], S2 = ea.EA_EXTENSION_STEPS[1];
@@ -201,14 +204,14 @@ for (const [n, mode, env, E] of [[0, "open", {}, C], [1, "open", { NEXT_PUBLIC_A
 
 // ── 4. no time-zone reads or locale date formatting in the campaign code ─────────────────────────────────────────────────────────────────
 console.log("4. campaign code never reads the visitor's time zone");
-for (const f of ["src/lib/earlyAccess.ts", "src/components/ea/Ea.tsx", "src/components/ui/PricingCard.tsx"]) {
+for (const f of ["src/lib/earlyAccess.ts", "src/components/ea/Ea.tsx", "src/components/ui/PricingCard.tsx", "src/lib/requestRoutes.ts", "src/components/request/RequestPages.tsx", "src/components/request/RequestForm.tsx", "src/components/request/RequestConfirm.tsx", "src/components/request/api.ts"]) {
   const src = fs.readFileSync(path.join(ROOT, f), "utf8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
   const m = src.match(/getTimezoneOffset|toLocale(Date|Time)?String|Intl\.DateTimeFormat|resolvedOptions|new Date\(|Date\.parse/g);
   check(!m, `${f}: no time-zone read, locale date formatting or Date parsing${m ? ` (${[...new Set(m)].join(", ")})` : ""}`);
 }
 {
   const strays = [];
-  const walkDir = (d) => { for (const e of fs.readdirSync(d, { withFileTypes: true })) { const p = path.join(d, e.name); if (e.isDirectory()) { if (!["node_modules", ".next", "out", "ea"].includes(e.name)) walkDir(p); } else if (/\.(tsx?|css)$/.test(e.name) && !/earlyAccess\.ts$|components\/ea\/Ea\.tsx$/.test(p) && /EA_|data-ea-|\bt\.ea\b|\bea\.(bar|hero|plan|section|after|header)\b|Early Access/.test(fs.readFileSync(p, "utf8")) && !/PricingCard|HomePage|PricingPage|SiteHeader|layout\.tsx|aicc\.css|i18n\/en\.ts|i18n\/(he|es|ru)\.ts|i18n\/eaTokens\.ts|i18n\/index\.ts$/.test(p)) strays.push(path.relative(ROOT, p)); } };
+  const walkDir = (d) => { for (const e of fs.readdirSync(d, { withFileTypes: true })) { const p = path.join(d, e.name); if (e.isDirectory()) { if (!["node_modules", ".next", "out", "ea"].includes(e.name)) walkDir(p); } else if (/\.(tsx?|css)$/.test(e.name) && !/earlyAccess\.ts$|components\/ea\/Ea\.tsx$/.test(p) && /EA_|data-ea-|\bt\.ea\b|\bea\.(bar|hero|plan|section|after|header)\b|Early Access/.test(fs.readFileSync(p, "utf8")) && !/PricingCard|HomePage|PricingPage|SiteHeader|layout\.tsx|\[\[\.\.\.slug\]\]\/page\.tsx|components\/request\/RequestPages\.tsx|lib\/requestRoutes\.ts|aicc\.css|i18n\/en\.ts|i18n\/(he|es|ru)\.ts|i18n\/eaTokens\.ts|i18n\/index\.ts$/.test(p)) strays.push(path.relative(ROOT, p)); } };
   walkDir(path.join(ROOT, "src"));
   check(strays.length === 0, `Early Access wiring is confined to the known files${strays.length ? ` (stray: ${strays.join(", ")})` : ""}`);
 }
@@ -241,8 +244,8 @@ const flat = (o, pre = "", out = []) => { if (typeof o === "string") out.push([p
     const rawStrings = flat(raw[l]);
     const lit = rawStrings.filter(([, v]) => /20(26|27)/.test(v));
     check(lit.length === 0, `${l}: the pack has no literal year (the dates are tokens, one copy set)${lit.length ? " -> " + lit.map(([p]) => p).join(", ") : ""}`);
-    const unknown = rawStrings.flatMap(([, v]) => [...v.matchAll(/\{([A-Za-z]+)\}/g)].map((m) => m[1])).filter((t) => !toks.EA_DATE_TOKENS.includes(t) && t !== "contactEmail");
-    check(unknown.length === 0, `${l}: every {token} in the pack is a date token or {contactEmail}${unknown.length ? " -> " + [...new Set(unknown)].join(", ") : ""}`);
+    const unknown = rawStrings.flatMap(([, v]) => [...v.matchAll(/\{([A-Za-z]+)\}/g)].map((m) => m[1])).filter((t) => !toks.EA_DATE_TOKENS.includes(t) && t !== "contactEmail" && t !== "mailProvider" && !/^price(Solo|Studio|Agency)$/.test(t));
+    check(unknown.length === 0, `${l}: every {token} in the pack is a date token, {contactEmail} or {mailProvider}${unknown.length ? " -> " + [...new Set(unknown)].join(", ") : ""}`);
     check(rawStrings.some(([, v]) => v.includes("{firstLastDay}")) && rawStrings.filter(([, v]) => v.includes("{firstLastDay}")).every(([p]) => p === "extended.note" || p === "extended.noteAnnounce"), `${l}: {firstLastDay} (the initial last day) is used by the extension notes (open and announce) and by nothing else`);
     // the token table equals the independent literals (REQUIRED_DATES) and Intl's own formatting of the Israel calendar day, step by step
     const tag = { en: "en-US", he: "he-IL", es: "es-ES", ru: "ru-RU" }[l];
@@ -268,7 +271,7 @@ const flat = (o, pre = "", out = []) => { if (typeof o === "string") out.push([p
   check(JSON.stringify(Object.keys(REQUIRED)) === JSON.stringify(["en", "he", "es", "ru"]) && JSON.stringify(Object.keys(REQUIRED_DATES)) === JSON.stringify(["en", "he", "es", "ru"]), "the required-token tables cover exactly the four locales");
   // the resolver refuses an unknown token (a typo can never reach a page)
   let threw = false; try { toks.resolveEaTokens("until {lastDy}", "en", 0); } catch { threw = true; }
-  check(threw && toks.resolveEaTokens("a {contactEmail} b", "en", 1) === "a {contactEmail} b" && toks.resolveEaTokens("{endDate}", "en", 2) === "March 1, 2027" && toks.resolveEaTokens("{firstLastDay}", "es", 2) === "31 de diciembre de 2026", "the token resolver: an unknown token throws, {contactEmail} passes through, {endDate} follows the step, {firstLastDay} is always the initial day");
+  check(threw && toks.resolveEaTokens("a {contactEmail} b", "en", 1) === "a {contactEmail} b" && nbn(toks.resolveEaTokens("{endDate}", "en", 2)) === "March 1, 2027" && nbn(toks.resolveEaTokens("{firstLastDay}", "es", 2)) === "31 de diciembre de 2026", "the token resolver: an unknown token throws, {contactEmail} passes through, {endDate} follows the step, {firstLastDay} is always the initial day");
 }
 
 // ── 6. a built export ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -288,7 +291,7 @@ if (out) {
     const mode = h.match(/<html[^>]*\sdata-ea-mode="(\w+)"/)?.[1] || "off";
     check(mode === expect, `${p}: built in mode ${mode} (expected ${expect})`);
     const hasScript = h.includes(`Date.now()>=${E}`);
-    const trace = /data-ea-(live|after|hide-live|soon|cutoff)|aicc-eabar|Early Access/i.test(h);
+    const trace = /data-ea-(live|after|hide-live|soon|cutoff|support|limited|pill)|aicc-eabar|aicc-easupport|aicc-eabadge|Early Access|launch offer|Request Free Access|request-access/i.test(h);
     if (expect === "off") { check(!hasScript && !trace && !h.includes(String(C)) && !h.includes(String(S1)) && !h.includes(String(S2)), `${p}: a normal build carries no trace of the campaign (no script, no attribute, no text, no end instant)`); }
     else {
       check(hasScript, `${p}: the head script is present with the end number of step ${step} (${E})`);
@@ -305,8 +308,18 @@ if (out) {
     const text = (rel) => nbn(html(rel).replace(/<script[\s\S]*?<\/script>/g, " ").replace(/<style[\s\S]*?<\/style>/g, " ").replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " ").replace(/&#x27;|&#39;/g, "'").replace(/&quot;/g, '"').replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/\s+/g, " "));
     const idx = await loadTs("src/i18n/index.ts");
     const pr = html("pricing/index.html");
-    if (args.includes("--strike")) check(/<s>/.test(pr) && /Regular price, not charged during Early Access:/.test(pr), "pricing: strike-through ON: the plan price is struck through and labelled");
-    else check(!/<s>|<del>/.test(pr.slice(pr.indexOf("<main"), pr.indexOf("</main>"))) && /Planned price when purchases open:/.test(pr), "pricing: strike-through OFF (default): no struck-through price; the price is labelled 'Planned price when purchases open:'");
+    if (args.includes("--strike")) check(/<s>/.test(pr) && /Planned regular price, not charged during the launch offer:/.test(pr), "pricing: strike-through ON: the plan price is struck through and labelled");
+    else check(!/<s>|<del>/.test(pr.slice(pr.indexOf("<main"), pr.indexOf("</main>"))) && /Regular price:/.test(pr), "pricing: strike-through OFF (default): no struck-through price; the price is labelled 'Regular price:'");
+    // P34: "Limited availability" exists only in a build made with NEXT_PUBLIC_AICC_EA_LIMITED_NOTE=on (--limited), on the Home hero of every language, and nowhere else
+    {
+      const { EA_LIMITED_PHRASE } = await import("./lib/early-access-truth.mjs");
+      const homes = LOCALES.map((l) => html(l === "en" ? "index.html" : `${l}/index.html`));
+      const all = [...homes, ...LOCALES.map((l) => html(l === "en" ? "pricing/index.html" : `${l}/pricing/index.html`))];
+      // review P34-5: "Limited availability" only in OPEN mode (an announce build never says it, even with the switch on)
+      if (args.includes("--limited") && expect === "open") check(homes.every((h, i) => h.includes("data-ea-limited") && text(LOCALES[i] === "en" ? "index.html" : `${LOCALES[i]}/index.html`).includes(nbn(EA_LIMITED_PHRASE[LOCALES[i]]))), "limited ON: every Home hero carries \"Limited availability\" in its language (data-ea-limited)");
+      else check(all.every((h) => !h.includes("data-ea-limited") && !Object.values(EA_LIMITED_PHRASE).some((v) => h.includes(v))), "limited OFF (default): no page carries \"Limited availability\" in any language");
+      check(all.every((h) => !/aicc-eanote/.test(h)) && homes.every((h) => (h.match(/data-ea-support="hero"/g) || []).length === 1) && all.every((h) => (h.match(/data-ea-support="plans"/g) || []).length === 1), "every Home has exactly one Hero support list and every Home and Pricing page one plan support list (no old fine print)");
+    }
     check(pr.includes(`data-ea-cutoff="${ea.EA_STEP_ISO_UTC[step]}"`), `pricing: the explanation is marked with the end of step ${step} (data-ea-cutoff="${ea.EA_STEP_ISO_UTC[step]}")`);
     check(pr.includes(`Free until ${REQUIRED_DATES.en[step].last}`) && pr.includes(REQUIRED_DATES.en[step].end), `pricing: 'Free until ${REQUIRED_DATES.en[step].last}' and the end date '${REQUIRED_DATES.en[step].end}' are stated`);
     if (closes) check(["pricing/index.html", "index.html", "he/pricing/index.html", "es/index.html", "ru/pricing/index.html"].every((q) => html(q).includes("data-ea-intake") && html(q).includes("data-ea-closed-only")), "extended OPEN build: the request controls and their closed counterparts are both in the pages (the head script picks one at the initial end)");
@@ -318,9 +331,9 @@ if (out) {
     for (const l of LOCALES) {
       const pre = l === "en" ? "" : `${l}/`;
       const mine = idx.getEaDictionary(l, step), first = idx.getEaDictionary(l, 0);
-      for (const [rel, want] of [[`${pre}pricing/index.html`, ["plan.free", "plan.term", "section.title", "section.reservation", "section.faq.extension.q", "section.faq.change.q", "section.who.b", "section.steps.use.body"]], [`${pre}index.html`, ["hero.note", "section.homeLead"]]]) {
+      for (const [rel, want] of [[`${pre}pricing/index.html`, ["plan.free", "plan.term", "section.title", "section.reservation", "section.faq.extension.q", "section.faq.change.q", "section.who.b", expect === "open" ? "section.steps.use.body" : "section.steps.useAnnounce.body"]], [`${pre}index.html`, [...(expect === "open" ? ["hero.badgeTag", "section.homeLead"] : ["hero.badgeTagAnnounce", "section.homeLeadAnnounce"]), "hero.badge", "hero.support.noCard", "hero.support.manual", "pricing.support.noCard", "pricing.support.manual", "pricing.support.regular"]]]) {
         const tx = text(rel);
-        const missing = [...want, ...(rel.endsWith("pricing/index.html") ? [step > 0 ? "section.who.dExtended" : "section.who.d"] : [])].filter((p) => !tx.includes(nbn(p.split(".").reduce((a, k) => a[k], mine))));
+        const missing = [...want, ...(rel.endsWith("pricing/index.html") ? [step > 0 ? "section.who.dExtended" : "section.who.d", "plan.pill", "pricing.support.noCard", "pricing.support.manual", "pricing.support.regular"] : [])].filter((p) => !tx.includes(nbn(p.split(".").reduce((a, k) => a[k], mine))));
         check(missing.length === 0, `${rel}: says the sentences of step ${step}${missing.length ? " -> missing " + missing.join(", ") : ""}`);
         const barPath = step > 0 ? (expect === "open" ? "extended.bar" : "extended.barAnnounce") : expect === "open" ? "bar.live" : "bar.announce";
         check(tx.includes(nbn(barPath.split(".").reduce((a, k) => a[k], mine))), `${rel}: the bar says '${barPath}' of step ${step}`);
@@ -348,12 +361,12 @@ if (out && !SKIP_LIVE) {
   const root = path.resolve(out), expect = arg("expect") || "off", step = Number(arg("expect-step") || 0);
   if (expect !== "off") {
     const srv = http.createServer((req, res) => { const f = path.join(root, decodeURIComponent(req.url.split("?")[0]), "index.html"); if (!f.startsWith(root) || !fs.existsSync(f)) { res.writeHead(404); res.end(); return; } res.writeHead(200, { "content-type": "text/html", "cache-control": "no-cache" }); res.end(fs.readFileSync(f)); });
-    await new Promise((r) => srv.listen(0, "127.0.0.1", r));
+    await new Promise((r) => srv.listen(testPort(), "127.0.0.1", r));
     const run = (st) => new Promise((resolve) => { const c = spawn(process.execPath, [path.join(ROOT, "scripts/ea-live-check.mjs"), `http://127.0.0.1:${srv.address().port}`, "--step", String(st)], { cwd: ROOT, stdio: "ignore" }); c.on("exit", (code) => resolve(code)); });
     check((await run(step)) === 0, `ea:live passes on this ${expect} step ${step} export served locally with no-cache headers (5 pages)`);
     const wrong = [0, 1, 2].filter((x) => x !== step);
     check((await Promise.all(wrong.map(run))).every((code) => code === 1), `ea:live FAILS on this export when step ${wrong.join(" or ")} is expected`);
-    srv.close();
+    await new Promise((r) => srv.close(r));
   }
 }
 
@@ -396,25 +409,28 @@ function cpProblems(src) {
 const off = arg("compare-off");
 if (out && off) {
   console.log(`8. head metadata: ${out} versus the normal build ${off}`);
-  const headOf = (h) => {
+  const headOf = (h, rel = "") => {
     const hd = h.slice(h.indexOf("<head"), h.indexOf("</head>"));
     const tags = [...hd.matchAll(/<(title|meta|link)\b[^>]*>(?:[^<]*<\/title>)?/g)].map((x) => x[0]);
     const ld = [...h.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g)].map((x) => x[1]);
-    return JSON.stringify({ tags: tags.filter((t) => !/\/_next\/|nonce|preload/.test(t)), ld });
+    // a launch-offer build leaves the 14-day guarantee out of the Pricing description by design (P32 review): the descriptions of the Pricing pages are the one allowed difference
+    const skipDesc = /(^|\/)pricing\/index\.html$/.test(rel);
+    return JSON.stringify({ tags: tags.filter((t) => !/\/_next\/|nonce|preload/.test(t) && !(skipDesc && /name="description"|property="og:description"|name="twitter:description"/.test(t))), ld });
   };
-  const list = (d) => { const r = []; const w = (x, rel) => { for (const e of fs.readdirSync(x, { withFileTypes: true })) { if (e.isDirectory()) { if (!["_next", "brand-kit", "fonts", "og", "demo"].includes(e.name)) w(path.join(x, e.name), `${rel}${e.name}/`); } else if (e.name === "index.html") r.push(`${rel}index.html`); } }; w(d, ""); return r; };
+  // (the request pages exist only in an OPEN build: they have no counterpart in the normal build, so they are skipped below)
+  const list = (d) => { const r = []; const w = (x, rel) => { for (const e of fs.readdirSync(x, { withFileTypes: true })) { if (e.isDirectory()) { if (!["_next", "brand-kit", "fonts", "og", "demo", "request-access"].includes(e.name)) w(path.join(x, e.name), `${rel}${e.name}/`); } else if (e.name === "index.html") r.push(`${rel}index.html`); } }; w(d, ""); return r; };
   let n = 0, diff = 0;
   for (const rel of list(path.resolve(out))) {
     const o = path.join(path.resolve(off), rel); if (!fs.existsSync(o)) { bad(`${rel} missing from the normal build`); continue; }
     n++;
-    if (headOf(fs.readFileSync(path.join(path.resolve(out), rel), "utf8")) !== headOf(fs.readFileSync(o, "utf8"))) { diff++; bad(`${rel}: title / meta / link / JSON-LD differ between the campaign build and the normal build`); }
+    if (headOf(fs.readFileSync(path.join(path.resolve(out), rel), "utf8"), rel) !== headOf(fs.readFileSync(o, "utf8"), rel)) { diff++; bad(`${rel}: title / meta / link / JSON-LD differ between the campaign build and the normal build`); }
   }
   check(n > 0 && diff === 0, `${n} pages: title, meta, Open Graph, hreflang, canonical and JSON-LD are byte-identical with the campaign on and off`);
 }
 
 if (!SKIP_STATIC) {
 // ── 9. the launch gates (Production 21): the extension reference, the Plugin identity (allow-list) and the extended-build confirmations, exercised in real child processes ──
-console.log("9. launch:check gates (extension reference, Plugin release identity allow-list, extended-build confirmations)");
+console.log("9. launch:check gates (extension reference, Plugin release identity allow-list, extended-build confirmations, P32 open-mode attestations)");
 {
   const SUPERSEDED = "0fee2c9d994cfe554103d78997be3a83a676dae8a9ee88bfd8319fcd9e9b5a83";
   const GOOD = "3f7a85eac8a55b5196d24508a70cbe7f8341a258a1bc21294454d387cf39c1b6"; // the allow-listed (unsigned) candidate, scripts/data/ea-plugin-releases.json
@@ -450,6 +466,97 @@ console.log("9. launch:check gates (extension reference, Plugin release identity
   check(has(both, /confirmed \(AICC_EA_HTML_NOCACHE_CONFIRMED=yes\)/) && !has(both, /a cached page of the INITIAL build flips/) && !has(both, /AFTER the Control Plane/), "both confirmations clear the extended-build blockers (the owner-approval blockers of any Early Access build stay)");
   for (const bad of ["YES", "true", "1", " yes", "yes "]) check(has(lc({ ...E2, AICC_EA_EXTENSION_CP_VERIFIED: bad, AICC_EA_HTML_NOCACHE_CONFIRMED: bad }), /AFTER the Control Plane/), `the confirmation is the exact word yes (${JSON.stringify(bad)} does not count)`);
   check(has(lc({ NEXT_PUBLIC_AICC_EA_EXTENSION_STEP: "1", NEXT_PUBLIC_AICC_EA_EXTENSION_REF: "DEC-0001" }), /switch is off in this build: the extension changes nothing/), "an extension with the switch off is reported (it changes nothing)");
+  // ── P32: the open-mode attestations, the strike-through counsel gate and the mail-provider placeholder ──
+  const O = { NEXT_PUBLIC_AICC_EARLY_ACCESS: "open", AICC_EA_PLUGIN_RELEASE_SHA256: GOOD };
+  const INTAKE = /AICC_EA_INTAKE_VERIFIED is (not set|"[^"]*", which is not)/, LEGAL = /AICC_EA_LEGAL_SIGNOFF is (not set|"[^"]*", which is not)/, MAIL = /NEXT_PUBLIC_AICC_EA_MAIL_PROVIDER is /, STRIKE = /NEXT_PUBLIC_AICC_EA_STRIKE=on shows the plan price struck through/;
+  const o0 = lc(O);
+  check(has(o0, INTAKE) && has(o0, LEGAL) && has(o0, MAIL), "OPEN with no attestation: blockers for the missing intake verification, the missing legal sign-off and the missing e-mail provider");
+  const good = { ...O, AICC_EA_INTAKE_VERIFIED: "cp-dark/p33/intake-evidence", AICC_EA_LEGAL_SIGNOFF: "counsel-2026-11-30", NEXT_PUBLIC_AICC_EA_MAIL_PROVIDER: "Mailprovider Inc" };
+  const og = lc(good);
+  check(!has(og, INTAKE) && !has(og, LEGAL) && !has(og, MAIL) && has(og, /intake verified \(AICC_EA_INTAKE_VERIFIED=cp-dark\/p33\/intake-evidence\)/) && has(og, /legal sign-off \(AICC_EA_LEGAL_SIGNOFF=counsel-2026-11-30\)/), "OPEN with real references for both attestations and a provider name: those three blockers clear (and are recorded, not verified)");
+  // review P34-3: a FILE reference counts only inside the evidence directory (AICC_EVIDENCE_DIR, default ~/aviv_files/AICC/commerce_copilot_images/AICC-launch-evidence); any other existing file does not
+  {
+    const evd = fs.mkdtempSync(path.join(process.env.TMPDIR || "/tmp", "p34-evd-")); fs.writeFileSync(path.join(evd, "intake-proof.md"), "x"); fs.mkdirSync(path.join(evd, "sub")); fs.symlinkSync("/etc/hosts", path.join(evd, "sub", "link.md"));
+    const E = { ...good, AICC_EVIDENCE_DIR: evd };
+    check(!has(lc({ ...E, AICC_EA_INTAKE_VERIFIED: path.join(evd, "intake-proof.md") }), INTAKE), "a file inside the evidence directory is accepted as a reference");
+    for (const f of [path.join(ROOT, "package.json"), path.join(ROOT, "README.md"), "README.md", "docs/cutover/early-access.md", "/etc/hosts", path.join(evd, "sub", "link.md"), path.join(evd, "..", path.basename(evd), "..", "x.md")]) {
+      check(has(lc({ ...E, AICC_EA_INTAKE_VERIFIED: f }), INTAKE) && has(lc({ ...E, AICC_EA_LEGAL_SIGNOFF: f }), LEGAL) && has(lc({ ...O, NEXT_PUBLIC_AICC_EA_STRIKE: "on", AICC_EVIDENCE_DIR: evd, AICC_EA_STRIKE_COUNSEL_APPROVED: f }), STRIKE) && has(lc({ ...O, NEXT_PUBLIC_AICC_EA_LIMITED_NOTE: "on", AICC_EVIDENCE_DIR: evd, AICC_EA_LIMITED_ATTESTED: f }), /the Hero says "Limited availability"/), `a file outside the evidence directory (${f.replace(ROOT, "<repo>").replace(evd, "<evd>")}) clears no attestation`);
+    }
+    for (const bad of ["approved-1", "todo1-x", "yes_2026", "ok-1", "true-2026", "x-1", "ab-1234", "pending-2026-1"]) check(has(lc({ ...O, NEXT_PUBLIC_AICC_EA_STRIKE: "on", AICC_EA_STRIKE_COUNSEL_APPROVED: bad }), STRIKE) && has(lc({ ...good, AICC_EA_LEGAL_SIGNOFF: bad }), LEGAL), `the suffixed placeholder / short reference ${JSON.stringify(bad)} is refused`);
+    check(!has(lc({ ...O, NEXT_PUBLIC_AICC_EA_STRIKE: "on", AICC_EA_STRIKE_COUNSEL_APPROVED: "counsel-2026-11-14-ref7" }), STRIKE) && !has(lc({ ...good, AICC_EA_LEGAL_SIGNOFF: "counsel-2026-11-14-ref7" }), LEGAL), "a genuine reference (counsel-2026-11-14-ref7) is accepted");
+    fs.rmSync(evd, { recursive: true, force: true });
+  }
+  for (const okv of ["cp-dark/p33/intake-evidence", "counsel-2026-11-30", "TICKET-114"]) check(!has(lc({ ...good, AICC_EA_INTAKE_VERIFIED: okv }), INTAKE) && !has(lc({ ...good, AICC_EA_LEGAL_SIGNOFF: okv }), LEGAL), `a reference ${JSON.stringify(okv)} (a token with a separator and a digit) is accepted`);
+  check(has(lc({ ...good, AICC_EA_INTAKE_VERIFIED: "docs/no-such-file" }), INTAKE), "a path that does not exist and has no digit is refused");
+  check(has(lc({ ...good, AICC_EA_INTAKE_VERIFIED: "" }), INTAKE) && !has(lc({ ...good, AICC_EA_INTAKE_VERIFIED: "" }), LEGAL), "an empty intake attestation is still a blocker and does not disturb the legal one");
+  check(has(lc({ ...good, AICC_EA_LEGAL_SIGNOFF: "" }), LEGAL) && !has(lc({ ...good, AICC_EA_LEGAL_SIGNOFF: "" }), INTAKE), "an empty legal attestation is still a blocker and does not disturb the intake one");
+  for (const bad of ["yes", "true", "1", "TODO", "TBD", "ref-1", "placeholder", "xx", " ", "verified", "pending", "false", "not done", "later", "unknown", "yes yes", "12345", "pending-1", "ok-1", "no spaces 1"]) {
+    check(has(lc({ ...good, AICC_EA_INTAKE_VERIFIED: bad }), INTAKE), `intake attestation ${JSON.stringify(bad)} is refused (a bare word or a placeholder is not an evidence reference)`);
+    check(has(lc({ ...good, AICC_EA_LEGAL_SIGNOFF: bad }), LEGAL), `legal attestation ${JSON.stringify(bad)} is refused`);
+  }
+  for (const bad of ["", "TBD", "to be confirmed", "placeholder", "ExampleMail", "n/a", "todo"]) check(has(lc({ ...good, NEXT_PUBLIC_AICC_EA_MAIL_PROVIDER: bad }), MAIL), `the e-mail provider ${JSON.stringify(bad)} is refused (the owner has not chosen a provider)`);
+  check(!has(lc({ NEXT_PUBLIC_AICC_EARLY_ACCESS: "announce", AICC_EA_PLUGIN_RELEASE_SHA256: GOOD }), INTAKE) && !has(lc({ NEXT_PUBLIC_AICC_EARLY_ACCESS: "announce", AICC_EA_PLUGIN_RELEASE_SHA256: GOOD }), MAIL), "an announce build needs neither attestation nor a mail provider (it has no form)");
+  check(!has(lc({}), INTAKE) && !has(lc({}), LEGAL) && !has(lc({}), MAIL) && !has(lc({}), /launch offer (OPEN|ANNOUNCE)/), "a normal (OFF) build never mentions the launch-offer gates");
+  // the strike-through: default OFF, a blocker when on, cleared only by a real counsel reference
+  const eaMod = await loadTs("src/lib/earlyAccess.ts");
+  check(eaMod.EA_STRIKE === false, "NEXT_PUBLIC_AICC_EA_STRIKE is off by default (the regular price is shown plainly, never struck through)");
+  check(has(lc({ ...O, NEXT_PUBLIC_AICC_EA_STRIKE: "on" }), STRIKE), "strike-through ON without counsel approval: launch:check reports the blocker (the existing gate still fires)");
+  check(has(lc({ ...O, NEXT_PUBLIC_AICC_EA_STRIKE: "on", AICC_EA_STRIKE_COUNSEL_APPROVED: "yes" }), STRIKE) && has(lc({ ...O, NEXT_PUBLIC_AICC_EA_STRIKE: "on", AICC_EA_STRIKE_COUNSEL_APPROVED: "TODO" }), STRIKE), "a bare yes or a placeholder is not a counsel approval");
+  check(!has(lc({ ...O, NEXT_PUBLIC_AICC_EA_STRIKE: "on", AICC_EA_STRIKE_COUNSEL_APPROVED: "counsel-memo-2026-12-01" }), STRIKE), "a real counsel reference clears the strike-through blocker");
+  check(!has(lc(O), STRIKE) && !has(lc({ ...O, NEXT_PUBLIC_AICC_EA_STRIKE: "true" }), STRIKE), "no strike blocker when the switch is not exactly on (the default, and the wrong word \"true\")");
+  // review P34-2: the strike gate also follows the BUILT export (an export with a struck price raises the counsel blocker whatever this shell says)
+  for (const rel of ["pricing/index.html", "index.html", "he/pricing/index.html", "ru/index.html"]) for (const mark of ['<p class="aicc-plan__regular aicc-plan__regular--strike">', "<s><bdi>$99</bdi></s>"]) {
+    const d = fs.mkdtempSync(path.join(process.env.TMPDIR || "/tmp", "p34-strike-")); fs.writeFileSync(path.join(d, "index.html"), '<!DOCTYPE html><html lang="en" data-ea-mode="open"><head></head><body></body></html>');
+    fs.mkdirSync(path.dirname(path.join(d, rel)), { recursive: true }); fs.writeFileSync(path.join(d, rel), (rel === "index.html" ? '<!DOCTYPE html><html lang="en" data-ea-mode="open"><body>' : "<body>") + mark + "</body>");
+    check(has(lc({ ...O, AICC_OUT_DIR: d }), STRIKE), `a built export with a struck price in ${rel} (${mark.includes("<s>") ? "<s>" : "strike class"}) raises the counsel blocker although the shell's switch is unset`);
+    check(!has(lc({ ...O, AICC_OUT_DIR: d, AICC_EA_STRIKE_COUNSEL_APPROVED: "counsel-2026-11-14-ref7" }), STRIKE), `... and a real counsel reference clears it (${rel})`);
+    fs.rmSync(d, { recursive: true, force: true });
+  }
+  { // review P34-2: the inline campaign stylesheet that names the strike class (every campaign build carries it) is not a struck price
+    const d = fs.mkdtempSync(path.join(process.env.TMPDIR || "/tmp", "p34-strike-")); fs.writeFileSync(path.join(d, "index.html"), '<!DOCTYPE html><html lang="en" data-ea-mode="open"><head><style>.aicc-plan__regular--strike s{font-size:1.5rem}</style></head><body><p class="aicc-plan__regular">x</p></body></html>');
+    check(!has(lc({ ...O, AICC_OUT_DIR: d }), STRIKE), "an export whose only mention of the strike class is the inline stylesheet raises no strike blocker");
+    fs.rmSync(d, { recursive: true, force: true });
+  }
+  // P34 "Limited availability": default OFF, a blocker when on (switch or built export), cleared only by a real owner reference; nothing in an OFF build
+  {
+    const LIM = /the Hero says "Limited availability"/;
+    check(eaMod.EA_LIMITED === false && eaMod.EA_LIMITED_REQUESTED === false, "NEXT_PUBLIC_AICC_EA_LIMITED_NOTE is off by default (no \"Limited availability\" line)");
+    check(has(lc({ ...O, NEXT_PUBLIC_AICC_EA_LIMITED_NOTE: "on" }), LIM), "\"Limited availability\" ON without the owner attestation: launch:check reports the blocker");
+    for (const bad of ["yes", "true", "TODO", "placeholder", "pending", "12345"]) check(has(lc({ ...O, NEXT_PUBLIC_AICC_EA_LIMITED_NOTE: "on", AICC_EA_LIMITED_ATTESTED: bad }), LIM), `limited attestation ${JSON.stringify(bad)} is refused`);
+    const okLim = lc({ ...O, NEXT_PUBLIC_AICC_EA_LIMITED_NOTE: "on", AICC_EA_LIMITED_ATTESTED: "owner-capacity-2026-12-01" });
+    check(!has(okLim, LIM) && has(okLim, /owner attestation \(AICC_EA_LIMITED_ATTESTED=owner-capacity-2026-12-01\)/), "a real owner reference clears the \"Limited availability\" blocker (recorded, not verified)");
+    check(!has(lc(O), LIM) && !has(lc({ ...O, NEXT_PUBLIC_AICC_EA_LIMITED_NOTE: "true" }), LIM) && !has(lc({ ...O, NEXT_PUBLIC_AICC_EA_LIMITED_NOTE: "ON" }), LIM), "no blocker when the switch is not exactly on (unset, \"true\", \"ON\")");
+    check(!has(lc({ NEXT_PUBLIC_AICC_EA_LIMITED_NOTE: "on" }), LIM) && has(lc({ NEXT_PUBLIC_AICC_EA_LIMITED_NOTE: "on" }), /has no effect in this build \(the campaign is off\)/), "with the campaign OFF the switch renders nothing and launch:check says it has no effect");
+    const d = fs.mkdtempSync(path.join(process.env.TMPDIR || "/tmp", "p34-lim-")); fs.writeFileSync(path.join(d, "index.html"), '<!DOCTYPE html><html lang="en" dir="ltr" data-ea-mode="announce"><head></head><body><ul data-ea-limited></ul></body></html>');
+    check(has(lc({ AICC_OUT_DIR: d }), LIM), "a built export that carries the limited line is gated even when this shell's switch is unset");
+    fs.rmSync(d, { recursive: true, force: true });
+  }
+  const VPROD = /launch offer VERIFY with a production deploy flag/;
+  // env versus artifact (security review H1): the gates follow the campaign the BUILT export carries, whatever this shell says
+  {
+    const mk = (mode, verify) => { const d = fs.mkdtempSync(path.join(process.env.TMPDIR || "/tmp", "p32-art-")); fs.writeFileSync(path.join(d, "index.html"), `<!DOCTYPE html><html lang="en" dir="ltr"${mode ? ` data-ea-mode="${mode}"` : ""}><head></head><body></body></html>`); if (verify) { fs.mkdirSync(path.join(d, "request-access"), { recursive: true }); fs.writeFileSync(path.join(d, "request-access/index.html"), '<div data-req-verify></div>'); } return d; };
+    const dOpen = mk("open"), dAnn = mk("announce"), dVer = mk("", true), dOff = mk("");
+    const eo = lc({ AICC_OUT_DIR: dOpen });
+    check(has(eo, /environment says mode "off" but the built export .* says "open"/) && has(eo, INTAKE) && has(eo, LEGAL) && has(eo, MAIL) && has(eo, /launch offer OPEN: publishing a campaign build needs the owner/), "an OPEN export checked from a shell with the switch unset: the mismatch is reported and the OPEN attestation, owner-approval and mail-provider gates apply");
+    const ea_ = lc({ AICC_OUT_DIR: dAnn });
+    check(has(ea_, /says "announce"/) && has(ea_, /launch offer ANNOUNCE: publishing a campaign build needs the owner/) && has(ea_, PLUG), "an ANNOUNCE export with the switch unset: mismatch, owner approval and the Plugin identity gate apply");
+    const ev = lc({ AICC_OUT_DIR: dVer, AICC_PRODUCTION: "1" });
+    check(has(ev, /\(verify\)/) && has(ev, VPROD) && !has(lc({ AICC_OUT_DIR: dVer, AICC_PRODUCTION: "1", AICC_EA_VERIFY_BUILD: "owner-approved" }), VPROD), "a VERIFY export with the switch unset and AICC_PRODUCTION=1 is refused unless AICC_EA_VERIFY_BUILD=owner-approved");
+    check(!has(lc({ AICC_OUT_DIR: dOff }), /environment says mode/) && !has(lc({ AICC_OUT_DIR: dOff }), /launch offer (OPEN|ANNOUNCE)/), "an ordinary export with the switch unset raises nothing about the launch offer");
+    const eAgree = lc({ AICC_OUT_DIR: dOpen, NEXT_PUBLIC_AICC_EARLY_ACCESS: "open" });
+    check(!has(eAgree, /environment says mode/) && has(eAgree, INTAKE), "environment and export agreeing: no mismatch line, the OPEN gates still apply");
+    for (const d of [dOpen, dAnn, dVer, dOff]) fs.rmSync(d, { recursive: true, force: true });
+  }
+  // VERIFY mode: the ordinary site plus unlisted request pages; a production run refuses it without the owner's exact word
+  const V = { NEXT_PUBLIC_AICC_EARLY_ACCESS: "verify" };
+  check(has(lc({ ...V, AICC_PRODUCTION: "1" }), VPROD), "verify + AICC_PRODUCTION=1 without AICC_EA_VERIFY_BUILD: launch:check reports the blocker");
+  check(!has(lc({ ...V, AICC_PRODUCTION: "1", AICC_EA_VERIFY_BUILD: "owner-approved" }), VPROD) && has(lc({ ...V, AICC_PRODUCTION: "1", AICC_EA_VERIFY_BUILD: "owner-approved" }), /AICC_EA_VERIFY_BUILD=owner-approved is set/), "verify + AICC_PRODUCTION=1 + AICC_EA_VERIFY_BUILD=owner-approved: the blocker clears (recorded, not verified)");
+  for (const bad of ["yes", "true", "OWNER-APPROVED", "approved", " owner-approved"]) check(has(lc({ ...V, AICC_PRODUCTION: "1", AICC_EA_VERIFY_BUILD: bad }), VPROD) && has(lc({ ...V, AICC_EA_VERIFY_BUILD: bad }), /the only accepted value is the exact word owner-approved/), `AICC_EA_VERIFY_BUILD=${JSON.stringify(bad)} is not the owner's word`);
+  check(!has(lc(V), VPROD) && has(lc(V), /launch offer VERIFY build: the ordinary site plus the unlisted/), "verify without a production flag is allowed and described (the ordinary site plus unlisted noindex request pages)");
+  check(!has(lc(V), /AICC_EA_INTAKE_VERIFIED|AICC_EA_LEGAL_SIGNOFF|AICC_EA_PLUGIN_RELEASE_SHA256/), "a verify build needs no attestation: it shows no offer, no button and no claim");
+  check(eaMod.EA_VERIFY === false && eaMod.EA_MODE === "off", "verify is off by default and, when requested, never turns the campaign on (EA_MODE stays off)");
+  // the older destination override is ignored and says so
+  check(has(lc({ ...good, NEXT_PUBLIC_AICC_EARLY_ACCESS_URL: "https://example.test/x" }), /NEXT_PUBLIC_AICC_EARLY_ACCESS_URL is set .* but is IGNORED/), "a leftover NEXT_PUBLIC_AICC_EARLY_ACCESS_URL is reported as ignored (the request buttons lead only to /request-access/)");
 }
 
 // The Control Plane comparison is not optional (Production 21 review R4-F3): a missing Control Plane file fails the run, only the explicit AICC_CP_DIR=none disables it.
@@ -470,7 +577,7 @@ console.log("10. ea:live: Cache-Control and the served build (local fixture orig
   const { spawn } = await import("node:child_process");
   // asynchronous on purpose: the fixture server lives in THIS process, so a blocking spawnSync would deadlock it
   const run = (port, ...a) => new Promise((resolve) => { const c = spawn(process.execPath, [path.join(ROOT, "scripts/ea-live-check.mjs"), `http://127.0.0.1:${port}`, ...a], { cwd: ROOT, stdio: "ignore" }); c.on("exit", (code) => resolve({ status: code })); });
-  const mk = (cc, script) => new Promise((resolve) => { const srv = http.createServer((req, res) => { const h = { "content-type": "text/html" }; if (cc) h["cache-control"] = cc; res.writeHead(200, h); res.end(`<html><head><script>try{${script}}catch(e){}</script></head><body>x</body></html>`); }).listen(0, "127.0.0.1", () => resolve(srv)); });
+  const mk = (cc, script) => new Promise((resolve) => { const srv = http.createServer((req, res) => { const h = { "content-type": "text/html" }; if (cc) h["cache-control"] = cc; res.writeHead(200, h); res.end(`<html><head><script>try{${script}}catch(e){}</script></head><body>x</body></html>`); }).listen(testPort(), "127.0.0.1", () => resolve(srv)); });
   // The fixture pages carry the REAL head script that src/lib/earlyAccess.ts generates for each build (never a hand-written one): an extended OPEN page has the requests-closed clause with the
   // initial cutoff in it, and ea:live must not mistake that for "a step-0 page" (Production 21 review R7-F1).
   const REF1 = { NEXT_PUBLIC_AICC_EA_EXTENSION_STEP: "1", NEXT_PUBLIC_AICC_EA_EXTENSION_REF: "DEC-0001" }, REF2 = { NEXT_PUBLIC_AICC_EA_EXTENSION_STEP: "2", NEXT_PUBLIC_AICC_EA_EXTENSION_REF: "DEC-0002" };
@@ -485,7 +592,7 @@ console.log("10. ea:live: Cache-Control and the served build (local fixture orig
   for (const [label, cc, script, step, wantExit] of cases) {
     const srv = await mk(cc, script);
     const r = await run(srv.address().port, "--step", String(step), "--pages", "/,/pricing/");
-    srv.close();
+    await new Promise((res) => srv.close(res));
     check(r.status === wantExit, `ea:live: ${label} -> exit ${wantExit} (got ${r.status})`);
   }
 }

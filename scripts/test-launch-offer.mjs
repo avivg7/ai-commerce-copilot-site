@@ -1,0 +1,301 @@
+// npm run test:launch-offer: what the BUILT pages of every launch-offer mode contain, and must not contain, in all four languages (P32). Offline, no browser.
+//   node scripts/test-launch-offer.mjs --off <dir> --announce <dir> --open <dir> --verify <dir> [--base <dir>] [--off-subswitches <dir>] [--limited <dir>] [--announce-limited <dir>]
+//     (--off-subswitches: an export built with the switch unset but NEXT_PUBLIC_AICC_EA_LIMITED_NOTE=on and NEXT_PUBLIC_AICC_EA_STRIKE=on: it must equal --base too;
+//      --limited: an OPEN export built with NEXT_PUBLIC_AICC_EA_LIMITED_NOTE=on (P34); --announce-limited: the same switch in an ANNOUNCE build, which must not show it)
+//     (exports built with NEXT_PUBLIC_AICC_EARLY_ACCESS unset | announce | open | verify; --base: an export of the base commit 011c6f6 built with the switch unset)
+// It proves:
+//  * OFF: no trace of the campaign; no request page; byte-equivalent to the base commit (after normalising the build id) when --base is given;
+//  * ANNOUNCE: the offer, the end instant and the regular prices are stated; every request control is a plain, non-clickable status; no request button wording and no link to /request-access/ exists anywhere;
+//  * OPEN: the same plus request buttons that lead to /request-access/ (hero, header, cards, band), eight request pages (four languages), no link to a payment, checkout, licence or grant route,
+//    Turnstile is named only in request-page code, never in an HTML page, and never loaded by another page;
+//  * VERIFY: the ordinary site (no campaign text, no button, no link, nothing in the sitemap or robots.txt) plus eight unlisted noindex request pages with the "Verification page, not public" banner;
+//  * P34 (owner request): the two-part Hero pill ([Launch offer] Free until ...), the owner's short bar, three short support lines under the Hero buttons ("Limited availability" only with
+//    its switch), the launch-offer label on every card, three support lines under the cards on Home and Pricing, and the Home guarantee line only in the hidden ended view;
+//  * every mode: no hero fine print, no "was/save/worth/%/countdown" wording in the campaign text, no strike-through without the flag, no 14-day guarantee line on a plan card, the end instant on the bar,
+//    the cards and the FAQ in each language, one offer name per language, no promise of a paid plan "from 2027".
+import fs from "node:fs";
+import path from "node:path";
+import crypto from "node:crypto";
+import { loadDictionaries, loadTs } from "./lib/load.mjs";
+
+const args = process.argv.slice(2);
+const arg = (n) => { const i = args.indexOf(`--${n}`); return i >= 0 ? path.resolve(args[i + 1]) : undefined; };
+const dirs = { off: arg("off"), announce: arg("announce"), open: arg("open"), verify: arg("verify") };
+const BASE = arg("base"), OFF_SUB = arg("off-subswitches"), LIMITED = arg("limited"), ANN_LIMITED = arg("announce-limited");
+if (!dirs.off || !dirs.announce || !dirs.open || !dirs.verify) { console.error("usage: --off <dir> --announce <dir> --open <dir> --verify <dir> [--base <dir>]"); process.exit(2); }
+
+const LOCALES = ["en", "he", "es", "ru"];
+const D = await loadDictionaries();
+const { getEaDictionary } = await loadTs("src/i18n/index.ts");
+const { PLANS, formatPrice } = await loadTs("src/data/plans.ts");
+const { EA_CUTOFF_UTC_MS } = await loadTs("src/lib/earlyAccess.ts");
+let failed = 0, total = 0;
+const check = (cond, msg) => { total++; if (!cond) { failed++; console.error("  FAIL " + msg); } else console.log("  ok   " + msg); };
+
+const nb = (t) => String(t).replace(/ |&nbsp;/g, " ");
+const decode = (t) => t.replace(/&#x27;|&#39;/g, "'").replace(/&quot;/g, '"').replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&nbsp;/g, " ");
+const norm = (t) => nb(decode(String(t))).replace(/\s+/g, " ").trim();
+const htmlOf = (root, rel) => { const f = path.join(root, rel); return fs.existsSync(f) ? fs.readFileSync(f, "utf8") : null; };
+const visibleText = (h) => norm(h.replace(/<script[\s\S]*?<\/script>/g, " ").replace(/<style[\s\S]*?<\/style>/g, " ").replace(/<[^>]+>/g, " "));
+const segments = (h) => new Set(h.replace(/<script[\s\S]*?<\/script>/g, "<").replace(/<style[\s\S]*?<\/style>/g, "<").split(/<[^>]+>/).map(norm).filter((x) => x.length > 2));
+const pre = (l) => (l === "en" ? "" : `${l}/`);
+const walk = (root, filter = () => true) => { const out = []; const w = (d) => { for (const e of fs.readdirSync(d, { withFileTypes: true })) { const p = path.join(d, e.name); if (e.isDirectory()) w(p); else if (filter(p)) out.push(p); } }; w(root); return out; };
+const htmlFiles = (root) => walk(root, (p) => p.endsWith(".html") && !/\/_next\//.test(p));
+const textFiles = (root) => walk(root, (p) => /\.(html|txt|xml|json)$/.test(p) && !/\/(_next|brand-kit|og|fonts|demo)\//.test(p));
+const ea = (l) => getEaDictionary(l, 0);
+const NAME = { en: /launch[- ]offer/i, he: /הצעת ה?השקה/, es: /oferta de lanzamiento/i, ru: /предложени\S* в[\s ]честь[\s ]запуска/i };
+const OLD = { en: /early access/i, he: /גישה מוקדמת/, es: /acceso anticipado/i, ru: /ранн\S* доступ/i };
+const BANNED = /\b(was|save|saves|saving|savings|worth|discount|countdown)\b|\d\s?%|(\d+|few) (days?|hours?|minutes?) (left|remaining)|\b(hurry|last chance|act now)\b|ends? (soon|in)\b|from 2027/i;
+const BANNED_LOCAL = { he: /הנחה|חסכו|חיסכון|\d\s?%|מבצע|הזדמנות אחרונה|מ־?2027/, es: /descuento|ahorr|\d\s?%|[uú]ltima oportunidad|desde 2027/i, ru: /скидк|экономи|\d\s?%|последний шанс|с 2027/i };
+const REQ_FILES = ["request-access/index.html", "request-access/confirm/index.html", ...["he", "es", "ru"].flatMap((l) => [`${l}/request-access/index.html`, `${l}/request-access/confirm/index.html`])];
+
+/** The words of the request button in every language (never allowed outside an OPEN build's pages or a request page). */
+const requestWords = [...new Set(LOCALES.flatMap((l) => { const e = ea(l); return [e.hero.ctaOpen, e.plan.ctaOpen, e.header.cta]; }))].map(nb);
+
+// ───────── build equivalence (shared with the OFF proof) ─────────
+function buildId(root) {
+  const d = path.join(root, "_next/static");
+  const ids = fs.readdirSync(d).filter((x) => fs.existsSync(path.join(d, x, "_buildManifest.js")));
+  if (ids.length !== 1) throw new Error(`cannot find the build id of ${root}`);
+  return ids[0];
+}
+function fingerprint(root, { relaxed = false, ignore = [] } = {}) {
+  const bid = buildId(root), out = new Map();
+  for (const f of walk(root)) {
+    let rel = path.relative(root, f).split(path.sep).join("/");
+    if (ignore.some((i) => rel.includes(i))) continue;
+    let b = fs.readFileSync(f);
+    if (/\.(html|txt|js|css|json|xml|map|webmanifest|vtt)$/.test(rel)) {
+      let t = b.toString("latin1").split(bid).join("BUILDID");
+      if (relaxed) t = t.replace(/(page-)[0-9a-f]{16}(\.js)/g, "$1HASH$2").replace(/(:I\[)\d+(,\[)/g, "$1MODID$2").replace(/(\\"id\\":)\d+/g, "$1MODID");
+      b = Buffer.from(t, "latin1");
+    }
+    rel = rel.split(bid).join("BUILDID");
+    if (relaxed) rel = rel.replace(/(app\/\[\[\.\.\.slug\]\]\/page-)[0-9a-f]{16}/, "$1HASH");
+    out.set(rel, crypto.createHash("sha256").update(b).digest("hex"));
+  }
+  return out;
+}
+function compare(a, b, opts) {
+  const A = fingerprint(a, opts), B = fingerprint(b, opts);
+  const onlyA = [...A.keys()].filter((k) => !B.has(k)), onlyB = [...B.keys()].filter((k) => !A.has(k)), diff = [...A.keys()].filter((k) => B.has(k) && A.get(k) !== B.get(k));
+  return { n: A.size, m: B.size, onlyA, onlyB, diff };
+}
+
+// ───────── OFF ─────────
+console.log("== OFF (switch unset)");
+{
+  const root = dirs.off;
+  const all = textFiles(root);
+  const traces = all.filter((f) => /data-ea-|aicc-eabar|aicc-eanote|aicc-easupport|aicc-eabadge|request-access|Request Free Access/.test(fs.readFileSync(f, "utf8")));
+  check(traces.length === 0, `no file of the export carries a trace of the campaign (data-ea-*, bar, fine print, request-access, request button wording)${traces.length ? " -> " + path.relative(root, traces[0]) : ""}`);
+  check(REQ_FILES.every((r) => !fs.existsSync(path.join(root, r))) && !fs.existsSync(path.join(root, "request-access")), "no request page exists in the export (any language)");
+  for (const l of LOCALES) {
+    const h = htmlOf(root, `${pre(l)}index.html`), t = visibleText(h);
+    check(!requestWords.some((w) => t.includes(w)) && !NAME[l].test(t), `${l}: Home shows no request wording and no offer name`);
+    check(/Try Live Demo|id="demo"|#demo/.test(h) || l !== "en", `${l}: the ordinary Hero (live-demo action) is intact`);
+  }
+  if (BASE) {
+    const r = compare(BASE, root);
+    check(r.onlyA.length === 0 && r.onlyB.length === 0 && r.diff.length === 0, `OFF is byte-equivalent to the base commit build after normalising the build id: ${r.n} files vs ${r.m}, only-in-base ${r.onlyA.length}, only-in-off ${r.onlyB.length}, different ${r.diff.length}${r.diff.length ? " -> " + r.diff.slice(0, 3).join(", ") : ""}`);
+  } else console.log("  note --base not given: the OFF-equivalence proof against the base commit was not run");
+  if (BASE && OFF_SUB) {
+    // P34: the two sub-switches (strike-through, "Limited availability") change nothing while the campaign switch is off
+    const r = compare(BASE, OFF_SUB);
+    check(r.onlyA.length === 0 && r.onlyB.length === 0 && r.diff.length === 0, `OFF with NEXT_PUBLIC_AICC_EA_LIMITED_NOTE=on and NEXT_PUBLIC_AICC_EA_STRIKE=on is byte-equivalent to the base commit build too: ${r.n} files vs ${r.m}, different ${r.diff.length}${r.diff.length ? " -> " + r.diff.slice(0, 3).join(", ") : ""}`);
+  }
+}
+
+// ───────── the checks every campaign build shares (announce and open) ─────────
+function campaignChecks(mode, root) {
+  console.log(`== ${mode.toUpperCase()}: pages, offer, prices, end instant, naming (four languages)`);
+  const offSeg = (l, rel) => segments(htmlOf(dirs.off, rel));
+  for (const l of LOCALES) {
+    const e = ea(l), P = pre(l);
+    const home = htmlOf(root, `${P}index.html`), pricing = htmlOf(root, `${P}pricing/index.html`);
+    const th = visibleText(home), tp = visibleText(pricing);
+    check(new RegExp(`<html[^>]*data-ea-mode="${mode}"`).test(home), `${l}: <html data-ea-mode="${mode}">`);
+    // offer, badge, bar, name
+    check(th.includes(norm(mode === "open" ? e.bar.live : e.bar.announce)), `${l}: the announcement bar states the offer, the last day and the clock (${mode})`);
+    const tag = mode === "open" ? e.hero.badgeTag : e.hero.badgeTagAnnounce;
+    { // P34: the pill is [tag] + "Free until <last day>" (the owner's two parts), the tag first, both inside the eyebrow pill
+      const pill = (nb(home).match(/<span class="aicc-eyebrow-pill">([\s\S]*?)<\/span><\/div>/) || [])[1] || "";
+      const t1 = (pill.match(/aicc-eabadge__tag">([^<]*)</) || [])[1], t2 = (pill.match(/aicc-eabadge__text">([^<]*)</) || [])[1];
+      check(norm(t1 || "") === norm(tag) && norm(t2 || "") === norm(e.hero.badge), `${l}: the Hero pill reads [${tag}] ${e.hero.badge} (${mode === "open" ? "the owner's line" : "the coming-soon tag: nothing reads as live"})`);
+    }
+    check(NAME[l].test(e.offerName) && NAME[l].test(norm(e.bar.live)) && NAME[l].test(norm(e.hero.badgeTag)) && NAME[l].test(norm(e.hero.badgeTagAnnounce)) && NAME[l].test(norm(e.plan.pill)) && NAME[l].test(norm(e.section.title)) && NAME[l].test(norm(e.section.faqTitle)), `${l}: one offer name (${e.offerName}) on the bar, the pill, the card label, the explanation title and the questions`);
+    check(!/aicc-eanote/.test(home) && !/aicc-eanote/.test(pricing), `${l}: no old fine print under the Hero buttons (aicc-eanote absent)`);
+    { // P34 (owner request, replacing the P32 "nothing under the buttons" decision): exactly the short support lines follow the Hero actions, inside the Hero copy, before the visual
+      const h = nb(home), iA = h.indexOf('class="aicc-hero-actions'), iS = h.indexOf('data-ea-support="hero"'), iV = h.indexOf("aicc-hero__visual");
+      const ul = h.slice(h.lastIndexOf("<ul", iS), h.indexOf("</ul>", iS));
+      const items = [...ul.matchAll(/<li[^>]*>[\s\S]*?<span>([^<]*)<\/span><\/li>/g)].map((m) => norm(m[1]));
+      const want = [e.hero.support.noCard, e.hero.support.manual, ...(root === LIMITED ? [e.hero.support.limited] : [])].map(norm);
+      check(iA > 0 && iS > iA && iS < iV && (h.match(/data-ea-support="hero"/g) || []).length === 1 && JSON.stringify(items) === JSON.stringify(want), `${l}: under the Hero buttons: ${want.map((x) => `"${x}"`).join(", ")} (one short list, nothing else)`);
+      check(items.every((x) => x.length <= 64 && !/[.!;:]/.test(x) && !/\d/.test(x)), `${l}: every Hero support line is one short line with no number`);
+      check(root === LIMITED ? /data-ea-limited/.test(ul) && /<li class="aicc-easupport__chip"><span>[^<]*<\/span><\/li>/.test(ul) : !/data-ea-limited/.test(h) && !th.includes(norm(e.hero.support.limited)), `${l}: "${e.hero.support.limited}" ${root === LIMITED ? "is shown as a plain chip without a check icon (NEXT_PUBLIC_AICC_EA_LIMITED_NOTE=on, OPEN)" : root === ANN_LIMITED ? "is absent from an ANNOUNCE build even with its switch on" : "is absent (its switch is off by default)"}`);
+    }
+    { // P34: the three support lines under the plan cards, on Home and on Pricing; the card label on every card
+      const want = [e.pricing.support.noCard, e.pricing.support.manual, e.pricing.support.regular].map(norm);
+      for (const [name, page] of [["Home", home], ["Pricing", pricing]]) {
+        const h = nb(page), i = h.indexOf('data-ea-support="plans"');
+        const ul = i < 0 ? "" : h.slice(h.lastIndexOf("<ul", i), h.indexOf("</ul>", i));
+        const items = [...ul.matchAll(/<li>[\s\S]*?<span>([^<]*)<\/span><\/li>/g)].map((m) => norm(m[1]));
+        check(JSON.stringify(items) === JSON.stringify(want) && h.indexOf("<article") < i && (h.match(/data-ea-support="plans"/g) || []).length === 1, `${l}: ${name}: under the plan cards: ${want.map((x) => `"${x}"`).join(", ")}`);
+      }
+      const pills = [...nb(pricing).matchAll(/data-ea-pill[^>]*>[\s\S]*?aicc-badge--success">([^<]*)</g)].map((m) => norm(m[1]));
+      const homePills = [...nb(home).matchAll(/data-ea-pill[^>]*>[\s\S]*?aicc-badge--success">([^<]*)</g)].map((m) => norm(m[1]));
+      check(pills.length === 3 && homePills.length === 3 && [...pills, ...homePills].every((x) => x === norm(e.plan.pill)), `${l}: every plan card (Home and Pricing) carries the label "${e.plan.pill}"`);
+      // review P34-6: the Home "14-day money-back guarantee" line is not in the DOM of a campaign build at all; the ended view's list (price, renewal) sits in a <div data-ea-after>
+      const g = D[l].home.pricing.confidence.guarantee, hh = nb(home);
+      const after = hh.match(/<div data-ea-after="">\s*<ul class="aicc-pricing-confidence"[\s\S]*?<\/ul>\s*<\/div>/);
+      check(!hh.includes(nb(g)) && !!after && !/display:contents/.test(after[0]) && after[0].includes(nb(D[l].home.pricing.confidence.renewal)), `${l}: Home: the guarantee line is absent from the page; the ended view's list (without it) is wrapped in a div data-ea-after`);
+      // the short bar is backed by the exact end instant on every card and in the explanation (the owner's bar wording names no clock)
+      check(th.includes(norm(mode === "open" ? e.bar.live : e.bar.announce)) && norm(e.plan.ends).includes("22:00 UTC") && tp.includes(norm(e.plan.ends)) && tp.includes(norm(mode === "open" ? e.section.lead : e.section.leadAnnounce)), `${l}: the short bar "${mode === "open" ? e.bar.live : e.bar.announce}" is backed by the exact instant on the cards ("${e.plan.ends}") and in the explanation`);
+    }
+    // the old name only in the one linking sentence and the privacy notice
+    const allowedOld = [e.section.terms, D[l].common.eaNotice].map((x) => norm(x.replace(/\{contactEmail\}/g, "").replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")));
+    const stripAllowed = (t) => { let x = t; for (const a of allowedOld) { const head = a.slice(0, 40); const i = x.indexOf(head); if (i >= 0) x = x.slice(0, i) + " " + x.slice(i + a.length); } return x; };
+    const oldHits = [th, tp].map(stripAllowed).filter((t) => OLD[l].test(t));
+    check(oldHits.length === 0, `${l}: the older name "Early Access" appears nowhere but the one linking sentence and the privacy notice`);
+    check(!/Early Access (is|are) (now )?(open|live|available)|now open/i.test(th + tp), `${l}: no page claims the launch offer or Early Access is open`);
+    // Hero actions
+    if (mode === "announce") {
+      check(th.includes(norm(e.hero.ctaAnnounce)) && !new RegExp(`<a[^>]*>[^<]*${e.hero.ctaAnnounce.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`).test(nb(home)), `${l}: the Hero request control is the status "${e.hero.ctaAnnounce}" and is not inside a link`);
+      check(!requestWords.some((w) => th.includes(w) || tp.includes(w)), `${l}: no request button wording ("Request Free Access" in any language) on Home or Pricing`);
+      check(!/Request Free Access/i.test(th + tp), `${l}: "Request Free Access" is not displayed`);
+    } else {
+      const anchors = [...nb(home).matchAll(/<a\b[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/g)].map((m) => [m[1], norm(m[2].replace(/<[^>]+>/g, " "))]);
+      const want = `/${P}request-access/`.replace("//", "/");
+      const hero = anchors.filter(([, t]) => t === norm(e.hero.ctaOpen)), head = anchors.filter(([, t]) => t === norm(e.header.cta));
+      check(hero.length >= 1 && hero.every(([h]) => h === want), `${l}: the Hero button "${e.hero.ctaOpen}" leads to ${want} (${hero.map((x) => x[0]).join(", ")})`);
+      check(head.length >= 2 && head.every(([h]) => h === want), `${l}: the header button (desktop and menu) "${e.header.cta}" leads to ${want}`);
+      const cards = [...nb(pricing).matchAll(/<a\b[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/g)].filter((m) => norm(m[2].replace(/<[^>]+>/g, " ")).startsWith(norm(e.plan.ctaOpen)));
+      check(cards.length >= 4 && cards.filter((m) => /\/request-access\/\?plan=(solo|studio|agency)$/.test(m[1])).length >= 3, `${l}: Pricing: the three plan buttons and the closing band lead to ${want} (plans carry ?plan=)`);
+    }
+    // prices: the regular price, read from plans.ts, with its label; no strike-through; no "was/save"
+    const regular = [...pricing.matchAll(/<p class="aicc-plan__regular"[^>]*>([\s\S]*?)<\/p>/g)].map((m) => norm(m[1].replace(/<[^>]+>/g, " ")));
+    check(regular.length === 3 && PLANS.every((pl, i) => regular[i].includes(formatPrice(pl.price, l)) && regular[i].startsWith(norm(e.plan.planned))), `${l}: Pricing: "${e.plan.planned}" with ${PLANS.map((p) => formatPrice(p.price, l)).join(", ")} from plans.ts on the three cards`);
+    check(!/<s>|<del>|line-through/.test(pricing.slice(pricing.indexOf("<main"), pricing.indexOf("</main>"))), `${l}: no struck-through price without NEXT_PUBLIC_AICC_EA_STRIKE=on`);
+    check((tp.match(new RegExp(norm(e.plan.free).replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g")) || []).length >= 3, `${l}: every card says "${e.plan.free}"`);
+    // cards: no guarantee line, the approved/no-card/no-renewal lines, the end instant
+    const articles = pricing.split("<article").slice(1).map((a) => norm(a.slice(0, a.indexOf("</article>")).replace(/<[^>]+>/g, " ")));
+    check(articles.length === 3 && articles.every((a) => !a.includes(norm(D[l].common.plan.guarantee))), `${l}: no plan card carries the 14-day guarantee line (not even hidden)`);
+    check(articles.every((a) => a.includes(norm(e.plan.approved)) && a.includes(norm(e.plan.noCard)) && a.includes(norm(e.plan.noAuto)) && a.includes(norm(e.plan.ends))), `${l}: every card says available to approved stores, no credit card, no automatic renewal and states the end instant`);
+    check(tp.includes(norm(e.pricing.decision)) && tp.includes(norm(e.pricing.notOpen)) && tp.includes(norm(e.pricing.note)), `${l}: Pricing says an explicit renewal decision is needed, paid purchases are not open, accounts are created for approved requests`);
+    {
+      // the ordinary "Purchases and new accounts open soon" band belongs to the ended view only: while the offer is live it is present in the markup only inside a data-ea-after block
+      const band = D[l].common.soon.band, i = nb(pricing).indexOf(band);
+      const marker = i < 0 ? "" : [...nb(pricing).slice(Math.max(0, i - 600), i).matchAll(/data-ea-(live|after)/g)].map((m) => m[1]).pop();
+      check(i < 0 || marker === "after", `${l}: the ordinary closing sentence "${band.slice(0, 40)}..." is only in the hidden ended view (nearest marker: ${marker || "none"})`);
+    }
+    // the end instant on the bar, the cards and the FAQ; the head script; the data attribute
+    const faq = tp.includes(norm(e.section.faq.end.a)) && tp.includes(norm(mode === "open" ? e.section.faq.free.a : e.section.faq.free.aAnnounce)) && tp.includes(norm(e.section.faq.eligible.a));
+    check(faq, `${l}: the FAQ (explanation) states the end instant ("${e.section.faq.end.q}") and the free offer`);
+    check(home.includes(`Date.now()>=${EA_CUTOFF_UTC_MS}`) && pricing.includes('data-ea-cutoff="2026-12-31T22:00:00Z"'), `${l}: the page carries the end instant 2026-12-31T22:00:00Z (unix ${EA_CUTOFF_UTC_MS / 1000}) in its head script and the explanation`);
+    // announce never reads as live: the present-tense variants exist only in an open build
+    if (mode === "announce") check(!th.includes(norm(e.section.homeLead)) && !tp.includes(norm(e.section.lead)) && !tp.includes(norm(e.section.steps.request.body)) && !tp.includes(norm(e.section.faq.free.a)), `${l}: an announce page carries none of the present-tense availability sentences (homeLead, lead, "Request access" step, "Is it free?" answer); the coming-soon variants are used`);
+    else check(th.includes(norm(e.section.homeLead)) && tp.includes(norm(e.section.faq.free.a)) && !tp.includes(norm(e.section.leadAnnounce)), `${l}: an open page uses the present-tense sentences and none of the announce variants`);
+    // the Pricing description of a campaign build does not mention the 14-day guarantee (the cards do not)
+    { const md = (pricing.match(/<meta name="description" content="([^"]*)"/) || [])[1] || ""; const od = (pricing.match(/<meta property="og:description" content="([^"]*)"/) || [])[1] || "";
+      check(md && !/14[\s\u00a0-]*(-day|day|días|дн|ימים)|guarantee|garant|гаранти|ערבות/i.test(decode(md) + decode(od)) && decode(md).includes(formatPrice(99, l)), `${l}: the Pricing meta and Open Graph descriptions mention the plan prices and no money-back guarantee`); }
+    // wording rules on what the campaign ADDED to the page
+    const added = [...segments(home)].filter((s) => !offSeg(l, `${P}index.html`).has(s)).concat([...segments(pricing)].filter((s) => !offSeg(l, `${P}pricing/index.html`).has(s)));
+    const bad = added.filter((s) => BANNED.test(s) || (BANNED_LOCAL[l] && BANNED_LOCAL[l].test(s)));
+    check(bad.length === 0, `${l}: nothing the campaign adds uses was/save/worth/percent/countdown/urgency or "from 2027" wording (${added.length} added text segments)${bad.length ? " -> " + bad[0].slice(0, 80) : ""}`);
+  }
+  // identical terms in all languages: the same facts (dates and structure) everywhere
+  const dates = LOCALES.map((l) => ea(l).plan.ends.match(/22:00 UTC/) ? 1 : 0);
+  check(dates.every((x) => x === 1), `the UTC end instant (22:00 UTC) is on the cards in all four languages`);
+  const tokens = LOCALES.map((l) => Object.keys(ea(l)).join(","));
+  check(new Set(tokens).size === 1, "the four campaign dictionaries have the same structure (same offer naming keys, same terms)");
+}
+
+// ───────── ANNOUNCE ─────────
+console.log("\n== ANNOUNCE: nothing to click");
+campaignChecks("announce", dirs.announce);
+{
+  const root = dirs.announce, all = textFiles(root);
+  check(all.every((f) => !/request-access/.test(fs.readFileSync(f, "utf8"))), "no file of the export (HTML, RSC payload, sitemap, robots) mentions /request-access/");
+  check(REQ_FILES.every((r) => !fs.existsSync(path.join(root, r))), "no request page exists");
+  const leaks = all.filter((f) => { const t = nb(fs.readFileSync(f, "utf8")); return requestWords.some((w) => t.includes(w)); });
+  check(leaks.length === 0, `no file of the export contains the request button wording in any language, not even in hidden markup${leaks.length ? " -> " + path.relative(root, leaks[0]) : ""}`);
+  const anchors = htmlFiles(root).flatMap((f) => [...fs.readFileSync(f, "utf8").matchAll(/<a\b[^>]*href="([^"]*)"/g)].map((m) => m[1]));
+  check(!anchors.some((h) => /offer=early-access|request-access/.test(h)), "no link of any page leads to a request or sign-up destination");
+}
+
+// ───────── OPEN ─────────
+console.log("\n== OPEN: request buttons lead to /request-access/");
+campaignChecks("open", dirs.open);
+if (LIMITED) { console.log("\n== OPEN with NEXT_PUBLIC_AICC_EA_LIMITED_NOTE=on (P34): the same, plus \"Limited availability\" under the Hero buttons"); campaignChecks("open", LIMITED); }
+if (ANN_LIMITED) { console.log("\n== ANNOUNCE with NEXT_PUBLIC_AICC_EA_LIMITED_NOTE=on (review P34-5): no \"Limited availability\" (OPEN only)"); campaignChecks("announce", ANN_LIMITED); }
+{
+  const root = dirs.open;
+  check(REQ_FILES.every((r) => fs.existsSync(path.join(root, r))), "eight request pages exist (/request-access/ and /request-access/confirm/ in en, he, es, ru)");
+  for (const l of LOCALES) for (const kind of ["request-access/", "request-access/confirm/"]) {
+    const h = htmlOf(root, `${pre(l)}${kind}index.html`), meta = D[l].ea.request;
+    const dir = l === "he" ? "rtl" : "ltr";
+    check(new RegExp(`<html[^>]*lang="${l}"[^>]*dir="${dir}"|<html[^>]*dir="${dir}"[^>]*lang="${l}"`).test(h), `${l} ${kind}: <html lang="${l}" dir="${dir}">`);
+    check(/<meta name="robots" content="noindex,nofollow"\/?>/.test(h) && /<meta name="referrer" content="no-referrer"\/?>/.test(h), `${l} ${kind}: noindex,nofollow and no-referrer`);
+    const t = visibleText(h);
+    check(t.includes(norm(kind.endsWith("confirm/") ? meta.confirm.title : meta.title)), `${l} ${kind}: the page title is in the page language`);
+    check(!/data-req-verify/.test(h) && !t.includes(norm(meta.verifyBanner)), `${l} ${kind}: no "Verification page" banner in an open build`);
+    check(!/challenges\.cloudflare\.com/.test(h), `${l} ${kind}: the HTML names no Turnstile origin (the script is loaded on demand, after /status says open)`);
+    if (!kind.endsWith("confirm/")) check(t.includes(norm(meta.checking)) && !/<form\b/.test(h), `${l} ${kind}: the server HTML shows only "checking" (the form exists only after /status says open)`);
+  }
+  // Turnstile code lives only in a request-page chunk that no other page references
+  const chunkDir = path.join(root, "_next/static/chunks");
+  const tsChunks = walk(chunkDir, (p) => p.endsWith(".js")).filter((p) => fs.readFileSync(p, "utf8").includes("challenges.cloudflare.com")).map((p) => path.basename(p));
+  check(tsChunks.length >= 1, `the Turnstile origin is named in client code (${tsChunks.join(", ")})`);
+  // the origin is a string constant of the request form, which Next bundles with the route's page chunk; no page loads the Turnstile SCRIPT except the request page after /status says open
+  // (no <script> of that origin exists in any HTML; the browser test proves no request to it is made by any other page or before the answer)
+  check(tsChunks.every((c) => /^page-/.test(c)) && htmlFiles(root).every((f) => !/<script[^>]*src="[^"]*challenges\.cloudflare\.com/.test(fs.readFileSync(f, "utf8"))), `the Turnstile origin is only a string in the route's page chunk (${tsChunks.join(", ")}); no HTML page has a <script> for it (it is injected on demand by the request form)`);
+  // nothing reaches payment
+  const PAY = /(?:href|action)="[^"]*(?:checkout|\/cart|\/pay\b|payment|licen[cs]e|\/grant|wp-admin|wp-login|my-account\/?\?(?:[^"]*&)?plan=|offer=early-access)[^"]*"/i;
+  const payHits = htmlFiles(root).filter((f) => PAY.test(fs.readFileSync(f, "utf8")));
+  check(payHits.length === 0, `no page of the open build links to a payment, checkout, licence, grant or purchase route${payHits.length ? " -> " + path.relative(root, payHits[0]) : ""}`);
+  const apiRefs = new Set();
+  for (const c of walk(chunkDir, (p) => p.endsWith(".js"))) { const t = fs.readFileSync(c, "utf8"); if (t.includes("access-requests")) for (const m of t.matchAll(/\/wp-json\/[^"'`\s\\)]*/g)) apiRefs.add(m[0]); }
+  check(apiRefs.size >= 1 && [...apiRefs].every((a) => /^\/wp-json\/aicc\/v1\/access-requests(\/status|\/confirm)?$/.test(a)), `the only API surface named by client code is /wp-json/aicc/v1/access-requests* (${[...apiRefs].join(", ")})`);
+  check(!/sitemap|request-access/.test((htmlOf(root, "../__none") || "")) && !/request-access/.test(fs.readFileSync(path.join(root, "sitemap.xml"), "utf8")) && !/request-access/.test(fs.readFileSync(path.join(root, "robots.txt"), "utf8")), "sitemap.xml and robots.txt do not name the request pages");
+}
+
+// ───────── VERIFY ─────────
+console.log("\n== VERIFY: the ordinary site plus unlisted request pages");
+{
+  const root = dirs.verify;
+  check(REQ_FILES.every((r) => fs.existsSync(path.join(root, r))), "eight request pages exist");
+  for (const l of LOCALES) for (const kind of ["request-access/", "request-access/confirm/"]) {
+    const h = htmlOf(root, `${pre(l)}${kind}index.html`), meta = D[l].ea.request;
+    check(/<meta name="robots" content="noindex,nofollow"\/?>/.test(h), `${l} ${kind}: <meta name="robots" content="noindex,nofollow">`);
+    check(/data-req-verify/.test(h) && visibleText(h).includes(norm(meta.verifyBanner)), `${l} ${kind}: the banner says "${meta.verifyBanner}"`);
+    check(!/data-ea-mode/.test(h), `${l} ${kind}: no campaign mode marker (the page is OFF plus the form)`);
+  }
+  check(D.en.ea.request.verifyBanner === "Verification page, not public" && LOCALES.every((l) => !/[–—]/.test(D[l].ea.request.verifyBanner)), "the banner text is exactly 'Verification page, not public' in English and has no dash in any language");
+  const nonReq = textFiles(root).filter((f) => !/request-access\//.test(path.relative(root, f).split(path.sep).join("/")));
+  check(nonReq.every((f) => !/request-access/.test(fs.readFileSync(f, "utf8"))), "no ordinary page, RSC payload, sitemap.xml or robots.txt names /request-access/ (unlisted: no navigation, no internal link, no search entry)");
+  check(nonReq.every((f) => { const t = nb(fs.readFileSync(f, "utf8")); return !requestWords.some((w) => t.includes(w)) && !/data-ea-|aicc-eabar|aicc-eanote/.test(t); }), "no ordinary page carries any campaign text, marker or the request button wording (Request Free Access nowhere)");
+  const sm = fs.readFileSync(path.join(root, "sitemap.xml"), "utf8"), rb = fs.readFileSync(path.join(root, "robots.txt"), "utf8");
+  check(!/request/.test(sm) && !/request/.test(rb), "sitemap.xml and robots.txt contain nothing about the request pages");
+  const r = compare(dirs.off, root, { relaxed: true, ignore: ["request-access"] });
+  check(r.onlyA.length === 0 && r.onlyB.length === 0 && r.diff.every((d) => /page-HASH\.js$/.test(d)), `every non-request file equals the OFF build after normalising the build id, the page-chunk hash and webpack module ids: ${r.n} files, only-in-off ${r.onlyA.length}, only-in-verify ${r.onlyB.length}, different ${r.diff.length} (${r.diff.join(", ") || "none"}; the page chunk carries the module ids)`);
+  const rs = compare(dirs.off, root, { relaxed: true, ignore: ["request-access", "_next/static/chunks"] });
+  check(rs.diff.length === 0 && rs.onlyA.length === 0 && rs.onlyB.length === 0, `all ${rs.n} HTML and RSC payload files of the ordinary site are identical to OFF (chunk files aside)`);
+}
+
+// ───────── negative controls: the probes must see what they claim to see ─────────
+console.log("\n== negative controls");
+{
+  check(requestWords.some((w) => nb(`<p>${w}</p>`).includes(w)) && /Request Free Access/.test(requestWords.join("|")), "the request-button probe sees the real wording");
+  check(BANNED.test("Save 20% today") && BANNED.test("Regular price, was $99") && BANNED.test("Starting from 2027") && !BANNED.test("Regular price: $99 a year"), "the banned-wording probe catches save / % / was / from 2027 and passes the plain price line");
+  const fakeOff = path.join(process.env.TMPDIR || "/tmp", `p32-neg-${process.pid}`);
+  fs.mkdirSync(fakeOff, { recursive: true });
+  fs.writeFileSync(path.join(fakeOff, "a.html"), "<p>x</p>");
+  const bid = "ID1"; fs.mkdirSync(path.join(fakeOff, "_next/static", bid), { recursive: true }); fs.writeFileSync(path.join(fakeOff, "_next/static", bid, "_buildManifest.js"), "x");
+  const fakeB = fakeOff + "-b"; fs.cpSync(fakeOff, fakeB, { recursive: true }); fs.writeFileSync(path.join(fakeB, "a.html"), "<p>y</p>");
+  check(compare(fakeOff, fakeB).diff.length === 1 && compare(fakeOff, fakeOff).diff.length === 0, "the equivalence probe reports one changed file and none for an identical tree");
+  fs.rmSync(fakeOff, { recursive: true, force: true }); fs.rmSync(fakeB, { recursive: true, force: true });
+}
+
+console.log(`\n${total - failed}/${total} checks passed`);
+if (failed) { console.error(`FAIL test:launch-offer (${failed})`); process.exit(1); }
+console.log("PASS test:launch-offer");
