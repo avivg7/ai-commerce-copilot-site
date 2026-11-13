@@ -151,6 +151,26 @@ export const eaEn = {
       plugin: { q: "What will I see in the plugin when the launch offer ends?", a: "At 22:00 UTC on {lastDay} the plugin shows that your plan has expired, with a \"Renew plan\" button, and AICC stops showing on your storefront. Your store keeps selling as usual. The plugin does not warn you beforehand, so note the date; your account page shows it too." },
     },
   },
+  // P37 SELF-SERVICE FREE TRIAL (NEXT_PUBLIC_AICC_SELFSERVICE=on; src/lib/selfService.ts). The sign-up itself is on the Control Plane (/start/), which always shows the truthful state (open, waitlist, closed, paused).
+  // These strings are rendered ONLY by a self-service build. Rules (scripts/lib/early-access-truth.mjs, SS_EXTRA_RULES; they replace the launch-offer rules for this block): the words "free trial" are allowed here and
+  // nowhere else; no card wording (the only payment sentence is "no payment method is required for the trial"); no renewal, subscription, discount, urgency, count or day-length wording; UTC only, no geography;
+  // the only store counts are the ones the Backend enforces: trial 1 store, paid Solo 1, Studio up to 3, Agency up to 10. he/es/ru are machine drafts (not reviewed by native speakers).
+  ss: {
+    bar: { label: "Free trial announcement", text: "Launch Offer: free trial for one store until {until}", link: "Trial terms" },
+    // the card label per state of GET /wp-json/aicc/v1/signup/status (src/lib/ssStatus.ts has the state table): start = open or not yet known, waitlist = a link to the sign-up page (which shows the waitlist), closed / paused / off = plain text
+    cta: { start: "Start free trial", waitlist: "Join the waitlist", closed: "Free trial registration closed", paused: "Free trial registration paused", notOpen: "Free trial registration is not open" },
+    plan: { trial: "Free trial: 1 store", paidOne: "Paid plan: 1 store", paidMany: "Paid plan: up to {n} stores", noPayment: "No payment method required for the trial", checksLabel: "Free trial and plan allowance" },
+    hero: { supportLabel: "Free trial at a glance", support: { noPayment: "No payment method for the trial", oneStore: "The trial includes 1 store" } },
+    band: { lead: "Start a free trial for one store. No payment method is required for the trial." },
+    link: "How the free trial works",
+    terms: {
+      label: "Free trial terms",
+      store: "The free trial covers 1 store, whichever plan you choose.",
+      payment: "No payment method is required for the trial, so nothing is charged. The trial ends {lastDay} at\u00a022:00 UTC.",
+      paid: "Paid plans are not open for purchase yet. Their regular prices apply once they open: Solo covers 1 store, Studio up to 3, Agency up to 10.",
+      state: "Registration can close or move to a waitlist, and the sign-up page always shows the current state.",
+    },
+  },
   // The request pages (/request-access/ and /request-access/confirm/). They exist only in an OPEN build and talk only to the Control Plane routes of the intake contract.
   // Every message is generic on purpose: the page never says whether an address, a store or a request exists.
   request: {

@@ -244,7 +244,7 @@ const flat = (o, pre = "", out = []) => { if (typeof o === "string") out.push([p
     const rawStrings = flat(raw[l]);
     const lit = rawStrings.filter(([, v]) => /20(26|27)/.test(v));
     check(lit.length === 0, `${l}: the pack has no literal year (the dates are tokens, one copy set)${lit.length ? " -> " + lit.map(([p]) => p).join(", ") : ""}`);
-    const unknown = rawStrings.flatMap(([, v]) => [...v.matchAll(/\{([A-Za-z]+)\}/g)].map((m) => m[1])).filter((t) => !toks.EA_DATE_TOKENS.includes(t) && t !== "contactEmail" && t !== "mailProvider" && !/^price(Solo|Studio|Agency)$/.test(t));
+    const unknown = rawStrings.flatMap(([p, v]) => [...v.matchAll(/\{([A-Za-z]+)\}/g)].map((m) => (p === "ss.plan.paidMany" && m[1] === "n" ? "" : m[1])).filter(Boolean)).filter((t) => !toks.EA_DATE_TOKENS.includes(t) && t !== "contactEmail" && t !== "mailProvider" && !/^price(Solo|Studio|Agency)$/.test(t)); // {n} (the store count of plans.ts) is allowed in ss.plan.paidMany only (P37)
     check(unknown.length === 0, `${l}: every {token} in the pack is a date token, {contactEmail} or {mailProvider}${unknown.length ? " -> " + [...new Set(unknown)].join(", ") : ""}`);
     check(rawStrings.some(([, v]) => v.includes("{firstLastDay}")) && rawStrings.filter(([, v]) => v.includes("{firstLastDay}")).every(([p]) => p === "extended.note" || p === "extended.noteAnnounce"), `${l}: {firstLastDay} (the initial last day) is used by the extension notes (open and announce) and by nothing else`);
     // the token table equals the independent literals (REQUIRED_DATES) and Intl's own formatting of the Israel calendar day, step by step

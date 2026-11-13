@@ -4,7 +4,7 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { ROOT } from "./lib/load.mjs";
 import { truthProblems, selfTestProblems, TRUTH_RULES } from "./lib/launch-truth.mjs";
-import { ALLOWED_WHY, EA_EXTRA_RULES, EA_EXEMPT_LINE, isCampaignFile, eaExtraRulesProbe, EA_LIMITED_PHRASE, EA_MANUAL_PHRASE } from "./lib/early-access-truth.mjs";
+import { ALLOWED_WHY, EA_EXTRA_RULES, EA_EXEMPT_LINE, isCampaignFile, eaExtraRulesProbe, EA_LIMITED_PHRASE, EA_MANUAL_PHRASE, SS_ALLOWED_WHY, SS_EXTRA_RULES, ssBlockLines } from "./lib/early-access-truth.mjs";
 
 // "Watch demo" is allowed since the owner visual pass: the modal is an honest labelled placeholder until a real video is configured,
 // and `npm run launch:check` blocks a production launch while the placeholder is active.
@@ -173,6 +173,20 @@ function stripComments(src) {
   const wrong = ok.filter(extra), missed = bad.filter((t) => !extra(t));
   if (wrong.length || missed.length) { console.error(`FAIL: self-test of the P34 allowances: wrongly flagged [${wrong}] not caught [${missed}]`); process.exit(1); }
 }
+// Self-test of the P37 self-service free-trial allowance: "free trial" / "Start free trial" pass ONLY inside the `ss:` block of a campaign file, under SS_EXTRA_RULES (no card, renewal, discount, urgency,
+// day-count, approval or price wording); outside the block the base rules and EA_EXTRA_RULES still ban the same words.
+{
+  const base = (t, inSs) => RULES.some(([re, why]) => re.test(t) && !(inSs && (ALLOWED_WHY.has(why) || SS_ALLOWED_WHY.has(why))));
+  const ss = (t) => SS_EXTRA_RULES.some(([re]) => re.test(t));
+  const okInSs = ["Start free trial", "Free trial: 1 store", "Free trial registration closed", "Join the waitlist", "No payment method required for the trial", "Paid plan: up to {n} stores", "Empezar prueba gratuita", "התחילו ניסיון חינם", "Начать бесплатный пробный период", "Prueba gratuita: 1 tienda", "Бесплатный пробный период: 1 магазин"];
+  const badInSs = ["Start a free trial for 14 days", "Start free trial, no credit card", "Free trial, then $99", "Free trial that renews automatically", "Your free trial subscription", "Save 20% on the free trial", "Free trial: only 5 spots left", "Free trial for approved stores", "Request a free trial", "Free plan for one store", "Unlimited free trial", "Prueba gratuita de 30 días", "Prueba gratuita, sin tarjeta", "Бесплатный пробный период на 14 дней", "ניסיון חינם ללא כרטיס אשראי", "Free trial, cancel anytime", "Start free", "Join thousands of stores on the free trial", "Join the free trial", "הצטרפו לניסיון החינם"];
+  const missed = badInSs.filter((t) => !(base(t, true) || ss(t))), wrong = okInSs.filter((t) => base(t, true) || ss(t));
+  const leaked = ["Start free trial", "Free trial: 1 store", "Prueba gratuita: 1 tienda"].filter((t) => !base(t, false) && !EA_EXTRA_RULES.some(([re]) => re.test(t)));
+  if (missed.length || wrong.length || leaked.length) { console.error(`FAIL: self-test of the self-service free-trial allowance: not caught [${missed}] wrongly flagged [${wrong}] allowed outside the ss block [${leaked}]`); process.exit(1); }
+  const probe = ["export const x = {", "  ss: {", '    a: "Start free trial",', "  },", '  b: "Start free trial",'].join("\n");
+  const lines = ssBlockLines(probe);
+  if (!(lines.has(2) && !lines.has(4) && !lines.has(0))) { console.error("FAIL: self-test of ssBlockLines: the block must cover exactly the lines of the top-level `  ss: {` block"); process.exit(1); }
+}
 // Launch-truth rules (scripts/lib/launch-truth.mjs, shared with content:check): self-tested here on every run, applied to every source line below.
 {
   const bad = selfTestProblems();
@@ -183,11 +197,14 @@ let scanned = 0;
 for (const f of [...files(path.join(ROOT, "src")), ...files(path.join(ROOT, "docs")), path.join(ROOT, "README.md")]) {
   scanned++;
   const text = stripComments(fs.readFileSync(f, "utf8"));
+  const campaign = isCampaignFile(path.relative(ROOT, f));
+  const ssLines = campaign ? ssBlockLines(text) : new Set(); // P37: the `ss:` (self-service free trial) block of a campaign file has its own rule set
   text.split("\n").forEach((line, i) => {
     // The Early Access campaign copy (src/i18n/ea/) is the ONLY place the plain words "free" / "no credit card" are allowed (owner decision, Production 20); it gets extra bans instead.
-    const campaign = isCampaignFile(path.relative(ROOT, f));
-    for (const [re, why] of RULES) if (re.test(line) && !(campaign && ALLOWED_WHY.has(why))) hits.push(`${path.relative(ROOT, f)}:${i + 1}  [${why}]  ${line.trim().slice(0, 110)}`);
-    if (campaign && !EA_EXEMPT_LINE.test(line)) for (const [re, why] of EA_EXTRA_RULES) if (re.test(eaExtraRulesProbe(line))) hits.push(`${path.relative(ROOT, f)}:${i + 1}  [${why}]  ${line.trim().slice(0, 110)}`);
+    // P37: inside the `ss:` block (and only there) the words "free trial" are allowed too, under SS_EXTRA_RULES instead of EA_EXTRA_RULES.
+    const inSs = ssLines.has(i);
+    for (const [re, why] of RULES) if (re.test(line) && !(campaign && (ALLOWED_WHY.has(why) || (inSs && SS_ALLOWED_WHY.has(why))))) hits.push(`${path.relative(ROOT, f)}:${i + 1}  [${why}]  ${line.trim().slice(0, 110)}`);
+    if (campaign && !EA_EXEMPT_LINE.test(line)) for (const [re, why] of (inSs ? SS_EXTRA_RULES : EA_EXTRA_RULES)) if (re.test(eaExtraRulesProbe(line))) hits.push(`${path.relative(ROOT, f)}:${i + 1}  [${why}]  ${line.trim().slice(0, 110)}`);
     for (const p of truthProblems(line, { publicCopy: /^src\//.test(path.relative(ROOT, f)) })) hits.push(`${path.relative(ROOT, f)}:${i + 1}  [${p.why}]  ${line.trim().slice(0, 110)}`);
   });
 }

@@ -38,6 +38,91 @@ export const EA_EXTRA_RULES = [
 ];
 
 /**
+ * P37 SELF-SERVICE FREE TRIAL copy (the `ss:` block of each src/i18n/ea/<locale>.ts, NEXT_PUBLIC_AICC_SELFSERVICE=on). The launch-offer rules above forbid the word "trial" because the launch offer is not one;
+ * the self-service sign-up IS a free trial (one store, a fixed end), so exactly that wording is allowed INSIDE the `ss:` block and nowhere else (the copy:check base rules still ban it in every other file and block).
+ * Everything else stays banned there too, and the block gets its own bans: no card wording (the only payment sentence is "no payment method is required for the trial"), no renewal / subscription / billing
+ * wording, no discount, urgency, scarcity or count claim, no day-length claim ("14-day trial": the end is a fixed date), no price, no "approved / approval / request" (nobody is approved by hand any more).
+ */
+// "Join" is banned site-wide (it implies a customer base); inside the block it is allowed ONLY as the waitlist action ("Join the waitlist"), see the two rules below
+export const SS_ALLOWED_WHY = new Set(["free tier / trial claim", "free trial", "Join (implies a customer base)", "he: join"]);
+const swap = (re, from, why) => { const src = re.source.split(from).join(""); if (src === re.source) throw new Error(`SS rule derivation: "${from}" not found in ${why}`); return new RegExp(src, re.flags); };
+export const SS_EXTRA_RULES = [
+  // English: "free trial" and "Start free trial" are the feature; a free PLAN / tier / forever / lifetime offer is still not
+  [/\bfree (plan|tier|version|forever|for ever|for life|for the first|for founding|for early|to try|to start|download)\b|freemium|start free(?! trial\b)|forever free|lifetime|for life/i, "en: the free trial is not a free plan, a free tier or a lifetime offer"],
+  EA_EXTRA_RULES[1], EA_EXTRA_RULES[2], EA_EXTRA_RULES[3], EA_EXTRA_RULES[4], EA_EXTRA_RULES[5],
+  [swap(EA_EXTRA_RULES[6][0], "תקופת ניסיון|ניסיון חינם|", "he"), EA_EXTRA_RULES[6][1].replace("no trial, ", "")],
+  [swap(EA_EXTRA_RULES[7][0], "prueba|", "es"), EA_EXTRA_RULES[7][1].replace("no trial, ", "")],
+  [swap(EA_EXTRA_RULES[8][0], "пробн|", "ru"), EA_EXTRA_RULES[8][1].replace("no trial, ", "")],
+  [/(?<![.\w])join\b(?! the waitlist\b)/i, "en: \"Join\" only as \"Join the waitlist\""],
+  [/הצטרפו(?! לרשימת ההמתנה)/, "he: \"join\" only as the waitlist action"],
+  // the trial length is a fixed end date, never "N days" (any language)
+  [/\b\d+[- ]?days?\b|\d+ (ימים|יום)|\d+[  ]d[ií]as|\d+[  ](дн|день|дней)/i, "no trial length in days (the trial ends on a fixed date, stated as a date)"],
+  // no card wording at all: the one payment sentence is "no payment method is required for the trial" (credit card / card / tarjeta / карт / כרטיס)
+  [/\bcards?\b|credit|כרטיס|tarjeta|(?<![а-яё])карт/i, "no card wording (say \"no payment method is required for the trial\")"],
+  // nobody is approved by hand in the self-service flow, and nothing is requested
+  [/approv|\brequests?\b|אישור|מאושר|בקש|aprob|solicitud|одобр|запрос/i, "no approval / request wording (the sign-up is self-service)"],
+  // no promise the trial cannot keep
+  [/unlimited|no (commitment|obligation|strings)|cancel any ?time|instant(ly)?\b|ללא התחייבות|sin compromiso|без обязательств|мгновенно|inmediat/i, "no unlimited / no-commitment / instant claim"],
+];
+export const SS_PAID_STORES = [1, 3, 10]; // the Backend allowance table: AICC_LM_Early_Access::PLAN_SEATS (trial: 1)
+/** Inclusive line range (0-based indexes of `text.split("\n")`) of the top-level `  ss: {` block of a campaign file, as a Set; empty when the file has none. */
+export function ssBlockLines(text) {
+  const lines = String(text).split("\n"), out = new Set();
+  const a = lines.findIndex((l) => /^  ss: \{\s*$/.test(l));
+  if (a < 0) return out;
+  for (let i = a; i < lines.length; i++) { out.add(i); if (i > a && /^  \},?\s*$/.test(lines[i])) break; }
+  return out;
+}
+/** The words each language uses for the two facts the trial copy must carry: "payment method" and "trial". */
+const SS_WORDS = {
+  en: { pay: "payment method", trial: /trial/i, store: /store/i },
+  he: { pay: "אמצעי תשלום", trial: /ניסיון/, store: /חנו/ },
+  es: { pay: "método de pago", trial: /prueba/i, store: /tienda/i },
+  ru: { pay: "способ оплаты", trial: /пробн/i, store: /магазин/i },
+};
+
+/**
+ * Problems of the self-service block of one locale's (resolved) campaign dictionary: present and complete, one store for the trial, the paid allowance exactly 1 / 3 / 10 (never more: those are the numbers
+ * the Backend enforces), "no payment method is required for the trial" where payment is mentioned and nowhere an unqualified "no card" claim, the end stated in UTC, four distinct state labels.
+ */
+export function ssDisclosureProblems(locale, ea, step = 0) {
+  const problems = [], ss = ea?.ss, W = SS_WORDS[locale];
+  const nb = (x) => String(x).replace(/ /g, " ");
+  const at = (p) => p.split(".").reduce((a, k) => a?.[k], ss);
+  if (!ss) return [`${locale}: ea.ss (the self-service block) is missing`];
+  for (const k of ["bar.label", "bar.text", "bar.link", "cta.start", "cta.waitlist", "cta.closed", "cta.paused", "cta.notOpen", "plan.trial", "plan.paidOne", "plan.paidMany", "plan.noPayment", "plan.checksLabel", "hero.supportLabel", "hero.support.noPayment", "hero.support.oneStore", "band.lead", "link", "terms.label", "terms.store", "terms.payment", "terms.paid", "terms.state"]) if (typeof at(k) !== "string" || !at(k).trim()) problems.push(`${locale}: ea.ss.${k} is missing or empty`);
+  if (problems.length) return problems;
+  // the trial covers ONE store, said on the card and in the terms
+  for (const k of ["plan.trial", "terms.store", "hero.support.oneStore"]) if (!/(^|[^\d])1([^\d]|$)/.test(at(k)) && !/אחת|una\b|одн/i.test(at(k))) problems.push(`${locale}: ea.ss.${k} must state that the trial covers one store`);
+  // paid allowance: {n} comes from plans.ts at render time; the literal numbers in the terms are exactly 1, 3, 10
+  if (!at("plan.paidMany").includes("{n}")) problems.push(`${locale}: ea.ss.plan.paidMany must carry the {n} token (the store count of plans.ts)`);
+  const paid = nb(at("terms.paid")).match(/\d+/g) || [];
+  // Solo's single store may be a number or the word "one" (Hebrew writes "לחנות אחת"); Studio 3 and Agency 10 are always numbers
+  const pj = JSON.stringify(paid.map(Number));
+  if (pj !== JSON.stringify(SS_PAID_STORES) && pj !== JSON.stringify(SS_PAID_STORES.slice(1))) problems.push(`${locale}: ea.ss.terms.paid must state the paid allowance ${SS_PAID_STORES.join(" / ")} stores (the Backend table) and nothing larger, found [${paid}]`);
+  // no store count anywhere else in the block except the allowed ones, and no capacity above the Backend table; 22:00 is the clock
+  for (const [p, v] of walk(ss, "", [])) {
+    const d = REQUIRED_DATES[locale][step];
+    const nums = (nb(v).replace(/22:00/g, "").split(nb(d.last)).join("").split(nb(d.until)).join("").match(/\d+/g) || []).map(Number); // the resolved dates of the build's step are not store counts
+    const bad = nums.filter((n) => !SS_PAID_STORES.includes(n));
+    if (bad.length) problems.push(`${locale}: ea.ss.${p} carries the number(s) ${bad.join(", ")}: the only numbers allowed are the store allowance ${SS_PAID_STORES.join(" / ")} and the 22:00 UTC clock`);
+  }
+  // payment: only the qualified sentence, in the four places that mention it
+  for (const k of ["plan.noPayment", "hero.support.noPayment", "terms.payment", "band.lead"]) { const v = nb(at(k)).toLowerCase(); if (!v.includes(nb(W.pay).toLowerCase()) || !W.trial.test(v)) problems.push(`${locale}: ea.ss.${k} must say "${W.pay}" together with the trial (the only payment claim allowed is: no payment method is required for the trial)`); }
+  // the end is stated in UTC with the last day (the same instant as the Control Plane trial expiry)
+  const need = { ...REQUIRED_DATES[locale][step] };
+  if (!nb(at("terms.payment")).includes(nb("22:00 UTC")) || !at("terms.payment").includes("{lastDay}") && !nb(at("terms.payment")).includes(nb(need.last))) problems.push(`${locale}: ea.ss.terms.payment must state the end as {lastDay} and 22:00 UTC`);
+  if (!at("bar.text").includes("{until}") && !nb(at("bar.text")).includes(nb(need.until))) problems.push(`${locale}: ea.ss.bar.text must state the last day`);
+  // four distinct labels, the trial wording on every state label, the waitlist label names the waitlist
+  const labels = ["cta.start", "cta.waitlist", "cta.closed", "cta.paused", "cta.notOpen"].map(at);
+  if (new Set(labels).size !== labels.length) problems.push(`${locale}: the five self-service state labels must all differ`);
+  for (const k of ["cta.start", "cta.closed", "cta.paused", "cta.notOpen"]) if (!W.trial.test(at(k))) problems.push(`${locale}: ea.ss.${k} must name the trial`);
+  // short support lines (one line each)
+  for (const k of ["hero.support.noPayment", "hero.support.oneStore"]) if (nb(at(k)).length > 64 || /[.!;:]/.test(at(k))) problems.push(`${locale}: ea.ss.${k} must be one short line (at most 64 characters, no sentence punctuation)`);
+  return problems;
+}
+
+/**
  * The dates each step must state in each language, written out as literals on purpose (NOT read from src/i18n/eaTokens.ts): the token table and these literals are two independent
  * statements of the same calendar facts, and `ea:check` fails when they disagree or when either disagrees with the IANA database. Index 0 = the initial end, 1 and 2 = the extension steps.
  * last = the last included day (Israel), end = the day access ends at 00:00 Israel time, utc = the UTC line of the plan cards ("22:00 UTC on <last day>").
@@ -211,6 +296,8 @@ export function eaDisclosureProblems(locale, ea, step = 0) {
   }
   // every dictionary string must be non-empty
   for (const [p, v] of walk(ea, "", [])) if (!v.trim()) problems.push(`${locale}: ea.${p} is empty`);
+  // P37: the self-service free trial block
+  problems.push(...ssDisclosureProblems(locale, ea, step));
   return problems;
 }
 

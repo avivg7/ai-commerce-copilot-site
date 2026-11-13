@@ -130,6 +130,23 @@ export const eaEs: DeepPartial<EaDict> = {
       plugin: { q: "¿Qué verá en el plugin cuando termine la oferta de lanzamiento?", a: "A las 22:00 UTC del {lastDay} el plugin indica que su plan ha caducado, con un botón para renovar el plan, y AICC deja de mostrarse en el escaparate de su tienda. Su tienda sigue vendiendo como siempre. El plugin no avisa de antemano, así que anote la fecha; la página de su cuenta también la muestra." },
     },
   },
+  // P37 prueba gratuita (borrador automático, no revisado por hablantes nativos). Véase el bloque en inglés para las reglas.
+  ss: {
+    bar: { label: "Aviso de prueba gratuita", text: "Oferta de lanzamiento: prueba gratuita para una tienda hasta el {until}", link: "Condiciones de la prueba" },
+    cta: { start: "Empezar prueba gratuita", waitlist: "Unirse a la lista de espera", closed: "Registro de prueba gratuita cerrado", paused: "Registro de prueba gratuita en pausa", notOpen: "El registro de prueba gratuita no está abierto" },
+    plan: { trial: "Prueba gratuita: 1 tienda", paidOne: "Plan de pago: 1 tienda", paidMany: "Plan de pago: hasta {n} tiendas", noPayment: "No hace falta método de pago para la prueba", checksLabel: "Prueba gratuita y capacidad del plan" },
+    hero: { supportLabel: "La prueba gratuita de un vistazo", support: { noPayment: "Sin método de pago en la prueba", oneStore: "La prueba incluye 1 tienda" } },
+    band: { lead: "Empiece una prueba gratuita para una tienda. No hace falta método de pago para la prueba." },
+    link: "Cómo funciona la prueba gratuita",
+    terms: {
+      label: "Condiciones de la prueba gratuita",
+      store: "La prueba gratuita cubre 1 tienda, sea cual sea el plan que elija.",
+      payment: "No hace falta método de pago para la prueba, así que no se cobra nada. La prueba termina el {lastDay} a las\u00a022:00 UTC.",
+      paid: "Las compras de pago aún no están abiertas. Los precios regulares se aplicarán cuando se abran: Solo cubre 1 tienda, Studio hasta 3 y Agency hasta 10.",
+      state: "El registro puede cerrarse o pasar a una lista de espera, y la página de registro muestra siempre el estado actual.",
+    },
+  },
+
   request: {
     verifyBanner: "Página de verificación, no pública",
     pageTitle: "Solicitar acceso gratuito",
