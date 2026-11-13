@@ -28,7 +28,6 @@ const D = await loadDictionaries();
 const { PLANS } = await loadTs("src/data/plans.ts");
 const LOCALES = ["en", "he", "es", "ru"];
 const pre = (l) => (l === "en" ? "" : `/${l}`);
-const norm = (t) => String(t).replace(/ /g, " ").replace(/\s+/g, " ").trim();
 let failed = 0, total = 0;
 const check = (cond, msg) => { total++; if (!cond) { failed++; console.error("  FAIL " + msg); } else console.log("  ok   " + msg); };
 const END = Date.UTC(2026, 11, 31, 22, 0, 0);
@@ -37,11 +36,11 @@ const startOf = (l, plan) => `https://www.copilt.org${l === "en" ? "" : `/${l}`}
 
 const mocks = { off: await startMock({ dir: dirs.off, port: PB }), announce: await startMock({ dir: dirs.announce, port: PB ? PB + 1 : 0 }), open: await startMock({ dir: dirs.open, port: PB ? PB + 2 : 0 }) };
 const browser = await launch();
-async function view(cell, route, w, { h = 900, locale = "en", signup = "open", delay = 0, cookie = false, block = true } = {}) {
+async function view(cell, route, w, { h = 900, locale = "en", signup = "open", delay = 0, cookie = false, block = true, now = END - 86400e3 } = {}) {
   const m = mocks[cell];
   m.reset(); m.set({ signup, signupDelayMs: delay });
   const ctx = await browser.newContext({ viewport: { width: w, height: h }, reducedMotion: "reduce", locale: locale === "he" ? "he-IL" : "en-US" });
-  await ctx.clock.setFixedTime(new Date(END - 86400e3));
+  await ctx.clock.setFixedTime(new Date(now));
   if (cookie) await ctx.addCookies([{ name: "aicc_probe", value: "1", url: m.url }]);
   const nav = [];
   if (block) await ctx.route("https://www.copilt.org/**", (r) => { nav.push(r.request().url()); return r.fulfill({ contentType: "text/html", body: "<html><body>control plane (intercepted)</body></html>" }); });
@@ -73,8 +72,9 @@ for (const cell of ["announce", "off", "open"]) for (const l of LOCALES) for (co
       const hero = await page.evaluate(() => [...document.querySelectorAll(".aicc-hero-actions a")].filter((e) => e.closest(".aicc-hero--home")).map((e) => ({ href: e.getAttribute("href"), text: e.innerText.trim(), top: e.getBoundingClientRect().top, vis: e.getClientRects().length > 0 })));
       check(hero.length === 2 && hero.every((x) => x.vis && x.top < 844) && hero[0].href === "#demo" && hero[0].text === D[l].home.hero.ctaDemo && hero[1].href === `${pre(l)}/pricing/`.replace(/^$/, "/"), `ss-${cell} ${l} home @${w}: Try Live Demo (#demo) and See Pricing are the two Hero actions, visible above the fold`);
     }
-    const file = path.join(SHOTS, `ss-${cell}-${l}-${name}-${w}.png`);
-    await page.screenshot({ path: file, fullPage: name === "pricing" && w === 390 ? false : false });
+    // the screenshots: the Hero view (Home, viewport) and the plan cards section (element), so the cards, the trial lines and the terms block are visible
+    if (name === "home") await page.screenshot({ path: path.join(SHOTS, `ss-${cell}-${l}-home-hero-${w}.png`) });
+    await page.locator(name === "home" ? '[aria-labelledby="pricing-title"]' : '[aria-labelledby="plans-title"]').screenshot({ path: path.join(SHOTS, `ss-${cell}-${l}-${name}-plans-${w}.png`) });
     await ctx.close();
   }
 }
@@ -105,7 +105,8 @@ for (const l of LOCALES) for (const [answer, kind, key] of [["waitlist", "link",
   const { ctx, page } = await view("announce", `${pre(l)}/pricing/`, 1440, { signup: answer, locale: l });
   const cs = await cards(page);
   check(kind === "link" ? cs.every((c, i) => c.link.length === 1 && c.link[0].text.startsWith(lab) && c.link[0].href === startOf(l, PLANS[i].id)) : cs.every((c) => c.link.length === 0 && c.st.length === 1 && c.st[0].text === lab), `${l} ${answer}: cards show "${lab}" as ${kind === "link" ? "a link to " + startOf(l) : "plain text"}`);
-  if (answer === "closed_cutoff") await page.screenshot({ path: path.join(SHOTS, `ss-announce-${l}-pricing-closed-1440.png`) });
+  if (answer === "closed_cutoff") await page.locator('[aria-labelledby="plans-title"]').screenshot({ path: path.join(SHOTS, `ss-announce-${l}-pricing-plans-closed-1440.png`) });
+  if (answer === "waitlist") await page.locator('[aria-labelledby="plans-title"]').screenshot({ path: path.join(SHOTS, `ss-announce-${l}-pricing-plans-waitlist-1440.png`) });
   await ctx.close();
   const home = await view("announce", `${pre(l)}/`, 1440, { signup: answer, locale: l });
   const band = await home.page.evaluate(() => { const s = document.querySelector('[aria-labelledby="final-title"]'); return { a: [...s.querySelectorAll("a")].map((x) => x.getAttribute("href")), st: [...s.querySelectorAll("[data-ss-state]")].map((x) => x.innerText.trim()) }; });
@@ -145,6 +146,15 @@ for (const l of LOCALES) for (const cell of ["announce", "off"]) {
   await ctx.close();
 }
 
+// ───────── the ended view (a launch-offer build loaded after the end instant) ─────────
+console.log("== after the end instant (a stale page of a launch-offer + self-service build): the ordinary ended view, no sign-up promise");
+for (const l of ["en", "he"]) {
+  const { ctx, page } = await view("announce", `${pre(l)}/pricing/`, 1440, { locale: l, now: END + 1000 });
+  const r = await page.evaluate(() => ({ cardLinks: [...document.querySelectorAll("article.aicc-plan a.aicc-btn")].filter((e) => e.getClientRects().length > 0).length, chips: [...document.querySelectorAll("article.aicc-plan .aicc-btn--soon")].filter((e) => e.getClientRects().length > 0).length, bar: [...document.querySelectorAll(".aicc-eabar")].filter((e) => e.getClientRects().length > 0).length, trial: [...document.querySelectorAll("[data-ss-checks],[data-ss-terms],[data-ss-band]")].filter((e) => e.getClientRects().length > 0).length }));
+  check(r.cardLinks === 0 && r.chips === 3 && r.bar === 0 && r.trial === 0, `${l}: after 2026-12-31T22:00:00Z a stale self-service + announce page shows the ordinary ended view (no sign-up button, no trial text, no bar; the three "purchases open soon" statements) [${JSON.stringify(r)}]`);
+  await ctx.close();
+}
+
 // ───────── the plan finder ─────────
 console.log("== plan finder (Which plan?): the suggestion ends in the sign-up button, not an inert chip");
 for (const l of ["en", "he"]) {
@@ -166,18 +176,19 @@ for (const l of ["en", "he"]) {
 
 // ───────── keyboard ─────────
 console.log("== keyboard: Tab order and focus ring on the card buttons");
-async function tabs(page, max = 120) {
+async function tabs(page, max = 120, stopAtCards = 0) {
   const seq = [];
   await page.evaluate(() => document.activeElement && document.activeElement.blur());
   for (let i = 0; i < max; i++) {
     await page.keyboard.press("Tab");
     seq.push(await page.evaluate(() => { const e = document.activeElement; if (!e || e === document.body) return null; const cs = getComputedStyle(e); return { href: e.getAttribute("href"), cls: e.className, inCard: !!e.closest("article.aicc-plan"), ring: (cs.outlineStyle !== "none" && parseFloat(cs.outlineWidth) > 0) || cs.boxShadow !== "none" }; }));
+    if (stopAtCards && seq.filter((x) => x && x.inCard && /aicc-btn/.test(x.cls)).length >= stopAtCards) break; // the first pass over the three card buttons is enough (Tab wraps around the page)
   }
   return seq;
 }
 for (const l of ["en", "he"]) for (const cell of ["announce", "off"]) {
   const { ctx, page } = await view(cell, `${pre(l)}/pricing/`, 1440, { locale: l });
-  const seq = (await tabs(page)).filter(Boolean);
+  const seq = (await tabs(page, 200, 3)).filter(Boolean);
   const inCard = seq.filter((s) => s.inCard && /aicc-btn/.test(s.cls));
   check(inCard.length === 3 && inCard.every((s, i) => s.href === startOf(l, PLANS[i].id)), `${l} ss-${cell}: Tab reaches the three card buttons in order solo, studio, agency (${inCard.map((s) => s.href.split("=")[1]).join(", ")})`);
   check(inCard.every((s) => s.ring), `${l} ss-${cell}: every card button shows a focus ring (outline or shadow) when focused by keyboard`);
@@ -185,7 +196,7 @@ for (const l of ["en", "he"]) for (const cell of ["announce", "off"]) {
 }
 {
   const { ctx, page } = await view("announce", "/pricing/", 1440, { signup: "closed_cutoff" });
-  const seq = (await tabs(page)).filter(Boolean);
+  const seq = (await tabs(page, 90)).filter(Boolean);
   check(seq.filter((s) => s.inCard && /aicc-btn/.test(s.cls)).length === 0, "closed_cutoff: no card button is a tab stop (the state is plain text)");
   await ctx.close();
 }

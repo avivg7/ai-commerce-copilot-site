@@ -142,7 +142,11 @@ export function analyzeDocument(html, ctx) {
   const findings = [];
   const add = (where, arr) => arr.forEach((f) => findings.push({ ...f, where }));
   const lang = ((html.match(/<html\b[^>]*\blang=["']([a-z]{2})/i) || [, "en"])[1] || "en").toLowerCase();
-  const w = (t) => wordingFindings(t, { lang });
+  // P37: a self-service build (<html data-ss-mode="on">) may say "free trial" ONLY in the approved strings of its copy pack (ctx.ssPhrases, from src/i18n/ea/<locale>.ts `ss`): those exact phrases are removed
+  // before the wording rules run, so any other free-trial wording (a duration, "try it free", "no credit card", ...) on the same page, and the same phrases on a page WITHOUT the marker, are still findings.
+  const ssOn = /<html\b[^>]*\sdata-ss-mode="on"/i.test(html) && Array.isArray(ctx.ssPhrases) && ctx.ssPhrases.length > 0;
+  const ssStrip = (t) => (ssOn ? ctx.ssPhrases.reduce((x, ph) => x.split(ph).join(" "), String(t)) : t);
+  const w = (t) => wordingFindings(ssStrip(t), { lang });
   add("text", w(parts.text));
   add("title", w(parts.title));
   add("meta", w([parts.description, parts.ogTitle, parts.ogDescription, parts.ogSite].filter(Boolean).join("\n")));

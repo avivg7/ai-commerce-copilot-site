@@ -106,6 +106,16 @@ if (env.NEXT_PUBLIC_LEGAL_DRAFT_NOTICE === "off" && !approved) problems.push("NE
   }
   if (env.AICC_EA_VERIFY_BUILD && env.AICC_EA_VERIFY_BUILD !== "owner-approved") problems.push(`AICC_EA_VERIFY_BUILD is "${env.AICC_EA_VERIFY_BUILD}": the only accepted value is the exact word owner-approved`);
   if (ea.EA_EXPIRED_REQUEST) problems.push(`early access: the switch is "${ea.EA_REQUESTED}" but this build is made at or after the end (${ea.EA_END_ISO_UTC}), so the campaign was NOT published; remove NEXT_PUBLIC_AICC_EARLY_ACCESS from the release environment${ea.EA_EXTENSION_REQUESTED && !ea.EA_EXTENDED ? " (an extension was requested but ignored, see the next line)" : ""}`);
+  // P37 self-service free trial (orthogonal to the launch-offer mode): report the state, refuse a value that is not exactly "on", and remind the deploy order (the Control Plane /start/ page must be live first)
+  {
+    const ss = await loadTs("src/lib/selfService.ts");
+    const raw = env.NEXT_PUBLIC_AICC_SELFSERVICE;
+    console.log(`self-service free trial switch (NEXT_PUBLIC_AICC_SELFSERVICE): ${ss.SS_ON ? `ON: plan cards, bands and "Get started" lead to ${ss.startUrl("en", "solo")} (and /he/start/, /es/start/, /ru/start/); the Hero keeps Try Live Demo and See Pricing` : "OFF (default): the build is the P36 export for the same environment"}`);
+    if (raw !== undefined && raw !== "" && raw !== "on") problems.push(`self-service: NEXT_PUBLIC_AICC_SELFSERVICE is "${raw}": only the exact value "on" turns it on (anything else is OFF)`);
+    if (ss.SS_EXPIRED_REQUEST) problems.push(`self-service: the switch is "on" but this build is made at or after the end (${ea.EA_END_ISO_UTC}), so self-service was NOT published; remove NEXT_PUBLIC_AICC_SELFSERVICE from the release environment`);
+    if (ss.SS_ON) console.log("  note self-service DEPLOY ORDER: publish this build only AFTER the Control Plane serves /start/ and GET /wp-json/aicc/v1/signup/status answers 200 (the Control Plane route is a 404 while its switch is off, and the card buttons would lead there)");
+    if (ss.SS_ON && env.NEXT_PUBLIC_AICC_START_URL && !/^https:\/\//.test(env.NEXT_PUBLIC_AICC_START_URL)) problems.push(`self-service: NEXT_PUBLIC_AICC_START_URL ("${env.NEXT_PUBLIC_AICC_START_URL}") is not an https URL`);
+  }
   // Extension (Production 21): a step needs its decision reference; without it the build silently keeps the initial end, which is the conservative side, but the operator must be told.
   if (ea.EA_EXTENSION_REQUESTED && !ea.EA_EXTENDED) problems.push(`early access extension: NEXT_PUBLIC_AICC_EA_EXTENSION_STEP is "${env.NEXT_PUBLIC_AICC_EA_EXTENSION_STEP}" but the extension was IGNORED (${ea.EA_EXTENSION_REJECTED}); this build keeps the initial end ${ea.EA_CUTOFF_ISO_UTC}`);
   if (ea.EA_EXTENDED && !ea.EA_ON) problems.push(`early access extension: step ${ea.EA_EXTENSION_STEP} is set but the Early Access switch is off in this build: the extension changes nothing; remove NEXT_PUBLIC_AICC_EA_EXTENSION_STEP and NEXT_PUBLIC_AICC_EA_EXTENSION_REF`);

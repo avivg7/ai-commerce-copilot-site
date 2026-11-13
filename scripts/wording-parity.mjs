@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // P35/P36 wording parity: the Site launch-offer strings (src/i18n/ea/{en,he,es,ru}.ts, step 0, tokens resolved) versus the Control Plane /pricing/ strings
 // (admin/wp-content/themes/aicc-admin/inc/launch-offer.php msgids + the COMPILED catalogues languages/{he_IL,es_ES,ru_RU}.mo), in four languages.
-//   node wording-parity.mjs [--site <site worktree>] [--cp <control-plane worktree>]
+//   node wording-parity.mjs [--site <site worktree>] [--cp <control-plane worktree>] [--require-ss]   (P37: --require-ss fails while a self-service string is not mirrored on the Control Plane)
 // READ-ONLY on both trees. Exit 1 on any mismatch, any CP string with no Site counterpart that is not on the declared CP-only list, any CP string left untranslated, or a date-token table mismatch.
 import fs from "node:fs"; import path from "node:path"; import os from "node:os";
 const arg = (n, d) => { const i = process.argv.indexOf("--" + n); return i >= 0 ? process.argv[i + 1] : d; };
@@ -62,6 +62,17 @@ for (const l of ["en", "he", "es", "ru"]) { // P36 owner rule: the compared cust
   for (const [k, v] of cp) if (bad.test(l === "en" ? v : (CAT[l].get(v) || ""))) fails.push(`${l} CP ${k}: names a country or a local time zone or a 00:00 end`);
   const walk = (o, p) => typeof o === "string" ? (bad.test(o) ? fails.push(`${l} Site ea.${p}: names a country or a local time zone or a 00:00 end`) : 0) : o && typeof o === "object" ? Object.entries(o).forEach(([k, v]) => walk(v, p ? p + "." + k : k)) : 0;
   walk(site, "");
+}
+// P37 self-service strings (the `ss.*` keys of src/i18n/ea/<locale>.ts; the list for the Control Plane theme is scripts/snapshots/selfservice-msgids.txt). Every `ss.*` key the Control Plane defines in aicc_lo_strings()
+// is compared by the loop above like any other (key = Site dictionary path); the Site strings the Control Plane does not define yet are REPORTED, and FAIL only with --require-ss (the release run once the
+// Control Plane mirror has landed). A Control Plane `ss.*` key with no Site string is a mismatch (the loop above reports it).
+{
+  const msg = path.join(SITE, "scripts/snapshots/selfservice-msgids.txt");
+  const siteSs = fs.existsSync(msg) ? fs.readFileSync(msg, "utf8").split("\n").filter((x) => x && !x.startsWith("#")).map((x) => x.split("\t")[0]) : [];
+  const missing = siteSs.filter((k) => !cp.has(k));
+  const mirrored = siteSs.length - missing.length;
+  console.log(`self-service strings: ${siteSs.length} on the Site, ${mirrored} mirrored by the Control Plane, ${missing.length} not yet${missing.length ? " (first: " + missing.slice(0, 3).join(", ") + ")" : ""}`);
+  if (process.argv.includes("--require-ss") && missing.length) for (const k of missing) fails.push(`self-service string ${k}: the Control Plane theme (inc/launch-offer.php aicc_lo_strings) does not define it`);
 }
 console.log(`CP strings: ${cp.size}; compared per language; matching: ${ok}; CP-only declared: ${rows.length}; mismatches: ${fails.length}`);
 for (const r of rows) console.log("  note " + r);

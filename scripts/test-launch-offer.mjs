@@ -339,7 +339,7 @@ function ssChecks(mode, root) {
   for (const l of LOCALES) {
     const e = ea(l), ss = e.ss, P = pre(l), dict = D[l];
     const home = htmlOf(root, `${P}index.html`), pricing = htmlOf(root, `${P}pricing/index.html`), product = htmlOf(root, `${P}product/index.html`);
-    const th = visibleText(home), tp = visibleText(pricing), tprod = visibleText(product);
+    const th = visibleText(home), tp = visibleText(pricing);
     const marker = (h, attr, v) => new RegExp(`<html[^>]*${attr}="${v}"`).test(h);
     check(marker(home, "data-ss-mode", "on") && marker(pricing, "data-ss-mode", "on") && (mode === "off" ? !/data-ea-mode/.test(home) : marker(home, "data-ea-mode", mode)), `${l} ${tag}: <html data-ss-mode="on"> and ${mode === "off" ? "no launch-offer marker" : `data-ea-mode="${mode}"`}`);
     check(new RegExp(`<html[^>]*dir="${l === "he" ? "rtl" : "ltr"}"`).test(home), `${l} ${tag}: <html dir="${l === "he" ? "rtl" : "ltr"}">`);

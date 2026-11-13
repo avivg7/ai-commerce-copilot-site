@@ -21,6 +21,18 @@ import http from "node:http";
 import https from "node:https";
 import { analyzeDocument, robotsFindings, sitemapFindings, CANONICAL_ORIGIN, MUTATIONS, CLEAN_SAMPLES, cleanPage, wordingFindings } from "./lib/public-truth.mjs";
 
+import { loadTs } from "./lib/load.mjs";
+
+// P37: the approved self-service strings (the `ss` block of the launch-offer packs, four languages, every extension step), longest first: a self-service build may say exactly these (see analyzeDocument).
+const SS_PHRASES = await (async () => {
+  const { getEaDictionary } = await loadTs("src/i18n/index.ts");
+  const out = new Set();
+  const walkStrings = (o) => (typeof o === "string" ? [o] : o && typeof o === "object" ? Object.values(o).flatMap(walkStrings) : []);
+  for (const l of ["en", "he", "es", "ru"]) for (const step of [0, 1, 2]) for (const v of walkStrings(getEaDictionary(l, step).ss)) { out.add(v); out.add(v.replace(/\u00a0/g, " ")); out.add(v.replace(/\{n\}/g, "3").replace(/\{n\}/g, "10")); }
+  for (const l of ["en", "he", "es", "ru"]) for (const n of [3, 10]) out.add(getEaDictionary(l, 0).ss.plan.paidMany.replace("{n}", String(n)));
+  return [...out].filter((x) => x.trim().length > 3).sort((a, b) => b.length - a.length);
+})();
+
 const argv = process.argv.slice(2);
 const arg = (n, d = null) => { const i = argv.indexOf(`--${n}`); return i >= 0 && argv[i + 1] !== undefined ? argv[i + 1] : d; };
 const has = (n) => argv.includes(`--${n}`);
@@ -41,6 +53,7 @@ function scanHtml(html, pathname, { alias, status = 200, finalPath = null }) {
   const ctx = {
     origin: CANONICAL_ORIGIN, pathname: effective, status, noindexAllowed: noindexAllowed(effective), isError: status >= 400 || isErrorPath(pathname),
     canonicalAlternatives: /\/my-account\//.test(effective) ? [CANONICAL_ORIGIN + effective.replace(/(\/my-account\/).*/, "$1")] : [],
+    ssPhrases: SS_PHRASES,
   };
   return analyzeDocument(body, ctx);
 }
@@ -180,6 +193,17 @@ async function selfTest() {
     check(`mutation caught: ${name} -> ${want}`, f.some((x) => x.id === want), `got [${f.map((x) => x.id).join(", ")}]`);
   }
   for (const s of CLEAN_SAMPLES) { const f = wordingFindings(s); check(`clean sentence passes: ${s.slice(0, 60)}`, f.length === 0, JSON.stringify(f)); }
+  // P37 self-service: the approved free-trial strings pass ONLY on a page that carries the self-service marker; anything else free-trial-like is still caught
+  {
+    const ssPage = (extra, marked = true) => { const h = cleanPage({ extraBody: extra }); return marked ? h.replace('<html lang="en"', '<html lang="en" data-ss-mode="on"') : h; };
+    const c = { ...ctx, ssPhrases: SS_PHRASES };
+    check("self-service: 'Start free trial' passes on a marked page", analyzeDocument(ssPage('<a href="https://www.copilt.org/start/">Start free trial</a><p>The free trial covers 1 store, whichever plan you choose.</p>'), c).length === 0, JSON.stringify(analyzeDocument(ssPage('<a href="https://www.copilt.org/start/">Start free trial</a>'), c)));
+    check("self-service: the same words on an UNMARKED page are caught", analyzeDocument(ssPage('<a href="https://www.copilt.org/start/">Start free trial</a>', false), c).some((x) => x.id === "free-trial"));
+    check("self-service: a trial length on a marked page is caught", analyzeDocument(ssPage("<p>Start your 14-day free trial today.</p>"), c).some((x) => x.id === "free-trial"));
+    check("self-service: 'try it free' on a marked page is caught", analyzeDocument(ssPage("<p>Try it free.</p>"), c).some((x) => x.id === "free-trial"));
+    check("self-service: 'free for 30 days' on a marked page is caught", analyzeDocument(ssPage("<p>Use AICC free for 30 days.</p>"), c).some((x) => x.id === "free-trial"));
+    check("self-service: without ssPhrases a marked page gets no allowance", analyzeDocument(ssPage('<a href="https://www.copilt.org/start/">Start free trial</a>'), ctx).some((x) => x.id === "free-trial"));
+  }
   // noindex is allowed on transactional pages, not on the pricing page
   const noidx = base.replace("</head>", '<meta name="robots" content="noindex, nofollow"></head>');
   check("noindex is allowed on /cart/", analyzeDocument(noidx.replace(/\/pricing\//g, "/cart/"), { ...ctx, pathname: "/cart/", noindexAllowed: true }).every((x) => x.id !== "noindex"));
