@@ -9,6 +9,8 @@ import { EA_ON, EA_OPEN } from "@/lib/earlyAccess";
 
 import { EaAfterNote, EaClosingLead, EaCta, EaPlanTerms, EaPricingNote, EaSection, EaStatusNote } from "@/components/ea/Ea";
 import { SoonBandActions } from "@/components/ui/Soon";
+import { SS_ON } from "@/lib/selfService";
+import { SsBand, SsPlanFinderSlot, SsTerms } from "@/components/ss/Ss";
 import { Container, Section, SectionHeading } from "@/components/ui/Primitives";
 import { PricingCard } from "@/components/ui/PricingCard";
 import { LocaleLink } from "@/components/ui/LocaleLink";
@@ -79,13 +81,14 @@ export function PricingPage({ locale, t }: { locale: Locale; t: Dictionary }) {
                 headingLevel={3}
                 ea={t.ea.plan}
                 demoLabel={t.home.hero.ctaDemo}
+                {...(SS_ON ? { ss: t.ea.ss, t } : {})}
               />
             ))
               // the terms every plan shares take the full width under the three cards (a campaign build only; an ordinary build adds nothing here, so its page is byte-identical);
               // P34 (owner list): the three short support lines come first, right under the cards
-              .concat(EA_ON ? [<EaStatusNote key="ea-status" locale={locale} t={t} />, <EaPlanTerms key="ea-terms" locale={locale} t={t} />] : [])}
+              .concat(SS_ON ? [<SsTerms key="ss-terms" locale={locale} t={t} />] : EA_ON ? [<EaStatusNote key="ea-status" locale={locale} t={t} />, <EaPlanTerms key="ea-terms" locale={locale} t={t} />] : [])}
           </div>
-          <p className="aicc-countline" style={{ marginBlockStart: "1.5rem" }}>{EA_ON ? <EaPricingNote locale={locale} t={t} ordinary={p.plansSection.note} /> : p.plansSection.note} {t.common.plan.renewal}</p>
+          <p className="aicc-countline" style={{ marginBlockStart: "1.5rem" }}>{EA_ON && !SS_ON ? <EaPricingNote locale={locale} t={t} ordinary={p.plansSection.note} /> : p.plansSection.note} {t.common.plan.renewal}</p>
           <p className="aicc-countline" style={{ marginBlockStart: "0.5rem" }} {...tx("pricing.teaser")}>
             {p.teaser.text}{" "}
             <LocaleLink locale={locale} route="product" hash="demo" className="aicc-link">{p.teaser.link}</LocaleLink>
@@ -94,7 +97,7 @@ export function PricingPage({ locale, t }: { locale: Locale; t: Dictionary }) {
       </Section>
 
       {/* 3b. Early Access (Production 20): renders only in an Early Access build */}
-      <EaSection locale={locale} t={t} />
+      {SS_ON ? null : <EaSection locale={locale} t={t} />}
 
       {/* 4. Which plan? */}
       <Section tone="surface" labelledBy="which-title" fb={fb("pricing.which")}>
@@ -109,6 +112,23 @@ export function PricingPage({ locale, t }: { locale: Locale; t: Dictionary }) {
             ))}
           </div>
           <p className="aicc-prose" style={{ marginBlock: "1.5rem" }}>{R(p.which.outro)}</p>
+          {SS_ON ? (
+            <SsPlanFinderSlot
+              locale={locale}
+              t={t}
+              {...tx("pricing.finder")}
+              s={{
+                label: p.finder.label,
+                hint: p.finder.hint,
+                error: p.finder.error,
+                many: p.finder.many,
+                empty: p.finder.empty,
+                suggestion: p.finder.suggestion,
+                results: { solo: p.finder.resultSolo, studio: p.finder.resultStudio, agency: p.finder.resultAgency },
+                names,
+              }}
+            />
+          ) : (
           <PlanFinder
             locale={locale}
             {...tx("pricing.finder")}
@@ -125,6 +145,7 @@ export function PricingPage({ locale, t }: { locale: Locale; t: Dictionary }) {
               soon: t.common.soon.label,
             }}
           />
+          )}
         </Container>
       </Section>
 
@@ -180,13 +201,25 @@ export function PricingPage({ locale, t }: { locale: Locale; t: Dictionary }) {
               <h2 id="pricing-final" className="aicc-h2">{p.final.title}</h2>
               {EA_ON ? (
                 <div className="aicc-stack aicc-stack--lg" data-ea-live>
-                  <EaClosingLead locale={locale} t={t} />
+                  {SS_ON ? null : <EaClosingLead locale={locale} t={t} />}
+                  {SS_ON ? (
+                    /* P37: the self-service sign-up is the primary band action; Try Live Demo stays */
+                    <SsBand locale={locale} t={t}>
+                      <Button href={`${localePath(locale)}#demo`} variant="secondary" size="lg">{t.home.hero.ctaDemo}</Button>
+                    </SsBand>
+                  ) : (
                   <div className="aicc-hero-actions">
                     <EaCta locale={locale} t={t} variant="primary" />
                     {EA_OPEN ? null : <Button href={`${localePath(locale)}#demo`} variant="primary" size="lg">{t.home.hero.ctaDemo}</Button>}
                   </div>
+                  )}
                 </div>
               ) : null}
+              {SS_ON && !EA_ON ? (
+                <SsBand locale={locale} t={t}>
+                  <Button href={localePath(locale, "questions")} variant="ghost" size="lg" {...tx("common.seeAllQuestions")}>{t.common.seeAllQuestions}</Button>
+                </SsBand>
+              ) : (
               <div className="aicc-stack aicc-stack--lg" {...(EA_ON ? { "data-ea-after": "" } : {})}>
                 {COMMERCE_OPEN ? <p className="aicc-lead">{p.final.body}</p> : <p className="aicc-lead" {...tx("common.soon.band")}>{t.common.soon.band}</p>}
                 {COMMERCE_OPEN ? (
@@ -199,6 +232,7 @@ export function PricingPage({ locale, t }: { locale: Locale; t: Dictionary }) {
                   <SoonBandActions locale={locale} t={t} to="questions" />
                 )}
               </div>
+              )}
             </div>
           </div>
         </Container>

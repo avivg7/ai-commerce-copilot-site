@@ -12,6 +12,7 @@ import { LocaleLink } from "@/components/ui/LocaleLink";
 import { RecoImage } from "@/components/ui/RecoImage";
 import { Accordion } from "@/components/ui/Accordion";
 import { Rich } from "@/lib/rich";
+import { SS_ON } from "@/lib/selfService";
 
 /**
  * Early Access presentation (Production 20). Every export renders nothing in a normal build (EA_ON false).
@@ -84,12 +85,15 @@ export const EA_P34_CSS = [
 export function EaBar({ locale, t }: { locale: Locale; t: Dictionary }) {
   if (!EA_ON) return null;
   const e = t.ea.bar;
+  const ss = SS_ON ? t.ea.ss : null; // P37: with self-service on the bar says the free trial (the launch-offer bar says "approved stores" and "requests")
   return (
-    <div className="aicc-eabar" data-ea-live role="region" aria-label={e.label} {...A(locale, "ea.bar.label")}>
+    <div className="aicc-eabar" data-ea-live role="region" aria-label={ss ? ss.bar.label : e.label} {...(ss ? A(locale, "ea.ss.bar") : A(locale, "ea.bar.label"))}>
       <Container>
         <p className="aicc-eabar__text">
           <Sparkles size={16} aria-hidden="true" />
-          {EA_EXTENDED ? (
+          {ss ? (
+            <span {...A(locale, "ea.ss.bar")}>{ss.bar.text}</span>
+          ) : EA_EXTENDED ? (
             <>
               <span {...INTAKE} {...A(locale, "ea.extended")}>{EA_OPEN ? t.ea.extended.bar : t.ea.extended.barAnnounce}</span>
               {EA_INTAKE_CLOSES ? <span {...CLOSED_ONLY} {...A(locale, "ea.extended")}>{t.ea.extended.barClosed}</span> : null}
@@ -98,9 +102,9 @@ export function EaBar({ locale, t }: { locale: Locale; t: Dictionary }) {
             <span {...A(locale, "ea.bar")}>{EA_OPEN ? e.live : e.announce}</span>
           )}
           {/* in the closed phase the header button and the hero action already lead to the same place: one tab stop fewer */}
-          <span {...INTAKE} style={{ display: "contents" }}>
-            <LocaleLink locale={locale} route="pricing" hash="early-access" className="aicc-eabar__link">
-              <span {...A(locale, "ea.bar")}>{EA_OPEN ? e.link : e.linkAnnounce}</span>
+          <span {...(ss ? {} : INTAKE)} style={{ display: "contents" }}>
+            <LocaleLink locale={locale} route="pricing" hash={ss ? "free-trial" : "early-access"} className="aicc-eabar__link">
+              <span {...(ss ? A(locale, "ea.ss.bar") : A(locale, "ea.bar"))}>{ss ? ss.bar.link : EA_OPEN ? e.link : e.linkAnnounce}</span>
             </LocaleLink>
           </span>
         </p>
@@ -115,6 +119,15 @@ export function EaBar({ locale, t }: { locale: Locale; t: Dictionary }) {
  */
 export function EaHeroSupport({ locale, t }: { locale: Locale; t: Dictionary }) {
   if (!EA_ON) return null;
+  if (SS_ON) {
+    // P37: the two short facts of the free trial (no payment method for the trial, one store); no "approval", no status note
+    const ss = t.ea.ss;
+    return (
+      <ul className="aicc-easupport aicc-fade-up" style={{ ["--i" as string]: 4 }} data-ea-live data-ea-support="hero" data-ss-support aria-label={ss.hero.supportLabel} {...A(locale, "ea.ss.hero")}>
+        {[ss.hero.support.noPayment, ss.hero.support.oneStore].map((x) => (<li key={x}><Check size={16} aria-hidden="true" /><span>{x}</span></li>))}
+      </ul>
+    );
+  }
   const s = t.ea.hero.support;
   return (
     <>
@@ -133,7 +146,7 @@ export function EaHeroSupport({ locale, t }: { locale: Locale; t: Dictionary }) 
  * mistaken for an action is ever inert. Renders nothing in an OPEN build (the request buttons are real links there) and in an ordinary build.
  */
 export function EaStatusNote({ locale, t }: { locale: Locale; t: Dictionary }) {
-  if (!EA_ON || EA_OPEN) return null;
+  if (!EA_ON || EA_OPEN || SS_ON) return null; // P37: with self-service on nothing "comes soon": the sign-up page shows the real state
   return (
     <p className="aicc-eanote" data-ea-live data-ea-status {...A(locale, "ea.hero")}>
       <Sparkles size={16} aria-hidden="true" />
@@ -168,7 +181,7 @@ export function EaHeroBadge({ locale, t, ordinary }: { locale: Locale; t: Dictio
  * <p class="aicc-btn"> in the primary slot and replaced Try Live Demo). The announce status is the plain text of EaStatusNote. In the closed phase of an extended OPEN build the status says that new requests are closed.
  */
 export function EaCta({ locale, t, size = "lg", variant = "primary", plan }: { locale: Locale; t: Dictionary; size?: "md" | "lg"; variant?: "primary" | "secondary"; plan?: "solo" | "studio" | "agency" }) {
-  if (!EA_ON || !EA_OPEN) return null;
+  if (!EA_ON || !EA_OPEN || SS_ON) return null; // P37: no request button while self-service is on (the sign-up replaces the request)
   const arrow = <ArrowRight size={18} className="aicc-flip" aria-hidden="true" />;
   return (
     <>
@@ -299,7 +312,7 @@ export function EaSection({ locale, t }: { locale: Locale; t: Dictionary }) {
 /** The header button while the offer is live in OPEN mode: same words and destination as the hero button (the ordinary "Get started" is shown after the end date and in every other mode). */
 export function EaHeaderCta({ locale, t, className, hidden = false }: { locale: Locale; t: Dictionary; className: string; hidden?: boolean }) {
   // `hidden`: the request pages themselves do not repeat the request button in the header (the visitor is already on the form)
-  if (!EA_OPEN || hidden) return null;
+  if (!EA_OPEN || hidden || SS_ON) return null; // P37: the header "Get started" leads to the self-service sign-up instead
   return (
     <>
       <a href={eaUrl(locale)} className={className} style={{ whiteSpace: "nowrap", paddingInline: "0.875rem" }} data-ea-live {...INTAKE} {...A(locale, "ea.header")}>{t.ea.header.cta}</a>

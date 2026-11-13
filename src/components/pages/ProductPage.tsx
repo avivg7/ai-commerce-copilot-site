@@ -13,6 +13,8 @@ import { breadcrumbLd, faqLd, softwareLd } from "@/lib/jsonld";
 import { Button } from "@/components/ui/Button";
 import { COMMERCE_OPEN, getStartedUrl } from "@/lib/site";
 import { SoonBandActions } from "@/components/ui/Soon";
+import { SS_ON, startUrl } from "@/lib/selfService";
+import { SsBand } from "@/components/ss/Ss";
 import { Fb, Pair, Ruled, SlotRows, Strip, Track } from "@/components/blocks/Blocks";
 import { DashPreview, Flow, Loop, RecoAskPanel, RulesDemo } from "@/components/blocks/KitMounts";
 import { PLANS } from "@/data/plans";
@@ -50,7 +52,7 @@ export function ProductPage({ locale, t }: { locale: Locale; t: Dictionary }) {
       <div>
         <PageHead locale={locale} t={t} pageName={t.common.pageNames.product} title={<span {...fb("product.hero")}>{p.hero.title}</span>} lead={<span {...fb("product.hero")}>{p.hero.lead}</span>}>
           <div className="aicc-hero-actions">
-            <Button href={getStartedUrl(locale)} variant="primary" size="lg" {...tx("common.getStarted")} icon={<ArrowRight size={16} className="aicc-flip" aria-hidden="true" />}>{t.common.getStarted}</Button>
+            <Button href={SS_ON ? startUrl(locale) : getStartedUrl(locale)} variant="primary" size="lg" {...tx("common.getStarted")} icon={<ArrowRight size={16} className="aicc-flip" aria-hidden="true" />}>{t.common.getStarted}</Button>
             <WatchDemo locale={locale} t={t} />
           </div>
         </PageHead>
@@ -268,8 +270,12 @@ export function ProductPage({ locale, t }: { locale: Locale; t: Dictionary }) {
           <div className="aicc-final">
             <div className="aicc-stack aicc-stack--lg">
               <h2 id="safety-cta" className="aicc-h2">{p.safetyCta.title}</h2>
-              {COMMERCE_OPEN ? <p className="aicc-lead">{p.safetyCta.body}</p> : <p className="aicc-lead" {...tx("common.soon.band")}>{t.common.soon.band}</p>}
-              {COMMERCE_OPEN ? (
+              {SS_ON ? (
+                <SsBand locale={locale} t={t}>
+                  <Button href={localePath(locale, "pricing")} variant="ghost" size="lg" {...tx("common.seePricing")}>{t.common.seePricing}</Button>
+                </SsBand>
+              ) : COMMERCE_OPEN ? <p className="aicc-lead">{p.safetyCta.body}</p> : <p className="aicc-lead" {...tx("common.soon.band")}>{t.common.soon.band}</p>}
+              {SS_ON ? null : COMMERCE_OPEN ? (
                 <div className="aicc-hero-actions">
                   <Button href={getStartedUrl(locale)} variant="primary" size="lg" {...tx("common.getStarted")} icon={<ArrowRight size={16} className="aicc-flip" aria-hidden="true" />}>{t.common.getStarted}</Button>
                   <Button href={localePath(locale, "pricing")} variant="ghost" size="lg" {...tx("common.seePricing")}>{t.common.seePricing}</Button>
@@ -360,8 +366,12 @@ export function ProductPage({ locale, t }: { locale: Locale; t: Dictionary }) {
           <div className="aicc-final">
             <div className="aicc-stack aicc-stack--lg">
               <h2 id="product-final" className="aicc-h2">{p.cta.title}</h2>
-              {COMMERCE_OPEN ? <p className="aicc-lead">{p.cta.body}</p> : <p className="aicc-lead" {...tx("common.soon.band")}>{t.common.soon.band}</p>}
-              {COMMERCE_OPEN ? (
+              {SS_ON ? (
+                <SsBand locale={locale} t={t}>
+                  <Button href={localePath(locale, "pricing")} variant="ghost" size="lg" {...tx("common.seePricing")}>{t.common.seePricing}</Button>
+                </SsBand>
+              ) : COMMERCE_OPEN ? <p className="aicc-lead">{p.cta.body}</p> : <p className="aicc-lead" {...tx("common.soon.band")}>{t.common.soon.band}</p>}
+              {SS_ON ? null : COMMERCE_OPEN ? (
                 <div className="aicc-hero-actions">
                   <Button href={getStartedUrl(locale)} variant="primary" size="lg" {...tx("common.getStarted")} icon={<ArrowRight size={16} className="aicc-flip" aria-hidden="true" />}>{t.common.getStarted}</Button>
                   <Button href={localePath(locale, "pricing")} variant="ghost" size="lg" {...tx("common.seePricing")}>{t.common.seePricing}</Button>

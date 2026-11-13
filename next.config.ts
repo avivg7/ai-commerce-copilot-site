@@ -28,6 +28,9 @@ const nextConfig: NextConfig = {
     // P32: "1" only for an `open` or `verify` launch-offer build. A compile-time constant on purpose: the request pages (and their client code) are imported behind `if (process.env.NEXT_PUBLIC_AICC_EA_REQUEST_PAGES === "1")`,
     // which webpack folds away in every other build, so those builds carry none of that code and stay byte-identical to a build made before the pages existed.
     NEXT_PUBLIC_AICC_EA_REQUEST_PAGES: process.env.NEXT_PUBLIC_AICC_EARLY_ACCESS === "open" || process.env.NEXT_PUBLIC_AICC_EARLY_ACCESS === "verify" ? "1" : "",
+    // P37: "1" only for a self-service build (NEXT_PUBLIC_AICC_SELFSERVICE=on). Same technique: the client component of the card button (and the status fetch) is imported behind
+    // `if (process.env.NEXT_PUBLIC_AICC_SS_CODE === "1")`, which webpack folds away in every other build, so the OFF build carries none of it and stays byte-identical to the P36 export.
+    NEXT_PUBLIC_AICC_SS_CODE: process.env.NEXT_PUBLIC_AICC_SELFSERVICE === "on" ? "1" : "",
   },
   experimental: {
     // Unmatched URLs get a branded 404.html even though the root layout lives in a dynamic segment.

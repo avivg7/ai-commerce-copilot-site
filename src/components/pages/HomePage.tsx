@@ -8,6 +8,8 @@ import { COMMERCE_OPEN, getStartedUrl } from "@/lib/site";
 import { EA_ON, EA_OPEN } from "@/lib/earlyAccess";
 import { EaClosingLead, EaCta, EaHeroBadge, EaHeroSupport, EaStatusNote } from "@/components/ea/Ea";
 import { SoonBandActions } from "@/components/ui/Soon";
+import { SS_ON } from "@/lib/selfService";
+import { SsBand } from "@/components/ss/Ss";
 import { localePath } from "@/lib/routes";
 import { Button } from "@/components/ui/Button";
 import { Container, Section, SectionHeading } from "@/components/ui/Primitives";
@@ -66,7 +68,7 @@ export function HomePage({ locale, t }: { locale: Locale; t: Dictionary }) {
               {/* P36 (owner correction): the launch offer is SUPPLEMENTARY. Try Live Demo and See Pricing are the two Hero actions in every mode (the P35 build replaced the demo with an inert status chip: never again).
                    A real "Request Free Access" link is added ONLY when the intake is open (EA_OPEN); an announce Hero is the ordinary P24 Hero plus the pill and the support lines. */}
               {EA_ON && EA_OPEN ? <EaCta locale={locale} t={t} variant="primary" /> : null}
-              {demoCta(EA_ON && EA_OPEN ? "secondary" : "primary")}
+              {demoCta(EA_ON && EA_OPEN && !SS_ON ? "secondary" : "primary")}
               <Button href={localePath(locale, "pricing")} variant="secondary" size="lg" {...tx("home.hero.ctaPlans")}>{h.hero.ctaPlans}</Button>
             </div>
             {/* P34 (owner request): three short support lines under the launch-offer buttons; nothing in an ordinary build */}
@@ -261,6 +263,7 @@ export function HomePage({ locale, t }: { locale: Locale; t: Dictionary }) {
                 compact
                 ea={t.ea.plan}
                 demoLabel={h.hero.ctaDemo}
+                {...(SS_ON ? { ss: t.ea.ss, t } : {})}
               />
             ))}
           </div>
@@ -270,8 +273,8 @@ export function HomePage({ locale, t }: { locale: Locale; t: Dictionary }) {
             <>
               {/* P36: ONE plain line under the cards (the cards carry the checks; the exact end instant is in the terms block on /pricing/) */}
               <EaStatusNote locale={locale} t={t} />
-              <p className="aicc-small" data-ea-live style={{ marginBlockStart: "0.75rem", textAlign: "center" }} {...tx("ea.section")}>
-                <LocaleLink locale={locale} route="pricing" hash="early-access" className="aicc-link">{t.ea.section.link}</LocaleLink>
+              <p className="aicc-small" data-ea-live style={{ marginBlockStart: "0.75rem", textAlign: "center" }} {...tx(SS_ON ? "ea.ss" : "ea.section")}>
+                <LocaleLink locale={locale} route="pricing" hash={SS_ON ? "free-trial" : "early-access"} className="aicc-link">{SS_ON ? t.ea.ss.link : t.ea.section.link}</LocaleLink>
               </p>
               {/* review P34-6: the ended view gets the list back WITHOUT the guarantee line: a campaign build never carries it in the DOM (like the cards) */}
               <div data-ea-after="">
@@ -280,6 +283,13 @@ export function HomePage({ locale, t }: { locale: Locale; t: Dictionary }) {
                   <li>{h.pricing.confidence.renewal}</li>
                 </ul>
               </div>
+            </>
+          ) : SS_ON ? (
+            <>
+              {confidence}
+              <p className="aicc-small" style={{ marginBlockStart: "0.75rem", textAlign: "center" }} {...tx("ea.ss")}>
+                <LocaleLink locale={locale} route="pricing" hash="free-trial" className="aicc-link">{t.ea.ss.link}</LocaleLink>
+              </p>
             </>
           ) : confidence}
           <p style={{ marginBlockStart: "1rem" }}>
@@ -307,14 +317,27 @@ export function HomePage({ locale, t }: { locale: Locale; t: Dictionary }) {
               <h2 id="final-title" className="aicc-h2">{h.final.title}</h2>
               {EA_ON ? (
                 <div className="aicc-stack aicc-stack--lg" data-ea-live>
-                  <EaClosingLead locale={locale} t={t} />
+                  {SS_ON ? null : <EaClosingLead locale={locale} t={t} />}
+                  {SS_ON ? (
+                    /* P37: the self-service sign-up is the primary band action; Try Live Demo and See Pricing stay */
+                    <SsBand locale={locale} t={t}>
+                      {demoCta("secondary")}
+                      <Button href={localePath(locale, "pricing")} variant="ghost" size="lg" {...tx("common.seePricing")}>{t.common.seePricing}</Button>
+                    </SsBand>
+                  ) : (
                   <div className="aicc-hero-actions">
                     {EA_OPEN ? <EaCta locale={locale} t={t} variant="primary" /> : null}
                     {demoCta(EA_OPEN ? "secondary" : "primary")}
                     <Button href={localePath(locale, "pricing")} variant="ghost" size="lg" {...tx("common.seePricing")}>{t.common.seePricing}</Button>
                   </div>
+                  )}
                 </div>
               ) : null}
+              {SS_ON && !EA_ON ? (
+                <SsBand locale={locale} t={t}>
+                  <Button href={localePath(locale, "pricing")} variant="ghost" size="lg" {...tx("common.seePricing")}>{t.common.seePricing}</Button>
+                </SsBand>
+              ) : (
               <div className="aicc-stack aicc-stack--lg" {...(EA_ON ? { "data-ea-after": "" } : {})}>
                 {COMMERCE_OPEN ? <p className="aicc-lead">{h.final.body}</p> : <p className="aicc-lead" {...tx("common.soon.band")}>{t.common.soon.band}</p>}
                 <p className="aicc-lead aicc-lead--sub">{R(h.final.guarantee)}</p>
@@ -332,6 +355,7 @@ export function HomePage({ locale, t }: { locale: Locale; t: Dictionary }) {
                   <SoonBandActions locale={locale} t={t} />
                 )}
               </div>
+              )}
             </div>
           </div>
         </Container>

@@ -15,6 +15,8 @@ import { withBase } from "@/lib/site";
 import { localePath } from "@/lib/routes";
 import { LanguageSuggestion, type SuggestStrings } from "@/components/layout/LanguageSuggestion";
 import { EA_HEAD_SCRIPT, EA_MODE, EA_ON } from "@/lib/earlyAccess";
+import { SS_ON } from "@/lib/selfService";
+import { SS_CSS } from "@/components/ss/Ss";
 import { EA_HERO_CSS, EA_P34_CSS, EaBar } from "@/components/ea/Ea";
 
 export const dynamicParams = false;
@@ -49,12 +51,14 @@ export default async function RootLayout({
       dir={meta.dir}
       className={`${geistLatin.variable} ${geistExt.variable}`}
       {...(EA_ON ? { "data-ea-mode": EA_MODE } : {})}
+      {...(SS_ON ? { "data-ss-mode": "on" } : {})}
       suppressHydrationWarning
     >
       <head>
         <script dangerouslySetInnerHTML={{ __html: PREFS_SCRIPT }} />
         {/* Early Access builds only: marks the document when the campaign end date has passed (absolute UTC time, no time zone), so an old page switches to the ended view. */}
-        {EA_ON ? (<><script dangerouslySetInnerHTML={{ __html: EA_HEAD_SCRIPT }} /><style dangerouslySetInnerHTML={{ __html: EA_HERO_CSS + EA_P34_CSS }} /></>) : null}
+        {EA_ON ? (<><script dangerouslySetInnerHTML={{ __html: EA_HEAD_SCRIPT }} /><style dangerouslySetInnerHTML={{ __html: EA_HERO_CSS + EA_P34_CSS + (SS_ON ? SS_CSS : "") }} /></>) : SS_ON ? <style dangerouslySetInnerHTML={{ __html: SS_CSS }} /> : null}
+        {/* P37: the SS_CSS above is the CSS of the self-service free-trial parts (self-service builds only, in the same child slot so every other page stays byte-identical) */}
         {locale === "he" ? (
           <>
             {/* Heebo (SIL OFL, public/fonts/OFL-Heebo.txt), Hebrew subset, only declared and preloaded on Hebrew pages. */}
