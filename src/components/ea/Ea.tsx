@@ -58,7 +58,7 @@ export const EA_P34_CSS = [
   ".aicc-easupport__chip{padding:0.0625rem 0.5rem;border:1px solid var(--aicc-border);border-radius:9999px;background:var(--aicc-surface)}",
   ".aicc-easupport--plans{margin-block-start:1.5rem}",
   // P35 (review L3): the inert "requests open soon" status must not look like a button: dashed outline, pill shape, regular weight, no fill (still a <p>, no role)
-  ".aicc-btn--soon.aicc-eastatus[data-ea-soon]{border-style:dashed;border-radius:9999px;background:transparent;font-weight:500;box-shadow:none}",
+  ".aicc-btn--soon.aicc-eastatus[data-ea-soon]{border-style:dashed;border-radius:9999px;background:transparent;font-weight:500;box-shadow:none;white-space:normal;text-align:center;line-height:1.3;block-size:auto;min-block-size:3rem;padding-block:0.5rem}",
   ".aicc-plans>.aicc-easupport{grid-column:1/-1;margin-block-start:0.25rem}",
   "@media (max-width:39.99rem){.aicc-easupport{gap:0.375rem 1rem;margin-block-start:0.875rem}}",
   ".aicc-plan__badgerow{gap:0.5rem;flex-wrap:wrap}",
