@@ -293,7 +293,10 @@ export function EaSection({ locale, t }: { locale: Locale; t: Dictionary }) {
             </div>
           </div>
           <p className="aicc-muted aicc-small" style={{ marginBlockStart: "1.5rem", maxInlineSize: "52rem" }}><Rich text={s.terms} ctx={ctx} />{" "}<Rich text={s.reservation} ctx={ctx} /></p>
-          <p className="aicc-muted aicc-small" data-ea-notice {...INTAKE} style={{ marginBlockStart: "0.75rem", maxInlineSize: "52rem" }} {...A(locale, "ea.section")}><Rich text={s.notice} ctx={ctx} /></p>
+          {/* P35: the data-use notice belongs to the moment requests can be made (OPEN), as on the Control Plane page; an announce build collects nothing and carries no privacy text */}
+          {EA_OPEN ? (
+            <p className="aicc-muted aicc-small" data-ea-notice {...INTAKE} style={{ marginBlockStart: "0.75rem", maxInlineSize: "52rem" }} {...A(locale, "ea.section")}><Rich text={s.notice} ctx={ctx} /></p>
+          ) : null}
           <h3 className="aicc-eah3" style={{ marginBlockStart: "2rem" }}>{s.faqTitle}</h3>
           <Accordion items={faq} />
         </Container>
