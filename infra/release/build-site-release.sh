@@ -75,6 +75,10 @@ if [ "$TARGET" = stage ]; then
   python3 -I "$HERE/lib/release_tool.py" site-check --tree "$TREE" --target stage --stage-id "$STAGE_ID"
 else
   python3 -I "$HERE/lib/release_tool.py" site-check --tree "$TREE" --target production
+  # P35 (review M1): the struck-through price and the "Limited availability" chip are refused unless their attestation is valid (the same rules as launch:check); this reads the BUILT markup, fail-closed
+  command -v node >/dev/null 2>&1 || rl_die "a production release runs scripts/ea-release-gate.mjs, which needs node on the Mac" 1
+  [ -f "$SITE_REPO/scripts/ea-release-gate.mjs" ] || rl_die "scripts/ea-release-gate.mjs not found in $SITE_REPO (the strike / limited-availability gate)" 1
+  ( cd "$SITE_REPO" && node scripts/ea-release-gate.mjs --tree "$TREE" ) || rl_die "EA RELEASE GATE: the export shows the struck-through price or the \"Limited availability\" chip without its attestation (see above); nothing was packed" 1
   if [ "$PUBTRUTH" = 1 ]; then
     command -v node >/dev/null 2>&1 || rl_die "--public-truth needs node on the Mac (the builder runs there)" 1
     [ -f "$SITE_REPO/scripts/public-truth-gate.mjs" ] || rl_die "--public-truth: $SITE_REPO/scripts/public-truth-gate.mjs not found" 1

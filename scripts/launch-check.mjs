@@ -5,6 +5,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { loadTs, ROOT } from "./lib/load.mjs";
 import { auditBuild, DEFAULT_ORIGIN, structuredOffersOn } from "./lib/seo-audit.mjs";
+import { makeAttested } from "./lib/ea-attest.mjs";
 import { processorProblems, placeholderMarkup, REAL_GATEWAY_ALLOWLIST } from "./lib/payment-gate.mjs";
 
 const strict = process.argv.includes("--strict") || process.env.AICC_PRODUCTION === "1";
@@ -95,25 +96,7 @@ if (env.NEXT_PUBLIC_LEGAL_DRAFT_NOTICE === "off" && !approved) problems.push("NE
   const effOn = effMode !== "off", effOpen = effMode === "open", effVerify = ea.EA_VERIFY || art.verify;
   const M = effMode.toUpperCase();
   if (art.mode !== null && (art.mode !== ea.EA_MODE || art.verify !== ea.EA_VERIFY)) problems.push(`launch offer: this shell's environment says mode "${ea.EA_MODE}"${ea.EA_VERIFY ? " (verify)" : ""} but the built export in ${path.relative(ROOT, artDir) || "."} says "${art.mode}"${art.verify ? " (verify)" : ""}: the stricter reading applies below, and the export must be rebuilt or checked with the environment it was built with`);
-  // An attestation is a REFERENCE to evidence, recorded and never verified here: either the path of an existing evidence file, or a token of the shape "letters, a separator, ..., at least one digit"
-  // (cp-dark/p33/intake-evidence, counsel-2026-11-30, TICKET-114). No spaces; not a placeholder or answer word (pending, false, later, unknown, "not done", "yes yes", digits only, ok-1 ...).
-  const BAD_WORDS = new Set(["pending", "false", "true", "yes", "no", "later", "unknown", "none", "not", "done", "todo", "tbd", "tba", "na", "ref", "test", "xxx", "placeholder", "verified", "approved", "signed", "ok", "soon", "waiting", "wip"]);
-  // Review P34-3: a FILE reference counts only when it is a regular file (no symlink) inside the evidence directory (AICC_EVIDENCE_DIR, default the owner's launch-evidence folder);
-  // any other existing file (package.json, README.md, /etc/hosts) clears nothing. A token is at least 8 characters, and a placeholder word with a numeric or one-letter suffix
-  // (approved-1, todo1-x, yes_2026, ok-1, true-2026, x-1) is refused.
-  const EVIDENCE_DIR = path.resolve(env.AICC_EVIDENCE_DIR || path.join(env.HOME || "", "aviv_files/AICC/commerce_copilot_images/AICC-launch-evidence"));
-  const PLACEHOLDER_SUFFIXED = /^(?=.{0,200}$)(?:yes|no|true|false|ok|okay|todo|tbd|tba|na|x+|test|pending|approved|verified|signed|done|ref|wip|placeholder)(?:\d*)(?:[-_.:/#@](?:[a-z]|\d+|yes|no|true|ok|x+|todo|tbd))*$/i;
-  const attested = (v) => {
-    if (typeof v !== "string") return false;
-    const t = v.trim();
-    if (t.length < 8 || t.length > 200 || /[\r\n]/.test(t)) return false;
-    if (path.isAbsolute(t) || /^[.~]/.test(t) || /\.(md|txt|pdf|json|log|png|jpe?g|html?)$/i.test(t)) {
-      try { const real = fs.realpathSync(t); const st = fs.lstatSync(t); return st.isFile() && !st.isSymbolicLink() && real.startsWith(fs.realpathSync(EVIDENCE_DIR) + path.sep); } catch { return false; }
-    }
-    if (!/^[A-Za-z]{2,}[-_:#/][A-Za-z0-9._:/#@-]*[0-9][A-Za-z0-9._:/#@-]*$/.test(t) || eaRefIsPlaceholder(t) || PLACEHOLDER_SUFFIXED.test(t)) return false;
-    const words = t.split(/[-_:#/.@]+/).map((w) => w.toLowerCase().replace(/^\d+|\d+$/g, "")).filter(Boolean);
-    return words.length > 0 && !words.every((w) => BAD_WORDS.has(w) || w.length === 1);
-  };
+  const attested = makeAttested(env, eaRefIsPlaceholder); // an attestation is a REFERENCE to evidence, recorded and never verified here (rules: scripts/lib/ea-attest.mjs)
   console.log(`early access switch (NEXT_PUBLIC_AICC_EARLY_ACCESS): ${ea.EA_MODE.toUpperCase()}${ea.EA_REQUESTED !== ea.EA_MODE ? ` (requested "${ea.EA_REQUESTED}", ignored: this build is at or after the end ${ea.EA_END_ISO_UTC})` : ""}; end ${ea.EA_END_ISO_UTC}${ea.EA_EXTENDED ? ` = EXTENSION STEP ${ea.EA_EXTENSION_STEP} (the initial published end was ${ea.EA_CUTOFF_ISO_UTC})` : ` = 2027-01-01 00:00 Asia/Jerusalem (initial published end)`}`);
   // VERIFY mode (P32): the ordinary site plus UNLISTED request pages, to test the live destination before any button exists. It may be built anywhere, but a PRODUCTION run refuses it without the owner's explicit word.
   if (env.NEXT_PUBLIC_AICC_EARLY_ACCESS === "verify" || art.verify) {

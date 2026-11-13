@@ -384,6 +384,26 @@ for m in open announce; do
   t_ok "with AICC_EA_RELEASE_APPROVED=owner-approved the $m export is packaged" env AICC_EA_RELEASE_APPROVED=owner-approved bash "$REL/build-site-release.sh" --target production --export-dir "$TMP/ea-$m" --out-dir "$TMP/ea-out3-$m"
   t_contains "...and the manifest records ea_mode=$m" "$(cat "$TMP"/ea-out3-$m/site-*.manifest.json)" "\"ea_mode\": \"$m\""
 done
+# P35 (review M1): the struck-through price and the "Limited availability" chip are refused at RELEASE time unless their attestation is valid (same rules as launch:check), whatever the owner's release word.
+for x in strike limited; do
+  rm -rf "$TMP/ea-x-$x"; cp -R "$EXPORT" "$TMP/ea-x-$x"; sed -i.bak "s/<html/<html data-ea-mode=\"open\"/" "$TMP/ea-x-$x/index.html"; rm -f "$TMP/ea-x-$x/index.html.bak"
+  if [ "$x" = strike ]; then MARK='<p class="aicc-plan__regular aicc-plan__regular--strike"><s>$99</s></p>'; VAR=AICC_EA_STRIKE_COUNSEL_APPROVED; else MARK='<ul><li class="aicc-easupport__chip" data-ea-limited><span>Limited availability</span></li></ul>'; VAR=AICC_EA_LIMITED_ATTESTED; fi
+  python3 -I - "$TMP/ea-x-$x/index.html" "$MARK" <<'PY'
+import sys
+p, m = sys.argv[1:3]; s = open(p).read(); i = s.rindex("</body>"); open(p, "w").write(s[:i] + m + s[i:])
+PY
+  t_fail "RELEASE GATE: an export with the $x markup is refused even with the owner's release word and no attestation" env AICC_EA_RELEASE_APPROVED=owner-approved bash "$REL/build-site-release.sh" --target production --export-dir "$TMP/ea-x-$x" --out-dir "$TMP/ea-x-out-$x"
+  t_contains "...and names $VAR" "$(env AICC_EA_RELEASE_APPROVED=owner-approved bash "$REL/build-site-release.sh" --target production --export-dir "$TMP/ea-x-$x" --out-dir "$TMP/ea-x-out-$x" 2>&1)" "$VAR"
+  for bad in yes approved-1 todo-2026-11 /etc/hosts; do
+    t_fail "...a placeholder or out-of-evidence reference ($bad) does not count ($x)" env AICC_EA_RELEASE_APPROVED=owner-approved "$VAR=$bad" bash "$REL/build-site-release.sh" --target production --export-dir "$TMP/ea-x-$x" --out-dir "$TMP/ea-x-out2-$x"
+  done
+  t_ok "...a real reference token lets it through ($x)" env AICC_EA_RELEASE_APPROVED=owner-approved "$VAR=counsel-2026-11-30" bash "$REL/build-site-release.sh" --target production --export-dir "$TMP/ea-x-$x" --out-dir "$TMP/ea-x-out3-$x"
+  # mutation: the same builder WITHOUT the gate (the behaviour before P35) packages the unattested export, so the assertions above fail on the old code
+  sed '/P35 (review M1)/,/ea-release-gate.mjs --tree/d' "$REL/build-site-release.sh" > "$REL/build-site-release.mutant.sh"
+  t_ok "MUTATION: the old release path (gate removed) would package the unattested $x export" env AICC_EA_RELEASE_APPROVED=owner-approved bash "$REL/build-site-release.mutant.sh" --target production --export-dir "$TMP/ea-x-$x" --out-dir "$TMP/ea-x-out4-$x"
+  rm -f "$REL/build-site-release.mutant.sh"
+done
+t_ok "the ordinary production export passes the gate untouched" bash -c "cd '$REL/../..' && node scripts/ea-release-gate.mjs --tree '$EXPORT'"
 rm -rf "$TMP/ea-verify"; cp -R "$EXPORT" "$TMP/ea-verify"; mkdir -p "$TMP/ea-verify/request-access"; printf '<html><body><div data-req-verify></div></body></html>' > "$TMP/ea-verify/request-access/index.html"
 t_fail "production build REFUSES an export that contains request-access/ (verify mode)" bash "$REL/build-site-release.sh" --target production --export-dir "$TMP/ea-verify" --out-dir "$TMP/ea-out-verify"
 t_ok "...and accepts it with the owner's word, recording ea_mode=verify" bash -c "env AICC_EA_RELEASE_APPROVED=owner-approved bash '$REL/build-site-release.sh' --target production --export-dir '$TMP/ea-verify' --out-dir '$TMP/ea-out3-verify' >/dev/null 2>&1 && grep -q '\"ea_mode\": \"verify\"' '$TMP'/ea-out3-verify/site-*.manifest.json"
