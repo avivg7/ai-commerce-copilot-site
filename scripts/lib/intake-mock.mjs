@@ -13,6 +13,9 @@ const DEFAULTS = {
   create: "auto", // auto (contract rules + neutral 202) | 429 | 503 | 400bot | 400invalid | drop | 202
   confirm: "auto", // auto (single-use tokens) | throttle | 503 | drop
   statusDelayMs: 0,
+  // P37 self-service sign-up status (GET /wp-json/aicc/v1/signup/status): open | waitlist | closed_cutoff | paused | off | http404 | http500 | badjson | drop | inconsistent (open:true with mode paused) | unknown (mode "maybe")
+  signup: "open",
+  signupDelayMs: 0,
 };
 
 export async function startMock({ dir, port = 0 }) {
@@ -30,6 +33,18 @@ export async function startMock({ dir, port = 0 }) {
   const server = http.createServer(async (req, res) => {
     const u = new URL(req.url, "http://x");
     const p = u.pathname;
+    if (p === "/wp-json/aicc/v1/signup/status") {
+      log.push({ t: vnow(), method: req.method, path: p, headers: { cookie: req.headers.cookie || "", origin: req.headers.origin || "" }, raw: "", bytes: 0 });
+      if (cfg.signupDelayMs) await new Promise((r) => setTimeout(r, cfg.signupDelayMs));
+      const m = cfg.signup;
+      if (m === "drop") return req.socket.destroy();
+      if (m === "http404") return json(res, 404, { code: "rest_no_route" });
+      if (m === "http500") return json(res, 500, { open: true, mode: "open" });
+      if (m === "badjson") { res.writeHead(200, { "Content-Type": "application/json" }); return res.end("{not json"); }
+      if (m === "inconsistent") return json(res, 200, { open: true, mode: "paused" });
+      if (m === "unknown") return json(res, 200, { open: true, mode: "maybe" });
+      return json(res, 200, { open: m === "open", mode: m, plan_options: ["solo", "studio", "agency"] });
+    }
     if (p.startsWith("/wp-json/aicc/v1/access-requests")) {
       const chunks = []; let size = 0;
       for await (const c of req) { size += c.length; if (size < 1_000_000) chunks.push(c); }

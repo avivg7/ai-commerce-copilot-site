@@ -3,6 +3,8 @@
 //     (--off-subswitches: an export built with the switch unset but NEXT_PUBLIC_AICC_EA_LIMITED_NOTE=on and NEXT_PUBLIC_AICC_EA_STRIKE=on: it must equal --base too;
 //      --limited: an OPEN export built with NEXT_PUBLIC_AICC_EA_LIMITED_NOTE=on (P34); --announce-limited: the same switch in an ANNOUNCE build, which must not show it)
 //     (exports built with NEXT_PUBLIC_AICC_EARLY_ACCESS unset | announce | open | verify; --base: an export of the base commit 5907dea (P35 line) built with the switch unset, from the same checkout path and dist directory name (module ids depend on the path))
+//     P37 (self-service): --ss-off <dir> --ss-announce <dir> --ss-open <dir> (exports built with NEXT_PUBLIC_AICC_SELFSERVICE=on and the launch-offer switch unset | announce | open) run the SELF-SERVICE matrix below;
+//     --base-announce / --base-open / --base-verify <dir>: P36 exports of the same environments built from the base commit: the OFF (self-service unset) build of each must be byte-equivalent to them
 // It proves:
 //  * OFF: no trace of the campaign; no request page; byte-equivalent to the base commit (after normalising the build id) when --base is given;
 //  * ANNOUNCE: the offer, the end instant and the regular prices are stated; every request control is a plain, non-clickable status; no request button wording and no link to /request-access/ exists anywhere;
@@ -15,12 +17,14 @@
 //    the cards and the FAQ in each language, one offer name per language, no promise of a paid plan "from 2027".
 import fs from "node:fs";
 import path from "node:path";
-import crypto from "node:crypto";
 import { loadDictionaries, loadTs } from "./lib/load.mjs";
+import { compare } from "./lib/export-fingerprint.mjs";
 
 const args = process.argv.slice(2);
 const arg = (n) => { const i = args.indexOf(`--${n}`); return i >= 0 ? path.resolve(args[i + 1]) : undefined; };
 const dirs = { off: arg("off"), announce: arg("announce"), open: arg("open"), verify: arg("verify") };
+const SS = { off: arg("ss-off"), announce: arg("ss-announce"), open: arg("ss-open") };
+const BASES = { announce: arg("base-announce"), open: arg("base-open"), verify: arg("base-verify") };
 const BASE = arg("base"), OFF_SUB = arg("off-subswitches"), LIMITED = arg("limited"), ANN_LIMITED = arg("announce-limited"), ANN_STRIKE = arg("announce-strike");
 if (!dirs.off || !dirs.announce || !dirs.open || !dirs.verify) { console.error("usage: --off <dir> --announce <dir> --open <dir> --verify <dir> [--base <dir>]"); process.exit(2); }
 
@@ -53,35 +57,7 @@ const REQ_FILES = ["request-access/index.html", "request-access/confirm/index.ht
 /** The words of the request button in every language (never allowed outside an OPEN build's pages or a request page). */
 const requestWords = [...new Set(LOCALES.flatMap((l) => { const e = ea(l); return [e.hero.ctaOpen, e.plan.ctaOpen, e.header.cta]; }))].map(nb);
 
-// ───────── build equivalence (shared with the OFF proof) ─────────
-function buildId(root) {
-  const d = path.join(root, "_next/static");
-  const ids = fs.readdirSync(d).filter((x) => fs.existsSync(path.join(d, x, "_buildManifest.js")));
-  if (ids.length !== 1) throw new Error(`cannot find the build id of ${root}`);
-  return ids[0];
-}
-function fingerprint(root, { relaxed = false, ignore = [] } = {}) {
-  const bid = buildId(root), out = new Map();
-  for (const f of walk(root)) {
-    let rel = path.relative(root, f).split(path.sep).join("/");
-    if (ignore.some((i) => rel.includes(i))) continue;
-    let b = fs.readFileSync(f);
-    if (/\.(html|txt|js|css|json|xml|map|webmanifest|vtt)$/.test(rel)) {
-      let t = b.toString("latin1").split(bid).join("BUILDID");
-      if (relaxed) t = t.replace(/(page-)[0-9a-f]{16}(\.js)/g, "$1HASH$2").replace(/(:I\[)\d+(,\[)/g, "$1MODID$2").replace(/(\\"id\\":)\d+/g, "$1MODID");
-      b = Buffer.from(t, "latin1");
-    }
-    rel = rel.split(bid).join("BUILDID");
-    if (relaxed) rel = rel.replace(/(app\/\[\[\.\.\.slug\]\]\/page-)[0-9a-f]{16}/, "$1HASH");
-    out.set(rel, crypto.createHash("sha256").update(b).digest("hex"));
-  }
-  return out;
-}
-function compare(a, b, opts) {
-  const A = fingerprint(a, opts), B = fingerprint(b, opts);
-  const onlyA = [...A.keys()].filter((k) => !B.has(k)), onlyB = [...B.keys()].filter((k) => !A.has(k)), diff = [...A.keys()].filter((k) => B.has(k) && A.get(k) !== B.get(k));
-  return { n: A.size, m: B.size, onlyA, onlyB, diff };
-}
+// ───────── build equivalence (shared with the OFF proof): scripts/lib/export-fingerprint.mjs ─────────
 
 // ───────── OFF ─────────
 console.log("== OFF (switch unset)");
@@ -344,6 +320,161 @@ console.log("\n== VERIFY: the ordinary site plus unlisted request pages");
   check(rs.diff.length === 0 && rs.onlyA.length === 0 && rs.onlyB.length === 0, `all ${rs.n} HTML and RSC payload files of the ordinary site are identical to OFF (chunk files aside)`);
 }
 
+// ───────── P37 SELF-SERVICE matrix: launch-offer mode (off | announce | open) x self-service (on); the self-service OFF side is the existing matrix above (+ byte-equivalence to P36) ─────────
+// With NEXT_PUBLIC_AICC_SELFSERVICE=on: every card button, closing band, the header "Get started" and the Product "Get started" lead to the Control Plane sign-up {CP}/start/?plan=<id> (language-prefixed); the Hero keeps
+// Try Live Demo (#demo, primary) and See Pricing; no card ever targets #demo or /request-access/; no inert status-only button; the trial covers one store and the paid allowance is 1 / 3 / 10 only; every link resolves.
+const CP_ORIGIN = "https://www.copilt.org";
+/** The ONLY absolute (Control Plane hosted) hrefs a page may carry, by exact path pattern: the sign-up (with an optional plan), the account area, the pricing page and the DPA. Anything else absolute is a dead-link risk. */
+const CP_ALLOW = /^https:\/\/www\.copilt\.org(\/(he|es|ru))?\/(start\/(\?plan=(solo|studio|agency))?|my-account\/|pricing\/|data-processing-addendum\/)$/;
+const startOf = (l, plan) => `${CP_ORIGIN}${l === "en" ? "" : `/${l}`}/start/${plan ? `?plan=${plan}` : ""}`;
+const accountOf = (l) => `${CP_ORIGIN}${l === "en" ? "" : `/${l}`}/my-account/`;
+const anchorsOf = (h) => [...nb(h).matchAll(/<a\b([^>]*)href="([^"]*)"([^>]*)>([\s\S]*?)<\/a>/g)].map((m) => ({ href: m[2], cls: (m[1] + m[3]).match(/class="([^"]*)"/)?.[1] || "", text: norm(m[4].replace(/<[^>]+>/g, " ")), at: m.index }));
+const sectionOf = (h, labelledBy) => { const i = h.indexOf(`aria-labelledby="${labelledBy}"`); if (i < 0) return ""; const a = h.lastIndexOf("<section", i); return h.slice(a, h.indexOf("</section>", i)); };
+const articlesOf = (h) => nb(h).split("<article").slice(1).map((a) => a.slice(0, a.indexOf("</article>"))).filter((a) => /class="aicc-plan\b/.test(a));
+const STORE_NUMS = /(?:(\d+)\s+(?:stores?|tiendas?|магазин\p{L}*|חנויות|חנות)|חנות אחת)/giu;
+function ssChecks(mode, root) {
+  const tag = `ss-${mode}`;
+  console.log(`== SELF-SERVICE + ${mode.toUpperCase()}: CTA targets, Hero, allowance, links, no inert chip (four languages)`);
+  const requestHits = [];
+  for (const l of LOCALES) {
+    const e = ea(l), ss = e.ss, P = pre(l), dict = D[l];
+    const home = htmlOf(root, `${P}index.html`), pricing = htmlOf(root, `${P}pricing/index.html`), product = htmlOf(root, `${P}product/index.html`);
+    const th = visibleText(home), tp = visibleText(pricing), tprod = visibleText(product);
+    const marker = (h, attr, v) => new RegExp(`<html[^>]*${attr}="${v}"`).test(h);
+    check(marker(home, "data-ss-mode", "on") && marker(pricing, "data-ss-mode", "on") && (mode === "off" ? !/data-ea-mode/.test(home) : marker(home, "data-ea-mode", mode)), `${l} ${tag}: <html data-ss-mode="on"> and ${mode === "off" ? "no launch-offer marker" : `data-ea-mode="${mode}"`}`);
+    check(new RegExp(`<html[^>]*dir="${l === "he" ? "rtl" : "ltr"}"`).test(home), `${l} ${tag}: <html dir="${l === "he" ? "rtl" : "ltr"}">`);
+    // ---- Hero: the original two actions, unchanged and independent of self-service
+    {
+      const h = nb(home), i0 = h.indexOf('class="aicc-hero-actions'), hero = h.slice(i0, h.indexOf("</div>", i0));
+      const an = anchorsOf(hero);
+      const demo = an.find((a) => a.text === norm(dict.home.hero.ctaDemo)), plans = an.find((a) => a.text === norm(dict.home.hero.ctaPlans));
+      check(!!demo && demo.href === "#demo" && /aicc-btn--primary/.test(demo.cls), `${l} ${tag}: the Hero keeps "${dict.home.hero.ctaDemo}" as the PRIMARY link to #demo`);
+      check(!!plans && plans.href === `/${P}pricing/`, `${l} ${tag}: the Hero keeps "${dict.home.hero.ctaPlans}" as a link to /${P}pricing/`);
+      check(an.length === 2 && !/<p\b|aicc-btn--soon|data-ea-soon/.test(hero), `${l} ${tag}: the Hero has exactly its two actions (no sign-up button, no request button, no inert chip)`);
+      check(/\bid="demo"/.test(h), `${l} ${tag}: the #demo target exists on Home`);
+    }
+    // ---- cards (Home and Pricing): one sign-up link each, honest allowance, order
+    for (const [name, page] of [["Home", home], ["Pricing", pricing]]) {
+      const cards = articlesOf(page);
+      check(cards.length === 3, `${l} ${tag} ${name}: three plan cards`);
+      cards.forEach((a, i) => {
+        const plan = PLANS[i], planName = dict.pricing.plans[plan.id].name;
+        const links = anchorsOf(a).filter((x) => /(^|\s)aicc-btn(\s|$)/.test(x.cls));
+        check(links.length === 1 && links[0].href === startOf(l, plan.id), `${l} ${tag} ${name} ${plan.id}: the card's ONE action is the sign-up link ${startOf(l, plan.id)} (${links.map((x) => x.href).join(", ") || "none"})`);
+        check(links.length === 1 && links[0].text.startsWith(norm(ss.cta.start)) && links[0].text.includes(planName), `${l} ${tag} ${name} ${plan.id}: the label is "${ss.cta.start}" (${planName} for screen readers)`);
+        check(!/#demo|request-access/.test(links.map((x) => x.href).join(" ")) && !/href="[^"]*(#demo|request-access)/.test(a), `${l} ${tag} ${name} ${plan.id}: the card never targets #demo or /request-access/`);
+        const text = norm(a.replace(/<[^>]+>/g, " | "));
+        const paid = plan.stores === 1 ? ss.plan.paidOne : ss.plan.paidMany.replace("{n}", String(plan.stores));
+        check(text.includes(norm(ss.plan.trial)) && text.includes(norm(paid)) && text.includes(norm(ss.plan.noPayment)), `${l} ${tag} ${name} ${plan.id}: the card states the trial ("${ss.plan.trial}"), the paid allowance ("${paid}") and the payment rule`);
+        const nums = [...text.matchAll(STORE_NUMS)].map((m) => (m[1] ? Number(m[1]) : 1)); // Hebrew writes one store as "חנות אחת"
+        check(nums.length >= 2 && nums.every((n) => [1, 3, 10].includes(n)) && nums.includes(plan.stores) && nums.includes(1), `${l} ${tag} ${name} ${plan.id}: the only store counts on the card are 1 and ${plan.stores}, from the 1 / 3 / 10 table [${nums}]`);
+        const n = a.indexOf('class="aicc-plan__name"'), c = a.search(/<a\b[^>]*class="aicc-btn/), k = a.indexOf("aicc-plan__checks");
+        if (mode === "off") check(n >= 0 && n < c && c < k, `${l} ${tag} ${name} ${plan.id}: order: plan name, button, trial and payment checks`);
+        else { const r = a.indexOf("aicc-plan__regular-line"), f = a.indexOf("aicc-plan__free-word"); check(n >= 0 && n < r && r < f && f < c && c < k, `${l} ${tag} ${name} ${plan.id}: P36 order kept: name, regular price, FREE, the sign-up button, the checks`); }
+        check(!/<p class="aicc-btn|aicc-sstate/.test(a.replace(/<div data-ea-after[\s\S]*?<\/div>/, "")) || false, `${l} ${tag} ${name} ${plan.id}: no inert button-looking element and no run-time state text in the static card`);
+      });
+      // the inert "Purchases open soon" chip: only in the hidden ended view of a launch-offer build, never visible; in self-service-only builds nowhere
+      const bad = []; const h = nb(page);
+      for (const m of h.matchAll(/<p class="aicc-btn[^"]*"/g)) { const mk = [...h.slice(Math.max(0, m.index - 900), m.index).matchAll(/data-ea-(live|after)/g)].map((x) => x[1]).pop(); if (mode === "off" || mk !== "after") bad.push(`${name}@${m.index}`); }
+      check(bad.length === 0 && !/data-ea-soon|aicc-eastatus/.test(h), `${l} ${tag} ${name}: no status-only inert button is visible (the "${dict.common.soon.label}" chip exists only in the hidden ended view of a launch-offer build)${bad.length ? " -> " + bad.join(", ") : ""}`);
+      if (mode !== "off") {
+        const css = (home.match(/<style>([\s\S]*?)<\/style>/g) || []).join("\n");
+        const free = remOf(css, ".aicc-plan .aicc-plan__free-word"), reg = remOf(css, ".aicc-plan .aicc-plan__regular-line");
+        check(name !== "Home" || (free > reg && reg >= 2 && free / reg >= 1.4), `${l} ${tag}: FREE (${free}rem) stays dominant over the regular price (${reg}rem)`);
+      }
+    }
+    // ---- terms, bar, links to the terms
+    check(/\bid="free-trial"/.test(pricing) && [ss.terms.label, ss.terms.store, ss.terms.payment, ss.terms.paid, ss.terms.state].every((x) => tp.includes(norm(x))), `${l} ${tag}: Pricing carries the free-trial terms block (#free-trial): one store, no payment method for the trial, the UTC end, the 1 / 3 / 10 paid allowance, the state note`);
+    check(tp.includes("22:00 UTC") && norm(ss.terms.payment).includes("22:00 UTC"), `${l} ${tag}: the end is stated in UTC ("22:00 UTC")`);
+    check(norm(ss.terms.paid).match(/\d+/g).map(Number).every((n) => [1, 3, 10].includes(n)) && !tp.match(/\b(11|12|15|20|25|30|50|100)\s+(stores|tiendas|магазин)/i), `${l} ${tag}: no page text claims a paid capacity above the Backend table (1 / 3 / 10)`);
+    if (mode !== "off") {
+      check(th.includes(norm(ss.bar.text)) && !th.includes(norm(e.bar.live)), `${l} ${tag}: the bar says the free trial ("${ss.bar.text}") and not the launch-offer request wording`);
+      const barLink = anchorsOf(home).find((a) => a.text === norm(ss.bar.link));
+      check(!!barLink && barLink.href === `/${P}pricing/#free-trial`, `${l} ${tag}: the bar link leads to /${P}pricing/#free-trial (${barLink?.href})`);
+      const sup = (nb(home).match(/data-ea-support="hero"[\s\S]*?<\/ul>/) || [""])[0];
+      check(sup.includes(norm(ss.hero.support.noPayment)) && sup.includes(norm(ss.hero.support.oneStore)) && !sup.includes(norm(e.hero.support.approval)) && !sup.includes(norm(e.hero.support.noCard)), `${l} ${tag}: the Hero support lines are the two trial facts (no "approval", no "no credit card")`);
+    }
+    // ---- no launch-offer request wording while self-service is on: nothing says "approved", "request", or "no credit card"
+    {
+      const banned = [...new Set([e.hero.ctaOpen, e.hero.ctaAnnounce, e.header.cta, e.plan.approved, e.plan.noCard, e.plan.ctaClosed, e.hero.support.approval, e.hero.support.noCard, e.pricing.note, e.bar.live, e.bar.announce, e.bar.linkAnnounce].map(norm))];
+      // the hidden ended view (data-ea-after) may carry the ordinary wording; only what is shown while the page is live counts
+      const live = (h) => visibleText(nb(h).replace(/<div class="aicc-eaafter"[\s\S]*?<\/div>/, " ").replace(/<(div|span|p|ul)\b[^>]*data-ea-after[\s\S]*?<\/\1>/g, " "));
+      const hits2 = banned.filter((w) => [live(home), live(pricing), live(product)].some((t) => t.includes(w)));
+      check(hits2.length === 0, `${l} ${tag}: no launch-offer request / approval / "no credit card" wording is shown while self-service is on${hits2.length ? " -> " + hits2[0] : ""}`);
+    }
+    // ---- header (desktop and menu): Get started -> sign-up; Sign in stays on the account page; no request button
+    {
+      const hdr = nb(home).slice(nb(home).indexOf('<header class="aicc-site-header"'), nb(home).indexOf("</header>"));
+      const an = anchorsOf(hdr), gs = an.filter((a) => a.text === norm(dict.common.getStarted)), si = an.filter((a) => a.text === norm(dict.brand.signIn));
+      check(gs.length >= 2 && gs.every((a) => a.href === startOf(l) && !/data-ea-after/.test(hdr.slice(Math.max(0, a.at - 10), a.at + 400).replace(/[\s\S]*?(<a\b)/, "$1").slice(0, 400))), `${l} ${tag}: the header "Get started" (desktop and menu) leads to ${startOf(l)} and is visible (not in the ended view)`);
+      check(si.length >= 2 && si.every((a) => a.href === accountOf(l)), `${l} ${tag}: "Sign in" (desktop and menu) stays on the account page ${accountOf(l)}`);
+      check(!anchorsOf(hdr).some((a) => /request-access/.test(a.href)), `${l} ${tag}: the header has no request link`);
+    }
+    // ---- closing bands (Home, Pricing, Product x2) and the Product hero
+    for (const [name, page, id] of [["Home", home, "final-title"], ["Pricing", pricing, "pricing-final"], ["Product", product, "safety-cta"], ["Product", product, "product-final"]]) {
+      const sec = sectionOf(page, id), an = anchorsOf(sec);
+      const live = mode === "off" ? sec : sec.slice(0, sec.indexOf("data-ea-after") > 0 ? sec.indexOf("data-ea-after") : sec.length);
+      const cta = anchorsOf(live).filter((a) => a.text.startsWith(norm(ss.cta.start)));
+      check(cta.length === 1 && cta[0].href === startOf(l) && norm(live.replace(/<[^>]+>/g, " ")).includes(norm(ss.band.lead)), `${l} ${tag}: the ${name} closing band (${id}) leads with "${ss.cta.start}" -> ${startOf(l)} and its lead sentence`);
+      check(!an.some((a) => /request-access/.test(a.href)), `${l} ${tag}: the ${name} band (${id}) has no request link`);
+    }
+    {
+      const hero = nb(product).slice(nb(product).indexOf('class="aicc-hero-actions'), nb(product).indexOf("</div>", nb(product).indexOf('class="aicc-hero-actions')));
+      const gs = anchorsOf(hero).find((a) => a.text === norm(dict.common.getStarted));
+      check(!!gs && gs.href === startOf(l), `${l} ${tag}: the Product "Get started" leads to ${startOf(l)}`);
+    }
+    for (const [name, page] of [["Home", home], ["Pricing", pricing], ["Product", product]]) if (/request-access/.test(page)) requestHits.push(`${l} ${name}`);
+  }
+  // ---- every link of every page resolves: internal links to an export page / WordPress route, absolute links only to the exact Control Plane patterns
+  {
+    const dead = [], seen = new Set();
+    for (const f of htmlFiles(root)) {
+      const rel = path.relative(root, f).split(path.sep).join("/"), raw = fs.readFileSync(f, "utf8");
+      for (const m of raw.matchAll(/<a\b[^>]*href="([^"]*)"/g)) {
+        const h = decode(m[1]); if (h.startsWith("#") || /^(mailto|tel):/.test(h)) continue;
+        if (/^https?:/.test(h)) { if (!CP_ALLOW.test(h) && !seen.has(h)) { seen.add(h); dead.push(`${rel}: ${h}`); } continue; }
+        if (!h.startsWith("/")) { dead.push(`${rel}: ${h}`); continue; }
+        const hp = h.split(/[?#]/)[0]; if (/^\/(_next|brand-kit|og|fonts|demo)\//.test(hp) || /\.[a-z0-9]{2,5}$/i.test(hp)) continue;
+        const seg = hp.replace(/^\/(he|es|ru)\//, "/").split("/").filter(Boolean)[0];
+        if (!(fs.existsSync(path.join(root, hp.replace(/^\//, ""), "index.html")) || (seg && WP_ROUTES.has(seg)) || hp === "/")) dead.push(`${rel}: ${h}`);
+      }
+    }
+    check(dead.length === 0, `${tag}: every link of every page resolves (export page, WordPress route, or an exact Control Plane pattern: /start/?plan=, /my-account/, /pricing/, /data-processing-addendum/)${dead.length ? " -> " + dead.slice(0, 4).join(" | ") : ""}`);
+  }
+  // ---- /request-access/ is never linked, whatever the launch-offer mode; the sitemap does not list the Control Plane sign-up
+  {
+    const nonReq = textFiles(root).filter((f) => !/(^|\/)request-access\//.test(path.relative(root, f).split(path.sep).join("/")));
+    const hits = nonReq.filter((f) => /request-access/.test(fs.readFileSync(f, "utf8")));
+    check(hits.length === 0 && requestHits.length === 0, `${tag}: no page, RSC payload, sitemap or robots.txt outside the request pages mentions /request-access/ while self-service is on${hits.length ? " -> " + path.relative(root, hits[0]) : ""}`);
+    check(!/\/start\//.test(fs.readFileSync(path.join(root, "sitemap.xml"), "utf8")), `${tag}: sitemap.xml does not list the Control Plane /start/ page`);
+    const all = textFiles(root).filter((f) => !/(^|\/)request-access\//.test(path.relative(root, f).split(path.sep).join("/")));
+    const leaks = all.filter((f) => requestWords.some((w) => nb(fs.readFileSync(f, "utf8")).includes(w)));
+    check(leaks.length === 0, `${tag}: no file outside the request pages carries the "Request Free Access" wording in any language${leaks.length ? " -> " + path.relative(root, leaks[0]) : ""}`);
+  }
+  // ---- the run-time state code is in a client chunk of this build only; the status path is named there and nowhere else
+  {
+    const chunkDir = path.join(root, "_next/static/chunks"), refs = new Set();
+    for (const c of walk(chunkDir, (p) => p.endsWith(".js"))) { const t = fs.readFileSync(c, "utf8"); if (t.includes("signup/status")) for (const m of t.matchAll(/\/wp-json\/[^"'`\s\\)]*/g)) refs.add(m[0]); }
+    check([...refs].length === 1 && [...refs][0] === "/wp-json/aicc/v1/signup/status", `${tag}: the only API surface the self-service button names is GET /wp-json/aicc/v1/signup/status (${[...refs].join(", ")})`);
+    check(htmlFiles(root).every((f) => !/class="aicc-sstate|data-ss-state=/.test(fs.readFileSync(f, "utf8"))), `${tag}: no page ships a run-time state text in its static HTML (the static button is always the sign-up link)`);
+  }
+}
+if (SS.off || SS.announce || SS.open) {
+  console.log("\n== P37 SELF-SERVICE");
+  for (const m of ["off", "announce", "open"]) if (SS[m]) ssChecks(m, SS[m]); else console.log(`  note --ss-${m} not given: the self-service + ${m} cell of the matrix was not run`);
+  // the self-service OFF side of the matrix: the build of each launch-offer environment WITHOUT the switch is byte-equivalent to the P36 export of the same environment
+  for (const [m, dir] of [["announce", dirs.announce], ["open", dirs.open], ["verify", dirs.verify]]) if (BASES[m]) {
+    const r = compare(BASES[m], dir);
+    check(r.onlyA.length === 0 && r.onlyB.length === 0 && r.diff.length === 0, `self-service OFF (${m}) is byte-equivalent to the P36 ${m} export after normalising the build id: ${r.n} files vs ${r.m}, only-in-P36 ${r.onlyA.length}, only-in-new ${r.onlyB.length}, different ${r.diff.length}${r.diff.length ? " -> " + r.diff.slice(0, 3).join(", ") : ""}`);
+  } else console.log(`  note --base-${m} not given: the self-service OFF byte-equivalence for ${m} was not run`);
+  // the Hero's two actions are identical (destination and wording) with self-service on and off, in every mode and language: self-service never touches them
+  for (const [m, dir] of [["off", SS.off], ["announce", SS.announce], ["open", SS.open]]) if (dir) for (const l of LOCALES) {
+    const heroLinks = (root) => { const h = nb(htmlOf(root, `${pre(l)}index.html`)), i0 = h.indexOf('class="aicc-hero-actions'); return anchorsOf(h.slice(i0, h.indexOf("</div>", i0))).filter((a) => a.text === norm(D[l].home.hero.ctaDemo) || a.text === norm(D[l].home.hero.ctaPlans)).map((a) => `${a.text}|${a.href}`).sort(); };
+    const a = heroLinks(dirs[m]), b = heroLinks(dir);
+    check(a.length === 2 && JSON.stringify(a) === JSON.stringify(b), `${l} self-service + ${m}: the Hero's Try Live Demo and See Pricing links equal the ones of the same mode without self-service (${b.join(", ")})`);
+  }
+}
+
 // ───────── negative controls: the probes must see what they claim to see ─────────
 console.log("\n== negative controls");
 {
@@ -366,7 +497,7 @@ console.log("\n== UTC and geographic neutrality: every mode, every language");
 {
   const GEO = /israel|israeli|jerusalem|ישראל|израил/i;
   const NEXT = /(?<!\d)(january 1,? 2027|1 בינואר 2027|1 de enero de 2027|1 января 2027)/i;
-  for (const [name, root] of [["off", dirs.off], ["announce", dirs.announce], ["open", dirs.open], ["verify", dirs.verify], ...(ANN_STRIKE ? [["announce-strike", ANN_STRIKE]] : [])]) {
+  for (const [name, root] of [["off", dirs.off], ["announce", dirs.announce], ["open", dirs.open], ["verify", dirs.verify], ...(ANN_STRIKE ? [["announce-strike", ANN_STRIKE]] : []), ...Object.entries(SS).filter(([, d]) => d).map(([m, d]) => [`ss-${m}`, d])]) {
     const bad = [], mid = [], next = [];
     for (const f of htmlFiles(root)) {
       const raw = fs.readFileSync(f, "utf8"), t = visibleText(raw), rel = path.relative(root, f);

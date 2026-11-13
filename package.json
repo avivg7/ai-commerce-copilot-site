@@ -73,7 +73,10 @@
     "test:launch-offer-browser": "node scripts/test-launch-offer-browser.mjs",
     "test:request-form": "node scripts/test-request-form.mjs",
     "test:launch-offer-mutations": "node scripts/test-launch-offer-mutations.mjs",
-    "test:wording-parity": "node scripts/wording-parity.mjs"
+    "test:wording-parity": "node scripts/wording-parity.mjs",
+    "test:selfservice": "node scripts/test-selfservice.mjs",
+    "test:selfservice-browser": "node scripts/test-selfservice-browser.mjs",
+    "export:hash": "node scripts/export-hash.mjs"
   },
   "dependencies": {
     "clsx": "^2.1.1",
