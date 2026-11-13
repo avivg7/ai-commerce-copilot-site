@@ -29,13 +29,18 @@ ORDER = [
     "AICC_LEGAL_REVIEW_APPROVED", "AICC_LEGAL_SUBPROCESSORS_VERIFIED", "AICC_STRUCTURED_DATA_OFFERS", "AICC_COMMERCE_OPEN",
     "AICC_LM_PAID_GATEWAYS", "AICC_LM_PAYMENT_EVIDENCE_PROVIDER", "AICC_LAUNCH_REAL_GATEWAYS", "AICC_LM_PAYMENT_GATE_STRICT",
     "AICC_EXTRA_ACCESSIBLE_HOSTS",
+    "AICC_TURNSTILE_ENABLED",
     "AICC_LM_PLUGIN_SIGNING_PUBKEYS",
 ]
 FREE_TEXT = {  # key -> maximum length in characters
     "AICC_LEGAL_ENTITY_NAME": 200, "AICC_LEGAL_ENTITY_ADDRESS": 300, "AICC_LEGAL_GOVERNING_LAW": 300, "AICC_LEGAL_JURISDICTION": 300,
     "AICC_LEGAL_PAYMENT_PROCESSOR": 80, "AICC_LEGAL_VAT_DETAILS": 300,
 }
-TRUE_ONLY = ("AICC_LEGAL_REVIEW_APPROVED", "AICC_STRUCTURED_DATA_OFFERS", "AICC_LM_PAYMENT_GATE_STRICT", "AICC_COMMERCE_OPEN")
+TRUE_ONLY = ("AICC_LEGAL_REVIEW_APPROVED", "AICC_STRUCTURED_DATA_OFFERS", "AICC_LM_PAYMENT_GATE_STRICT", "AICC_COMMERCE_OPEN", "AICC_TURNSTILE_ENABLED")
+# AICC_TURNSTILE_ENABLED (P32 launch offer): exactly `true` or unset (unset = today's render, byte for byte). It renders NO define(): its only effect is that the renderer appends the ONE host the Control Plane's server-side
+# Turnstile verification POSTs to (https://challenges.cloudflare.com/turnstile/v0/siteverify) to WP_ACCESSIBLE_HOSTS, because production blocks every other outbound request (WP_HTTP_BLOCK_EXTERNAL). Without it the
+# request form can never pass its bot check. The Turnstile site key and secret are Control Plane constants and secret files, never owner facts of this file.
+TURNSTILE_HOST = "challenges.cloudflare.com"
 # AICC_COMMERCE_OPEN is the ONE switch for "commercial checkout is open" (pre-commercial truth round, docs/cutover/pre-commercial.md): production only, exactly `true`, UNSET = CLOSED. The public website is live
 # before checkout opens, so unset is the normal state and the file never has to mention it. It can be set only when every launch fact the Control Plane launch gate (scripts/check-launch-blockers.php) demands from
 # THIS file is present; the gate itself is the real lock (the Control Plane also needs WooCommerce "Coming soon" off AND a clean attested gate run before it treats commerce as open), and there is NO override.
@@ -51,7 +56,7 @@ COMMERCE_OPEN_REQUIRES = [
 # Staging never carries legal facts, launch switches or the launch allowlist: those describe the public launch.
 KEYS_FOR = {
     "production": [k for k in ORDER if k != "AICC_LM_PAYMENT_GATE_STRICT"],  # includes AICC_LM_PLUGIN_SIGNING_PUBKEYS (public keys only; production serves the signed Plugin releases)
-    "stage": ["AICC_ACTIVATION_PROOF_KID", "AICC_LM_PAID_GATEWAYS", "AICC_LM_PAYMENT_EVIDENCE_PROVIDER", "AICC_LM_PAYMENT_GATE_STRICT", "AICC_EXTRA_ACCESSIBLE_HOSTS"],
+    "stage": ["AICC_ACTIVATION_PROOF_KID", "AICC_LM_PAID_GATEWAYS", "AICC_LM_PAYMENT_EVIDENCE_PROVIDER", "AICC_LM_PAYMENT_GATE_STRICT", "AICC_EXTRA_ACCESSIBLE_HOSTS", "AICC_TURNSTILE_ENABLED"],
 }
 BASE_HOST = {"production": "api.copilt.org", "stage": "stage.copilt.org"}
 MAX_FILE_BYTES = 16384
@@ -349,7 +354,7 @@ def render(facts, env):
     require_render_ready(facts, env)
     out = []
     for k in ORDER:
-        if k not in facts or k == "AICC_EXTRA_ACCESSIBLE_HOSTS":
+        if k not in facts or k in ("AICC_EXTRA_ACCESSIBLE_HOSTS", "AICC_TURNSTILE_ENABLED"):
             continue
         v = facts[k]
         if k in TRUE_ONLY:
@@ -371,6 +376,8 @@ def render(facts, env):
         else:
             out.append("define( '%s', %s );" % (k, php_str(v)))
     hosts = parse_hosts("AICC_EXTRA_ACCESSIBLE_HOSTS", facts["AICC_EXTRA_ACCESSIBLE_HOSTS"], env) if "AICC_EXTRA_ACCESSIBLE_HOSTS" in facts else []
+    if facts.get("AICC_TURNSTILE_ENABLED") == "true" and TURNSTILE_HOST not in hosts:
+        hosts = hosts + [TURNSTILE_HOST]  # appended after the owner's own hosts, never counted against their limit
     return out, hosts
 
 

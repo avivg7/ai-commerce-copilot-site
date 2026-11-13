@@ -87,10 +87,18 @@ SHA="$(git -C "$SITE_REPO" rev-parse --short HEAD 2>/dev/null || echo unknown)"
 # fail closed: a build whose commit cannot be determined (not a git checkout, git missing) is NOT clean; a production deploy requires dirty == false
 DIRTYF=false; [ -n "$(git -C "$SITE_REPO" status --porcelain 2>/dev/null | head -1)" ] && DIRTYF=true
 [ "$SHA" != unknown ] || DIRTYF=true
-META="$(python3 -I - "$TARGET" "$SHA" "$DIRTYF" "$STAGE_HOST" "$CPBRAND" <<'PY'
-import json, sys
-t, sha, dirty, host, cpbrand = sys.argv[1:6]
+META="$(python3 -I - "$TARGET" "$SHA" "$DIRTYF" "$STAGE_HOST" "$CPBRAND" "$TREE" <<'PY'
+import json, os, re, sys
+t, sha, dirty, host, cpbrand, tree = sys.argv[1:7]
 meta = {"target": t, "site_commit": sha, "dirty": dirty == "true", "host": host if t == "stage" else "www.copilt.org"}
+# P32: the launch-offer mode of the export is recorded ONLY when it is not the ordinary site (an ordinary release keeps the manifest it always had)
+_m = re.search(rb"<html[^>]*\sdata-ea-mode=\"(\w+)\"", open(os.path.join(tree, "index.html"), "rb").read())
+_mode = _m.group(1).decode() if _m else "off"
+_rp = os.path.join(tree, "request-access", "index.html")
+if _mode == "off" and os.path.exists(_rp) and b"data-req-verify" in open(_rp, "rb").read():
+    _mode = "verify"
+if _mode != "off" or os.path.isdir(os.path.join(tree, "request-access")):
+    meta["ea_mode"] = _mode
 if cpbrand:  # only when verified; a build without --cp-worktree has the manifest it always had
     meta["cp_brand_kit_verified_at"] = cpbrand
 print(json.dumps(meta))

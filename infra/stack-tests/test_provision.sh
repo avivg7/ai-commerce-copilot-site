@@ -598,6 +598,16 @@ if [ -x "$LOCALMY/mysqld" ]; then
     t_eq "...stored lower case" "$(OFT list | sed -n 's/^AICC_EXTRA_ACCESSIBLE_HOSTS=//p')" "restapi.payplus.co.il"
     t_ok "two hosts are accepted" OFT set AICC_EXTRA_ACCESSIBLE_HOSTS 'restapi.payplus.co.il, restapidev.payplus.co.il'
     OFR >/dev/null 2>&1; t_eq "...both rendered after the API host, nothing else" "$(cst "$OFD/prod.php" WP_ACCESSIBLE_HOSTS | jq -r .WP_ACCESSIBLE_HOSTS)" "api.copilt.org,restapi.payplus.co.il,restapidev.payplus.co.il"
+    # --- P32 launch offer: AICC_TURNSTILE_ENABLED adds the Turnstile verification host (and nothing else) to the outbound allow-list; unset = today's render byte for byte
+    RENDER_BEFORE="$(sha "$OFD/prod.php")"
+    t_ok "AICC_TURNSTILE_ENABLED=true is accepted" OFT set AICC_TURNSTILE_ENABLED true
+    OFR >/dev/null 2>&1; t_eq "...the render appends challenges.cloudflare.com after the owner's own hosts (outbound stays blocked)" "$(cst "$OFD/prod.php" WP_ACCESSIBLE_HOSTS WP_HTTP_BLOCK_EXTERNAL | jq -r '[.WP_ACCESSIBLE_HOSTS,.WP_HTTP_BLOCK_EXTERNAL]|join(" ")')" "api.copilt.org,restapi.payplus.co.il,restapidev.payplus.co.il,challenges.cloudflare.com true"
+    t_eq "...the flag itself defines nothing in wp-config (no AICC_TURNSTILE_ENABLED constant)" "$(cst "$OFD/prod.php" AICC_TURNSTILE_ENABLED | jq -r .AICC_TURNSTILE_ENABLED)" "null"
+    t_ok "...and the render still passes php -l" php -l "$OFD/prod.php"
+    for v in false yes 1 TRUE ''; do t_rc "AICC_TURNSTILE_ENABLED=$(printf '%s' "$v" | sed 's/^$/(empty)/') is REFUSED (only the exact word true)" 1 OFT set AICC_TURNSTILE_ENABLED "$v"; done
+    OFT unset AICC_TURNSTILE_ENABLED >/dev/null; OFR >/dev/null 2>&1
+    t_eq "...unsetting the flag restores the previous render byte for byte (default output unchanged)" "$(sha "$OFD/prod.php")" "$RENDER_BEFORE"
+    t_eq "...and the host list is the owner's hosts only" "$(cst "$OFD/prod.php" WP_ACCESSIBLE_HOSTS | jq -r .WP_ACCESSIBLE_HOSTS)" "api.copilt.org,restapi.payplus.co.il,restapidev.payplus.co.il"
     # --- injection attempts that ARE legal text are escaped, never executed (round trip through real PHP)
     OFT unset AICC_EXTRA_ACCESSIBLE_HOSTS >/dev/null
     rt() { OFT set AICC_LEGAL_ENTITY_NAME "$2" >/dev/null 2>&1 && OFR >/dev/null 2>&1 && t_eq "round trip through PHP: $1" "$(cst "$OFD/prod.php" AICC_LEGAL_ENTITY_NAME AICC_EVIL | jq -r '[.AICC_LEGAL_ENTITY_NAME,(.AICC_EVIL|tostring)]|join("|")')" "$2|null" || t_bad "round trip through PHP: $1" "set or render failed"; }

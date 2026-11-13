@@ -33,6 +33,12 @@ for f in "$PRE" "$FINAL"; do
   t_contains "$(basename "$f"): HSTS ramp starts at 300 s" "$C" 'Strict-Transport-Security "max-age=300"'
   t_contains "$(basename "$f"): operator listener is loopback only" "$C" "bind 127.0.0.1"
   t_contains "$(basename "$f"): /healthz is answered by Caddy itself" "$C" "respond \"ok\" 200"
+  # P32 launch offer: the request pages (only) may load Cloudflare Turnstile; the origin is named on ONE line (the request-page CSP) and nowhere else, and both listeners route to it
+  t_eq "$(basename "$f"): challenges.cloudflare.com appears on exactly one code line (the request-page CSP snippet)" "$(printf '%s\n' "$C" | grep -c 'challenges\.cloudflare\.com')" "1"
+  t_contains "$(basename "$f"): the request-page CSP snippet allows Turnstile in script-src, frame-src and connect-src" "$C" "script-src 'self' 'unsafe-inline' https://challenges.cloudflare.com; style-src"
+  t_contains "$(basename "$f"): ...frame-src names only the Turnstile origin" "$C" "frame-src https://challenges.cloudflare.com; frame-ancestors"
+  t_eq "$(basename "$f"): the request-page CSP is imported by the request handler of BOTH listeners (public and operator) and by nothing else" "$(printf '%s\n' "$C" | grep -c 'import static_csp_request')" "2"
+  t_eq "$(basename "$f"): no wildcard or scheme-wide source in any Content-Security-Policy line" "$(printf '%s\n' "$C" | grep 'Content-Security-Policy' | grep -cE '\*|https?: |https?:;')" "0"
 done
 t_rc "--pre-cutover with --mode stage is a usage error" 2 node "$REPO/scripts/ops/render-edge.mjs" --mode stage --pre-cutover
 if [ -x "$HOME/aicc-rehearsal/bin/caddy" ]; then

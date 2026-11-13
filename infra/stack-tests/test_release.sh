@@ -375,6 +375,20 @@ SID="0123456789abcdef0123456789abcdef"
 if [ -f "$REPO/out/index.html" ] && ! grep -rqs --include='*.txt' --include='*.html' "www\.copilt\.org" "$REPO/out/__next._head.txt" "$REPO/out/index.html"; then EXPORT="$REPO/out"; else EXPORT="$TMP/mini-export"; mkdir -p "$EXPORT/_next/static" "$EXPORT/404"; for p in index.html 404.html 404/index.html; do printf '<!doctype html><html><head><title>x</title></head><body>p</body></html>' > "$EXPORT/$p"; done; printf 'User-agent: *\nAllow: /\n' > "$EXPORT/robots.txt"; echo c > "$EXPORT/_next/static/c.js"; fi
 t_ok "stage build succeeds" bash "$REL/build-site-release.sh" --target stage --stage-id "$SID" --export-dir "$EXPORT" --out-dir "$TMP/site-stage"
 t_ok "production build succeeds" bash "$REL/build-site-release.sh" --target production --export-dir "$EXPORT" --out-dir "$TMP/site-prod"
+# P32 launch offer: a PRODUCTION release is the ordinary site; an export built in announce/open/verify mode or carrying the request pages is refused unless AICC_EA_RELEASE_APPROVED=owner-approved
+for m in open announce; do
+  rm -rf "$TMP/ea-$m"; cp -R "$EXPORT" "$TMP/ea-$m"; sed -i.bak "s/<html/<html data-ea-mode=\"$m\"/" "$TMP/ea-$m/index.html"; rm -f "$TMP/ea-$m/index.html.bak"
+  t_fail "production build REFUSES an export built in $m mode" bash "$REL/build-site-release.sh" --target production --export-dir "$TMP/ea-$m" --out-dir "$TMP/ea-out-$m"
+  t_contains "...and says the owner's word is needed" "$(bash "$REL/build-site-release.sh" --target production --export-dir "$TMP/ea-$m" --out-dir "$TMP/ea-out-$m" 2>&1)" "AICC_EA_RELEASE_APPROVED=owner-approved"
+  t_fail "a wrong approval word does not count ($m)" env AICC_EA_RELEASE_APPROVED=yes bash "$REL/build-site-release.sh" --target production --export-dir "$TMP/ea-$m" --out-dir "$TMP/ea-out2-$m"
+  t_ok "with AICC_EA_RELEASE_APPROVED=owner-approved the $m export is packaged" env AICC_EA_RELEASE_APPROVED=owner-approved bash "$REL/build-site-release.sh" --target production --export-dir "$TMP/ea-$m" --out-dir "$TMP/ea-out3-$m"
+  t_contains "...and the manifest records ea_mode=$m" "$(cat "$TMP"/ea-out3-$m/site-*.manifest.json)" "\"ea_mode\": \"$m\""
+done
+rm -rf "$TMP/ea-verify"; cp -R "$EXPORT" "$TMP/ea-verify"; mkdir -p "$TMP/ea-verify/request-access"; printf '<html><body><div data-req-verify></div></body></html>' > "$TMP/ea-verify/request-access/index.html"
+t_fail "production build REFUSES an export that contains request-access/ (verify mode)" bash "$REL/build-site-release.sh" --target production --export-dir "$TMP/ea-verify" --out-dir "$TMP/ea-out-verify"
+t_ok "...and accepts it with the owner's word, recording ea_mode=verify" bash -c "env AICC_EA_RELEASE_APPROVED=owner-approved bash '$REL/build-site-release.sh' --target production --export-dir '$TMP/ea-verify' --out-dir '$TMP/ea-out3-verify' >/dev/null 2>&1 && grep -q '\"ea_mode\": \"verify\"' '$TMP'/ea-out3-verify/site-*.manifest.json"
+t_fail "site-check alone refuses the same tree (release tool)" "${TOOL[@]}" site-check --tree "$TMP/ea-verify" --target production
+t_not_contains "an ordinary production release records no ea_mode (manifest unchanged)" "$(cat "$TMP"/site-prod/site-*.manifest.json)" "ea_mode"
 # --public-truth (pre-commercial truth round): the production release is REFUSED when the tree shows anything internal, staged or untrue. Fixture trees carry a canonical so the clean one passes.
 PTC='<!doctype html><html lang="en" dir="ltr"><head><meta charset="utf-8"><title>AI Commerce Copilot</title><meta name="description" content="Recommendations for WooCommerce."><link rel="canonical" href="https://www.copilt.org/"></head><body><main><h1>AICC</h1><p>Purchases open soon.</p>%s</main></body></html>'
 mkdir -p "$TMP/pt-clean/404" "$TMP/pt-bad/404"; printf "$PTC" "" > "$TMP/pt-clean/index.html"; printf "$PTC" "<p>Operated by (pending)</p>" > "$TMP/pt-bad/index.html"

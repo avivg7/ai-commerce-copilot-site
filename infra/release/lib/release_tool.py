@@ -403,6 +403,19 @@ def cmd_site_stage(a):
     print("stage transform: noindex injected into %d html file(s), robots.txt disallow-all, sitemap removed, identity file written" % n)
 
 
+def ea_mode_of(tree):
+    """The launch-offer mode a built export carries (P32): ("off"|"announce"|"open", verify). verify = an otherwise ordinary export whose request pages carry the verification banner."""
+    mode = "off"
+    idx = os.path.join(tree, "index.html")
+    if os.path.exists(idx):
+        m = re.search(rb"<html[^>]*\sdata-ea-mode=\"(\w+)\"", open(idx, "rb").read())
+        if m:
+            mode = m.group(1).decode()
+    rp = os.path.join(tree, "request-access", "index.html")
+    verify = mode == "off" and os.path.exists(rp) and b"data-req-verify" in open(rp, "rb").read()
+    return mode, verify
+
+
 def cmd_site_check(a):
     problems = []
     ident = os.path.join(a.tree, ".well-known", "aicc-stage-identity")
@@ -448,6 +461,11 @@ def cmd_site_check(a):
             problems.append("a stage identity file exists in a production tree")
         if bad_noindex:
             problems.append("content page(s) carry noindex in a production tree: %s" % ", ".join(bad_noindex[:5]))
+        # P32 launch offer: a production tree is the ordinary site. An export built in announce, open or verify mode, or one that contains the request pages, is refused unless the owner's exact word is set.
+        ea_mode, ea_verify = ea_mode_of(a.tree)
+        has_req = os.path.isdir(os.path.join(a.tree, "request-access"))
+        if (ea_mode != "off" or ea_verify or has_req) and os.environ.get("AICC_EA_RELEASE_APPROVED") != "owner-approved":
+            problems.append("the export carries the launch offer (mode %s%s, request pages %s): a production release is refused unless AICC_EA_RELEASE_APPROVED=owner-approved is set (the owner's decision for exactly this deployment)" % (ea_mode, ", verify" if ea_verify else "", "present" if has_req else "absent"))
         if stage_marked:
             problems.append("%d html file(s) carry the staging noindex marker in a production tree" % stage_marked)
         if blanket:

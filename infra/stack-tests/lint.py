@@ -191,6 +191,7 @@ else:
     m_keys = re.search(r"(?s)ORDER = \[(.*?)\n\]", ofs)
     of_keys = re.findall(r'"([A-Z][A-Z0-9_]+)"', m_keys.group(1)) if m_keys else []
     oexpect(len(of_keys) >= 14, "provision/lib/owner_facts.py", "ORDER must list the owner-fact keys")
+    oexpect('TURNSTILE_HOST = "challenges.cloudflare.com"' in ofs and 'facts.get("AICC_TURNSTILE_ENABLED") == "true"' in ofs and "AICC_TURNSTILE_ENABLED" in of_keys, "provision/lib/owner_facts.py", "the Turnstile verification host must be exactly challenges.cloudflare.com and added to WP_ACCESSIBLE_HOSTS only by the explicit AICC_TURNSTILE_ENABLED=true owner fact (P32)")
     if re.search(r"(?m)^\s*(import|from)\s+(subprocess|pickle|ctypes|socket|urllib|http)\b|\bos\.system\b|\beval\(|\bexec\(|__import__", ofs):
         fail(of_py, "the validator must be pure string handling: no subprocess, network, eval or exec")
     else:

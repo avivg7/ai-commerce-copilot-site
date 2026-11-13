@@ -258,6 +258,14 @@
 	header Content-Security-Policy-Report-Only "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; media-src 'self'; connect-src 'self'; frame-ancestors 'self'; base-uri 'self'; form-action 'self'"
 }
 
+# The launch-offer request pages ONLY (/request-access/ and /request-access/confirm/, in every language; P32). The request page loads Cloudflare Turnstile (bot protection), which needs its script, its challenge
+# frame and its verification calls from challenges.cloudflare.com: that ONE origin is added to script-src, frame-src and connect-src here and NOWHERE else (the global static_csp above is unchanged, so no other page may
+# load anything from Cloudflare). Everything the page itself talks to is the same origin: connect-src 'self' covers the three Control Plane routes of the intake (/wp-json/aicc/v1/access-requests, /status, /confirm), and
+# form-action 'self' / frame-ancestors 'self' stay. Report-Only like static_csp (same reason: the Next export inlines scripts, so 'unsafe-inline' stays until nonces/hashes exist); enforce both together later.
+(static_csp_request) {
+	header Content-Security-Policy-Report-Only "default-src 'self'; script-src 'self' 'unsafe-inline' https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; media-src 'self'; connect-src 'self' https://challenges.cloudflare.com; frame-src https://challenges.cloudflare.com; frame-ancestors 'self'; base-uri 'self'; form-action 'self'"
+}
+
 # The one place that talks to WordPress. `wp_proxy` is a SELECTOR: the committed text imports the FASTCGI form (stage, production). The macOS rehearsal generator can switch it to the
 # reverse_proxy form (scripts/lib/edge-render.mjs `upstream: "proxy"`) when no php-fpm is available; both forms are modelled and tested, and the Linux target is fastcgi.
 # An upstream 5xx (PHP fatal, WordPress critical error page) is NOT shown to the visitor: it becomes the edge's own 5xx page with the same status (handle_errors below).
@@ -427,6 +435,22 @@
 		Cache-Control "private, no-store, max-age=0"
 	}
 	import wp_body_cap
+	import wp_proxy {args[:]}
+}
+
+# The launch-offer request intake (P32): /wp-json/aicc/v1/access-requests and its /status and /confirm routes, and NOTHING else. Same as to_wordpress_nocache (never cached, same header stripping: PHP reads
+# the client address from REMOTE_ADDR, a forged X-Forwarded-For never reaches it, and `trusted_proxies` stays unset, so the Control Plane's per-IP throttles see the real client) but with a 4 KB body cap instead of 2 MB:
+# the contract's body is at most 2 KB (a Turnstile token alone can be 1.5 KB, so 4 KB leaves room for the cap to be raised to 4096 in the contract), so anything bigger is refused at the edge with 413 before PHP runs.
+# EDGE REQUIREMENT, NOT IMPLEMENTED HERE: a per-client-IP rate limit for this path. Stock Caddy has no rate-limit module and this repository builds none (no xcaddy build, no plugin pin), so the only limits today are the Control Plane's
+# own (IP bucket, per-e-mail, per-origin, global circuit breaker) and fail2ban on the access log; if the owner wants an edge limit it needs a Caddy build with a rate-limit module and a reviewed change of this snippet.
+(to_wordpress_intake) {
+	header {
+		defer
+		Cache-Control "private, no-store, max-age=0"
+	}
+	request_body {
+		max_size 4KB
+	}
 	import wp_proxy {args[:]}
 }
 
@@ -922,6 +946,10 @@ www.copilt.org {
 		import static_csp
 		import to_static
 	}
+	@wp_intake path_regexp wp_intake (?i)^/wp-json/aicc/v1/access-requests(?:/.*)?$
+	handle @wp_intake {
+		import to_wordpress_intake
+	}
 	@wp_machine path_regexp wp_machine ^/(?:wp-json|wp-admin|wc-api|wc-ajax)(?:/.*)?$|^/(?:wp-login\.php|wp-cron\.php|xmlrpc\.php)$
 	handle @wp_machine {
 		import to_wordpress_nocache
@@ -953,6 +981,12 @@ www.copilt.org {
 	@wp_pages path_regexp wp_pages ^(/(?:he|es|ru))?/(?:pricing|privacy|terms|refund-policy|data-processing-addendum|accessibility|cart|checkout|my-account|product-category|shop)(?:/.*)?$|^(/(?:he|es|ru))?/product/.+$
 	handle @wp_pages {
 		import to_wordpress
+	}
+	@request_access path_regexp request_access ^(/(?:he|es|ru))?/request-access(?:/.*)?$
+	handle @request_access {
+		header Cache-Control "public, max-age=0, must-revalidate"
+		import static_csp_request
+		import to_static
 	}
 	handle {
 		header Cache-Control "public, max-age=0, must-revalidate"
@@ -1057,6 +1091,10 @@ www.copilt.org:{$AICC_OPERATOR_PORT:8443} {
 		import static_csp
 		import to_static
 	}
+	@wp_intake path_regexp wp_intake (?i)^/wp-json/aicc/v1/access-requests(?:/.*)?$
+	handle @wp_intake {
+		import to_wordpress_intake env AICC_EDGE_LISTENER operator
+	}
 	@wp_machine path_regexp wp_machine ^/(?:wp-json|wp-admin|wc-api|wc-ajax)(?:/.*)?$|^/(?:wp-login\.php|wp-cron\.php|xmlrpc\.php)$
 	handle @wp_machine {
 		import to_wordpress_nocache env AICC_EDGE_LISTENER operator
@@ -1088,6 +1126,12 @@ www.copilt.org:{$AICC_OPERATOR_PORT:8443} {
 	@wp_pages path_regexp wp_pages ^(/(?:he|es|ru))?/(?:pricing|privacy|terms|refund-policy|data-processing-addendum|accessibility|cart|checkout|my-account|product-category|shop)(?:/.*)?$|^(/(?:he|es|ru))?/product/.+$
 	handle @wp_pages {
 		import to_wordpress env AICC_EDGE_LISTENER operator
+	}
+	@request_access path_regexp request_access ^(/(?:he|es|ru))?/request-access(?:/.*)?$
+	handle @request_access {
+		header Cache-Control "public, max-age=0, must-revalidate"
+		import static_csp_request
+		import to_static
 	}
 	handle {
 		header Cache-Control "public, max-age=0, must-revalidate"
