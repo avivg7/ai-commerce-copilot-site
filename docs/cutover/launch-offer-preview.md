@@ -20,7 +20,7 @@ Remove `out/` and `.next/` between builds. The mail provider value is only a nam
 ## Run the checks
 
 ```
-node scripts/test-launch-offer.mjs --off $OUT/off --announce $OUT/announce --open $OUT/open --verify $OUT/verify [--base <export of 011c6f6>]
+node scripts/test-launch-offer.mjs --off $OUT/off --announce $OUT/announce --open $OUT/open --verify $OUT/verify [--base <export of the base commit 5907dea, built from the same checkout path and dist directory name>]
 node scripts/test-request-form.mjs --open $OUT/open --verify $OUT/verify
 node scripts/test-launch-offer-browser.mjs --announce $OUT/announce --open $OUT/open --off $OUT/off --shots $OUT/shots [--expired $OUT/expired-open]
 node scripts/ea-check.mjs --out $OUT/open --expect open --compare-off $OUT/off      # also --expect announce / off, --strike

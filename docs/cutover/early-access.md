@@ -6,13 +6,13 @@ Written for: the owner and the operator. NAMING (P32): the public name is "launc
 
 Status: **built and tested locally; OFF by default; nothing deployed, nothing published.** This section wins over older wording below where they differ (sections 2 to 8 still describe the time logic, the extension and the removal plan, which are unchanged).
 
-**Name.** The public name is **launch offer** in all four languages (`offerName` in `src/i18n/ea/*.ts`: Launch offer, הצעת השקה, Oferta de lanzamiento, Предложение к запуску). The Terms and Privacy pages still say "Early Access"; the explanation names that link once (`section.terms`) and the privacy notice string `common.eaNotice` (a legal string, not edited here) keeps the old word. No other surface uses it, and `ea:check` and `test:launch-offer` enforce that.
+**Name.** The public name is **launch offer** in all four languages (`offerName` in `src/i18n/ea/*.ts`: Launch offer, הצעת השקה, Oferta de lanzamiento, Предложение к запуску). The Terms and Privacy pages still say "Early Access"; the explanation names that link once (`section.terms`). No other surface uses it, and `ea:check` and `test:launch-offer` enforce that.
 
 **One switch, four values** (`NEXT_PUBLIC_AICC_EARLY_ACCESS`, exact words only, build time):
 
 | Value | What the export is |
 |---|---|
-| unset / anything else (OFF) | the site as before, byte-equivalent to the base commit (proof: `npm run test:launch-offer -- ... --base <export of 011c6f6>`: 398 files, 0 different after normalising the build id) |
+| unset / anything else (OFF) | the site as before, byte-equivalent to the base commit (proof: `npm run test:launch-offer -- ... --base <export of the base commit 5907dea built from THE SAME checkout path and dist directory name>`: 397 files, 0 different after normalising the build id; Next/webpack module ids depend on the build path, so a build from another path differs only in six app chunks and their hashes: compare those with the evidence tools `compare-exports.mjs --relaxed` and `chunk-equivalence.py`) |
 | `verify` | the OFF site plus eight **unlisted** request pages (below); no campaign text, bar, button or link anywhere. Purpose: verify the live destination BEFORE any button is public |
 | `announce` | the offer, the end instant, the regular prices and the terms are shown; every request control is a plain, non-clickable status "Free access requests open soon" (no link, nothing to click); no page says the offer is open; no request page exists |
 | `open` | the same, with "Request Free Access" buttons (Hero, header, plan cards, closing band) leading to `/request-access/` in the page language (cards add `?plan=`); the request pages exist |
