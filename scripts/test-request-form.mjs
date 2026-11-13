@@ -23,7 +23,8 @@ const pre = (l) => (l === "en" ? "" : `/${l}`);
 // the server vocabulary that must never reach the screen
 const LEAK = /rate_limited|invalid_request|verification_failed|invalid_or_expired|"status"|received|verified|too_large|unsupported|forbidden|Retry-After|ft\.\d|mock-turnstile-token/i;
 
-const mock = await startMock({ dir: OPEN });
+const PBASE = Number(process.env.AICC_TEST_PORT_BASE || 0); // P35: optional fixed port range for the local mocks (else ephemeral)
+const mock = await startMock({ dir: OPEN, port: PBASE });
 const browser = await launch();
 const TS_ORIGIN = "https://challenges.cloudflare.com";
 
@@ -327,7 +328,7 @@ console.log("== confirm page: fragment token, click to confirm, one neutral text
 // ── 7. verify build: the banner on the form and the confirm page ──
 if (VERIFY) {
   console.log("== verify build");
-  const m2 = await startMock({ dir: VERIFY });
+  const m2 = await startMock({ dir: VERIFY, port: PBASE ? PBASE + 1 : 0 });
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
   for (const l of LOCALES) for (const kind of ["request-access/", "request-access/confirm/"]) {
     const page = await ctx.newPage();

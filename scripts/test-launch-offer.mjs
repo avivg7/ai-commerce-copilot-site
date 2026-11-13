@@ -2,7 +2,7 @@
 //   node scripts/test-launch-offer.mjs --off <dir> --announce <dir> --open <dir> --verify <dir> [--base <dir>] [--off-subswitches <dir>] [--limited <dir>] [--announce-limited <dir>]
 //     (--off-subswitches: an export built with the switch unset but NEXT_PUBLIC_AICC_EA_LIMITED_NOTE=on and NEXT_PUBLIC_AICC_EA_STRIKE=on: it must equal --base too;
 //      --limited: an OPEN export built with NEXT_PUBLIC_AICC_EA_LIMITED_NOTE=on (P34); --announce-limited: the same switch in an ANNOUNCE build, which must not show it)
-//     (exports built with NEXT_PUBLIC_AICC_EARLY_ACCESS unset | announce | open | verify; --base: an export of the base commit 011c6f6 built with the switch unset)
+//     (exports built with NEXT_PUBLIC_AICC_EARLY_ACCESS unset | announce | open | verify; --base: an export of the base commit 5907dea (P35 line) built with the switch unset, from the same checkout path and dist directory name (module ids depend on the path))
 // It proves:
 //  * OFF: no trace of the campaign; no request page; byte-equivalent to the base commit (after normalising the build id) when --base is given;
 //  * ANNOUNCE: the offer, the end instant and the regular prices are stated; every request control is a plain, non-clickable status; no request button wording and no link to /request-access/ exists anywhere;
@@ -152,11 +152,11 @@ function campaignChecks(mode, root) {
       // the short bar is backed by the exact end instant on every card and in the explanation (the owner's bar wording names no clock)
       check(th.includes(norm(mode === "open" ? e.bar.live : e.bar.announce)) && norm(e.plan.ends).includes("22:00 UTC") && tp.includes(norm(e.plan.ends)) && tp.includes(norm(mode === "open" ? e.section.lead : e.section.leadAnnounce)), `${l}: the short bar "${mode === "open" ? e.bar.live : e.bar.announce}" is backed by the exact instant on the cards ("${e.plan.ends}") and in the explanation`);
     }
-    // the old name only in the one linking sentence and the privacy notice
-    const allowedOld = [e.section.terms, D[l].common.eaNotice].map((x) => norm(x.replace(/\{contactEmail\}/g, "").replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")));
+    // the old name only in the one linking sentence (P35: the P22 common.eaNotice legal string is not part of this line, so it is no longer an allowed exception)
+    const allowedOld = [e.section.terms].map((x) => norm(x.replace(/\{contactEmail\}/g, "").replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")));
     const stripAllowed = (t) => { let x = t; for (const a of allowedOld) { const head = a.slice(0, 40); const i = x.indexOf(head); if (i >= 0) x = x.slice(0, i) + " " + x.slice(i + a.length); } return x; };
     const oldHits = [th, tp].map(stripAllowed).filter((t) => OLD[l].test(t));
-    check(oldHits.length === 0, `${l}: the older name "Early Access" appears nowhere but the one linking sentence and the privacy notice`);
+    check(oldHits.length === 0, `${l}: the older name "Early Access" appears nowhere but the one linking sentence`);
     check(!/Early Access (is|are) (now )?(open|live|available)|now open/i.test(th + tp), `${l}: no page claims the launch offer or Early Access is open`);
     // Hero actions
     if (mode === "announce") {
