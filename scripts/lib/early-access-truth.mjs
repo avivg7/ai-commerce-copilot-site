@@ -165,7 +165,7 @@ export function eaDisclosureProblems(locale, ea, step = 0) {
     // P34: the support lines under the Hero buttons and under the plan cards name the card (the "approved stores" and exact-instant facts stay on every card, required above)
     ["hero.support.noCard", need.card], ["pricing.support.noCard", need.card],
   ]) if (!has(path, tok)) problems.push(`${locale}: ea.${path} must contain "${tok}"`);
-  // one name for the offer, on every surface and in every language (P32): the surfaces below carry it, and the older name "Early Access" appears ONLY in the one sentence that links the offer to the legal pages (section.terms)
+  // one name for the offer, on every surface and in every language (P32): the surfaces below carry it, and the older name "Early Access" appears NOWHERE in the pack (P35 review M2: the live Terms and Privacy pages do not use it, so no sentence may claim that they do)
   {
     const NAME = { en: /launch[- ]offer/i, he: /הצעת ה?השקה/, es: /oferta de lanzamiento/i, ru: /предложени\S* в[\s\u00a0]честь[\s\u00a0]запуска/i }[locale];
     const OLD = { en: /early access/i, he: /גישה מוקדמת/, es: /acceso anticipado/i, ru: /ранн\S* доступ/i }[locale];
@@ -173,9 +173,8 @@ export function eaDisclosureProblems(locale, ea, step = 0) {
       const v = nb(p.split(".").reduce((a, k) => a?.[k], ea) || "");
       if (!NAME.test(v)) problems.push(`${locale}: ea.${p} must name the offer (${NAME})`);
     }
-    for (const [p, v] of walk(ea, "", [])) if (p !== "section.terms" && OLD.test(nb(v))) problems.push(`${locale}: ea.${p} uses the older name "Early Access" (only section.terms may name it, once, to link the offer to the legal pages)`);
-    if (!OLD.test(nb(ea.section.terms))) problems.push(`${locale}: ea.section.terms must name the older legal-page name once (${OLD})`);
-    if (!NAME.test(nb(ea.offerName || ""))) problems.push(`${locale}: ea.offerName must be the offer's name (${NAME})`);
+    for (const [p, v] of walk(ea, "", [])) if (OLD.test(nb(v))) problems.push(`${locale}: ea.${p} uses the older name "Early Access" (no sentence may claim that the Terms or Privacy pages call the offer that: they do not, until the legal publication)`);
+        if (!NAME.test(nb(ea.offerName || ""))) problems.push(`${locale}: ea.offerName must be the offer's name (${NAME})`);
   }
   // the owner's rules for the cards and the pages: never a "from 2027" promise, no percentage or "save" wording is possible in these files (EA_EXTRA_RULES), and no hero fine print key exists any more
   for (const [p, v] of walk(ea, "", [])) if (/\b(from|in|starting|beginning)\s+(january\s+)?2027\b|\bfrom\s+2027\b/i.test(v)) problems.push(`${locale}: ea.${p} promises something "from 2027" (no paid continuation is promised)`);

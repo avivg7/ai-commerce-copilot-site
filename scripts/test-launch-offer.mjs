@@ -153,10 +153,10 @@ function campaignChecks(mode, root) {
       check(th.includes(norm(mode === "open" ? e.bar.live : e.bar.announce)) && norm(e.plan.ends).includes("22:00 UTC") && tp.includes(norm(e.plan.ends)) && tp.includes(norm(mode === "open" ? e.section.lead : e.section.leadAnnounce)), `${l}: the short bar "${mode === "open" ? e.bar.live : e.bar.announce}" is backed by the exact instant on the cards ("${e.plan.ends}") and in the explanation`);
     }
     // the old name only in the one linking sentence (P35: the P22 common.eaNotice legal string is not part of this line, so it is no longer an allowed exception)
-    const allowedOld = [e.section.terms].map((x) => norm(x.replace(/\{contactEmail\}/g, "").replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")));
+    const allowedOld = [].map((x) => norm(x.replace(/\{contactEmail\}/g, "").replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")));
     const stripAllowed = (t) => { let x = t; for (const a of allowedOld) { const head = a.slice(0, 40); const i = x.indexOf(head); if (i >= 0) x = x.slice(0, i) + " " + x.slice(i + a.length); } return x; };
     const oldHits = [th, tp].map(stripAllowed).filter((t) => OLD[l].test(t));
-    check(oldHits.length === 0, `${l}: the older name "Early Access" appears nowhere but the one linking sentence`);
+    check(oldHits.length === 0, `${l}: the older name "Early Access" appears nowhere (P35: not even in a linking sentence)`);
     check(!/Early Access (is|are) (now )?(open|live|available)|now open/i.test(th + tp), `${l}: no page claims the launch offer or Early Access is open`);
     // Hero actions
     if (mode === "announce") {
@@ -286,7 +286,7 @@ console.log("\n== VERIFY: the ordinary site plus unlisted request pages");
 console.log("\n== negative controls");
 {
   check(requestWords.some((w) => nb(`<p>${w}</p>`).includes(w)) && /Request Free Access/.test(requestWords.join("|")), "the request-button probe sees the real wording");
-  check(BANNED.test("Save 20% today") && BANNED.test("Regular price, was $99") && BANNED.test("Starting from 2027") && !BANNED.test("Regular price: $99 a year"), "the banned-wording probe catches save / % / was / from 2027 and passes the plain price line");
+  check(BANNED.test("Save 20% today") && BANNED.test("Regular price, was $99") && BANNED.test("Starting from 2027") && !BANNED.test("Planned regular price: $99 a year"), "the banned-wording probe catches save / % / was / from 2027 and passes the plain price line");
   const fakeOff = path.join(process.env.TMPDIR || "/tmp", `p32-neg-${process.pid}`);
   fs.mkdirSync(fakeOff, { recursive: true });
   fs.writeFileSync(path.join(fakeOff, "a.html"), "<p>x</p>");

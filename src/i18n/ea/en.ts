@@ -1,8 +1,7 @@
 /**
  * Launch offer campaign copy, English (the contract for ea/he.ts, ea/es.ts, ea/ru.ts).
  * Published only by a campaign build (src/lib/earlyAccess.ts, NEXT_PUBLIC_AICC_EARLY_ACCESS=announce|open); a normal build never renders any of it.
- * P32: the public name of the offer is "launch offer" in all four languages. The formal Terms and Privacy pages still use the older word "Early Access"; the explanation names that
- * link once (`section.terms`) and nowhere else, so a visitor never meets three names for one thing. The word "trial" stays banned by the copy rules.
+ * P32: the public name of the offer is "launch offer" in all four languages. The older word "Early Access" is NOT used anywhere in this pack (P35: the live Terms and Privacy pages do not use it; ea:check enforces it); so a visitor never meets three names for one thing. The word "trial" stays banned by the copy rules.
  *
  * WHY THIS FILE IS SEPARATE: `npm run copy:check` bans "free", "no credit card" and similar claims everywhere because no free flow existed. The owner has since decided one
  * (free until 31 December 2026, fixed end, an explicit renewal decision to continue). Those words are now allowed ONLY in this folder, under a stricter rule set
@@ -70,7 +69,7 @@ export const eaEn = {
     // review P34-5: "planned", because no plan has ever been sold or charged at this price
     regular: "Planned regular price, not charged during the launch offer:",
     // Used when the strike-through is off (the default): the regular price as a plain fact, never as a reduction.
-    planned: "Regular price:",
+    planned: "Planned regular price:",
     regularPer: "a year",
     approved: "Available to approved stores",
     noCard: "No credit card required",
@@ -130,7 +129,7 @@ export const eaEn = {
       b: "Your AICC data is kept under the retention rules on the Data & Trust page, not deleted on that day.",
       c: "Continued service after that date needs your explicit renewal decision. Paid purchases are not open yet, and we explain the steps before anything can be bought. There is no automatic conversion and no automatic charge.",
     },
-    terms: "The launch offer is the same product as the paid plans (our Terms and Privacy pages call it Early Access). The end date, the absence of automatic charges and the data handling described on this page are part of this offer; the Terms, Privacy and Refund pages describe the rest. Requests close 24 hours before the offer ends. Questions? Write to {contactEmail}.",
+    terms: "The launch offer is the same product as the paid plans. The end date, the absence of automatic charges and the data handling described on this page are part of this offer; the Terms, Privacy and Refund pages describe the rest. Requests close 24 hours before the offer ends. Questions? Write to {contactEmail}.",
     notice: "When you ask for the launch offer we use your e-mail address, store address and chosen plan to review the request and contact you about it. Giving them is voluntary; without them we cannot review your request. The operator named in the [privacy policy](route:privacy) keeps them as described there. You can ask to see or correct them.",
     // Permanent, in EVERY build (the initial terms already say an extension is possible, so an extension is never a silent change): same text in the terms line and in the questions.
     reservation: "If we extend the launch offer, we do it for every launch-offer store at once and we say so on this page before the end date; where we can, we also tell you by e-mail. An extension never starts a charge. We cannot extend a single store's access.",

@@ -309,7 +309,7 @@ if (out) {
     const idx = await loadTs("src/i18n/index.ts");
     const pr = html("pricing/index.html");
     if (args.includes("--strike")) check(/<s>/.test(pr) && /Planned regular price, not charged during the launch offer:/.test(pr), "pricing: strike-through ON: the plan price is struck through and labelled");
-    else check(!/<s>|<del>/.test(pr.slice(pr.indexOf("<main"), pr.indexOf("</main>"))) && /Regular price:/.test(pr), "pricing: strike-through OFF (default): no struck-through price; the price is labelled 'Regular price:'");
+    else check(!/<s>|<del>/.test(pr.slice(pr.indexOf("<main"), pr.indexOf("</main>"))) && /Planned regular price:/.test(pr), "pricing: strike-through OFF (default): no struck-through price; the price is labelled 'Planned regular price:'");
     // P34: "Limited availability" exists only in a build made with NEXT_PUBLIC_AICC_EA_LIMITED_NOTE=on (--limited), on the Home hero of every language, and nowhere else
     {
       const { EA_LIMITED_PHRASE } = await import("./lib/early-access-truth.mjs");

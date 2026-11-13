@@ -3,7 +3,7 @@ import type { DeepPartial } from "../merge";
 
 /**
  * Launch offer campaign copy, Spanish (neutral international Spanish, formal "usted"). Machine draft of the same standing as the rest of es.ts: not reviewed by native speakers (see common.draft.translation).
- * The public name is "oferta de lanzamiento" (launch offer), used the same way on every surface; the formal Terms and Privacy pages call it "Acceso anticipado" (named once, in section.terms).
+ * The public name is "oferta de lanzamiento" (launch offer), used the same way on every surface; the older name "Early Access" is not used anywhere in this pack (P35: the live Terms and Privacy pages do not use it).
  * Dates are written as Spanish writes them and are legal facts, checked by scripts/lib/early-access-truth.mjs: 31 de diciembre de 2026 (last free day), 1 de enero de 2027 (access ends).
  * The time zone is always stated as "hora de Israel" (Israel time) and the UTC instant as "22:00 UTC".
  * Terms reused from the existing pack: tienda, escaparate, proceso de pago, Datos y confianza, conservación, plan, pedidos, plugin, garantía de devolución del dinero de 14 días.
@@ -52,7 +52,7 @@ export const eaEs: DeepPartial<EaDict> = {
     pill: "Oferta de lanzamiento",
     free: "Gratis hasta el {lastDay}, hora de Israel",
     regular: "Precio regular previsto, no se cobra durante la oferta de lanzamiento:",
-    planned: "Precio regular:",
+    planned: "Precio regular previsto:",
     regularPer: "al año",
     approved: "Disponible para tiendas aprobadas",
     noCard: "No hace falta tarjeta de crédito",
@@ -71,7 +71,7 @@ export const eaEs: DeepPartial<EaDict> = {
     support: {
       noCard: "Sin tarjeta de crédito durante la oferta de lanzamiento",
       manual: "Solo renovación manual",
-      regular: "Los precios regulares se aplicarán cuando abran las compras",
+      regular: "Los precios regulares se aplican cuando abren las compras",
     },
   },
   section: {
@@ -109,7 +109,7 @@ export const eaEs: DeepPartial<EaDict> = {
       b: "Sus datos de AICC se conservan según las reglas de conservación de la página Datos y confianza, y no se eliminan ese día.",
       c: "Para seguir con el servicio después de esa fecha hace falta una decisión explícita de renovar por su parte. Las compras de pago aún no están abiertas, y le explicaremos los pasos antes de que pueda comprarse nada. No hay conversión automática ni cobro automático.",
     },
-    terms: "La oferta de lanzamiento es el mismo producto que los planes de pago (nuestras páginas de términos y privacidad la llaman Acceso anticipado). La fecha de fin, la ausencia de cobros automáticos y el tratamiento de los datos descritos en esta página forman parte de esta oferta; las páginas de términos, privacidad y reembolso describen el resto. Las solicitudes se cierran 24 horas antes de que termine la oferta. ¿Preguntas? Escriba a {contactEmail}.",
+    terms: "La oferta de lanzamiento es el mismo producto que los planes de pago. La fecha de fin, la ausencia de cobros automáticos y el tratamiento de los datos descritos en esta página forman parte de esta oferta; las páginas de términos, privacidad y reembolso describen el resto. Las solicitudes se cierran 24 horas antes de que termine la oferta. ¿Preguntas? Escriba a {contactEmail}.",
     notice: "Cuando solicita la oferta de lanzamiento usamos su correo electrónico, la dirección de la tienda y el plan elegido para revisar la solicitud y ponernos en contacto con usted. Facilitarlos es voluntario; sin ellos no podemos revisar su solicitud. El responsable indicado en la [política de privacidad](route:privacy) los conserva como se describe allí. Puede pedir verlos o corregirlos.",
     reservation: "Si ampliamos la oferta de lanzamiento, lo hacemos para todas las tiendas de la oferta de lanzamiento a la vez y lo anunciamos en esta página antes de la fecha de fin; cuando podemos, también se lo comunicamos por correo electrónico. Una ampliación nunca inicia un cobro. No podemos ampliar el acceso de una sola tienda.",
     faqTitle: "Preguntas sobre la oferta de lanzamiento",

@@ -4,7 +4,7 @@ import type { DeepPartial } from "../merge";
 /**
  * Launch offer campaign copy, Hebrew (RTL). Machine draft of the same standing as the rest of he.ts: not reviewed by native speakers (see common.draft.translation).
  * Conventions as he.ts: plural-formal address (אתם / שלכם), no nikud, maqaf U+05BE between a Hebrew prefix and a Latin word.
- * The public name is "הצעת השקה" (launch offer), used the same way on every surface; the formal Terms and Privacy pages call it "גישה מוקדמת" (named once, in section.terms).
+ * The public name is "הצעת השקה" (launch offer), used the same way on every surface; the older name "Early Access" is not used anywhere in this pack (P35: the live Terms and Privacy pages do not use it).
  * Dates are written as Hebrew writes them and are legal facts, checked by scripts/lib/early-access-truth.mjs: 31 בדצמבר 2026 (last free day), 1 בינואר 2027 (access ends).
  * The time zone is always stated as "שעון ישראל" (Israel time) and the UTC instant as "22:00 UTC".
  * Terms reused from the existing pack: חנות, חזית החנות, קופה, נתונים ואמון, שמירת נתונים, תוכנית, הזמנות, תוסף, ערבות להחזר כספי תוך 14 ימים.
@@ -53,7 +53,7 @@ export const eaHe: DeepPartial<EaDict> = {
     pill: "הצעת השקה",
     free: "חינם עד {lastDay}, שעון ישראל",
     regular: "מחיר רגיל מתוכנן, לא מחויב במהלך הצעת ההשקה:",
-    planned: "מחיר רגיל:",
+    planned: "מחיר רגיל מתוכנן:",
     regularPer: "לשנה",
     approved: "זמין לחנויות מאושרות",
     noCard: "אין צורך בכרטיס אשראי",
@@ -72,7 +72,7 @@ export const eaHe: DeepPartial<EaDict> = {
     support: {
       noCard: "אין צורך בכרטיס אשראי במהלך הצעת ההשקה",
       manual: "חידוש ידני בלבד",
-      regular: "המחיר הרגיל יחול כשהרכישות ייפתחו",
+      regular: "המחיר הרגיל חל כשהרכישות ייפתחו",
     },
   },
   section: {
@@ -110,7 +110,7 @@ export const eaHe: DeepPartial<EaDict> = {
       b: "נתוני ה־AICC שלכם נשמרים לפי כללי שמירת הנתונים בעמוד נתונים ואמון, ולא נמחקים באותו יום.",
       c: "המשך השירות אחרי התאריך הזה דורש החלטת חידוש מפורשת מצדכם. רכישות בתשלום עדיין אינן פתוחות, ונסביר את השלבים לפני שאפשר יהיה לרכוש משהו. אין המרה אוטומטית ואין חיוב אוטומטי.",
     },
-    terms: "הצעת ההשקה היא אותו מוצר כמו התוכניות בתשלום (בעמודי תנאי השימוש והפרטיות היא נקראת גישה מוקדמת). תאריך הסיום, היעדר חיובים אוטומטיים וטיפול הנתונים המתואר בעמוד הזה הם חלק מההצעה הזאת; עמודי תנאי השימוש, הפרטיות וההחזרים מתארים את השאר. בקשות נסגרות 24 שעות לפני שהצעת ההשקה מסתיימת. שאלות? כתבו אל {contactEmail}.",
+    terms: "הצעת ההשקה היא אותו מוצר כמו התוכניות בתשלום. תאריך הסיום, היעדר חיובים אוטומטיים וטיפול הנתונים המתואר בעמוד הזה הם חלק מההצעה הזאת; עמודי תנאי השימוש, הפרטיות וההחזרים מתארים את השאר. בקשות נסגרות 24 שעות לפני שהצעת ההשקה מסתיימת. שאלות? כתבו אל {contactEmail}.",
     notice: "כשאתם מבקשים את הצעת ההשקה אנחנו משתמשים בכתובת האימייל, בכתובת החנות ובתוכנית שבחרתם כדי לבדוק את הבקשה וליצור איתכם קשר לגביה. מסירתם נתונה לבחירתכם; בלעדיהם אי אפשר לבדוק את הבקשה. המפעיל הנזכר ב[מדיניות הפרטיות](route:privacy) שומר אותם כמתואר שם. אפשר לבקש לראות או לתקן אותם.",
     reservation: "אם נאריך את הצעת ההשקה, נעשה זאת לכל חנויות הצעת ההשקה בבת אחת ונודיע על כך בעמוד הזה לפני תאריך הסיום; במקום שנוכל, נעדכן אתכם גם באימייל. ההארכה לעולם לא מתחילה חיוב. איננו יכולים להאריך את הגישה של חנות בודדת.",
     faqTitle: "שאלות על הצעת ההשקה",
