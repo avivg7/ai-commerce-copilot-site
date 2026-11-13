@@ -4,6 +4,7 @@ import type { Locale } from "@/i18n/config";
 import type { Dictionary } from "@/i18n";
 import { txProps } from "@/i18n";
 import { SS_ON, startUrl } from "@/lib/selfService";
+import { EA_ON } from "@/lib/earlyAccess";
 import type { PlanId } from "@/lib/site";
 
 /**
@@ -40,7 +41,7 @@ export function SsTerms({ locale, t }: { locale: Locale; t: Dictionary }) {
   const s = t.ea.ss;
   const items = [s.terms.store, s.terms.payment, s.terms.paid, s.terms.state];
   return (
-    <div className="aicc-eaterms" id="free-trial" data-ea-live data-ss-terms style={{ gridColumn: "1 / -1", marginBlockStart: "0.5rem" }} {...A(locale, "ea.ss.terms")}>
+    <div className="aicc-eaterms" id="free-trial" {...(EA_ON ? { "data-ea-live": "" } : {})} data-ss-terms style={{ gridColumn: "1 / -1", marginBlockStart: "0.5rem" }} {...A(locale, "ea.ss.terms")}>
       <h3 className="aicc-eah3">{s.terms.label}</h3>
       <ul className="aicc-lines">
         {items.map((x) => (<li key={x}><Check size={20} aria-hidden="true" /><span>{x}</span></li>))}

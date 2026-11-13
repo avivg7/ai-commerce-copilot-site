@@ -42,12 +42,15 @@ async function view(cell, route, w, { h = 900, locale = "en", signup = "open", d
   const ctx = await browser.newContext({ viewport: { width: w, height: h }, reducedMotion: "reduce", locale: locale === "he" ? "he-IL" : "en-US" });
   await ctx.clock.setFixedTime(new Date(now));
   if (cookie) await ctx.addCookies([{ name: "aicc_probe", value: "1", url: m.url }]);
-  const nav = [];
+  const nav = [], errors = [];
   if (block) await ctx.route("https://www.copilt.org/**", (r) => { nav.push(r.request().url()); return r.fulfill({ contentType: "text/html", body: "<html><body>control plane (intercepted)</body></html>" }); });
   const page = await ctx.newPage();
+  // hydration or script errors (a failed status request is a network line, not a script error: those console lines are ignored)
+  page.on("pageerror", (e) => errors.push(String(e.message || e)));
+  page.on("console", (c) => { if (c.type() === "error" && !/Failed to load resource|net::ERR|status of (4|5)\d\d/i.test(c.text())) errors.push(c.text()); });
   await page.goto(m.url + route, { waitUntil: "load" });
   await page.waitForTimeout(400);
-  return { ctx, page, m, nav };
+  return { ctx, page, m, nav, errors };
 }
 /** The card controls of a page: for each plan card, the link (if any), the plain-text state (if any), and every button-looking element. */
 const cards = (page) => page.evaluate(() => [...document.querySelectorAll("article.aicc-plan")].map((a) => {
@@ -87,8 +90,9 @@ const EXPECT = {
   http404: ["link", L.start], http500: ["link", L.start], badjson: ["link", L.start], drop: ["link", L.start], inconsistent: ["link", L.start], unknown: ["link", L.start],
 };
 for (const [answer, [kind, label]] of Object.entries(EXPECT)) {
-  const { ctx, page, m } = await view("announce", "/pricing/", 1440, { signup: answer, cookie: true });
+  const { ctx, page, m, errors } = await view("announce", "/pricing/", 1440, { signup: answer, cookie: true });
   const cs = await cards(page);
+  check(errors.length === 0, `answer ${answer}: no hydration or script error on the page (${errors.slice(0, 1).join("; ") || "none"})`);
   const calls = m.calls("/signup/status", "GET");
   check(calls.length === 1 && calls[0].headers.cookie === "", `answer ${answer}: exactly ONE status request, no cookie sent (credentials omitted)`);
   if (kind === "link") check(cs.every((c, i) => c.link.length === 1 && c.st.length === 0 && c.link[0].text.startsWith(label) && c.link[0].href === startOf("en", PLANS[i].id)), `answer ${answer}: every card keeps a real link to /start/?plan= labelled "${label}"${["open", "waitlist"].includes(answer) ? "" : " (the static button: the answer is not a valid one)"}`);

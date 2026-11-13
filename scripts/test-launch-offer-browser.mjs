@@ -245,8 +245,9 @@ if (LIMITED) {
   for (const l of LOCALES) for (const w of [1440, 390]) {
     const { ctx, page } = await view("limited", `${pre(l)}/`, w, { locale: l, h: w === 390 ? 844 : 900 });
     const t = await page.evaluate(() => [...document.querySelectorAll('[data-ea-support="hero"] li')].filter((e) => e.getClientRects().length).map((e) => ({ t: e.innerText.trim(), b: e.getBoundingClientRect().bottom, icon: !!e.querySelector("svg") })));
-    check(t.length === 3 && t[2].icon === false && t[0].icon && t[1].icon, `${l} @${w}: "Limited availability" is a plain chip without a check icon (review P34-5)`);
-    const want = [D[l].ea.hero.support.noCard, D[l].ea.hero.support.manual, D[l].ea.hero.support.limited].map(norm);
+    // P36 (UX spec): the three checks are no card, no automatic renewal, approval required; "Limited availability" is the fourth item, a plain chip (this block still expected the P34 three-line list until P37)
+    check(t.length === 4 && t[3].icon === false && t[0].icon && t[1].icon && t[2].icon, `${l} @${w}: "Limited availability" is a plain chip without a check icon (review P34-5)`);
+    const want = [D[l].ea.hero.support.noCard, D[l].ea.hero.support.noAuto, D[l].ea.hero.support.approval, D[l].ea.hero.support.limited].map(norm);
     check(JSON.stringify(t.map((x) => norm(x.t))) === JSON.stringify(want) && t.every((x) => !/\d/.test(x.t)), `${l} @${w}: the Hero support lines are "${want.join('", "')}" (no number, no countdown)`);
     if (l === "en" || l === "he") { const file = path.join(SHOTS, `limited-${l}-home-${w}.png`); await page.screenshot({ path: file }); }
     await ctx.close();

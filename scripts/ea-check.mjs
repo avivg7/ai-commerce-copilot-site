@@ -310,10 +310,27 @@ if (out) {
       else check(!h.includes("data-ea-closed") && !h.includes("data-ea-intake") && !h.includes("data-ea-closed-only"), `${p}: no requests-closed mechanism in this build (only an extended OPEN build has one)`);
     }
   }
+  let ssBuildAudited = false;
   if (expect !== "off") {
     const text = (rel) => nbn(html(rel).replace(/<script[\s\S]*?<\/script>/g, " ").replace(/<style[\s\S]*?<\/style>/g, " ").replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " ").replace(/&#x27;|&#39;/g, "'").replace(/&quot;/g, '"').replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/\s+/g, " "));
     const idx = await loadTs("src/i18n/index.ts");
     const pr = html("pricing/index.html");
+    // P37: a SELF-SERVICE build (<html data-ss-mode="on">) replaces the launch-offer request copy (bar, support lines, explanation, FAQ) with the free-trial block `ss`; its pages are audited against THAT pack here
+    // (the full matrix is scripts/test-launch-offer.mjs --ss-*), and the launch-offer sentence checks below do not apply to it.
+    if (/<html[^>]*\sdata-ss-mode="on"/.test(html("index.html"))) {
+      console.log("   (self-service build: the free-trial pack is audited instead of the launch-offer sentences)");
+      for (const l of LOCALES) {
+        const pre = l === "en" ? "" : `${l}/`, mine = idx.getEaDictionary(l, step);
+        const tp = text(`${pre}pricing/index.html`), th = text(`${pre}index.html`);
+        check(th.includes(nbn(mine.ss.bar.text)) && tp.includes(nbn(mine.ss.bar.text)), `${l}: the bar says the free trial ('ss.bar.text' of step ${step})`);
+        const missing = ["terms.label", "terms.store", "terms.payment", "terms.paid", "terms.state", "plan.trial", "plan.noPayment"].filter((k) => !tp.includes(nbn(k.split(".").reduce((a, x) => a[x], mine.ss))));
+        check(missing.length === 0, `${l}: Pricing says the free-trial terms and the card allowance${missing.length ? " -> missing " + missing.join(", ") : ""}`);
+        for (const other of [0, 1, 2].filter((o) => o !== step)) { let n = 0; for (const k of ["last", "until"]) { const lit = REQUIRED_DATES[l][other][k]; n += (tp.match(new RegExp(`(?<![0-9])${lit.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`, "g")) || []).length; } check(n === 0, `${l}: Pricing carries no date of step ${other}`); }
+      }
+      check(!/aicc-eanote|data-ea-support="plans"/.test(pr.replace(/<(style|script)[\s\S]*?<\/\1>/g, "")) && !/Request Free Access/i.test(text("pricing/index.html")), "self-service: no launch-offer status note and no request button on Pricing");
+      ssBuildAudited = true;
+    }
+    if (!ssBuildAudited) {
     if (args.includes("--strike")) check(/<s>/.test(pr) && /Planned regular price, not charged during the launch offer:/.test(pr), "pricing: strike-through ON: the plan price is struck through and labelled");
     else check(!/<s>|<del>/.test(pr.slice(pr.indexOf("<main"), pr.indexOf("</main>"))) && /Planned regular price:/.test(pr), "pricing: strike-through OFF (default): no struck-through price; the price is labelled 'Planned regular price:'");
     // P34: "Limited availability" exists only in a build made with NEXT_PUBLIC_AICC_EA_LIMITED_NOTE=on (--limited), on the Home hero of every language, and nowhere else
@@ -356,6 +373,7 @@ if (out) {
           check(stale.length === 0, `${rel}: no sentence of the initial-end copy is rendered in an extended build${stale.length ? " -> " + stale.map(([p]) => p).join(", ") : ""}`);
         }
       }
+    }
     }
   }
 }
