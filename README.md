@@ -41,6 +41,7 @@ npm run serve:out -- --port 3011   # serve out/ locally (add --prefix /ai-commer
 | `AICC_EA_EXTENSION_CP_VERIFIED`, `AICC_EA_HTML_NOCACHE_CONFIRMED` | unset | Read only by `launch:check`; for an EXTENDED build each clears its own blocker when it is exactly `yes`: the Control Plane `wp aicc-ea extend --step=<n>` has been run and verified; HTML is served with a short or no-cache `Cache-Control`, the caches were purged and `npm run ea:live` passed. `docs/cutover/early-access.md` section 7b |
 | `AICC_CP_DIR` | the Control Plane worktree p21-early-access | Where `ea:check` reads the Control Plane constants (`CUTOFF_UNIX`, `EXTENSION_STEPS`). The comparison FAILS when the file is missing; `AICC_CP_DIR=none` disables it explicitly (not for a release run) |
 | `NEXT_PUBLIC_AICC_EA_STRIKE` | unset (OFF) | `on` shows each plan price struck through next to the free offer (label "Regular price, not charged during Early Access"); the default shows it plainly as "Planned price when purchases open". Counsel must approve the strike-through first (no plan has been sold at that price); `launch:check` reports it as a blocker |
+| `NEXT_PUBLIC_AICC_EA_LIMITED_NOTE`, `AICC_EA_LIMITED_ATTESTED` | unset (OFF) | P34: `on` adds the short line "Limited availability" under the Hero buttons of a campaign build (nothing in an OFF build). `launch:check` blocks it until `AICC_EA_LIMITED_ATTESTED=<owner reference>` attests that every request is reviewed, approvals are capped and the offer can close at any time. See `docs/launch/p34-launch-offer-polish.md` |
 
 ## Checks
 
