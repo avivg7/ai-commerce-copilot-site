@@ -54,7 +54,7 @@ SH = [p for p in files(".sh")]
 # files that are sourced libraries or test runners (tests deliberately continue after a failing command, so they use `set -uo pipefail`)
 EXEMPT_SET_E = {
     "lib/common.sh": "sourced library", "lib/ip-guard.sh": "sourced library", "lib/ssh-session.sh": "sourced library", "lib/release-common.sh": "sourced library", "lib/backup-common.sh": "sourced library", "lib/t.sh": "sourced test harness",
-    "test_provision.sh": "test runner (must continue after a failing assertion)", "test_p37_wpconfig.sh": "test runner (must continue after a failing assertion)", "test_promote.sh": "test runner (must continue after a failing assertion)", "test_plugin_publish.sh": "test runner (must continue after a failing assertion)", "test_release.sh": "test runner (must continue after a failing assertion)",
+    "test_provision.sh": "test runner (must continue after a failing assertion)", "test_p37_wpconfig.sh": "test runner (must continue after a failing assertion)", "test_p38_brevo.sh": "test runner (must continue after a failing assertion)", "test_p38_key.sh": "test runner (must continue after a failing assertion)", "test_promote.sh": "test runner (must continue after a failing assertion)", "test_plugin_publish.sh": "test runner (must continue after a failing assertion)", "test_release.sh": "test runner (must continue after a failing assertion)",
     "test_backup.sh": "test runner (must continue after a failing assertion)", "test_lint.sh": "test runner (must continue after a failing assertion)", "run-all.sh": "runs every suite even when one fails", "test_ubuntu.sh": "test runner (cleans up through a trap, must report every failure)", "ubuntu-inner.sh": "test runner inside the container (must continue after a failing assertion)",
     "verify-droplet.sh": "pre-existing stage-1 script (read-only verifier that reports every failure), not changed here",
     "aicc-security-updates.sh": "records the exit code of each step (list refresh, upgrade) and ALWAYS writes the status file for AICC Ops, then fails the unit itself; -e would skip the status write",
@@ -202,7 +202,14 @@ else:
         tt = read(tp)
         oexpect(tt.count("// @@OWNER_FACTS_BEGIN@@\n") == 1 and tt.count("// @@OWNER_FACTS_END@@\n") == 1 and tt.count("\n@@OWNER_FACTS@@\n") == 1, "provision/wp-config.%s.template.php" % env_, "exactly one owner-facts region (begin marker, @@OWNER_FACTS@@, end marker)")
         tcode = re.sub(r"(?m)^\s*//.*$", "", re.sub(r"(?s)/\*.*?\*/", "", tt))
+        # P38: the existing SMTP region (between its markers) defines the SMTP layer's own sender; those three names are owner facts of the Brevo API region, so outside THAT region they must not appear in the template either
+        tt_nosmtp = re.sub(r"(?s)// @@MAIL_BEGIN@@\n.*?// @@MAIL_END@@\n", "", tt)
+        tcode_nosmtp = re.sub(r"(?m)^\s*//.*$", "", re.sub(r"(?s)/\*.*?\*/", "", tt_nosmtp))
         for k in of_keys:
+            if k in ("AICC_MAIL_FROM_ADDRESS", "AICC_MAIL_FROM_NAME", "AICC_MAIL_REPLY_TO"):
+                if ("'%s'" % k) in tcode_nosmtp:
+                    fail(tp, "%s must not be defined in the template outside the SMTP region: the Brevo API region renders it from the owner facts" % k)
+                continue
             if k != "AICC_EXTRA_ACCESSIBLE_HOSTS" and ("'%s'" % k) in tcode:
                 fail(tp, "%s must not be defined in the template: it comes only from the owner-facts file (a second define would warn and the template could hide an unset value)" % k)
     rwt = read(os.path.join(INFRA, "provision/render-wp-config.sh"))
