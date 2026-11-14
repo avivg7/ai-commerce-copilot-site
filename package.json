@@ -52,6 +52,7 @@
     "brand:check": "node scripts/build-brand-strings.mjs --check && node scripts/build-brand-manifest.mjs --check",
     "brand:sync": "node scripts/sync-brand-kit.mjs",
     "test:brand-sync": "node scripts/test-sync-brand-kit.mjs",
+    "test:kit-a11y": "node scripts/test-kit-a11y.mjs",
     "brand:publish": "node scripts/publish-brand-assets.mjs",
     "prebuild": "node scripts/publish-brand-assets.mjs",
     "predev": "node scripts/publish-brand-assets.mjs",

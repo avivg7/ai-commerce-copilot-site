@@ -878,7 +878,7 @@ for (const [w, h] of [[390, 844], [360, 740]]) {
   await p.click("[data-aicc-pause]");
   await p.waitForTimeout(300);
   const a = await p.evaluate(() => ({ paused: document.querySelector(".aicc-reco-hero video").paused, pressed: document.querySelector("[data-aicc-pause]").getAttribute("aria-pressed"), label: document.querySelector("[data-aicc-pause]").getAttribute("aria-label"), chips: [...new Set([...document.querySelectorAll(".aicc-reco-hero__chip")].map((c) => getComputedStyle(c).animationPlayState))].join() }));
-  check(`hero: Pause stops the video and the floating chips and becomes "${a.label}"`, a.paused && a.pressed === "true" && a.label === "Play animation" && a.chips === "paused", JSON.stringify(a));
+  check(`hero: Pause stops the video and the floating chips; the button keeps its name "${a.label}" and flips aria-pressed (Production 22, F8)`, a.paused && a.pressed === "true" && a.label === "Pause animation" && a.chips === "paused", JSON.stringify(a));
   await p.click("[data-aicc-pause]");
   check("hero: Play resumes (pressed state clears)", (await p.$eval("[data-aicc-pause]", (e) => e.getAttribute("aria-pressed"))) === "false");
   await ctx.close();
