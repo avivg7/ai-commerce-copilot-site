@@ -31,12 +31,28 @@ ORDER = [
     "AICC_EXTRA_ACCESSIBLE_HOSTS",
     "AICC_TURNSTILE_ENABLED",
     "AICC_LM_PLUGIN_SIGNING_PUBKEYS",
+    # ---- P37 self-service region (production only; everything below renders into the delimited P37 region, never into the owner-facts region; ABSENT = OFF = today's render byte for byte) ----
+    "AICC_TRIAL_SELF_SERVICE_ENABLED", "AICC_TRIAL_SELF_SERVICE_CAP",
+    "AICC_TURNSTILE_SITE_KEY",
+    "AICC_NOTIFY_ENABLED", "AICC_NOTIFY_EXCLUDED_CUSTOMERS",
+    "AICC_MAIL_MAX_PER_HOUR", "AICC_MAIL_MAX_PER_DAY",
+    "AICC_FUNNEL_COUNTERS_ENABLED", "AICC_FUNNEL_ALLOWED_ORIGINS",
+    "AICC_OWNER_OPS_SECTION_ENABLED", "AICC_MILESTONE_SYNC_SCHEDULED",
+    "AICC_PLAN_CHANGE_ENABLED", "AICC_PAY_RECONCILE_ENABLED", "AICC_PRIVACY_REQUESTS_ENABLED",
 ]
+P37_KEYS = ORDER[ORDER.index("AICC_TRIAL_SELF_SERVICE_ENABLED"):]
 FREE_TEXT = {  # key -> maximum length in characters
     "AICC_LEGAL_ENTITY_NAME": 200, "AICC_LEGAL_ENTITY_ADDRESS": 300, "AICC_LEGAL_GOVERNING_LAW": 300, "AICC_LEGAL_JURISDICTION": 300,
     "AICC_LEGAL_PAYMENT_PROCESSOR": 80, "AICC_LEGAL_VAT_DETAILS": 300,
 }
-TRUE_ONLY = ("AICC_LEGAL_REVIEW_APPROVED", "AICC_STRUCTURED_DATA_OFFERS", "AICC_LM_PAYMENT_GATE_STRICT", "AICC_COMMERCE_OPEN", "AICC_TURNSTILE_ENABLED")
+TRUE_ONLY = ("AICC_LEGAL_REVIEW_APPROVED", "AICC_STRUCTURED_DATA_OFFERS", "AICC_LM_PAYMENT_GATE_STRICT", "AICC_COMMERCE_OPEN", "AICC_TURNSTILE_ENABLED",
+             "AICC_TRIAL_SELF_SERVICE_ENABLED", "AICC_NOTIFY_ENABLED", "AICC_FUNNEL_COUNTERS_ENABLED", "AICC_OWNER_OPS_SECTION_ENABLED", "AICC_MILESTONE_SYNC_SCHEDULED",
+             "AICC_PLAN_CHANGE_ENABLED", "AICC_PAY_RECONCILE_ENABLED", "AICC_PRIVACY_REQUESTS_ENABLED")
+# P37 self-service (see docs/cutover/p37-self-service-wp-config.md). Every P37 switch is TRUE_ONLY: exactly `true` or unset, and UNSET is the OFF state the Control Plane reads (each constant is "exactly boolean true or off"), so the
+# default render defines none of them and is byte-identical to the render before the region existed. The Control Plane reads these constants and nothing else; the names below were verified against the Control Plane source (class files named
+# in the doc). Secrets are never owner facts: the Turnstile SECRET and the SMTP credentials stay in root-placed files (AICC_TURNSTILE_SECRET_FILE / AICC_MAIL_SECRETS_FILE); only PUBLIC values (site key, origins, caps, user ids) are facts.
+P37_APPROVED_CAPS = ("25", "50", "100")          # AICC_LM_Trial::APPROVED_CAP_STAGES
+TURNSTILE_SECRET_FILE = "/etc/aicc-mail/turnstile.secret"   # fixed host path of the secret FILE (same 0750 root:aicc-cp directory as smtp.env, which PHP can already traverse); the renderer defines the constant only when the file passed every check
 # AICC_TURNSTILE_ENABLED (P32 launch offer): exactly `true` or unset (unset = today's render, byte for byte). It renders NO define(): its only effect is that the renderer appends the ONE host the Control Plane's server-side
 # Turnstile verification POSTs to (https://challenges.cloudflare.com/turnstile/v0/siteverify) to WP_ACCESSIBLE_HOSTS, because production blocks every other outbound request (WP_HTTP_BLOCK_EXTERNAL). Without it the
 # request form can never pass its bot check. The Turnstile site key and secret are Control Plane constants and secret files, never owner facts of this file.
@@ -202,7 +218,7 @@ def parse_gateway_list(key, v):
 LABEL = re.compile(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?")
 
 
-def parse_hosts(key, v, env):
+def parse_hosts(key, v, env, allow_own=False):
     """Plain, lower-case DNS host names only: no wildcard, no IP literal, no port, no path, no internal-looking name, none of this project's own hosts."""
     out = []
     for raw in v.split(","):
@@ -220,7 +236,7 @@ def parse_hosts(key, v, env):
             raise OwnerFactsError("%s: '%s' looks like an IP address: only host names are allowed" % (key, h))
         if labels[-1] in BAD_TLDS:
             raise OwnerFactsError("%s: '%s' is a local or reserved name" % (key, h))
-        if h == "copilt.org" or h.endswith(".copilt.org"):
+        if not allow_own and (h == "copilt.org" or h.endswith(".copilt.org")):
             raise OwnerFactsError("%s: '%s' is one of this project's own hosts: the API host is built in and nothing else of ours may be added" % (key, h))
         if h in out:
             raise OwnerFactsError("%s lists '%s' twice" % (key, h))
@@ -228,6 +244,81 @@ def parse_hosts(key, v, env):
     if len(out) > MAX_EXTRA_HOSTS:
         raise OwnerFactsError("%s lists more than %d hosts" % (key, MAX_EXTRA_HOSTS))
     return out
+
+
+# ---- P37 validators -------------------------------------------------------------------------------------------------------------------------------------
+def _p37_cap(key, v):
+    if v not in P37_APPROVED_CAPS:
+        raise OwnerFactsError("%s must be exactly 25, 50 or 100 (the owner-approved stages; the Control Plane writes the constant as an integer and reads any other value as 'not an approved stage')" % key)
+    return v
+
+
+def _p37_site_key(key, v):
+    if not re.fullmatch(r"[A-Za-z0-9_-]{8,64}", v):  # AICC_LM_EA_Requests_Turnstile::site_key(): the PUBLIC site key; the SECRET never goes here (it lives in the secret file)
+        raise OwnerFactsError("%s must be the PUBLIC Turnstile site key: 8-64 characters from [A-Za-z0-9_-]. The Turnstile SECRET key is never an owner fact: it goes into %s (hidden prompt, see docs/cutover/p37-self-service-wp-config.md)" % (key, TURNSTILE_SECRET_FILE))
+    return v
+
+
+def _p37_mail_cap(key, v):
+    hi = {"AICC_MAIL_MAX_PER_HOUR": 2000, "AICC_MAIL_MAX_PER_DAY": 20000}[key]
+    if not re.fullmatch(r"[1-9][0-9]{0,4}", v) or int(v) > hi:
+        raise OwnerFactsError("%s must be a whole number from 1 to %d (the relay plan's own limit is the real ceiling; the Control Plane defaults are 60 per hour and 300 per day)" % (key, hi))
+    return str(int(v))
+
+
+def parse_origins(key, v):
+    """Exact https origins (scheme + host [+ port]) as the Control Plane's AICC_LM_Funnel::allowed_origins() reads them: no path, no trailing slash, no wildcard, no IP literal, no local name; lower case; at most 5."""
+    out = []
+    for raw in v.split(","):
+        o = raw.strip().lower()
+        if not o:
+            raise OwnerFactsError("%s has an empty entry (stray comma)" % key)
+        m = re.fullmatch(r"https://([a-z0-9.-]+)(?::([0-9]{1,5}))?", o)
+        if not m:
+            raise OwnerFactsError("%s: '%s' is not an exact https origin (https://host or https://host:port: no path, no trailing slash, no wildcard, no http)" % (key, o[:80]))
+        host = parse_hosts(key, m.group(1), "production", allow_own=True)[0]
+        if m.group(2) is not None and not (1 <= int(m.group(2)) <= 65535):
+            raise OwnerFactsError("%s: '%s' has a port outside 1-65535" % (key, o))
+        canon = "https://" + host + ((":" + str(int(m.group(2)))) if m.group(2) else "")
+        if canon in out:
+            raise OwnerFactsError("%s lists '%s' twice" % (key, canon))
+        out.append(canon)
+    if len(out) > 5:
+        raise OwnerFactsError("%s lists more than 5 origins" % key)
+    return out
+
+
+def parse_user_ids(key, v):
+    """AICC_NOTIFY_EXCLUDED_CUSTOMERS: positive WordPress user ids only. The Control Plane also accepts a 64-hex address hash; this renderer does not write one into a config file (a hash of an e-mail address is personal data: mark the account with the user meta instead)."""
+    out = []
+    for raw in v.split(","):
+        t = raw.strip()
+        if re.fullmatch(r"[0-9a-fA-F]{64}", t):
+            raise OwnerFactsError("%s: an address hash is not accepted here (it is personal data in a config file). List the numeric user id, or mark the account with the user meta _aicc_lm_synthetic_test_account" % key)
+        if not re.fullmatch(r"[1-9][0-9]{0,9}", t):
+            raise OwnerFactsError("%s: '%s' is not a positive user id (comma separated whole numbers, e.g. 2,7)" % (key, t[:40]))
+        if int(t) in out:
+            raise OwnerFactsError("%s lists user %s twice" % (key, t))
+        out.append(int(t))
+    if len(out) > 50:
+        raise OwnerFactsError("%s lists more than 50 users" % key)
+    return out
+
+
+def check_turnstile_secret_file(path):
+    """The Turnstile secret FILE, judged exactly as the Control Plane reads it (AICC_LM_EA_Requests_Turnstile::read_secret): regular file, not a symlink, 8-1024 bytes, first line trimmed = 8-256 printable ASCII characters (0x21-0x7E).
+    Returns the secret for an IN-MEMORY comparison only; callers must never print or write it. Permissions and ownership are checked by the renderer (stat), not here."""
+    if os.path.islink(path) or not os.path.isfile(path):
+        raise OwnerFactsError("%s is not a regular file" % path)
+    size = os.path.getsize(path)
+    if size < 8 or size > 1024:
+        raise OwnerFactsError("%s must be 8-1024 bytes (is %d)" % (path, size))
+    with open(path, "rb") as f:
+        raw = f.read()
+    first = re.split(rb"\r\n|\n|\r", raw)[0].strip(b" \t\n\r\0\x0b")
+    if not re.fullmatch(rb"[\x21-\x7e]{8,256}", first):
+        raise OwnerFactsError("%s: the first line must be the Turnstile secret key, 8-256 printable characters with no space (the Control Plane would read it as 'no secret')" % path)
+    return first.decode("ascii")
 
 
 def validate_value(key, value, env):
@@ -249,6 +340,16 @@ def validate_value(key, value, env):
         return _kid(key, v)
     if key in TRUE_ONLY:
         return _true(key, v)
+    if key == "AICC_TRIAL_SELF_SERVICE_CAP":
+        return _p37_cap(key, v)
+    if key == "AICC_TURNSTILE_SITE_KEY":
+        return _p37_site_key(key, v)
+    if key in ("AICC_MAIL_MAX_PER_HOUR", "AICC_MAIL_MAX_PER_DAY"):
+        return _p37_mail_cap(key, v)
+    if key == "AICC_FUNNEL_ALLOWED_ORIGINS":
+        return ",".join(parse_origins(key, v))
+    if key == "AICC_NOTIFY_EXCLUDED_CUSTOMERS":
+        return ",".join(str(i) for i in parse_user_ids(key, v))
     if key == "AICC_LEGAL_SUBPROCESSORS_VERIFIED":
         return _date(key, v)
     if key == "AICC_LM_PAID_GATEWAYS":
@@ -340,13 +441,79 @@ def php_str(v):
     return "'" + v.replace("\\", "\\\\").replace("'", "\\'") + "'"
 
 
-def require_render_ready(facts, env):
+def require_render_ready(facts, env, ctx=None):
     """Cross-key rules that decide whether a file may be RENDERED (not whether it may be edited: the keys can be set in any order). Production 17 (COM-GATE-01 / residual R-3):
     a production render that lists paid gateways but names no evidence provider would produce gateways without `require_provider_evidence`, i.e. the payment gate would accept a
     completed order on the strength of a transaction id alone. That is the unverified path COM-GATE-01 forbids, so the render (and `check`, which the renderer and the promotion
     preflight both run first) refuses it. Dark production (no gateways listed) stays renderable."""
+    problems = p37_problems(facts, env, ctx)
+    if problems:
+        raise OwnerFactsError("P37 self-service region REFUSED (nothing is rendered): " + " | ".join(problems))
     if env == "production" and "AICC_LM_PAID_GATEWAYS" in facts and "AICC_LM_PAYMENT_EVIDENCE_PROVIDER" not in facts:
         raise OwnerFactsError("AICC_LM_PAID_GATEWAYS is set but AICC_LM_PAYMENT_EVIDENCE_PROVIDER is not: a production render would accept a paid order on a transaction id alone, with no provider-side verification (COM-GATE-01). Set the provider (e.g. `set AICC_LM_PAYMENT_EVIDENCE_PROVIDER <tag>`) or `unset AICC_LM_PAID_GATEWAYS`. There is no override.")
+
+
+def p37_problems(facts, env, ctx=None):
+    """The P37 readiness rules, mirroring the Control Plane's own (AICC_LM_Signup::blockers(): `turnstile` = site key + secret file, `mail` = the SMTP layer active, `turnstile_blocked` = challenges.cloudflare.com not on WP_ACCESSIBLE_HOSTS;
+    AICC_LM_Trial::mode(): the switch AND a cap >= 1, else `off`) plus the notification rule (self-service promises verification, welcome, reminder and expiry mail: they exist only with AICC_NOTIFY_ENABLED and a working transport).
+    Returns a list of plain-language problems (empty = consistent). `ctx` is the HOST STATE the renderer verified: {"mail": bool (a safe /etc/aicc-mail/smtp.env exists), "turnstile_secret": bool (a safe Turnstile secret file exists)};
+    None = host state unknown (a bare `check` or the promotion preflight): only the rules decidable from the facts alone run, the renderer repeats the check with the host state before it writes anything."""
+    if env != "production" or not any(k in facts for k in P37_KEYS):
+        return []
+    out = []
+    on = "AICC_TRIAL_SELF_SERVICE_ENABLED" in facts
+    notify = "AICC_NOTIFY_ENABLED" in facts
+    if on:
+        if "AICC_TRIAL_SELF_SERVICE_CAP" not in facts:
+            out.append("AICC_TRIAL_SELF_SERVICE_ENABLED needs AICC_TRIAL_SELF_SERVICE_CAP (25, 50 or 100): without a cap the Control Plane reads the switch as OFF, so the file would claim an open signup that is closed")
+        if "AICC_TURNSTILE_SITE_KEY" not in facts:
+            out.append("AICC_TRIAL_SELF_SERVICE_ENABLED needs AICC_TURNSTILE_SITE_KEY: without the Turnstile site key the signup reads `paused` (blocker `turnstile`)")
+        if "AICC_TURNSTILE_ENABLED" not in facts:
+            out.append("AICC_TRIAL_SELF_SERVICE_ENABLED needs AICC_TURNSTILE_ENABLED=true: it puts challenges.cloudflare.com on WP_ACCESSIBLE_HOSTS; without it every submission is refused by WordPress itself (blocker `turnstile_blocked`)")
+        if not notify:
+            out.append("AICC_TRIAL_SELF_SERVICE_ENABLED needs AICC_NOTIFY_ENABLED=true: a self-service trial is promised its welcome, reminder and expiry mail, and the notification center that sends them is OFF while that switch is unset")
+        if ctx is not None and not ctx.get("turnstile_secret"):
+            out.append("AICC_TRIAL_SELF_SERVICE_ENABLED needs the Turnstile secret file (%s, root:aicc-cp 0640): none was found, so the signup would read `paused` (blocker `turnstile`)" % TURNSTILE_SECRET_FILE)
+        if ctx is not None and not ctx.get("mail"):
+            out.append("AICC_TRIAL_SELF_SERVICE_ENABLED needs the mail layer: no safe /etc/aicc-mail/smtp.env, so AICC_MAIL_ENABLED is not rendered and the signup reads `paused` (blocker `mail`)")
+    if notify and ctx is not None and not ctx.get("mail"):
+        out.append("AICC_NOTIFY_ENABLED needs the mail layer (a safe /etc/aicc-mail/smtp.env): the notification center would queue mail it can never send")
+    if "AICC_TURNSTILE_SITE_KEY" in facts and ctx is not None and not ctx.get("turnstile_secret"):
+        out.append("AICC_TURNSTILE_SITE_KEY is set but there is no Turnstile secret file (%s): the widget would render and every verification would fail" % TURNSTILE_SECRET_FILE)
+    caps = [k for k in ("AICC_MAIL_MAX_PER_HOUR", "AICC_MAIL_MAX_PER_DAY") if k in facts]
+    if caps and ctx is not None and not ctx.get("mail"):
+        out.append("%s set but the mail layer is not enabled (no safe /etc/aicc-mail/smtp.env): a cap for a layer that is not running" % " and ".join(caps))
+    if len(caps) == 2 and int(facts["AICC_MAIL_MAX_PER_HOUR"]) > int(facts["AICC_MAIL_MAX_PER_DAY"]):
+        out.append("AICC_MAIL_MAX_PER_HOUR (%s) is above AICC_MAIL_MAX_PER_DAY (%s): the day cap would always stop the hour first" % (facts["AICC_MAIL_MAX_PER_HOUR"], facts["AICC_MAIL_MAX_PER_DAY"]))
+    if "AICC_FUNNEL_ALLOWED_ORIGINS" in facts and "AICC_FUNNEL_COUNTERS_ENABLED" not in facts:
+        out.append("AICC_FUNNEL_ALLOWED_ORIGINS is set but AICC_FUNNEL_COUNTERS_ENABLED is not: the origins would configure a route that does not exist")
+    if "AICC_PAY_RECONCILE_ENABLED" in facts and "AICC_LM_PAID_GATEWAYS" not in facts:
+        out.append("AICC_PAY_RECONCILE_ENABLED needs a configured payment path (AICC_LM_PAID_GATEWAYS): the reconcile runs only when a provider is enabled, and no provider is configured while Commerce is closed")
+    return out
+
+
+def render_p37(facts, env, ctx):
+    """The lines of the delimited P37 region (each define on ONE line), in a fixed order; [] when nothing is set (the region is then removed from the output and the render equals the pre-P37 render byte for byte).
+    The Turnstile SECRET FILE constant is defined here only when the renderer verified the file (ctx["turnstile_secret"]); the file's content is never read into the output."""
+    if env != "production":
+        return []
+    problems = p37_problems(facts, env, ctx)
+    if problems:
+        raise OwnerFactsError("P37 self-service region REFUSED (nothing is rendered): " + " | ".join(problems))
+    out = []
+    for k in P37_KEYS:
+        if k not in facts:
+            continue
+        v = facts[k]
+        if k in TRUE_ONLY:
+            out.append("define( '%s', true );" % k)
+        elif k in ("AICC_TRIAL_SELF_SERVICE_CAP", "AICC_MAIL_MAX_PER_HOUR", "AICC_MAIL_MAX_PER_DAY"):
+            out.append("define( '%s', %d );" % (k, int(v)))   # an INTEGER literal: the Control Plane reads a string such as "25" as 0
+        else:
+            out.append("define( '%s', %s );" % (k, php_str(v)))
+    if ctx is not None and ctx.get("turnstile_secret"):
+        out.append("define( 'AICC_TURNSTILE_SECRET_FILE', %s );" % php_str(TURNSTILE_SECRET_FILE))
+    return out
 
 
 def render(facts, env):
@@ -354,7 +521,7 @@ def render(facts, env):
     require_render_ready(facts, env)
     out = []
     for k in ORDER:
-        if k not in facts or k in ("AICC_EXTRA_ACCESSIBLE_HOSTS", "AICC_TURNSTILE_ENABLED"):
+        if k not in facts or k in ("AICC_EXTRA_ACCESSIBLE_HOSTS", "AICC_TURNSTILE_ENABLED") or k in P37_KEYS:
             continue
         v = facts[k]
         if k in TRUE_ONLY:
@@ -385,13 +552,21 @@ def render(facts, env):
 def main(argv):
     import argparse
     ap = argparse.ArgumentParser(prog="owner_facts.py")
-    ap.add_argument("cmd", choices=["list", "check", "set", "unset", "keys", "export", "import"])
+    ap.add_argument("cmd", choices=["list", "check", "set", "unset", "keys", "export", "import", "check-turnstile-secret"])
     ap.add_argument("key", nargs="?")
     ap.add_argument("value", nargs="?")
     ap.add_argument("--file", required=True)
     ap.add_argument("--env", required=True, choices=["stage", "production"])
+    ap.add_argument("--context", action="store_true", help="check only: also apply the rules that need the host state (given by --mail-ready and --turnstile-secret-file)")
+    ap.add_argument("--mail-ready", action="store_true")
+    ap.add_argument("--turnstile-secret-file")
     a = ap.parse_args(argv)
     try:
+        if a.cmd == "check-turnstile-secret":
+            # --file is the SECRET FILE here. Prints only a verdict, never a character of the secret.
+            check_turnstile_secret_file(a.file)
+            print("ok: turnstile secret file readable as the Control Plane reads it (content not shown)")
+            return 0
         if a.cmd == "keys":
             print("\n".join(KEYS_FOR[a.env]))
             return 0
@@ -402,7 +577,15 @@ def main(argv):
                     print("%s=%s" % (k, facts[k]))
             return 0
         if a.cmd == "check":
-            require_render_ready(facts, a.env)
+            ctx = None
+            if a.context:
+                ctx = {"mail": bool(a.mail_ready), "turnstile_secret": False}
+                if a.turnstile_secret_file:
+                    sec = check_turnstile_secret_file(a.turnstile_secret_file)
+                    if facts.get("AICC_TURNSTILE_SITE_KEY") == sec:
+                        raise OwnerFactsError("AICC_TURNSTILE_SITE_KEY equals the Turnstile secret: the SECRET was entered as the site key. Nothing is rendered. Unset the fact, and rotate the secret in the Cloudflare dashboard (it has been written into the owner-facts file)")
+                    ctx["turnstile_secret"] = True
+            require_render_ready(facts, a.env, ctx)
             print("ok: %d value(s) valid for %s" % (len(facts), a.env))
             return 0
         if a.cmd == "export":

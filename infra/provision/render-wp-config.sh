@@ -14,6 +14,11 @@
 #   root-only file /etc/aicc/owner-facts.env (mode 0600 or 0400, a regular file, root:root; default = next to the secrets directory, --owner-facts-file for tests). The renderer NEVER writes that file, so a re-render can never
 #   lose a value; `aicc-owner-facts set|unset|list` edits it. Every value is validated (lib/owner_facts.py) and written as an escaped PHP literal. A file that exists but is unsafe or invalid makes the renderer REFUSE (nothing
 #   written); an absent file or an empty one renders exactly what an unset file always rendered, byte for byte. Production allows every key; staging only the proof key id, the paid-gateway list, the strict-mode switch and the extra host.
+# P37 SELF-SERVICE (production only; docs/cutover/p37-self-service-wp-config.md): the delimited P37 region of the template (Trial signup switch + cap, Turnstile site key, notification switch and excluded accounts, mail caps, funnel counters, owner-dashboard
+#   section, milestone sync, plan change, payment reconcile, privacy requests) is rendered from the SAME owner-facts file (new keys, listed by `aicc-owner-facts keys`) and from ONE secret FILE, /etc/aicc-mail/turnstile.secret (regular file, not a symlink, root:aicc-cp,
+#   mode 0640 or 0440, in the 0750 root:aicc-cp directory of smtp.env, first line = the Turnstile secret: the renderer checks it exactly as the Control Plane reads it and NEVER prints, copies or renders it; only the constant AICC_TURNSTILE_SECRET_FILE with its path is
+#   written). With no P37 fact and no such file the region is removed and the render is byte-identical to the render before P37. An unsafe/invalid secret file, or an inconsistent set (self-service without cap, Turnstile key + file, Turnstile host, mail enabled and
+#   the notification switch; notification switch or mail caps without mail; ...) REFUSES: nothing is written. Staging never carries the region.
 # Inputs : /etc/aicc/secrets/db-cp.pass (written by create-staging-db.sh); /etc/aicc/secrets/wp-secrets.env (created here once: eight WordPress keys/salts and
 #          two staging-only plugin secrets, 256-bit random each; reused on later runs so sessions survive a re-render; --force-salts regenerates them).
 # Output : /srv/aicc/shared/wp-config.php, mode 0640, owner root:aicc-cp (PHP-FPM and WP-CLI run as aicc-cp: read, cannot modify), `php -l` checked (when php is installed; otherwise a warning) before it replaces
@@ -89,6 +94,20 @@ sys.exit(0 if set(keys) == {"AICC_MAIL_SMTP_USER", "AICC_MAIL_SMTP_PASS"} else 1
 PY
   MAIL=1
 fi
+# TURNSTILE SECRET FILE (P37, production only): absent = no AICC_TURNSTILE_SECRET_FILE constant. Present = must be a regular file, not a symlink, mode 0640 or 0440 (the PHP user, group aicc-cp, must be able to READ it: 0600 root would not be
+# readable by PHP, so it is refused instead of silently failing at the first signup; nothing for "other", nothing writable by the group), owned root:aicc-cp in the 0750 root:aicc-cp directory, and readable as the Control Plane reads it. Its content is never printed.
+TS=0; TSF="$MAILDIR/turnstile.secret"
+if [ "$ENVN" = production ] && { [ -e "$TSF" ] || [ -L "$TSF" ]; }; then
+  [ -f "$TSF" ] && [ ! -L "$TSF" ] || die "REFUSED: $TSF is not a regular file"
+  tsm="$(stat -c '%a' "$TSF" 2>/dev/null || stat -f '%Lp' "$TSF")"
+  case "$tsm" in 640|440) ;; *) die "REFUSED: $TSF must be mode 0640 (is $tsm): readable by root and the aicc-cp group (PHP) only, writable by nobody but root" ;; esac
+  if [ "${AICC_TEST_HARNESS:-0}" != "1" ]; then
+    [ "$(stat -c '%U:%G %a' "$MAILDIR")" = "root:aicc-cp 750" ] || die "REFUSED: $MAILDIR must be root:aicc-cp 0750 (is $(stat -c '%U:%G %a' "$MAILDIR"))"
+    [ "$(stat -c '%U:%G' "$TSF")" = "root:aicc-cp" ] || die "REFUSED: $TSF must be owned root:aicc-cp (is $(stat -c '%U:%G' "$TSF")): PHP-FPM runs as aicc-cp and must not be able to change it"
+  fi
+  tsout="$(python3 -I "$SELF/lib/owner_facts.py" check-turnstile-secret --file "$TSF" --env "$ENVN" 2>&1)" || die "REFUSED: ${tsout#REFUSED: }"
+  TS=1
+fi
 # OWNER FACTS: absent = nothing to render. Present = must be a regular root-owned file nobody else can read or write, and every value must validate for this environment.
 NFACTS=0
 if [ -e "$OWNERF" ] || [ -L "$OWNERF" ]; then
@@ -98,7 +117,8 @@ if [ -e "$OWNERF" ] || [ -L "$OWNERF" ]; then
   if [ "${AICC_TEST_HARNESS:-0}" != "1" ]; then
     [ "$(stat -c '%U:%G' "$OWNERF")" = "root:root" ] || die "REFUSED: $OWNERF must be owned root:root (is $(stat -c '%U:%G' "$OWNERF")): PHP-FPM runs as aicc-cp and must not be able to change what the renderer will write"
   fi
-  ofout="$(python3 -I "$SELF/lib/owner_facts.py" check --file "$OWNERF" --env "$ENVN" 2>&1)" || die "REFUSED: $OWNERF: ${ofout#REFUSED: }"
+  ofctx=(); [ "$ENVN" != production ] || { ofctx=(--context); [ "$MAIL" != 1 ] || ofctx+=(--mail-ready); [ "$TS" != 1 ] || ofctx+=(--turnstile-secret-file "$TSF"); }
+  ofout="$(python3 -I "$SELF/lib/owner_facts.py" check --file "$OWNERF" --env "$ENVN" ${ofctx[@]+"${ofctx[@]}"} 2>&1)" || die "REFUSED: $OWNERF: ${ofout#REFUSED: }"
   NFACTS="$(printf '%s' "$ofout" | sed -n 's/^ok: \([0-9][0-9]*\) value.*/\1/p')"
 fi
 # AICC_COMMERCE_OPEN (pre-commercial truth round): commerce opens only with a working account flow, and every account e-mail (password link, receipt) needs the mail layer. Production without a safe smtp.env sends NO mail, so
@@ -106,7 +126,7 @@ fi
 if [ "$ENVN" = production ] && [ "$NFACTS" -gt 0 ] && python3 -I "$SELF/lib/owner_facts.py" list --file "$OWNERF" --env "$ENVN" 2>/dev/null | grep -q '^AICC_COMMERCE_OPEN='; then
   [ "$MAIL" = 1 ] || die "REFUSED: $OWNERF sets AICC_COMMERCE_OPEN but the mail layer is not enabled (no safe /etc/aicc-mail/smtp.env): customers could not receive their password link or receipt. Place the SMTP credentials first, or \`aicc-owner-facts unset AICC_COMMERCE_OPEN\`."
 fi
-if is_dry; then would "render $OUT from $TEMPLATE using secrets in $SECRETS (mode 0640 $OWNER); mail layer $([ "$MAIL" = 1 ] && echo ENABLED || echo "not enabled"); owner facts: ${NFACTS} value(s) from $OWNERF; nothing printed"; exit 0; fi
+if is_dry; then would "render $OUT from $TEMPLATE using secrets in $SECRETS (mode 0640 $OWNER); mail layer $([ "$MAIL" = 1 ] && echo ENABLED || echo "not enabled"); turnstile secret file $([ "$TS" = 1 ] && echo "valid (constant rendered, content never read into the output)" || echo "absent"); owner facts: ${NFACTS} value(s) from $OWNERF; nothing printed"; exit 0; fi
 if [ "$ENVN" = production ]; then
   for f in entitlement-webhook.secret activation-proof.secret; do
     [ -s "$SECRETS/$f" ] || die "REFUSED: $SECRETS/$f is missing: the OWNER places it (0600); it is never generated for production"
@@ -130,9 +150,9 @@ if [ ! -s "$ENVF" ] || [ "$FORCE_SALTS" = 1 ]; then
 fi
 tmp="$(mktemp "$(dirname "$OUT")/.wpcfg.XXXXXX" 2>/dev/null || mktemp)"
 trap 'rm -f "$tmp"' EXIT
-python3 -I - "$TEMPLATE" "$ENVF" "$SECRETS/db-cp.pass" "$DB" "$DBUSER" "$ENVN" "$SECRETS" "$MAIL" "$OWNERF" "$SELF/lib/owner_facts.py" > "$tmp" <<'PY'
+python3 -I - "$TEMPLATE" "$ENVF" "$SECRETS/db-cp.pass" "$DB" "$DBUSER" "$ENVN" "$SECRETS" "$MAIL" "$OWNERF" "$SELF/lib/owner_facts.py" "$TS" "$TSF" > "$tmp" <<'PY'
 import importlib.util, re, sys
-tpl, envf, passf, db, dbuser, envn, secdir, mail, ownerf, ofpy = sys.argv[1:11]
+tpl, envf, passf, db, dbuser, envn, secdir, mail, ownerf, ofpy, ts, tsf = sys.argv[1:13]
 s = open(tpl).read()
 # the mail region exists only in the production template; it is kept only when the renderer verified the secrets file (MAIL=1)
 if "@@MAIL_BEGIN@@" in s:
@@ -178,6 +198,25 @@ if RB in s:
     s = s[:a] + (body.replace("@@OWNER_FACTS@@\n", "\n".join(region) + "\n") if region else "") + s[b:]
 elif region:
     sys.exit("REFUSED: the template has no owner-facts region but the owner facts file sets values")
+# P37 SELF-SERVICE region (production only): the consistency rules run HERE too with the verified host state, so nothing is written for an inconsistent set. The secret file is read only to compare it, in memory, with the public site key.
+PB, PE = "// @@P37_BEGIN@@\n", "// @@P37_END@@\n"
+if envn != "production":
+    if PB in s: sys.exit("REFUSED: a stage render may not carry the P37 self-service region")
+    p37 = []
+else:
+    try:
+        if ts == "1" and facts.get("AICC_TURNSTILE_SITE_KEY") is not None and of.check_turnstile_secret_file(tsf) == facts["AICC_TURNSTILE_SITE_KEY"]:
+            sys.exit("REFUSED: owner facts: AICC_TURNSTILE_SITE_KEY equals the Turnstile secret (the SECRET was entered as the site key). Nothing is rendered; unset the fact and rotate the secret in the Cloudflare dashboard")
+        p37 = of.render_p37(facts, envn, {"mail": mail == "1", "turnstile_secret": ts == "1"})
+    except of.OwnerFactsError as e:
+        sys.exit("REFUSED: owner facts: %s" % e)
+if PB in s:
+    a = s.index(PB); b = s.index(PE) + len(PE)
+    if s.count(PB) != 1 or s.count(PE) != 1 or b < a or s.count("\n@@P37_SELF_SERVICE@@\n") != 1: sys.exit("REFUSED: the template's P37 region is malformed")
+    body = s[a:b].replace(PB, "").replace(PE, "")
+    s = s[:a] + (body.replace("@@P37_SELF_SERVICE@@\n", "\n".join(p37) + "\n") if p37 else "") + s[b:]
+elif p37:
+    sys.exit("REFUSED: the template has no P37 region but the owner facts / secret file set values")
 if extra_hosts:
     base = {"production": "api.copilt.org", "stage": "stage.copilt.org"}[envn]
     old = "define( 'WP_ACCESSIBLE_HOSTS', '%s' );" % base

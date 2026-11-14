@@ -54,7 +54,7 @@ SH = [p for p in files(".sh")]
 # files that are sourced libraries or test runners (tests deliberately continue after a failing command, so they use `set -uo pipefail`)
 EXEMPT_SET_E = {
     "lib/common.sh": "sourced library", "lib/ip-guard.sh": "sourced library", "lib/ssh-session.sh": "sourced library", "lib/release-common.sh": "sourced library", "lib/backup-common.sh": "sourced library", "lib/t.sh": "sourced test harness",
-    "test_provision.sh": "test runner (must continue after a failing assertion)", "test_promote.sh": "test runner (must continue after a failing assertion)", "test_plugin_publish.sh": "test runner (must continue after a failing assertion)", "test_release.sh": "test runner (must continue after a failing assertion)",
+    "test_provision.sh": "test runner (must continue after a failing assertion)", "test_p37_wpconfig.sh": "test runner (must continue after a failing assertion)", "test_promote.sh": "test runner (must continue after a failing assertion)", "test_plugin_publish.sh": "test runner (must continue after a failing assertion)", "test_release.sh": "test runner (must continue after a failing assertion)",
     "test_backup.sh": "test runner (must continue after a failing assertion)", "test_lint.sh": "test runner (must continue after a failing assertion)", "run-all.sh": "runs every suite even when one fails", "test_ubuntu.sh": "test runner (cleans up through a trap, must report every failure)", "ubuntu-inner.sh": "test runner inside the container (must continue after a failing assertion)",
     "verify-droplet.sh": "pre-existing stage-1 script (read-only verifier that reports every failure), not changed here",
     "aicc-security-updates.sh": "records the exit code of each step (list refresh, upgrade) and ALWAYS writes the status file for AICC Ops, then fails the unit itself; -e would skip the status write",
@@ -215,6 +215,46 @@ else:
         oexpect(needle in isr, "provision/install-stack.sh", "must install the owner-facts tool (%s)" % needle)
     ofh = read(of_sh)
     oexpect("set -euo pipefail" in ofh and "Refusing" in ofh and "AICC_ENV" in ofh, "provision/owner-facts.sh", "root refusal, the host identity and set -euo pipefail are required")
+print("== P37 self-service region: default OFF, refuses an inconsistent set, no secret, production only ==")
+P37_SWITCHES = ["AICC_TRIAL_SELF_SERVICE_ENABLED", "AICC_NOTIFY_ENABLED", "AICC_FUNNEL_COUNTERS_ENABLED", "AICC_OWNER_OPS_SECTION_ENABLED", "AICC_MILESTONE_SYNC_SCHEDULED", "AICC_PLAN_CHANGE_ENABLED", "AICC_PAY_RECONCILE_ENABLED", "AICC_PRIVACY_REQUESTS_ENABLED"]
+P37_VALUES = ["AICC_TRIAL_SELF_SERVICE_CAP", "AICC_TURNSTILE_SITE_KEY", "AICC_NOTIFY_EXCLUDED_CUSTOMERS", "AICC_MAIL_MAX_PER_HOUR", "AICC_MAIL_MAX_PER_DAY", "AICC_FUNNEL_ALLOWED_ORIGINS"]
+if os.path.exists(of_py):
+    ofs2 = read(of_py)
+    m2 = re.search(r"(?s)ORDER = \[(.*?)\n\]", ofs2)
+    keys2 = re.findall(r'"([A-Z][A-Z0-9_]+)"', m2.group(1)) if m2 else []
+    for k in P37_SWITCHES + P37_VALUES:
+        oexpect(k in keys2, of_py, "P37 owner fact %s must be in ORDER" % k)
+    mt = re.search(r"(?s)TRUE_ONLY = \((.*?)\)\n", ofs2)
+    tset = re.findall(r'"([A-Z][A-Z0-9_]+)"', mt.group(1)) if mt else []
+    for k in P37_SWITCHES:
+        oexpect(k in tset, of_py, "P37 switch %s must be TRUE_ONLY (exactly the word true, unset = OFF)" % k)
+    oexpect('P37_APPROVED_CAPS = ("25", "50", "100")' in ofs2, of_py, "the self-service cap stages must be exactly 25, 50, 100")
+    oexpect(re.search(r'TURNSTILE_SECRET_FILE = "/etc/aicc-mail/[a-z.-]+"', ofs2) is not None, of_py, "the Turnstile secret FILE path must be a fixed file under /etc/aicc-mail (PHP can traverse it; /etc/aicc it cannot)")
+    ms = re.search(r'"stage": \[(.*?)\],\n\}', ofs2, re.S)
+    oexpect(ms is not None and not any(k in ms.group(1) for k in P37_SWITCHES + P37_VALUES), of_py, "staging must not accept any P37 owner fact")
+    for bad in ("AICC_TRIAL_TURNSTILE", "AICC_NOTIFY_ALLOW_TEST_ACCOUNT_DELIVERY", "AICC_OWNER_DASHBOARD_USER_IDS", "AICC_TURNSTILE_SECRET_FILE", "AICC_MAIL_SMTP_PASS", "AICC_LM_TEST_FIXTURE"):
+        oexpect(bad not in keys2, of_py, "%s must never be an owner fact (a bypass, a test hatch or a secret)" % bad)
+    for needle, why in (("def p37_problems", "the consistency rules"), ("needs AICC_TRIAL_SELF_SERVICE_CAP", "cap rule"), ("needs AICC_NOTIFY_ENABLED=true", "notify rule"), ("needs AICC_TURNSTILE_SITE_KEY", "turnstile key rule"),
+                        ("def check_turnstile_secret_file", "the secret-file check"), ("equals the Turnstile secret", "the secret-as-site-key guard")):
+        oexpect(needle in ofs2, of_py, "P37 rule lost: %s (%s)" % (needle, why))
+    rw2 = read(os.path.join(INFRA, "provision/render-wp-config.sh"))
+    for needle, why in (("check-turnstile-secret", "the secret-file content check"), ("must be mode 0640", "the secret-file mode check"), ("@@P37_BEGIN@@", "the P37 region handling"), ("a stage render may not carry the P37", "staging refusal"),
+                        ("render_p37", "the P37 renderer"), ("--turnstile-secret-file", "the host-state context for the preflight check")):
+        oexpect(needle in rw2, os.path.join(INFRA, "provision/render-wp-config.sh"), "P37 gate lost: %s (%s)" % (needle, why))
+    oexpect(not re.search(r'echo "\$ts\w*"|cat "\$TSF"|tsout.*>>?\s*"\$', rw2), os.path.join(INFRA, "provision/render-wp-config.sh"), "the renderer must never print or copy the Turnstile secret file")
+pt = os.path.join(INFRA, "provision/wp-config.production.template.php")
+if os.path.exists(pt):
+    ptt = read(pt)
+    oexpect(ptt.count("// @@P37_BEGIN@@\n") == 1 and ptt.count("// @@P37_END@@\n") == 1 and ptt.count("\n@@P37_SELF_SERVICE@@\n") == 1, pt, "exactly one P37 region (begin marker, @@P37_SELF_SERVICE@@, end marker)")
+    pcode = re.sub(r"(?m)^\s*//.*$", "", re.sub(r"(?s)/\*.*?\*/", "", ptt))
+    for k in P37_SWITCHES + P37_VALUES + ["AICC_TURNSTILE_SECRET_FILE", "AICC_TRIAL_TURNSTILE", "AICC_NOTIFY_ALLOW_TEST_ACCOUNT_DELIVERY", "AICC_OWNER_DASHBOARD_USER_IDS"]:
+        oexpect(("'%s'" % k) not in pcode, pt, "%s must not be defined in the template: it is rendered only from the owner facts / the verified secret file (default = absent = OFF)" % k)
+stt = os.path.join(INFRA, "provision/wp-config.stage.template.php")
+if os.path.exists(stt):
+    oexpect("P37" not in read(stt) and "AICC_TRIAL_SELF_SERVICE" not in read(stt), stt, "the stage template must carry no P37 region")
+if not os.environ.get("AICC_LINT_INFRA"):      # the negative tests lint a copy of infra/ only (no docs/)
+    p37doc = os.path.join(ROOT, "docs/cutover/p37-self-service-wp-config.md")
+    oexpect(os.path.exists(p37doc), p37doc, "the P37 activation procedure must be documented")
 print("== secrets and addresses ==")
 SECRET_RES = [
     ("private key block", re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----")), ("AWS key", re.compile(r"AKIA[0-9A-Z]{16}")), ("token", re.compile(r"(gh[pousr]_[A-Za-z0-9]{30,}|xox[baprs]-[0-9A-Za-z-]{10,}|sk_live_[0-9A-Za-z]{16,})")),
