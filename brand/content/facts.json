@@ -29,7 +29,7 @@
   "renewal": "manual",
   "recurringBilling": false,
   "moneyBackDays": 14,
-  "moneyBackAppliesTo": "initial purchase",
+  "moneyBackAppliesTo": "eligible paid purchase",
   "moneyBackStartsAt": "payment received and plan issued",
   "refundEffect": "full refund revokes the plan; a revoked plan is never revived",
   "largerPlan": "separate purchase, no credit, not an in-place upgrade",

@@ -1224,7 +1224,7 @@
       "title": "Ask Reco",
       "suggestionsLabel": "Elija una pregunta para Reco",
       "answerLabel": "Respuesta de ejemplo",
-      "footnote": "Las respuestas salen de los datos de su propio panel. Reco ofrece información y enlaces; nunca cambia sus ajustes. En su administración también puede escribir una pregunta breve, y Reco la asocia con los temas que conoce. Reco responde en inglés y en hebreo; aquí la conversación aparece traducida.",
+      "footnote": "Las respuestas salen de los datos de su propio panel. Reco ofrece información y enlaces; nunca cambia sus ajustes. En su administración también puede escribir una pregunta breve, y Reco la asocia con los temas que conoce.",
       "qa": {
         "focus": {
           "q": "¿En qué debería centrarme hoy?",
@@ -1330,7 +1330,7 @@
         "product": "Продукт",
         "pricing": "Цены",
         "questions": "Вопросы",
-        "account": "Аккаунт",
+        "account": "Учётная запись",
         "menu": "Меню"
       },
       "signIn": "Войти",
@@ -1493,7 +1493,7 @@
           "deprioritize": "Deprioritize",
           "exclude": "Exclude"
         },
-        "excluded": "Не показывается покупателям: правило Exclude.",
+        "excluded": "Никогда не показывается покупателям: правило Exclude.",
         "ruleNote": "Правила применяются после ранжирования. Exclude главнее остальных правил; Prefer и Deprioritize сдвигают товар на одно место.",
         "tilesHeading": "Что записывает ваша панель",
         "tiles": {
@@ -1657,11 +1657,11 @@
       "title": "Ask Reco",
       "suggestionsLabel": "Выберите вопрос для Reco",
       "answerLabel": "Пример ответа",
-      "footnote": "Ответы строятся на данных вашей панели. Reco даёт сведения и ссылки и никогда не меняет ваши настройки. В вашей админ‑панели можно также ввести короткий вопрос, а Reco сопоставит его с темами, которые знает. Reco отвечает на английском и иврите: здесь вопросы и ответы переведены для примера.",
+      "footnote": "Ответы строятся на данных вашей панели. Reco даёт сведения и ссылки и никогда не меняет ваши настройки. В вашей админ-панели можно также ввести короткий вопрос, а Reco сопоставит его с темами, которые знает. Reco отвечает на английском и иврите: здесь вопросы и ответы переведены для примера.",
       "qa": {
         "focus": {
           "q": "На чём мне сосредоточиться сегодня?",
-          "a": "Необязательный следующий шаг: импортировать историю заказов WooCommerce за срок до 24 месяцев, чтобы AICC узнал, какие товары ваши клиенты уже покупают вместе. Прошлые заказы не импортируются, пока вы сами этого не выберете; без импорта AICC начинает с запасных вариантов из каталога и учится на новых заказах.",
+          "a": "Необязательный следующий шаг: импортировать историю заказов WooCommerce за срок до 24 месяцев, чтобы AICC узнал, какие товары ваши клиенты уже покупают вместе. Прошлые заказы никогда не импортируются, пока вы сами этого не выберете; без импорта AICC начинает с запасных вариантов из каталога и учится на новых заказах.",
           "link": "Go to Order History"
         },
         "opportunity": {

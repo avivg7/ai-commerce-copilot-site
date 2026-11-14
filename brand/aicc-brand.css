@@ -576,7 +576,7 @@ html.aicc-scroll-lock { overflow: hidden; scrollbar-gutter: stable; }
 .aicc-fbt-card__thumb { display: grid; place-items: center; block-size: 7.5rem; background: #f7f7f7; }
 .aicc-fbt-card[data-anchor] .aicc-fbt-card__thumb { opacity: 0.88; }
 .aicc-fbt-card__body { display: flex; flex-direction: column; gap: 0.15em; min-inline-size: 0; padding: 8px 10px 10px; }
-.aicc-fbt-card__name { font-size: 0.85rem; line-height: 1.3; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.aicc-fbt-card__name { font-size: 0.85rem; line-height: 1.3; overflow-wrap: anywhere; display: block; } /* Production 22 (F3): no line clamp - a product name is never cut when the reader sets WCAG 1.4.12 text spacing */
 .aicc-fbt-card__price { font-size: 0.9rem; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--aicc-text); }
 @container aicc-fbtw (min-width: 30rem) { .aicc-fbt-card__thumb { block-size: 9rem; } }
 .aicc-fbt__tag {
@@ -593,10 +593,10 @@ html.aicc-scroll-lock { overflow: hidden; scrollbar-gutter: stable; }
 .aicc-fbt__hint { font-size: var(--aicc-text-sm); color: var(--aicc-text-muted); }
 .aicc-fbt__foot { display: flex; flex-wrap: wrap; gap: var(--aicc-space-3) var(--aicc-space-4); align-items: center; justify-content: flex-start; padding-block-start: var(--aicc-space-2); }
 .aicc-fbt__total { display: flex; flex-direction: column; gap: 0.1em; margin: 0; }
-.aicc-fbt__total span { font-size: 0.78rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--aicc-text-muted); }
+.aicc-fbt__total span { font-size: 0.8rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--aicc-text-muted); }
 .aicc-fbt__total strong { font-size: 1.2rem; font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; color: var(--aicc-text); }
 @container aicc-fbtw (max-width: 29.99rem) { .aicc-fbt__foot { flex-direction: column; align-items: stretch; } .aicc-fbt__foot .aicc-btn { inline-size: 100%; } }
-.aicc-fbt__brand { display: flex; align-items: center; gap: 6px; margin: 0.5em 0 0; color: var(--aicc-text-muted); font-size: 11px; line-height: 1.2; }
+.aicc-fbt__brand { display: flex; align-items: center; gap: 6px; margin: 0.5em 0 0; color: var(--aicc-text-muted); font-size: 12.5px; line-height: 1.2; }
 .aicc-fbt__brand svg { flex: none; }
 .aicc-fbt__brand b { font-weight: 500; }
 .aicc-fbt__status { min-block-size: 1.5rem; font-size: var(--aicc-text-sm); color: var(--aicc-text-muted); }
@@ -746,6 +746,8 @@ html.aicc-scroll-lock { overflow: hidden; scrollbar-gutter: stable; }
 .aicc-dash__block { position: relative; padding: var(--aicc-space-4) var(--aicc-space-4) 0; display: grid; gap: var(--aicc-space-3); }
 .aicc-dash__tiles { list-style: none; padding: 0; margin: 0; display: grid; gap: var(--aicc-space-3); }
 .aicc-dash__tiles--three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+/* Production 22 (F4): a label or number never leaves the replica card when the reader enlarges the text (WCAG 1.4.4, 1.4.10); see also the narrow-screen rule below. */
+.aicc-dash__tlabel, .aicc-dash__tile strong { overflow-wrap: anywhere; }
 .aicc-dash__tile { display: grid; gap: 0.2rem; align-content: start; padding: var(--aicc-space-3) var(--aicc-space-4); border: 1px solid var(--aicc-border); border-radius: var(--aicc-radius-lg); background: var(--aicc-surface); min-inline-size: 0; }
 .aicc-dash__tlabel { font-size: var(--aicc-text-xs); font-weight: 650; color: var(--aicc-text-muted); }
 .aicc-dash__tile strong { font-size: 1.5rem; line-height: 1.15; font-variant-numeric: tabular-nums; }
@@ -1014,4 +1016,5 @@ html.aicc-scroll-lock { overflow: hidden; scrollbar-gutter: stable; }
 .aicc-loop__step > a .aicc-loop__t { text-decoration: underline; text-decoration-color: var(--aicc-border-strong); text-underline-offset: 0.25em; text-decoration-thickness: 1px; }
 .aicc-loop__step > a:hover .aicc-loop__t { text-decoration-color: currentColor; }
 /* Phone: two dashboard tiles per row (was one per row: a 1,500px panel). */
-@media (max-width: 40rem) { .aicc-dash__tiles--three { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+/* two columns while they fit, one when the text is enlarged (the rem minimum grows with it): Production 22 (F4) */
+@media (max-width: 40rem) { .aicc-dash__tiles--three { grid-template-columns: repeat(auto-fit, minmax(min(100%, 7.5rem), 1fr)); } }
