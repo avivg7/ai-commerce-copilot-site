@@ -119,6 +119,17 @@ define( 'AICC_ENTITLEMENT_WEBHOOK_SECRET', '@@AICC_ENTITLEMENT_WEBHOOK_SECRET@@'
 // gate: exact gateway ids), AICC_LAUNCH_REAL_GATEWAYS (the launch gate), AICC_LM_PLUGIN_SIGNING_PUBKEYS (PUBLIC Ed25519 update-signing keys, primary + standby: the Control Plane re-verifies each Plugin release when serving it). An owner-set extra outbound host for a payment gateway is appended to WP_ACCESSIBLE_HOSTS above by the renderer, never here. Nothing in this region is a secret.
 @@OWNER_FACTS@@
 // @@OWNER_FACTS_END@@
+// @@P37_BEGIN@@
+// ---- P37 self-service (Trial signup, notifications, owner dashboard): rendered by render-wp-config.sh from the owner facts + ONE root-placed secret file; EVERY constant below is ABSENT unless its owner fact is set (absent = OFF) ----------
+// This whole region (including these lines) is removed when no P37 fact is set and no Turnstile secret file exists, so the default render is byte-for-byte the render before P37. Procedure, order and refusal rules:
+// docs/cutover/p37-self-service-wp-config.md. The renderer REFUSES (writes nothing) an inconsistent set: self-service ON without a cap of 25/50/100, the Turnstile site key + secret file, the Turnstile outbound host, mail enabled or the notification switch;
+// the notification switch or mail caps without mail; origins without the funnel switch. NO SECRET is ever rendered here: the Turnstile SECRET and the SMTP credentials are FILES (AICC_TURNSTILE_SECRET_FILE, AICC_MAIL_SECRETS_FILE), only public values are facts.
+// Never defined by this renderer on purpose: AICC_TRIAL_TURNSTILE (production always requires Turnstile), AICC_NOTIFY_ALLOW_TEST_ACCOUNT_DELIVERY (a one-user test escape hatch), AICC_OWNER_DASHBOARD_USER_IDS (a separate reviewed change).
+// Switches the Control Plane reads as "exactly boolean true" (the string "true", 1 and "yes" do NOT count): AICC_TRIAL_SELF_SERVICE_ENABLED, AICC_NOTIFY_ENABLED, AICC_FUNNEL_COUNTERS_ENABLED, AICC_OWNER_OPS_SECTION_ENABLED,
+// AICC_MILESTONE_SYNC_SCHEDULED, AICC_PLAN_CHANGE_ENABLED, AICC_PAY_RECONCILE_ENABLED, AICC_PRIVACY_REQUESTS_ENABLED. AICC_TRIAL_SELF_SERVICE_CAP and the mail caps are INTEGERS (a string reads as 0).
+@@P37_SELF_SERVICE@@
+// ---- end P37 self-service ----
+// @@P37_END@@
 // AICC_LM_ALLOW_DEV_SECRET_BOOTSTRAP and AICC_LM_TEST_FIXTURE are intentionally NOT defined.
 
 // ---- bootstrap -----------------------------------------------------------------------------------------------------------------------------------------

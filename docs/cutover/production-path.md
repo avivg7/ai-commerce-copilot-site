@@ -97,6 +97,8 @@ sudo aicc-render-wp-config --env production --confirm-production
 ```
 The import file is validated exactly like `set` (one validator). After a promotion the file survives and is validated by the promotion gate (`production-promotion.md`).
 
+**P37 self-service (added 2026-11-14).** The same file also drives a second, delimited region of the production template (Trial signup switch and cap, notification switch, Turnstile site key and secret FILE, mail caps, funnel counters, owner-dashboard section, milestone sync, plan change, payment reconcile, privacy requests). Default: every constant absent (OFF) and the render byte-identical to the one above. Constants, activation order, refusal rules and the Turnstile secret-file placement: `p37-self-service-wp-config.md`.
+
 ## 4. Renderer gates (all refuse with a message, nothing is written)
 
 `--env production` needs: the production template (marker `AICC_TEMPLATE: production`, `WP_HOME` www, no staging host in code); `--confirm-production`; on a real host an identity file that says `AICC_ENV=production`; `/etc/aicc/secrets/entitlement-webhook.secret` and `activation-proof.secret` present, mode 0600/0400, at least 32 characters from a PHP-safe alphabet with at least 12 distinct characters; the database password file. The stage renderer refuses the production template and the other way round.
