@@ -651,6 +651,12 @@ ok(/Strict-Transport-Security "max-age=300"/.test(regenerated), "HSTS ramp must 
       const it = first(set, p);
       ok(!(it && it.matcher === "request_access") && !(it && it.act.csp === "request"), `${label} listener: ${p} never gets the request-page policy (Turnstile origin) and never the request handler`);
     }
+    // P37 self-service signup (/start/, any language): WordPress-owned, never cached, and NO CSP snippet. Turnstile's script and challenge frame (challenges.cloudflare.com) are therefore not blocked today; if a CSP is ever added to WordPress pages
+    // it must allow that origin in script-src, frame-src and connect-src first (docs/cutover/p37-self-service-wp-config.md section 7). static_csp must never reach it either (it would block Turnstile once enforced).
+    for (const p of ["/start/", "/start", "/he/start/", "/es/start/verify/", "/ru/start/"]) {
+      const it = first(set, p);
+      ok(it && it.act.origin === "wordpress" && it.act.cache === "private, no-store, max-age=0" && !it.act.csp && it.matcher !== "request_access", `${label} listener: ${p} is WordPress, never cached, and carries NO Content-Security-Policy snippet (Turnstile on /start/ is not blocked; matched ${it?.matcher})`);
+    }
     // the ONE new API surface of the intake: /wp-json/aicc/v1/access-requests* is the existing machine path (WordPress, never cached, never static); the request handler cannot capture it
     for (const p of ["/wp-json/aicc/v1/access-requests", "/wp-json/aicc/v1/access-requests/status", "/wp-json/aicc/v1/access-requests/confirm"]) {
       const it = first(set, p, p.endsWith("/status") ? "GET" : "POST");
