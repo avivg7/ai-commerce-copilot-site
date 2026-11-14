@@ -25,7 +25,9 @@ What you will see and do:
 4. `Render the configuration and reload PHP-FPM now? [y/N]`: it first lists the setting NAMES that will change (never values). Answer `y`.
 5. It runs the read-only check, then asks for **a mailbox you control**. Type your test address, then `y`. It sends the three test messages and prints only `verify: ok` style lines and Brevo's message ids (your address is masked).
 
-If anything says `REFUSED`, nothing further was done; copy the REFUSED line (it never contains the key) to the operator. Rotating later: `set-brevo-key.sh rotate`, then **revoke the old key in Brevo** (the host keeps no copy of it). Stopping: `set-brevo-key.sh revoke` (type `REVOKE`), then revoke the key in Brevo too.
+If anything says `REFUSED` before the key was sent, nothing was done; copy the REFUSED line (it never contains the key) to the operator. If it says **STATE UNKNOWN** (the connection dropped or the host reported a failure after the key was sent), the key may already be installed: run `set-brevo-key.sh status` (it never shows the key) before you retry or rotate. Rotating later: `set-brevo-key.sh rotate`; the old key is then gone from the host but **still valid in Brevo until you revoke it there** (the host keeps no copy of it). Stopping: `set-brevo-key.sh revoke` (type `REVOKE`), then revoke the key in Brevo too.
+
+Your test address is sent to the host on stdin, never in a command line, and every host echo of it is masked; the one place it is visible is the `wp` process's argument list on the host while a test runs (single-tenant host, not in the sudo log).
 
 ## 2. Read the three test messages and paste back FIVE lines
 
@@ -47,4 +49,8 @@ In the same mailbox press **Reply** on one test message. The To field must show 
 
 ## If you pasted the key somewhere by mistake
 
-Revoke it in Brevo immediately (SMTP & API, API Keys, delete), create a new one and run step 1 with `rotate`. A revoked key is harmless; a pasted live key is not.
+Revoke it in Brevo immediately (SMTP & API, API Keys, delete), create a new one and run step 1 with `rotate` if a key file is already installed, or with `install` if none is (`infra/provision/set-brevo-key.sh status` tells you which; the host refuses the wrong one and says so). A revoked key is harmless; a pasted live key is not.
+
+## Optional hardening: Brevo "Authorised IPs" (defense in depth)
+
+In Brevo (Security, **Authorised IPs**) you can restrict the API key to the production host's address so a leaked key is useless elsewhere. If you do: add exactly `157.230.110.211` (the address the site sends from; confirm it first from the host: `~/aicc-promotion/pssh 'curl -4 -s https://api.ipify.org'`; the Reserved IP `206.189.248.204` is for incoming traffic and may differ). **Lock-out risk:** if the host's outbound address ever changes (new Droplet, restore elsewhere, a network change), every send fails with an `auth_failed` health status and mail stops until you correct the list. To lift it: remove the entry or switch the restriction off on the same Brevo screen, then run `sudo aicc-wp aicc-mail check`. Do this only after the first successful test messages, and write the change date down.

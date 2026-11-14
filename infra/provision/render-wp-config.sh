@@ -181,7 +181,9 @@ if [ ! -s "$ENVF" ] || [ "$FORCE_SALTS" = 1 ]; then
       printf '%s=%s\n' "$k" "$(openssl rand -hex 32)"; done; } > "$ENVF.new"
   chmod 600 "$ENVF.new"; mv -f "$ENVF.new" "$ENVF"; info "generated $ENVF (0600)"
 fi
-if [ "$COMPARE" = 1 ]; then tmp="$(mktemp)"; else tmp="$(mktemp "$(dirname "$OUT")/.wpcfg.XXXXXX" 2>/dev/null || mktemp)"; fi
+# --compare writes a COMPLETE wp-config (secrets included) to a temp file: it lives in the 0700 secrets directory (never /tmp), mode 0600, removed by the trap, and a leftover of a killed run is swept at the next run
+rm -f "$SECRETS"/.compare.* 2>/dev/null || true
+if [ "$COMPARE" = 1 ]; then tmp="$(mktemp "$SECRETS/.compare.XXXXXX")"; chmod 600 "$tmp"; else tmp="$(mktemp "$(dirname "$OUT")/.wpcfg.XXXXXX" 2>/dev/null || mktemp)"; fi
 trap 'rm -f "$tmp"' EXIT
 python3 -I - "$TEMPLATE" "$ENVF" "$SECRETS/db-cp.pass" "$DB" "$DBUSER" "$ENVN" "$SECRETS" "$MAIL" "$OWNERF" "$SELF/lib/owner_facts.py" "$TS" "$TSF" "$BK" > "$tmp" <<'PY'
 import importlib.util, re, sys

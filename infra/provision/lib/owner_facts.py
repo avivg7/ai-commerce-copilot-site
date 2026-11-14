@@ -523,8 +523,10 @@ def validate_value(key, value, env):
         return _from_name(key, v)
     if key in FREE_TEXT:
         return _text(key, v)
-    if key in ("AICC_LEGAL_SUPPORT_EMAIL", "AICC_MAIL_REPLY_TO"):
+    if key == "AICC_LEGAL_SUPPORT_EMAIL":
         return _email(key, v)
+    if key == "AICC_MAIL_REPLY_TO":
+        return _brevo_from_address(key, v)   # the same allowed-domain rule as the sender: replies must land in a mailbox on our own domain
     if key == "AICC_MAIL_PROVIDER":
         return _mail_provider(key, v)
     if key == "AICC_MAIL_FROM_ADDRESS":
@@ -759,7 +761,7 @@ def render(facts, env):
 def main(argv):
     import argparse
     ap = argparse.ArgumentParser(prog="owner_facts.py")
-    ap.add_argument("cmd", choices=["list", "check", "set", "unset", "keys", "export", "import", "check-turnstile-secret", "check-brevo-key", "mail-mode"])
+    ap.add_argument("cmd", choices=["list", "check", "set", "unset", "keys", "export", "import", "check-turnstile-secret", "check-brevo-key", "mail-mode", "set-stdin"])
     ap.add_argument("key", nargs="?")
     ap.add_argument("value", nargs="?")
     ap.add_argument("--file", required=True)
@@ -837,7 +839,17 @@ def main(argv):
             raise OwnerFactsError("%s needs a KEY" % a.cmd)
         if a.key not in ORDER:
             raise OwnerFactsError("unknown key '%s' (allowed: %s)" % (a.key, ", ".join(KEYS_FOR[a.env])))
-        if a.cmd == "set":
+        if a.cmd == "set-stdin":
+            if a.value is not None:
+                raise OwnerFactsError("set-stdin needs KEY only: the value is read from stdin")
+            line = sys.stdin.buffer.readline(4097)
+            if len(line) > 4096:
+                raise OwnerFactsError("set-stdin: the value is longer than 4096 bytes")
+            try:
+                facts[a.key] = line.decode("utf-8").rstrip("\n")
+            except UnicodeDecodeError:
+                raise OwnerFactsError("set-stdin: the value is not valid UTF-8")
+        elif a.cmd == "set":
             if a.value is None:
                 raise OwnerFactsError("set needs KEY and VALUE")
             facts[a.key] = a.value
@@ -848,7 +860,7 @@ def main(argv):
             del facts[a.key]
         facts = validate_all(facts, a.env)
         write_file(a.file, facts, a.env)
-        print("%s %s in %s (mode 0600). Now re-render: sudo aicc-render-wp-config --env %s%s" % (a.key, "set" if a.cmd == "set" else "unset", a.file, a.env, " --confirm-production" if a.env == "production" else ""))
+        print("%s %s in %s (mode 0600). Now re-render: sudo aicc-render-wp-config --env %s%s" % (a.key, "set" if a.cmd in ("set", "set-stdin") else "unset", a.file, a.env, " --confirm-production" if a.env == "production" else ""))
         return 0
     except OwnerFactsError as e:
         print("REFUSED: %s" % e, file=sys.stderr)

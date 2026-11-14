@@ -263,6 +263,8 @@ if not os.environ.get("AICC_LINT_INFRA"):      # the negative tests lint a copy 
     p37doc = os.path.join(ROOT, "docs/cutover/p37-self-service-wp-config.md")
     oexpect(os.path.exists(p37doc), p37doc, "the P37 activation procedure must be documented")
 print("== P38 Brevo API mail: default OFF, one host, the key is a file, the provisioning tools never carry it ==")
+# NOTE: most checks below are PRESENCE / STRUCTURE checks (a needle is in a file, a forbidden pattern is not): they pin the shape of the code and catch an accidental deletion.
+# What the code DOES is proved by test_p38_brevo.sh and test_p38_key.sh; the block "behaviour of the validator" below is the exception: it imports owner_facts.py and calls it.
 P38_FACTS = ["AICC_MAIL_PROVIDER", "AICC_MAIL_FROM_ADDRESS", "AICC_MAIL_FROM_NAME", "AICC_MAIL_REPLY_TO", "AICC_MAIL_DAILY_BUDGET", "AICC_MAIL_TEST_RECIPIENTS", "AICC_MAIL_STATUS_POLL_ENABLED"]
 if os.path.exists(of_py):
     ofs3 = read(of_py)
@@ -283,8 +285,35 @@ if os.path.exists(of_py):
         oexpect(not re.search(r"(?i)API_KEY|BREVO|_KEY_FILE", bad), of_py, "%s: no owner fact may carry or name the Brevo key (the key is a root-placed FILE)" % bad)
     for needle, why in (("def p38_problems", "the consistency rules"), ("def render_p38", "the region renderer"), ("def check_brevo_key_file", "the key file shape check"), ("def mail_mode", "the provider decision"),
                         ("both /etc/aicc-mail/smtp.env and", "both-secret-files refusal"), ("is a Brevo host", "api.brevo.com only through the provider fact"), ("SMTP key (xsmtpsib-", "xsmtpsib refusal"),
-                        ("def mask_address", "personal data masking in list")):
+                        ("def mask_address", "personal data masking in list"), ('"set-stdin"', "the stdin form for personal data")):
         oexpect(needle in ofs3, of_py, "P38 rule lost: %s (%s)" % (needle, why))
+print("== P38 behaviour of the validator (imports owner_facts.py and calls it) ==")
+if os.path.exists(of_py):
+    import importlib.util as _ilu
+    try:
+        _sp = _ilu.spec_from_file_location("of_lint_p38", of_py); _m = _ilu.module_from_spec(_sp); _sp.loader.exec_module(_m)
+        def _refuses(fn, *a):
+            try:
+                fn(*a)
+            except _m.OwnerFactsError:
+                return True
+            return False
+        oexpect(_refuses(_m.validate_value, "AICC_MAIL_REPLY_TO", "a@gmail.com", "production") and _refuses(_m.validate_value, "AICC_MAIL_FROM_ADDRESS", "a@evil.com", "production"), of_py, "behaviour: a sender or reply-to off copilt.org must be refused")
+        oexpect(_m.validate_value("AICC_MAIL_REPLY_TO", "Support@COPILT.ORG", "production") == "Support@copilt.org", of_py, "behaviour: an address on copilt.org is accepted, domain lower-cased")
+        oexpect(_refuses(_m.validate_value, "AICC_EXTRA_ACCESSIBLE_HOSTS", "api.brevo.com", "production") and _refuses(_m.validate_value, "AICC_EXTRA_ACCESSIBLE_HOSTS", "x.brevo.com", "production"), of_py, "behaviour: a Brevo host as an extra outbound host must be refused")
+        oexpect(_refuses(_m.validate_value, "AICC_MAIL_PROVIDER", "ses", "production") and _refuses(_m.validate_value, "AICC_MAIL_PROVIDER", "brevo_api", "stage"), of_py, "behaviour: only brevo_api/smtp, production only")
+        oexpect(_refuses(_m.validate_value, "AICC_MAIL_FROM_NAME", "a?>b", "production") and _refuses(_m.validate_value, "AICC_MAIL_FROM_NAME", "x" * 71, "production"), of_py, "behaviour: a hostile or over-long from name must be refused")
+        oexpect(_m.php_str("a'\\b") == "'a\\'\\\\b'", of_py, "behaviour: php_str escapes the apostrophe and the backslash")
+        _f = {"AICC_MAIL_PROVIDER": "brevo_api", "AICC_MAIL_FROM_ADDRESS": "notifications@copilt.org"}
+        oexpect(_m.render_p38(_f, "production", {"mail": False, "brevo_key": False}) == ([], []), of_py, "behaviour: with no key file the Brevo region renders NOTHING (mail off, never half-enabled)")
+        _lines, _hosts = _m.render_p38(_f, "production", {"mail": False, "brevo_key": True})
+        oexpect(_hosts == ["api.brevo.com"] and _lines[0] == "define( 'AICC_MAIL_ENABLED', true );" and not any("NOTIFY" in l or "TRIAL" in l or "API_KEY'" in l for l in _lines), of_py, "behaviour: provider + key renders ENABLED, the one host and no notify / signup / key constant")
+        oexpect(bool(_m.mail_mode({}, {"mail": True, "brevo_key": True})[2]) and _m.mail_mode(_f, {"mail": True, "brevo_key": False})[0] == "none", of_py, "behaviour: both secret files without the provider fact is a problem; a provider without its file is mail off")
+        oexpect(bool(_m.p38_problems({"AICC_MAIL_STATUS_POLL_ENABLED": "true"}, "production")) and bool(_m.p38_problems(dict(_f, AICC_MAIL_DAILY_BUDGET="250", AICC_MAIL_MAX_PER_DAY="200"), "production")), of_py, "behaviour: a status poll without the provider and a budget above the day cap must be refused")
+        oexpect(_m.p38_problems({"AICC_MAIL_FROM_ADDRESS": "notifications@copilt.org"}, "production") == [], of_py, "behaviour: sender facts without the provider are inert (one unset turns Brevo off)")
+        oexpect(_m.render_p38(_f, "stage", {"mail": False, "brevo_key": True}) == ([], []), of_py, "behaviour: staging never renders the region")
+    except Exception as _e:   # a validator that cannot even be imported fails the lint, loudly
+        fail(of_py, "behaviour checks could not run: %s: %s" % (type(_e).__name__, str(_e)[:120]))
 pt3 = os.path.join(INFRA, "provision/wp-config.production.template.php")
 if os.path.exists(pt3):
     ptt3 = read(pt3)
@@ -298,7 +327,7 @@ if os.path.exists(stt3):
     oexpect("BREVO" not in read(stt3) and "brevo" not in read(stt3).replace("smtp-relay.brevo.com", ""), stt3, "the stage template must carry no Brevo region")
 rw3 = read(os.path.join(INFRA, "provision/render-wp-config.sh"))
 for needle, why in (("check-brevo-key", "the key file shape check (python, never a shell variable)"), ("brevo-api.key", "the key file path"), ("--compare", "the no-write comparison"), ("mail-mode", "the provider decision"), ("a stage render may not carry the P38", "staging refusal"),
-                    ("render_p38", "the region renderer"), ("--brevo-key-ready", "the host-state context for the preflight check"), ("must be mode 0640", "the key file mode check")):
+                    ("render_p38", "the region renderer"), ("--brevo-key-ready", "the host-state context for the preflight check"), ("must be mode 0640", "the key file mode check"), (".compare.", "the --compare temp file lives in the secrets directory")):
     oexpect(needle in rw3, os.path.join(INFRA, "provision/render-wp-config.sh"), "P38 gate lost: %s (%s)" % (needle, why))
 oexpect(not re.search(r'cat "\$BKF"|<\s*"\$BKF"|\$\(<\s*"?\$BKF|read [^\n]*"\$BKF"|echo "\$bk(out)?"', rw3), os.path.join(INFRA, "provision/render-wp-config.sh"), "the renderer must never read the Brevo key file into a shell variable, print it or copy it")
 hs = os.path.join(INFRA, "provision/host/aicc-set-brevo-key")
@@ -307,7 +336,7 @@ if not os.path.exists(hs):
 else:
     hst = read(hs)
     for needle, why in (("set -euo pipefail", "strict mode"), ("must run as root", "the non-root refusal"), ("xsmtpsib-", "an SMTP key is refused"), ("os.replace(tmp, target)", "atomic rename"), ("os.O_EXCL", "exclusive temp file"), ("logger -t aicc-brevo-key", "the audit line"),
-                        ("0o750", "the directory mode check"), ("shell tracing", "tracing refusal"), ("AICC_TEST_HARNESS", "the harness seams are gated"), ("revoke", "revoke mode"), ("rotate", "rotate mode"), ("status", "status mode")):
+                        ("0o750", "the directory mode check"), ("shell tracing", "tracing refusal"), ("fcntl.flock", "the directory lock"), ("os.fstat(fd).st_size", "the short-write check"), ("STATE UNKNOWN", "post-commit failure wording"), ("under_tmp", "seam gate"), ("TEST HARNESS ACTIVE", "seam banner"), ("AICC_TEST_HARNESS", "the harness seams are gated"), ("revoke", "revoke mode"), ("rotate", "rotate mode"), ("status", "status mode")):
         oexpect(needle in hst, hs, "host key tool lost: %s (%s)" % (needle, why))
     oexpect(not re.search(r"(?m)^\s*(set -x|bash -x|curl |wget |eval )", hst), hs, "the host key tool must never trace, fetch or eval")
     oexpect("O_NOFOLLOW" in hst and "S_ISREG" in hst, hs, "the host key tool must refuse symlinks and special files")
@@ -318,7 +347,8 @@ else:
     mst = read(ms_)
     for needle, why in (("read -rs", "hidden prompt"), ("/dev/tty", "prompt from the terminal"), ("unset HISTFILE", "no history"), ("umask 077", "private files"), ('HOSTIP="157.230.110.211"', "only the production host"), ('STAGE_ID="3e897286ce82e55f4d866acf0d526a5f"', "the production stage id gate"),
                         ("StrictHostKeyChecking=yes", "pinned host key"), ("BatchMode=yes", "no password prompts"), ("IdentitiesOnly=yes", "only the named identity"), ("aicc_cp_prod_operator", "the production operator identity"), ("known_hosts_aicc_prod", "the pinned host key file"),
-                        ("--dry-run", "dry run"), ("BASH_XTRACEFD", "tracing refusal"), ("shasum -a 256", "SHA-256 confirmation"), ("xsmtpsib-", "an SMTP key is refused"), ("ulimit -c 0", "no core dump")):
+                        ("--dry-run", "dry run"), ("BASH_XTRACEFD", "tracing refusal"), ("-F /dev/null", "ssh isolated from the owner's config"), ("ClearAllForwardings=yes", "no forwarding"), ("ProxyJump=none", "no jump host"), ("GlobalKnownHostsFile=/dev/null", "only the pinned known hosts"),
+                        ("STATE UNKNOWN", "post-failure wording"), ("TEST HARNESS ACTIVE", "seam banner"), ("set-stdin", "the mailbox goes over stdin"), ("shasum -a 256", "SHA-256 confirmation"), ("xsmtpsib-", "an SMTP key is refused"), ("ulimit -c 0", "no core dump")):
         oexpect(needle in mst, ms_, "owner script lost: %s (%s)" % (needle, why))
     oexpect(not re.search(r"(?m)^[^#\n]*\b(rssh|ssh|echo|printf '%s\\n' )[^|\n]*\$\{?k[12]\b[^|\n]*$", mst.replace("printf '%s\\n' \"$k1\" |", "").replace("printf '%s' \"$1\" |", "")), ms_, "the key variable must never be an argument of ssh, echo or any command line (stdin of the ssh connection only)")
     oexpect(not re.search(r"(?m)^\s*(set -x|bash -x)\b", mst), ms_, "the owner script must never trace")

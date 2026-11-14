@@ -14,7 +14,7 @@
 #   by the next run) and fsyncs the directory. It touches no other file (smtp.env and turnstile.secret are never opened for writing), keeps NO copy of the previous key and does not render or reload anything.
 # OUTPUT: only `installed: <path> root:aicc-cp 640 <size>` and the first 8 hex characters of the key's SHA-256 (a rotation fingerprint). One audit line (time, operator, action, fingerprint prefix) goes to the system
 #   journal: `logger -t aicc-brevo-key`. The key is never printed, echoed, logged or put in an argument, and is not stored in a shell variable (the whole path is inside one python3 -I process reading stdin).
-# TEST SEAMS (honoured ONLY with AICC_TEST_HARNESS=1): AICC_ROOT_PREFIX re-roots the absolute paths; AICC_TEST_OWNER=user:group replaces root:aicc-cp; AICC_TEST_KILL_AT=<stage> makes the process kill -9 itself at a stage
+# TEST SEAMS (honoured ONLY with AICC_TEST_HARNESS=1, and then ONLY when AICC_ROOT_PREFIX names a directory under the system temp dir; a loud TEST HARNESS ACTIVE banner goes to stderr): AICC_ROOT_PREFIX re-roots the absolute paths; AICC_TEST_OWNER=user:group replaces root:aicc-cp; AICC_TEST_KILL_AT=<stage> makes the process kill -9 itself at a stage
 #   (after_create, after_write, after_fsync, after_rename) to prove atomicity.
 set -euo pipefail
 die() { printf 'aicc-set-brevo-key: %s\n' "$*" >&2; exit 1; }
@@ -24,7 +24,20 @@ case "$-" in *x*) die "REFUSED: shell tracing (set -x) is on; the key could be t
 case ":${SHELLOPTS:-}:" in *:xtrace:*) die "REFUSED: SHELLOPTS contains xtrace" ;; esac
 umask 0077       # the python writer sets umask 0277 itself before it creates the temp file
 HARNESS=0; PREFIX=""
-if [ "${AICC_TEST_HARNESS:-0}" = "1" ]; then HARNESS=1; PREFIX="${AICC_ROOT_PREFIX:-}"; PREFIX="${PREFIX%/}"; fi
+# under_tmp <dir>: is the real path of an existing directory below the system temp dir ($TMPDIR, /tmp, /var/tmp, macOS /private/var/folders)?
+under_tmp() {
+  local d t; [ -d "$1" ] || return 1; d="$(cd "$1" && pwd -P)"
+  for t in "${TMPDIR:-}" /tmp /var/tmp; do [ -n "$t" ] || continue; t="$(cd "$t" 2>/dev/null && pwd -P)" || continue; case "$d/" in "$t"/*) return 0 ;; esac; done
+  case "$d/" in /private/var/folders/*) return 0 ;; esac
+  return 1
+}
+if [ "${AICC_TEST_HARNESS:-0}" = "1" ]; then
+  # the test seams can re-root every path and fake the owner: they are refused unless the prefix is a scratch directory, and they are never silent
+  PREFIX="${AICC_ROOT_PREFIX:-}"; PREFIX="${PREFIX%/}"
+  [ -n "$PREFIX" ] && under_tmp "$PREFIX" || die "REFUSED: AICC_TEST_HARNESS=1 needs AICC_ROOT_PREFIX to be an existing directory under the system temp dir (the seams are for tests only)"
+  HARNESS=1
+  printf 'aicc-set-brevo-key: *** TEST HARNESS ACTIVE: paths re-rooted under %s, owner/kill/short-write seams honoured. Never set this on a real host. ***\n' "$PREFIX" >&2
+fi
 MODE="${1:-}"; [ -n "$MODE" ] && shift || { sed -n 2,9p "${BASH_SOURCE[0]}" >&2; exit 2; }
 case "$MODE" in install|rotate|revoke|status) ;; -h|--help) sed -n 2,9p "${BASH_SOURCE[0]}"; exit 0 ;; *) die "unknown mode '$MODE' (install, rotate, revoke, status)" ;; esac
 EXPECT_ID=""
@@ -51,7 +64,7 @@ fi
 read -r -d '' PYSRC <<'PYEOF' || true
 import grp, hashlib, os, re, signal, stat, sys
 
-mode, maildir, logical, owner_want, harness, expect_kill = sys.argv[1:7]
+mode, maildir, logical, owner_want, harness, expect_kill, short_write = sys.argv[1:8]
 NAME = "brevo-api.key"
 target = os.path.join(maildir, NAME)
 SHAPE = re.compile(rb"[A-Za-z0-9_-]{20,200}")
@@ -107,6 +120,17 @@ def stale_temps():
             if stat.S_ISREG(os.lstat(p).st_mode):
                 out.append(p)
     return out
+
+
+def lock_dir():
+    """Non-blocking exclusive flock on the key directory for install / rotate / revoke: two concurrent runs can never interleave. Held until the process exits."""
+    import fcntl
+    fd = os.open(maildir, os.O_RDONLY)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        die("REFUSED: another aicc-set-brevo-key is running (the key directory is locked); wait for it, run `status`, then retry")
+    return fd
 
 
 def fsync_dir():
@@ -185,11 +209,16 @@ def read_key():
 def do_write(key):
     uid, gid = want_ids()
     os.umask(0o277)
+    data = key + b"\n"
     tmp = os.path.join(maildir, "%s%d" % (TEMP_PREFIX, os.getpid()))
     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o400)
     try:
         kill_at("after_create")
-        os.write(fd, key + b"\n")
+        chunk = data[:-3] if (harness == "1" and short_write == "1") else data    # the seam only SIMULATES a short write()
+        n = os.write(fd, chunk)
+        # a short write must NEVER replace a good key: the byte count and the real size of the temp file are both checked before anything is committed
+        if n != len(data) or os.fstat(fd).st_size != len(data):
+            die("REFUSED: the key was not written completely (wrote %d of %d bytes); the existing key file was NOT touched" % (n, len(data)))
         kill_at("after_write")
         os.fchown(fd, uid, gid)
         os.fchmod(fd, 0o640)
@@ -204,22 +233,23 @@ def do_write(key):
         raise
     os.close(fd)
     os.replace(tmp, target)
+    fp = hashlib.sha256(key).hexdigest()[:8]
+    sys.stderr.write("FP=%s\n" % fp)      # the audit line is written even if a later check fails: the rename HAS happened
     kill_at("after_rename")
     fsync_dir()
     st = os.lstat(target)
     own, mo = describe(st)
     if not (stat.S_ISREG(st.st_mode) and own == owner_want and mo == "640" and st.st_size == len(key) + 1):
-        die("the installed file does not have the expected owner, mode or size (%s %s %d): investigate before rendering" % (own, mo, st.st_size))
+        die("the key file WAS replaced but does not have the expected owner, mode or size (%s %s %d): STATE UNKNOWN, run `status` and investigate before rendering" % (own, mo, st.st_size))
     print("installed: %s %s 640 %d" % (logical, own, st.st_size))
-    fp = hashlib.sha256(key).hexdigest()[:8]
     print("fingerprint: sha256:%s (first 8 hex of the key's SHA-256: a rotation fingerprint, not the key)" % fp)
-    sys.stderr.write("FP=%s\n" % fp)
 
 
 def main():
     if mode == "status":
         return do_status()
     check_dir()
+    lock_fd = lock_dir()   # noqa: F841 (kept open on purpose)
     cur = target_state()
     for p in stale_temps():
         os.unlink(p)
@@ -252,17 +282,22 @@ except BaseException as e:   # never a traceback with local state: only the clas
 PYEOF
 
 # the python process's stderr carries one machine line "FP=<8 hex>|none" for the audit log; everything else is passed through
+KILL_AT=""; SHORT_WRITE=""; [ "$HARNESS" != 1 ] || { KILL_AT="${AICC_TEST_KILL_AT:-}"; SHORT_WRITE="${AICC_TEST_SHORT_WRITE:-}"; }
 errf="$(mktemp "${TMPDIR:-/tmp}/aicc-brevo-err.XXXXXX")"; trap 'rm -f "$errf"' EXIT
 rc=0
-python3 -I -c "$PYSRC" "$MODE" "$MAILDIR" "$LOGICAL_FILE" "$OWNER_WANT" "$HARNESS" "${AICC_TEST_KILL_AT:-}" 2>"$errf" || rc=$?
+python3 -I -c "$PYSRC" "$MODE" "$MAILDIR" "$LOGICAL_FILE" "$OWNER_WANT" "$HARNESS" "$KILL_AT" "$SHORT_WRITE" 2>"$errf" || rc=$?
 grep -v '^FP=' "$errf" >&2 || true
 fp="$(sed -En 's/^FP=([0-9a-f]{8}|none)$/\1/p' "$errf" | head -1)"
-if [ "$rc" = 0 ] && [ "$MODE" != status ]; then
+if [ "$MODE" != status ]; then
   operator="${SUDO_USER:-$(id -un)}"
-  logger -t aicc-brevo-key -- "action=$MODE operator=$operator fingerprint_prefix=${fp:-none} path=$LOGICAL_FILE" 2>/dev/null || true
+  # one audit line per CHANGE: also when a later check failed after the rename (result=committed-then-failed), because the file did change
+  if [ "$rc" = 0 ]; then result=ok; elif [ -n "$fp" ]; then result=committed-then-failed; else result=""; fi
+  if [ -n "$result" ]; then logger -t aicc-brevo-key -- "action=$MODE operator=$operator fingerprint_prefix=${fp:-none} result=$result path=$LOGICAL_FILE" 2>/dev/null || true; fi
+fi
+if [ "$rc" = 0 ] && [ "$MODE" != status ]; then
   case "$MODE" in
     install) echo "NEXT: owner facts + render + reload (docs/cutover/p38-brevo-host-update.md section 6). Keep the key in Brevo only as long as it is the current one." ;;
-    rotate) echo "REMINDER: the previous key is gone from this host (no backup is kept). REVOKE IT IN BREVO now (SMTP & API -> API Keys), then check with: sudo aicc-wp aicc-mail check" ;;
+    rotate) echo "REMINDER: the previous key is GONE from this host (no copy is kept) but is STILL VALID in Brevo until you revoke it: REVOKE IT IN BREVO NOW (SMTP & API -> API Keys), then check with: sudo aicc-wp aicc-mail check" ;;
     revoke) echo "REMINDER: the file is removed. The key itself is still valid until you REVOKE it in Brevo (SMTP & API -> API Keys). To turn mail off on the site: sudo aicc-owner-facts unset AICC_MAIL_PROVIDER, render, reload." ;;
   esac
 fi

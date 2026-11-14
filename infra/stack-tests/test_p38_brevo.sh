@@ -223,6 +223,21 @@ t_ok "...and none of those refusals wrote a facts file" test ! -e "$TMP/x.env"
 t_rc "FIVE exact addresses are accepted" 0 env AICC_TEST_HARNESS=1 bash "$PROV/owner-facts.sh" --file "$TMP/x.env" --env production set AICC_MAIL_TEST_RECIPIENTS "a@b.co,b@b.co,c@b.co,d@b.co,e@b.co"; rm -f "$TMP/x.env"
 t_contains "a refusal of a test recipient never echoes the value (personal data)" "$(env AICC_TEST_HARNESS=1 bash "$PROV/owner-facts.sh" --file "$TMP/x.env" --env production set AICC_MAIL_TEST_RECIPIENTS 'private.person@@broken' 2>&1 || true)" "AICC_MAIL_TEST_RECIPIENTS is not a plain e-mail address"
 t_not_contains "...(the value is not in the message)" "$(env AICC_TEST_HARNESS=1 bash "$PROV/owner-facts.sh" --file "$TMP/x.env" --env production set AICC_MAIL_TEST_RECIPIENTS 'private.person@@broken' 2>&1 || true)" "private.person"
+# set-stdin: the value is read from STDIN (never an argument): validated like set, nothing written when refused
+SS() { env AICC_TEST_HARNESS=1 bash "$PROV/owner-facts.sh" --file "$TMP/s.env" --env production set-stdin "$@"; }
+rm -f "$TMP/s.env"; printf 'Stdin.Person@example.org\n' | SS AICC_MAIL_TEST_RECIPIENTS >/dev/null 2>&1
+t_eq "set-stdin stores a valid test recipient read from stdin" "$(grep -c '^AICC_MAIL_TEST_RECIPIENTS=Stdin.Person@example.org$' "$TMP/s.env")" "1"
+t_eq "...and list masks it" "$(env AICC_TEST_HARNESS=1 bash "$PROV/owner-facts.sh" --file "$TMP/s.env" --env production list)" "AICC_MAIL_TEST_RECIPIENTS=S***@example.org"
+t_not_contains "...the confirmation line does not echo the value" "$(printf 'Stdin.Person@example.org\n' | SS AICC_MAIL_TEST_RECIPIENTS 2>&1)" "Stdin.Person"
+rm -f "$TMP/s.env"; for bad in "not-an-address" "" "a@b.co,,c@d.co" "a'b@x.org"; do
+  t_rc "set-stdin refuses '$bad'" 1 bash -c "printf '%s\n' \"\$1\" | env AICC_TEST_HARNESS=1 bash '$PROV/owner-facts.sh' --file '$TMP/s.env' --env production set-stdin AICC_MAIL_TEST_RECIPIENTS" _ "$bad"
+done
+t_ok "...and none of them wrote a file" test ! -e "$TMP/s.env"
+t_rc "set-stdin refuses a value of more than 4096 bytes" 1 bash -c "head -c 5000 /dev/zero | tr '\0' a | env AICC_TEST_HARNESS=1 bash '$PROV/owner-facts.sh' --file '$TMP/s.env' --env production set-stdin AICC_MAIL_FROM_NAME"
+t_rc "set-stdin with a value on the command line is refused (the form has no argument)" 1 bash -c "echo x | env AICC_TEST_HARNESS=1 bash '$PROV/owner-facts.sh' --file '$TMP/s.env' --env production set-stdin AICC_MAIL_FROM_NAME extra"
+t_rc "set-stdin refuses an unknown key" 1 bash -c "echo x | env AICC_TEST_HARNESS=1 bash '$PROV/owner-facts.sh' --file '$TMP/s.env' --env production set-stdin NOPE"
+t_rc "set-stdin on stage refuses a P38 key" 1 bash -c "echo a@copilt.org | env AICC_TEST_HARNESS=1 bash '$PROV/owner-facts.sh' --file '$TMP/s.env' --env stage set-stdin AICC_MAIL_REPLY_TO"
+rm -f "$TMP/s.env"
 # api.brevo.com requested without the provider fact, or as an extra host at all
 for h in "api.brevo.com" "brevo.com" "sub.brevo.com" "api.brevo.com,pay.example.com" "*.brevo.com" "API.BREVO.COM" "x.api.brevo.com"; do
   t_rc "extra outbound host '$h' is REFUSED (the Brevo host is added only by the provider fact; no wildcard, no pattern)" 1 env AICC_TEST_HARNESS=1 bash "$PROV/owner-facts.sh" --file "$TMP/x.env" --env production set AICC_EXTRA_ACCESSIBLE_HOSTS "$h"
@@ -292,6 +307,14 @@ done
 t_eq "...and the facts file still holds no from name after those refusals" "$(grep -c AICC_MAIL_FROM_NAME "$OFF" || true)" "0"
 printf 'AICC_MAIL_PROVIDER=brevo_api\nAICC_MAIL_FROM_ADDRESS=notifications@copilt.org\nAICC_MAIL_FROM_NAME=evil?>\n' > "$OFF"; chmod 600 "$OFF"; refused "a HAND-EDITED name with '?>' is REFUSED by the renderer" "AICC_MAIL_FROM_NAME contains '<' or '>'"
 printf 'AICC_MAIL_PROVIDER=brevo_api\nAICC_MAIL_FROM_ADDRESS=notifications@copilt.org\nAICC_MAIL_FROM_NAME=a\rb\n' > "$OFF"; refused "a HAND-EDITED name with a carriage return is REFUSED by the renderer" "carriage-return"
+for bad in "a@gmail.com" "support@evil.com" "support@copilt.org.evil.com" "support@sub.copilt.org" "support@COPILT.ORG.evil.com" "Support <support@copilt.org>" "support@copilt.org,x@gmail.com" "support@copilt.org
+x@evil.com"; do
+  t_rc "reply-to '${bad//$'\n'/\\n}' (off-domain or not a plain address) is REFUSED: replies must land on copilt.org" 1 env AICC_TEST_HARNESS=1 bash "$PROV/owner-facts.sh" --file "$TMP/x.env" --env production set AICC_MAIL_REPLY_TO "$bad"
+done
+t_eq "reply-to with an upper-case domain is stored lower-case" "$(env AICC_TEST_HARNESS=1 bash "$PROV/owner-facts.sh" --file "$TMP/x.env" --env production set AICC_MAIL_REPLY_TO "Support@COPILT.ORG" >/dev/null 2>&1; env AICC_TEST_HARNESS=1 bash "$PROV/owner-facts.sh" --file "$TMP/x.env" --env production list)" "AICC_MAIL_REPLY_TO=Support@copilt.org"
+rm -f "$TMP/x.env"
+t_rc "...whereas the LEGAL support address keeps its own (existing) rule: any domain" 0 env AICC_TEST_HARNESS=1 bash "$PROV/owner-facts.sh" --file "$TMP/x.env" --env production set AICC_LEGAL_SUPPORT_EMAIL "counsel@example.org"; rm -f "$TMP/x.env"
+printf 'AICC_MAIL_PROVIDER=brevo_api\nAICC_MAIL_FROM_ADDRESS=notifications@copilt.org\nAICC_MAIL_REPLY_TO=boss@gmail.com\n' > "$OFF"; chmod 600 "$OFF"; key_file; refused "a HAND-EDITED off-domain reply-to is REFUSED by the renderer" "AICC_MAIL_REPLY_TO must be an address @copilt.org"
 for bad in "a'b@copilt.org" 'a\b@copilt.org' "a;b@copilt.org" 'a"b@copilt.org' "a b@copilt.org" "a\$b@copilt.org" "a@copilt.org'); die();//"; do
   t_rc "reply-to '$bad' is REFUSED" 1 env AICC_TEST_HARNESS=1 bash "$PROV/owner-facts.sh" --file "$TMP/x.env" --env production set AICC_MAIL_REPLY_TO "$bad"
 done
@@ -319,6 +342,12 @@ t_eq "--compare of a changed set exits 4" "$crc" "4"
 t_contains "...names the changed constant" "$CMP" "changed: AICC_MAIL_DAILY_BUDGET, AICC_MAIL_FROM_NAME"
 t_not_contains "...and never prints a value" "$CMP" "Changed Name"
 t_eq "...and writes nothing (the output file is unchanged)" "$(sha "$OUT")" "$S1"
+touch "$SEC/.compare.leftover-from-a-killed-run"; R --compare >/dev/null 2>&1
+t_ok "a leftover .compare.* file of a killed earlier run is swept by the next run" test ! -e "$SEC/.compare.leftover-from-a-killed-run"
+t_eq "--compare leaves no temp copy of the rendered config behind in the secrets directory" "$(find "$SEC" -name '.compare.*' | wc -l | tr -d ' ')" "0"
+CTRACE="$( { env AICC_TEST_HARNESS=1 bash -x "$PROV/render-wp-config.sh" --env production --confirm-production --compare --out "$OUT" --secrets-dir "$SEC" --mail-dir "$MAILD" --plugin-release-dir "$REL" --owner-facts-file "$OFF" --owner "$OFU"; } 2>&1 )"
+t_contains "--compare creates its temp file INSIDE the 0700 secrets directory (not /tmp) with mode 0600" "$CTRACE" "mktemp $SEC/.compare."
+t_contains "...and chmods it 600" "$CTRACE" "chmod 600 $SEC/.compare."
 reset_facts; CMP="$(R --compare 2>&1)"; crc=$?
 t_eq "--compare of the render that REMOVES the Brevo region exits 4 and lists what goes away" "$crc/$(printf '%s' "$CMP" | grep -c 'removed: .*AICC_MAIL_PROVIDER')" "4/1"
 t_contains "...including the outbound-host line as a changed constant" "$CMP" "WP_ACCESSIBLE_HOSTS"

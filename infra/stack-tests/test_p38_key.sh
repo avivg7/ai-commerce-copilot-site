@@ -72,7 +72,7 @@ cat > "$FAKEBIN/aicc-wp" <<EOF
 # a stand-in for the Control Plane's WP-CLI: prints what a real one would (the FULL address is deliberately included: the owner script must mask it)
 if [ "\$1 \$2" = "aicc-mail check" ]; then echo "check: provider=brevo_api config=ok key=ok (content not shown)"; exit 0; fi
 if [ "\$1 \$2" = "aicc-mail send-test" ]; then to=""; kind=""; for a in "\$@"; do case "\$a" in --to=*) to="\${a#--to=}" ;; --kind=*) kind="\${a#--kind=}" ;; esac; done
-  printf 'send-test kind=%s result=accepted to=%s message_id=<fake-%s-0001@example.test>\n' "\$kind" "\$to" "\$kind"; exit 0; fi
+  printf 'send-test kind=%s result=accepted to=%s message_id=<fake-%s-0001@example.test>\n' "\$kind" "\$to" "\$kind"; printf 'echo-upper: %s\n' "\$(printf '%s' "\$to" | tr a-z A-Z)"; exit 0; fi
 echo "fake aicc-wp: unexpected \$*" >&2; exit 2
 EOF
 for f in "$FAKEBIN"/*; do [ -L "$f" ] || chmod 755 "$f"; done
@@ -81,12 +81,15 @@ cat > "$TMP/fakessh" <<EOF
 # fake ssh: logs its own argv and environment, checks the destination, then runs the REMOTE command locally inside the fake host (absolute host paths are re-rooted under the prefix)
 set -u
 dest=""; cmd=""; opts=()
-while [ \$# -gt 0 ]; do case "\$1" in -i|-o) opts+=("\$1" "\$2"); shift 2 ;; -*) opts+=("\$1"); shift ;; *) dest="\$1"; shift; cmd="\$*"; break ;; esac; done
+while [ \$# -gt 0 ]; do case "\$1" in -i|-o|-F) opts+=("\$1" "\$2"); shift 2 ;; -*) opts+=("\$1"); shift ;; *) dest="\$1"; shift; cmd="\$*"; break ;; esac; done
 { printf 'SSH dest=%s\n' "\$dest"; printf 'SSH opt=%s\n' "\${opts[@]}"; printf 'SSH cmd=%s\n' "\$cmd"; /usr/bin/env | /usr/bin/sort | /usr/bin/sed 's/^/SSHENV /'; } >> "$REC"
 [ "\$dest" = "aicc@157.230.110.211" ] || { echo "fake ssh: unexpected destination \$dest" >&2; exit 255; }
 [ ! -e "$TMP/ssh-down" ] || { echo "fake ssh: connection refused" >&2; exit 255; }
 cmd="\${cmd//\\/etc\\//$PFX/etc/}"; cmd="\${cmd//\\/usr\\/local\\/sbin\\//$FAKEBIN/}"
-exec env PATH="$FAKEBIN:\$PATH" AICC_TEST_HARNESS=1 AICC_ROOT_PREFIX="$PFX" AICC_TEST_OWNER="$OFU" bash -c "\$cmd"
+env PATH="$FAKEBIN:\$PATH" AICC_TEST_HARNESS=1 AICC_ROOT_PREFIX="$PFX" AICC_TEST_OWNER="$OFU" bash -c "\$cmd"; rc=\$?
+# a flag file makes the connection DROP after the remote tool has finished (exit 255): the host committed, the owner's side only sees a failure
+case "\$cmd" in *aicc-set-brevo-key*) [ ! -e "$TMP/ssh-post-fail" ] || exit 255 ;; esac
+exit \$rc
 EOF
 chmod 755 "$TMP/fakessh"
 # the operator key file and the pinned host key of the Mac side (fake values)
@@ -200,7 +203,7 @@ t_eq "...and the journal never saw a key" "$(grep -c 'xkeysib' "$JOURNAL" || tru
 
 echo "== B. ATOMICITY: kill -9 at every stage leaves the old key or nothing, never a partial or truncated file =="
 for stage in after_create after_write after_fsync after_rename; do
-  fresh_dir; AICC_TEST_KILL_AT="$stage" HOSTIN "$KEY1" install >/dev/null 2>&1; rc=$?
+  fresh_dir; U0="$(UNRELATED_SHA | tr '\n' ' ')"; AICC_TEST_KILL_AT="$stage" HOSTIN "$KEY1" install >/dev/null 2>&1; rc=$?
   t_ok "install killed at $stage: the process was really killed (non-zero exit)" test "$rc" != 0
   if [ "$stage" = after_rename ]; then
     t_eq "...install killed at $stage: the file is COMPLETE (the rename is the commit point)" "$(cat "$KF")" "$KEY1"
@@ -215,14 +218,15 @@ for stage in after_create after_write after_fsync after_rename; do
     t_contains "...status reports the stale temp file" "$(HOSTRUN status 2>&1)" "stale temp file"
     HOSTIN "$KEY1" install >/dev/null 2>&1; t_eq "...the next install removes it and succeeds" "$(mailstate)" "brevo-api.key smtp.env turnstile.secret "
   fi
-  t_eq "...smtp.env and turnstile.secret are intact" "$(sha "$MAILD/smtp.env" | cut -c1-8)" "$(sha "$MAILD/smtp.env" | cut -c1-8)"
+  t_eq "...smtp.env AND turnstile.secret hash exactly as before the killed run" "$(UNRELATED_SHA | tr '\n' ' ')" "$U0"
 done
 for stage in after_create after_write after_fsync after_rename; do
-  fresh_dir; HOSTIN "$KEY1" install >/dev/null 2>&1; AICC_TEST_KILL_AT="$stage" HOSTIN "$KEY2" rotate >/dev/null 2>&1; rc=$?
+  fresh_dir; U0="$(UNRELATED_SHA | tr '\n' ' ')"; HOSTIN "$KEY1" install >/dev/null 2>&1; AICC_TEST_KILL_AT="$stage" HOSTIN "$KEY2" rotate >/dev/null 2>&1; rc=$?
   t_ok "rotate killed at $stage: really killed" test "$rc" != 0
   if [ "$stage" = after_rename ]; then t_eq "...rotate killed at $stage: the NEW key, complete" "$(cat "$KF")" "$KEY2"; else t_eq "...rotate killed at $stage: the OLD key is intact, complete (no truncation, no mix)" "$(cat "$KF")" "$KEY1"; fi
   t_eq "...the final file is a whole key plus newline (size is one of the two)" "$(size_state)" "whole"
   t_eq "...mode 0640" "$(mode "$KF")" "640"
+  t_eq "...smtp.env AND turnstile.secret hash exactly as before" "$(UNRELATED_SHA | tr '\n' ' ')" "$U0"
   HOSTIN "$KEY2" rotate >/dev/null 2>&1; t_eq "...a later rotate succeeds and leaves no stale file" "$(mailstate)" "brevo-api.key smtp.env turnstile.secret "
 done
 fresh_dir; HOSTIN "$KEY1" install >/dev/null 2>&1; AICC_TEST_KILL_AT=after_write HOSTIN "$KEY2" rotate >/dev/null 2>&1
@@ -297,7 +301,7 @@ t_eq "the recorded argv/env of every external command the Mac script and the fak
 t_eq "...nor any fragment of it" "$(grep -c 'NOT-A-REAL-KEY' "$REC" || true)" "0"
 t_ok "...(the records are real: ssh, shasum and the host's python were recorded)" bash -c "grep -q '^SSH cmd=sudo /usr/local/sbin/aicc-set-brevo-key install' '$REC' && grep -q '^REC shasum' '$REC' && grep -q '^REC python3' '$REC'"
 t_eq "the remote command string sent over ssh contains no secret (it is exactly the documented command)" "$(grep '^SSH cmd=sudo' "$REC" | head -1)" "SSH cmd=sudo /usr/local/sbin/aicc-set-brevo-key install --expect-stage-id $STAGEID"
-t_eq "the ssh options recorded are the pinned production ones" "$(grep '^SSH opt=' "$REC" | head -11 | tr '\n' ' ')" "SSH opt=-i SSH opt=$HOMED/.ssh/aicc_cp_prod_operator SSH opt=-o SSH opt=IdentitiesOnly=yes SSH opt=-o SSH opt=BatchMode=yes SSH opt=-o SSH opt=StrictHostKeyChecking=yes SSH opt=-oUserKnownHostsFile=$HOMED/.ssh/known_hosts_aicc_prod SSH opt=-o SSH opt=ConnectTimeout=15 "
+t_eq "the ssh options recorded are the pinned production ones, isolated from the owner's ssh config (-F /dev/null, no proxy, no forwarding, no agent, no tty, no global known hosts, no host-key updates)" "$(awk '/^SSH dest/{n++} n==1 && /^SSH opt=/{printf "%s ", substr($0,9)}' "$REC")" "-F /dev/null -i $HOMED/.ssh/aicc_cp_prod_operator -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes -oUserKnownHostsFile=$HOMED/.ssh/known_hosts_aicc_prod -o GlobalKnownHostsFile=/dev/null -o UpdateHostKeys=no -o RequestTTY=no -o ProxyCommand=none -o ProxyJump=none -o ForwardAgent=no -o ForwardX11=no -o ClearAllForwardings=yes -o ConnectTimeout=15 -o ControlMaster=no -o ControlPath=none "
 t_eq "ssh was called twice: once to read the identity (before the prompt), once with the key on stdin" "$(grep -c '^SSH dest' "$REC")" "2"
 t_contains "the identity read came first" "$(grep '^SSH cmd=' "$REC" | head -1)" "cat /etc/aicc-stage-identity"
 t_eq "no file anywhere under the temp tree contains the key except the key file (and the test's own pty driver configs)" "$(grep -rlF "$KEY1" "$TMP" 2>/dev/null | grep -v "^$DRV/" | grep -v "^$KF\$" | tr '\n' ' ')" ""
@@ -335,7 +339,7 @@ ROT="$(jq -nc --arg k "$KEY2" '[{expect:"Brevo API key (input hidden", send:($k+
 drive r1 "$ROT" "$KEY2" -- rotate
 t_eq "rotate on a pty: exit 0" "$(res r1 .exit)" "0"
 t_eq "...the file holds the new key, mode 0640" "$(cat "$KF")/$(mode "$KF")" "$KEY2/640"
-t_contains "...the reminder to revoke the old key in Brevo is printed" "$(res r1 .output)" "revoke the PREVIOUS key in Brevo"
+t_contains "...the reminder to revoke the old key in Brevo is printed" "$(res r1 .output)" "STILL VALID in Brevo until you REVOKE it there"
 t_eq "...no leak (poller + terminal)" "$(res r1 '.leaks|join(" | ")')" ""
 t_eq "...the new key is in no record, journal or other file; the old key is nowhere on the host" "$(grep -cF "$KEY2" "$REC" || true)/$(grep -cF "$KEY2" "$JOURNAL" || true)/$(grep -rlF "$KEY1" "$PFX" 2>/dev/null | wc -l | tr -d ' ')" "0/0/0"
 t_eq "...the directory holds no backup of the previous key" "$(mailstate)" "brevo-api.key smtp.env turnstile.secret "
@@ -373,6 +377,7 @@ t_contains "...the message id is shown" "$OUTT" "message_id=<fake-verify-0001@ex
 t_contains "...the welcome test ran" "$OUTT" "message_id=<fake-welcome-0001@example.test>"
 t_eq "...the typed address appears in the output EXACTLY once: the terminal's own echo of what the owner typed; the script itself prints it nowhere (every later line shows the masked form)" "$(printf '%s' "$OUTT" | grep -o 'Owner.Box@example.org' | wc -l | tr -d ' ')" "1"
 t_contains "...(masked form)" "$OUTT" "O***@example.org"
+REC_THEN="$TMP/records-then.log"; cp "$REC" "$REC_THEN"; OUTT="$(res t1 .output)"
 t_eq "...the key is in no output, process list sample, record, journal or file" "$(res t1 '.leaks|length')/$(grep -cF "$KEY1" "$REC" || true)/$(grep -cF "$KEY1" "$JOURNAL" || true)/$(grep -rlF "$KEY1" "$TMP" 2>/dev/null | grep -v "^$DRV/" | grep -v "^$KF\$" | wc -l | tr -d ' ')" "0/0/0/0"
 t_eq "...the wp-config.php on the fake host contains no key" "$(grep -c "NOT-A-REAL-KEY" "$PFX/srv/aicc/shared/wp-config.php" || true)" "0"
 # declining the render and the mailbox leaves the configuration alone
@@ -385,6 +390,56 @@ t_eq "...no facts file entry for a test recipient" "$(grep -c TEST_RECIPIENTS "$
 fresh_dir; TB="$(jq -nc --arg k "$KEY1" '[{expect:"Brevo API key (input hidden", send:($k+"\n"), hidden:true},{expect:"confirm (input hidden", send:($k+"\n"), hidden:true},{expect:"Render the configuration and reload PHP-FPM now?", send:"n\n"},{expect:"for the test messages", send:"not an address; rm -rf /\n"}]')"
 drive t3 "$TB" "$KEY1" -- install --then-check; t_eq "a hostile string at the mailbox prompt: REFUSED (exit 1), nothing set" "$(res t3 .exit)/$(grep -c TEST_RECIPIENTS "$PFX/etc/aicc/owner-facts.env" || true)" "1/0"
 t_contains "...with the reason" "$(res t3 .output)" "not a plain mailbox address"
+
+echo "== G. review fixes: test-seam gates, unknown state after a failure, short write, directory lock, address handling =="
+# (4) the seams are refused outside a scratch directory and are never silent
+t_contains "host tool: AICC_TEST_HARNESS with an AICC_ROOT_PREFIX outside the temp dir is REFUSED" "$(env AICC_TEST_HARNESS=1 AICC_ROOT_PREFIX=/etc PATH="$FAKEBIN:$BASEPATH" bash "$HOSTSCRIPT" status 2>&1 || true)" "under the system temp dir"
+t_contains "host tool: AICC_TEST_HARNESS with NO prefix is REFUSED" "$(env AICC_TEST_HARNESS=1 PATH="$FAKEBIN:$BASEPATH" bash "$HOSTSCRIPT" status 2>&1 || true)" "under the system temp dir"
+t_contains "host tool: an active seam prints a loud banner on stderr" "$(HOSTRUN status 2>&1 >/dev/null)" "TEST HARNESS ACTIVE"
+t_contains "Mac script: AICC_TEST_HARNESS with a fake ssh OUTSIDE the temp dir is REFUSED" "$(env -i "PATH=$BASEPATH" "HOME=$HOMED" AICC_TEST_HARNESS=1 AICC_TEST_SSH=/usr/bin/ssh bash "$MACSCRIPT" --dry-run </dev/null 2>&1 || true)" "under the system temp dir"
+t_contains "Mac script: AICC_TEST_HARNESS with NO fake ssh is REFUSED" "$(env -i "PATH=$BASEPATH" "HOME=$HOMED" AICC_TEST_HARNESS=1 bash "$MACSCRIPT" --dry-run </dev/null 2>&1 || true)" "AICC_TEST_SSH"
+ln -s /usr/bin/ssh "$TMP/ssh-link"; t_contains "Mac script: a symlink in the temp dir that points at the real ssh is REFUSED" "$(env -i "PATH=$BASEPATH" "HOME=$HOMED" AICC_TEST_HARNESS=1 AICC_TEST_SSH="$TMP/ssh-link" bash "$MACSCRIPT" --dry-run </dev/null 2>&1 || true)" "under the system temp dir"
+t_contains "Mac script: an active seam prints a loud banner on stderr" "$(mac --dry-run 2>&1 >/dev/null </dev/null)" "TEST HARNESS ACTIVE"
+# (1) a failure AFTER the host committed: the owner is told the state is unknown
+fresh_dir; reset_identity; : > "$REC"; touch "$TMP/ssh-post-fail"
+drive u1 "$STEPS" "$KEY1" -- install
+t_eq "a connection that drops after the host committed: exit 1" "$(res u1 .exit)" "1"
+t_contains "...the owner is told the STATE IS UNKNOWN and to run status (not 'nothing was changed')" "$(res u1 .output)" "STATE UNKNOWN"
+t_contains "...naming the status command" "$(res u1 .output)" "status"
+t_ok "...and indeed the host HAD committed the key (so 'nothing else was changed' would have been false)" bash -c "[ \"\$(cat '$KF')\" = '$KEY1' ]"
+t_not_contains "...the message never claims nothing changed" "$(res u1 .output)" "nothing else was changed"
+t_eq "...and no leak" "$(res u1 '.leaks|join(" | ")')" ""
+rm -f "$TMP/ssh-post-fail"
+# (2) a short write must never replace a good key
+fresh_dir; HOSTIN "$KEY1" install >/dev/null 2>&1; U0="$(UNRELATED_SHA | tr '\n' ' ')"; SW="$(AICC_TEST_SHORT_WRITE=1 HOSTIN "$KEY2" rotate 2>&1)"; rc=$?
+t_eq "a SHORT WRITE during rotate is REFUSED (exit 1)" "$rc" "1"
+t_contains "...with the reason" "$SW" "not written completely"
+t_eq "...the good key is untouched" "$(cat "$KF")" "$KEY1"
+t_eq "...no temp file is left and nothing else changed" "$(mailstate)" "brevo-api.key smtp.env turnstile.secret "
+t_not_contains "...the message holds no key" "$SW" "ROT2"
+rm -f "$KF"; AICC_TEST_SHORT_WRITE=1 HOSTIN "$KEY1" install >/dev/null 2>&1; t_ok "...a short write on a fresh install creates NO key file (never a truncated one)" test ! -e "$KF"
+t_eq "...unrelated files untouched" "$(UNRELATED_SHA | tr '\n' ' ')" "$U0"
+# (12) two concurrent runs cannot interleave
+fresh_dir; python3 -I -c 'import fcntl,os,sys,time; fd=os.open(sys.argv[1],os.O_RDONLY); fcntl.flock(fd,fcntl.LOCK_EX); print("locked",flush=True); time.sleep(60)' "$MAILD" > "$TMP/lock.out" 2>&1 &
+LOCKPID=$!; for i in $(seq 1 100); do grep -q locked "$TMP/lock.out" 2>/dev/null && break; sleep 0.1; done
+LK="$(HOSTIN "$KEY1" install 2>&1)"; rc=$?
+t_eq "install while another process holds the key directory lock: REFUSED at once (exit 1)" "$rc" "1"
+t_contains "...naming the reason" "$LK" "another aicc-set-brevo-key is running"
+t_ok "...nothing written" test ! -e "$KF"
+t_contains "rotate and revoke are refused too" "$(HOSTRUN revoke 2>&1 || true)" "another aicc-set-brevo-key is running"
+t_contains "status (read-only) is NOT blocked by the lock" "$(HOSTRUN status 2>&1)" "absent: /etc/aicc-mail/brevo-api.key"
+kill "$LOCKPID" 2>/dev/null; wait "$LOCKPID" 2>/dev/null
+t_ok "after the lock is released the install succeeds" bash -c "printf '%s\n' '$KEY1' | env AICC_TEST_HARNESS=1 AICC_ROOT_PREFIX='$PFX' AICC_TEST_OWNER='$OFU' PATH='$FAKEBIN:$BASEPATH' bash '$HOSTSCRIPT' install >/dev/null 2>&1 && [ \"\$(cat '$KF')\" = '$KEY1' ]"
+# (8) the test mailbox is in no remote command line, and is masked whatever its case in any host echo
+t_eq "the ssh command strings of the --then-check run (recorded earlier) never contain the mailbox" "$(grep '^SSH cmd=' "$REC_THEN" | grep -ci 'owner\.box' || true)" "0"
+t_eq "...and no recorded argv or environment of any child process contains it either" "$(grep -ci 'owner\.box@example' "$REC_THEN" || true)" "0"
+t_contains "...the fact is set through the stdin form" "$(grep '^SSH cmd=' "$REC_THEN" | tr '\n' ' ')" "aicc-owner-facts set-stdin AICC_MAIL_TEST_RECIPIENTS"
+t_contains "...and each send-test reads the address with read -r from stdin" "$(grep '^SSH cmd=' "$REC_THEN" | tr '\n' ' ')" "IFS= read -r a; exec aicc-wp aicc-mail send-test"
+t_not_contains "a host echo of the address in UPPER case is masked as well" "$OUTT" "OWNER.BOX@EXAMPLE.ORG"
+t_not_contains "...and in lower case" "$OUTT" "owner.box@example.org"
+t_contains "...the masked form is shown instead on the echo line" "$OUTT" "echo-upper: O***@example.org"
+# (11) rotation says plainly what remains to be done
+t_contains "rotate: the old key is gone from the host but STILL VALID in Brevo until revoked" "$(res r1 .output)" "STILL VALID in Brevo"
 
 echo "== F. script hygiene (source checks) =="
 t_eq "the Mac script refuses every address but 157.230.110.211 (the address is a constant; no --host option)" "$(grep -c -- '--host\|--ip\|--stage-ip' "$MACSCRIPT" || true)/$(grep -c 'HOSTIP="157.230.110.211"' "$MACSCRIPT")" "0/1"
