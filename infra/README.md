@@ -25,7 +25,7 @@ Target: DigitalOcean Basic Regular, **1 vCPU / 2 GiB RAM / 50 GiB**, Ubuntu 24.0
 
 | Where | Files |
 |---|---|
-| `provision/` | `install-stack.sh` (+ `lib/common.sh`, `pins.env`), `harden-stage2.sh`, `stage2-verify-second-session.{sh,md}` (+ `lib/ssh-session.sh`), `create-staging-db.sh`, `render-wp-config.sh`, `wp-config.stage.template.php`, `push-bundle.sh`, `operator-tunnel.sh`, `RUNBOOK-stage-bringup.md` |
+| `provision/` | `install-stack.sh` (+ `lib/common.sh`, `pins.env`), `harden-stage2.sh`, `stage2-verify-second-session.{sh,md}` (+ `lib/ssh-session.sh`), `create-staging-db.sh`, `render-wp-config.sh`, `wp-config.stage.template.php`, `push-bundle.sh`, `operator-tunnel.sh`, `RUNBOOK-stage-bringup.md`; P38 Brevo mail: `set-brevo-key.sh` (owner-run, Mac) and `host/aicc-set-brevo-key` (root, host; installed to `/usr/local/sbin`), runbooks `docs/cutover/p38-brevo-host-update.md` and `p38-brevo-owner-steps.md` |
 | `systemd/` | `aicc-edge.service`, `aicc-wp-cron.{service,timer}`, `aicc-backup.{service,timer}`, `aicc-cert-expiry.{service,timer}`, `aicc-notify-failure@.service`, `overrides/{php8.3-fpm,mysql}.service.d/aicc.conf`, `aicc-unit-status.sh`, `edge.env.stage.template` |
 | `php/` `mysql/` | `aicc-pool.conf`, `90-aicc-fpm.ini`, `90-aicc-cli.ini`, `aicc-mail-sink.sh`, `aicc-admin.pool.conf.sample` (not installed); `99-aicc.cnf` |
 | `fail2ban/` `logrotate/` | jails `aicc-wp-login` and `caddy-4xx-flood` with their filters; rules for PHP logs, the MySQL slow log, the backup log |

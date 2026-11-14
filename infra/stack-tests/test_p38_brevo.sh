@@ -176,12 +176,18 @@ key_off
 echo "== D. REFUSALS (nothing is written; the previous file stays) =="
 key_file; facts "${BREVO_FACTS[@]}"; R >/dev/null 2>&1; KEEP="$(sha "$OUT")"
 t_ok "(baseline: the Brevo set is accepted)" R
-# facts of the Brevo region without the provider
-for kv in "AICC_MAIL_FROM_ADDRESS notifications@copilt.org" "AICC_MAIL_FROM_NAME Foo" "AICC_MAIL_REPLY_TO a@copilt.org" "AICC_MAIL_DAILY_BUDGET 100" "AICC_MAIL_TEST_RECIPIENTS a@example.org" "AICC_MAIL_STATUS_POLL_ENABLED true"; do
-  facts "$kv"; refused "${kv%% *} without AICC_MAIL_PROVIDER=brevo_api is REFUSED at render (it would configure a region that does not exist)" "AICC_MAIL_PROVIDER is not brevo_api"
+# facts of the Brevo region without the provider are INERT (so that `unset AICC_MAIL_PROVIDER` alone turns Brevo mail off), with a note; only the status poll may not stay on without the provider
+key_file; for kv in "AICC_MAIL_FROM_ADDRESS notifications@copilt.org" "AICC_MAIL_FROM_NAME Foo" "AICC_MAIL_REPLY_TO a@copilt.org" "AICC_MAIL_DAILY_BUDGET 100" "AICC_MAIL_TEST_RECIPIENTS a@example.org"; do
+  facts "$kv"; WARN="$(R 2>&1)"; rc=$?
+  t_eq "${kv%% *} without AICC_MAIL_PROVIDER renders NOTHING (inert, exit 0): the plain default" "$rc/$(diff <(sed -E 's/[0-9a-f]{64}/HEX64/g' "$OUT") "$GOLD" >/dev/null && echo golden)" "0/golden"
+  t_contains "...with a note that it is ignored" "$WARN" "${kv%% *} set but AICC_MAIL_PROVIDER is not brevo_api: ignored"
 done
-facts "AICC_MAIL_PROVIDER smtp" "AICC_MAIL_FROM_ADDRESS notifications@copilt.org"; refused "Brevo sender facts with provider=smtp are REFUSED (the SMTP region defines its own sender: a second define would warn)" "AICC_MAIL_PROVIDER is not brevo_api"
-facts "AICC_MAIL_PROVIDER smtp" "AICC_MAIL_STATUS_POLL_ENABLED true"; refused "status poll without Brevo (provider=smtp) is REFUSED" "AICC_MAIL_STATUS_POLL_ENABLED"
+reset_facts; R >/dev/null 2>&1; KEEP="$(sha "$OUT")"
+facts "AICC_MAIL_STATUS_POLL_ENABLED true"; refused "AICC_MAIL_STATUS_POLL_ENABLED without AICC_MAIL_PROVIDER=brevo_api is REFUSED (it registers a cron event: never without the transport)" "status poll exists only with the Brevo API transport"
+facts "AICC_MAIL_PROVIDER smtp" "AICC_MAIL_STATUS_POLL_ENABLED true"; refused "status poll with provider=smtp is REFUSED" "status poll exists only with the Brevo API transport"
+facts "AICC_MAIL_PROVIDER smtp" "AICC_MAIL_FROM_ADDRESS notifications@copilt.org"; WARN="$(R 2>&1)"; t_contains "Brevo sender facts with provider=smtp are ignored with a note (the SMTP region defines its own sender)" "$WARN" "ignored"
+t_eq "...and nothing of them is rendered" "$(grep -v '^//' "$OUT" | grep -c "notifications@copilt.org" || true)" "0"
+facts "${BREVO_FACTS[@]}"; R >/dev/null 2>&1; KEEP="$(sha "$OUT")"
 # budget and caps
 facts "${BREVO_FACTS[@]}" "AICC_MAIL_MAX_PER_DAY 200" "AICC_MAIL_DAILY_BUDGET 240"; refused "a daily budget above the day cap is REFUSED" "is above AICC_MAIL_MAX_PER_DAY"
 facts "${BREVO_FACTS[@]}" "AICC_MAIL_MAX_PER_DAY 200"; refused "a day cap below the DEFAULT budget (240) with no explicit budget is REFUSED (the default is never silently lowered)" "below the default daily budget"
@@ -371,8 +377,10 @@ T set AICC_MAIL_STATUS_POLL_ENABLED true >/dev/null; t_ok "step 5 (optional, lat
 T unset AICC_MAIL_STATUS_POLL_ENABLED >/dev/null; T unset AICC_MAIL_TEST_RECIPIENTS >/dev/null; R >/dev/null 2>&1
 T set AICC_MAIL_MAX_PER_HOUR 60 >/dev/null; T set AICC_MAIL_MAX_PER_DAY 240 >/dev/null; t_ok "step 6 (optional): caps matched to the plan, render" R
 T unset AICC_MAIL_MAX_PER_HOUR >/dev/null; T unset AICC_MAIL_MAX_PER_DAY >/dev/null
-T unset AICC_MAIL_PROVIDER >/dev/null; refused2="$(R 2>&1 || true)"
-t_contains "the WRONG order (provider unset while the sender facts remain) is refused, nothing written" "$refused2" "AICC_MAIL_PROVIDER is not brevo_api"
+T set AICC_MAIL_STATUS_POLL_ENABLED true >/dev/null; T unset AICC_MAIL_PROVIDER >/dev/null; refused2="$(R 2>&1 || true)"
+t_contains "the WRONG order (provider unset while the status poll is still on) is refused, nothing written" "$refused2" "status poll exists only with the Brevo API transport"
+T unset AICC_MAIL_STATUS_POLL_ENABLED >/dev/null; WARN="$(R 2>&1)"; t_ok "ONE-COMMAND OFF: with the poll unset, 'unset AICC_MAIL_PROVIDER' + render turns Brevo mail off while the sender facts stay (inert)" test "$(grep -v '^//' "$OUT" | grep -c 'brevo_api\|api\.brevo\.com\|AICC_MAIL_ENABLED' || true)" = "0"
+t_contains "...the render says the facts are ignored" "$WARN" "ignored"
 for k in AICC_MAIL_FROM_ADDRESS AICC_MAIL_FROM_NAME AICC_MAIL_REPLY_TO AICC_MAIL_DAILY_BUDGET; do T unset $k >/dev/null; done
 t_ok "rollback: every P38 fact unset, key file still there: the golden default again" bash -c "R() { :; }; env AICC_TEST_HARNESS=1 bash '$PROV/render-wp-config.sh' --env production --confirm-production --out '$OUT' --secrets-dir '$SEC' --mail-dir '$MAILD' --plugin-release-dir '$REL' --owner-facts-file '$OFF' --owner '$OFU' >/dev/null 2>&1; diff <(sed -E 's/[0-9a-f]{64}/HEX64/g' '$OUT') '$GOLD'"
 key_off; reset_facts

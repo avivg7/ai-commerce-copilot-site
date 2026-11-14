@@ -407,6 +407,10 @@ def mail_mode(facts, ctx):
         return "unknown", notes, problems
     smtp, key = bool(ctx.get("mail")), bool(ctx.get("brevo_key"))
     prov = facts.get("AICC_MAIL_PROVIDER")
+    if prov != "brevo_api":
+        inert = [k for k in P38_KEYS if k in facts and k != "AICC_MAIL_PROVIDER"]
+        if inert:
+            notes.append("%s set but AICC_MAIL_PROVIDER is not brevo_api: ignored (the Brevo API region is not rendered)" % ", ".join(inert))
     if prov == "brevo_api":
         if key:
             return "brevo_api", notes, problems
@@ -444,10 +448,11 @@ def p38_problems(facts, env, ctx=None):
             out.append("AICC_MAIL_MAX_PER_HOUR (%d) is above %d, the Brevo Free daily limit" % (hour, BREVO_DAY_CEILING))
     if not keys_set:
         return out
-    others = [k for k in keys_set if k != "AICC_MAIL_PROVIDER"]
     if prov != "brevo_api":
-        if others:
-            out.append("%s set but AICC_MAIL_PROVIDER is not brevo_api: these facts configure the Brevo API region and would otherwise do nothing (set AICC_MAIL_PROVIDER first, or unset them)" % ", ".join(others))
+        # sender / name / reply-to / budget / test recipients without the provider fact are INERT (the region is not rendered; mail_mode notes them): that is what makes `unset AICC_MAIL_PROVIDER` a one-command way to turn Brevo mail off.
+        # The status poll is the exception: it is a switch that registers a WP-Cron event, so it may never stay on without the provider (unset it first, or in the same command line).
+        if "AICC_MAIL_STATUS_POLL_ENABLED" in facts:
+            out.append("AICC_MAIL_STATUS_POLL_ENABLED set but AICC_MAIL_PROVIDER is not brevo_api: the status poll exists only with the Brevo API transport (`aicc-owner-facts unset AICC_MAIL_STATUS_POLL_ENABLED` first)")
         return out
     if "AICC_MAIL_FROM_ADDRESS" not in facts:
         out.append("AICC_MAIL_PROVIDER=brevo_api needs AICC_MAIL_FROM_ADDRESS (the verified sender, an address @copilt.org): no sender is guessed")
