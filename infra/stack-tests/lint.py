@@ -262,6 +262,72 @@ if os.path.exists(stt):
 if not os.environ.get("AICC_LINT_INFRA"):      # the negative tests lint a copy of infra/ only (no docs/)
     p37doc = os.path.join(ROOT, "docs/cutover/p37-self-service-wp-config.md")
     oexpect(os.path.exists(p37doc), p37doc, "the P37 activation procedure must be documented")
+print("== P38 Brevo API mail: default OFF, one host, the key is a file, the provisioning tools never carry it ==")
+P38_FACTS = ["AICC_MAIL_PROVIDER", "AICC_MAIL_FROM_ADDRESS", "AICC_MAIL_FROM_NAME", "AICC_MAIL_REPLY_TO", "AICC_MAIL_DAILY_BUDGET", "AICC_MAIL_TEST_RECIPIENTS", "AICC_MAIL_STATUS_POLL_ENABLED"]
+if os.path.exists(of_py):
+    ofs3 = read(of_py)
+    m3 = re.search(r"(?s)ORDER = \[(.*?)\n\]", ofs3)
+    keys3 = re.findall(r'"([A-Z][A-Z0-9_]+)"', m3.group(1)) if m3 else []
+    for k in P38_FACTS:
+        oexpect(k in keys3, of_py, "P38 owner fact %s must be in ORDER" % k)
+    oexpect('BREVO_HOST = "api.brevo.com"' in ofs3 and ofs3.count('"api.brevo.com"') == 1, of_py, "the Brevo API host must be exactly api.brevo.com, written ONCE (BREVO_HOST): no wildcard, no pattern, no second spelling")
+    oexpect('BREVO_KEY_FILE = "/etc/aicc-mail/brevo-api.key"' in ofs3, of_py, "the Brevo key FILE path must be the fixed /etc/aicc-mail/brevo-api.key (the directory PHP can traverse)")
+    oexpect('MAIL_PROVIDERS = ("brevo_api", "smtp")' in ofs3, of_py, "the mail provider fact accepts exactly brevo_api and smtp")
+    oexpect('MAIL_FROM_DOMAINS = ("copilt.org",)' in ofs3, of_py, "the sender domain is exactly copilt.org (the authenticated domain)")
+    oexpect(re.search(r"(?m)^BREVO_DAY_CEILING = 300\s*(#|$)", ofs3) is not None, of_py, "the Brevo Free daily ceiling is 300")
+    mt3 = re.search(r"(?s)TRUE_ONLY = \((.*?)\)\n", ofs3)
+    oexpect(mt3 is not None and "AICC_MAIL_STATUS_POLL_ENABLED" in mt3.group(1), of_py, "P38 switch AICC_MAIL_STATUS_POLL_ENABLED must be TRUE_ONLY (exactly the word true, unset = OFF)")
+    ms3 = re.search(r'"stage": \[(.*?)\],\n\}', ofs3, re.S)
+    oexpect(ms3 is not None and not any(k in ms3.group(1) for k in P38_FACTS), of_py, "staging must not accept any P38 owner fact")
+    for bad in keys3:
+        oexpect(not re.search(r"(?i)API_KEY|BREVO|_KEY_FILE", bad), of_py, "%s: no owner fact may carry or name the Brevo key (the key is a root-placed FILE)" % bad)
+    for needle, why in (("def p38_problems", "the consistency rules"), ("def render_p38", "the region renderer"), ("def check_brevo_key_file", "the key file shape check"), ("def mail_mode", "the provider decision"),
+                        ("both /etc/aicc-mail/smtp.env and", "both-secret-files refusal"), ("is a Brevo host", "api.brevo.com only through the provider fact"), ("SMTP key (xsmtpsib-", "xsmtpsib refusal"),
+                        ("def mask_address", "personal data masking in list")):
+        oexpect(needle in ofs3, of_py, "P38 rule lost: %s (%s)" % (needle, why))
+pt3 = os.path.join(INFRA, "provision/wp-config.production.template.php")
+if os.path.exists(pt3):
+    ptt3 = read(pt3)
+    oexpect(ptt3.count("// @@BREVO_BEGIN@@\n") == 1 and ptt3.count("// @@BREVO_END@@\n") == 1 and ptt3.count("\n@@BREVO_MAIL@@\n") == 1, pt3, "exactly one P38 Brevo region (begin marker, @@BREVO_MAIL@@, end marker)")
+    oexpect("api.brevo.com" not in ptt3, pt3, "the template must never name the Brevo API host: the renderer appends it, only with the provider fact and a valid key file")
+    pcode3 = re.sub(r"(?m)^\s*//.*$", "", re.sub(r"(?s)/\*.*?\*/", "", ptt3))
+    for k in ("AICC_MAIL_PROVIDER", "AICC_MAIL_API_KEY_FILE", "AICC_MAIL_API_KEY", "AICC_MAIL_DAILY_BUDGET", "AICC_MAIL_TEST_RECIPIENTS", "AICC_MAIL_STATUS_POLL_ENABLED", "AICC_MAIL_ALLOWED_FROM_DOMAINS"):
+        oexpect(("'%s'" % k) not in pcode3, pt3, "%s must not be defined in the template: it is rendered only from the owner facts + the verified key file (default = absent = mail layer off)" % k)
+stt3 = os.path.join(INFRA, "provision/wp-config.stage.template.php")
+if os.path.exists(stt3):
+    oexpect("BREVO" not in read(stt3) and "brevo" not in read(stt3).replace("smtp-relay.brevo.com", ""), stt3, "the stage template must carry no Brevo region")
+rw3 = read(os.path.join(INFRA, "provision/render-wp-config.sh"))
+for needle, why in (("check-brevo-key", "the key file shape check (python, never a shell variable)"), ("brevo-api.key", "the key file path"), ("--compare", "the no-write comparison"), ("mail-mode", "the provider decision"), ("a stage render may not carry the P38", "staging refusal"),
+                    ("render_p38", "the region renderer"), ("--brevo-key-ready", "the host-state context for the preflight check"), ("must be mode 0640", "the key file mode check")):
+    oexpect(needle in rw3, os.path.join(INFRA, "provision/render-wp-config.sh"), "P38 gate lost: %s (%s)" % (needle, why))
+oexpect(not re.search(r'cat "\$BKF"|<\s*"\$BKF"|\$\(<\s*"?\$BKF|read [^\n]*"\$BKF"|echo "\$bk(out)?"', rw3), os.path.join(INFRA, "provision/render-wp-config.sh"), "the renderer must never read the Brevo key file into a shell variable, print it or copy it")
+hs = os.path.join(INFRA, "provision/host/aicc-set-brevo-key")
+if not os.path.exists(hs):
+    fail(hs, "the host-side Brevo key tool must exist")
+else:
+    hst = read(hs)
+    for needle, why in (("set -euo pipefail", "strict mode"), ("must run as root", "the non-root refusal"), ("xsmtpsib-", "an SMTP key is refused"), ("os.replace(tmp, target)", "atomic rename"), ("os.O_EXCL", "exclusive temp file"), ("logger -t aicc-brevo-key", "the audit line"),
+                        ("0o750", "the directory mode check"), ("shell tracing", "tracing refusal"), ("AICC_TEST_HARNESS", "the harness seams are gated"), ("revoke", "revoke mode"), ("rotate", "rotate mode"), ("status", "status mode")):
+        oexpect(needle in hst, hs, "host key tool lost: %s (%s)" % (needle, why))
+    oexpect(not re.search(r"(?m)^\s*(set -x|bash -x|curl |wget |eval )", hst), hs, "the host key tool must never trace, fetch or eval")
+    oexpect("O_NOFOLLOW" in hst and "S_ISREG" in hst, hs, "the host key tool must refuse symlinks and special files")
+ms_ = os.path.join(INFRA, "provision/set-brevo-key.sh")
+if not os.path.exists(ms_):
+    fail(ms_, "the owner-run Mac script must exist")
+else:
+    mst = read(ms_)
+    for needle, why in (("read -rs", "hidden prompt"), ("/dev/tty", "prompt from the terminal"), ("unset HISTFILE", "no history"), ("umask 077", "private files"), ('HOSTIP="157.230.110.211"', "only the production host"), ('STAGE_ID="3e897286ce82e55f4d866acf0d526a5f"', "the production stage id gate"),
+                        ("StrictHostKeyChecking=yes", "pinned host key"), ("BatchMode=yes", "no password prompts"), ("IdentitiesOnly=yes", "only the named identity"), ("aicc_cp_prod_operator", "the production operator identity"), ("known_hosts_aicc_prod", "the pinned host key file"),
+                        ("--dry-run", "dry run"), ("BASH_XTRACEFD", "tracing refusal"), ("shasum -a 256", "SHA-256 confirmation"), ("xsmtpsib-", "an SMTP key is refused"), ("ulimit -c 0", "no core dump")):
+        oexpect(needle in mst, ms_, "owner script lost: %s (%s)" % (needle, why))
+    oexpect(not re.search(r"(?m)^[^#\n]*\b(rssh|ssh|echo|printf '%s\\n' )[^|\n]*\$\{?k[12]\b[^|\n]*$", mst.replace("printf '%s\\n' \"$k1\" |", "").replace("printf '%s' \"$1\" |", "")), ms_, "the key variable must never be an argument of ssh, echo or any command line (stdin of the ssh connection only)")
+    oexpect(not re.search(r"(?m)^\s*(set -x|bash -x)\b", mst), ms_, "the owner script must never trace")
+    oexpect(not re.search(r"aicc_digitalocean_prod|aicc_cp_stage|--host\b|--stage-ip", mst), ms_, "the owner script reaches the production host only, with the production operator identity only")
+isr3 = read(os.path.join(INFRA, "provision/install-stack.sh"))
+oexpect("provision/host/aicc-set-brevo-key" in isr3 and "aicc-set-brevo-key" in isr3, os.path.join(INFRA, "provision/install-stack.sh"), "must install the Brevo key tool (aicc-set-brevo-key)")
+if not os.environ.get("AICC_LINT_INFRA"):      # the negative tests lint a copy of infra/ only (no docs/)
+    for d3 in ("docs/cutover/p38-brevo-host-update.md", "docs/cutover/p38-brevo-owner-steps.md"):
+        oexpect(os.path.exists(os.path.join(ROOT, d3)), os.path.join(ROOT, d3), "the P38 procedure must be documented")
 print("== secrets and addresses ==")
 SECRET_RES = [
     ("private key block", re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----")), ("AWS key", re.compile(r"AKIA[0-9A-Z]{16}")), ("token", re.compile(r"(gh[pousr]_[A-Za-z0-9]{30,}|xox[baprs]-[0-9A-Za-z-]{10,}|sk_live_[0-9A-Za-z]{16,})")),
