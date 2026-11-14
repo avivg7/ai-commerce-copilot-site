@@ -665,24 +665,24 @@
 	# path_regexp alias_install ^(/(?:he|es|ru))?/(?:install|download)/?$  ->  https://www.copilt.org{1}/get-started/
 	# slash_pages: bare page URL gets its trailing slash in the same hop
 	@slash_pages_q {
-		path_regexp slash_pages_q ^(/(?:he|es|ru))?/(product|pricing|questions|data-and-trust|privacy|terms|refund-policy|accessibility|data-processing-addendum|my-account|cart|checkout)$
+		path_regexp slash_pages_q ^(/(?:he|es|ru))?/(product|pricing|questions|data-and-trust|privacy|terms|refund-policy|accessibility|data-processing-addendum|my-account|cart|checkout|start)$
 		expression {http.request.uri.query} != ''
 		method GET HEAD
 	}
 	redir @slash_pages_q https://www.copilt.org{re.slash_pages_q.1}/{re.slash_pages_q.2}/?{http.request.uri.query} 301
 	@slash_pages_qx {
-		path_regexp slash_pages_qx ^(/(?:he|es|ru))?/(product|pricing|questions|data-and-trust|privacy|terms|refund-policy|accessibility|data-processing-addendum|my-account|cart|checkout)$
+		path_regexp slash_pages_qx ^(/(?:he|es|ru))?/(product|pricing|questions|data-and-trust|privacy|terms|refund-policy|accessibility|data-processing-addendum|my-account|cart|checkout|start)$
 		expression {http.request.uri.query} != ''
 		not method GET HEAD
 	}
 	redir @slash_pages_qx https://www.copilt.org{re.slash_pages_qx.1}/{re.slash_pages_qx.2}/?{http.request.uri.query} 308
 	@slash_pages {
-		path_regexp slash_pages ^(/(?:he|es|ru))?/(product|pricing|questions|data-and-trust|privacy|terms|refund-policy|accessibility|data-processing-addendum|my-account|cart|checkout)$
+		path_regexp slash_pages ^(/(?:he|es|ru))?/(product|pricing|questions|data-and-trust|privacy|terms|refund-policy|accessibility|data-processing-addendum|my-account|cart|checkout|start)$
 		method GET HEAD
 	}
 	redir @slash_pages https://www.copilt.org{re.slash_pages.1}/{re.slash_pages.2}/ 301
 	@slash_pages_x {
-		path_regexp slash_pages_x ^(/(?:he|es|ru))?/(product|pricing|questions|data-and-trust|privacy|terms|refund-policy|accessibility|data-processing-addendum|my-account|cart|checkout)$
+		path_regexp slash_pages_x ^(/(?:he|es|ru))?/(product|pricing|questions|data-and-trust|privacy|terms|refund-policy|accessibility|data-processing-addendum|my-account|cart|checkout|start)$
 		not method GET HEAD
 	}
 	redir @slash_pages_x https://www.copilt.org{re.slash_pages_x.1}/{re.slash_pages_x.2}/ 308
@@ -974,11 +974,11 @@ www.copilt.org {
 		header Cache-Control "public, max-age=0, must-revalidate"
 		import to_static
 	}
-	@wp_nocache path_regexp wp_nocache ^(/(?:he|es|ru))?/(?:cart|checkout|my-account)(?:/.*)?$|^/wp-(?:json|admin|login\.php)(?:/.*)?$|^/wc-(?:ajax|api)(?:/.*)?$
+	@wp_nocache path_regexp wp_nocache ^(/(?:he|es|ru))?/(?:cart|checkout|my-account|start)(?:/.*)?$|^/wp-(?:json|admin|login\.php)(?:/.*)?$|^/wc-(?:ajax|api)(?:/.*)?$
 	handle @wp_nocache {
 		import to_wordpress_nocache
 	}
-	@wp_pages path_regexp wp_pages ^(/(?:he|es|ru))?/(?:pricing|privacy|terms|refund-policy|data-processing-addendum|accessibility|cart|checkout|my-account|product-category|shop)(?:/.*)?$|^(/(?:he|es|ru))?/product/.+$
+	@wp_pages path_regexp wp_pages ^(/(?:he|es|ru))?/(?:pricing|privacy|terms|refund-policy|data-processing-addendum|accessibility|cart|checkout|my-account|start|product-category|shop)(?:/.*)?$|^(/(?:he|es|ru))?/product/.+$
 	handle @wp_pages {
 		import to_wordpress
 	}
@@ -1119,11 +1119,11 @@ www.copilt.org:{$AICC_OPERATOR_PORT:8443} {
 		header Cache-Control "public, max-age=0, must-revalidate"
 		import to_static
 	}
-	@wp_nocache path_regexp wp_nocache ^(/(?:he|es|ru))?/(?:cart|checkout|my-account)(?:/.*)?$|^/wp-(?:json|admin|login\.php)(?:/.*)?$|^/wc-(?:ajax|api)(?:/.*)?$
+	@wp_nocache path_regexp wp_nocache ^(/(?:he|es|ru))?/(?:cart|checkout|my-account|start)(?:/.*)?$|^/wp-(?:json|admin|login\.php)(?:/.*)?$|^/wc-(?:ajax|api)(?:/.*)?$
 	handle @wp_nocache {
 		import to_wordpress_nocache env AICC_EDGE_LISTENER operator
 	}
-	@wp_pages path_regexp wp_pages ^(/(?:he|es|ru))?/(?:pricing|privacy|terms|refund-policy|data-processing-addendum|accessibility|cart|checkout|my-account|product-category|shop)(?:/.*)?$|^(/(?:he|es|ru))?/product/.+$
+	@wp_pages path_regexp wp_pages ^(/(?:he|es|ru))?/(?:pricing|privacy|terms|refund-policy|data-processing-addendum|accessibility|cart|checkout|my-account|start|product-category|shop)(?:/.*)?$|^(/(?:he|es|ru))?/product/.+$
 	handle @wp_pages {
 		import to_wordpress env AICC_EDGE_LISTENER operator
 	}

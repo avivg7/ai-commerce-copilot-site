@@ -16,7 +16,7 @@ export const LEGACY_BASE_PATH = "/ai-commerce-copilot-site";
 const LOC = "(/(?:he|es|ru))?";
 
 /** Pages that already exist (or will exist) as a trailing-slash URL; a bare form gets the slash in the SAME hop as any host redirect. */
-export const SLASH_PAGES = ["product", "pricing", "questions", "data-and-trust", "privacy", "terms", "refund-policy", "accessibility", "data-processing-addendum", "my-account", "cart", "checkout"];
+export const SLASH_PAGES = ["product", "pricing", "questions", "data-and-trust", "privacy", "terms", "refund-policy", "accessibility", "data-processing-addendum", "my-account", "cart", "checkout", "start"];
 
 /**
  * Path rules. Applied to every request on every host (apex, www, http, https). Every target is ABSOLUTE on https://www.copilt.org,
@@ -132,8 +132,8 @@ export const STATIC_RSC_RE = `^${LOC}(?:/(?:product|questions|data-and-trust))?/
 export const REQUEST_ACCESS_RE = `^${LOC}/request-access(?:/.*)?$`;
 /** The launch-offer request intake (P32): ONLY /wp-json/aicc/v1/access-requests and below. It gets the 4 KB body cap (to_wordpress_intake); every other REST route keeps the ordinary machine-path handling. */
 export const WP_INTAKE_RE = "(?i)^/wp-json/aicc/v1/access-requests(?:/.*)?$"; // case-insensitive: WordPress dispatches REST routes case-insensitively, so a case variant must not escape the 4 KB cap
-export const WP_NOCACHE_RE = `^${LOC}/(?:cart|checkout|my-account)(?:/.*)?$|^/wp-(?:json|admin|login\\.php)(?:/.*)?$|^/wc-(?:ajax|api)(?:/.*)?$`;
-export const WP_PAGES_RE = `^${LOC}/(?:pricing|privacy|terms|refund-policy|data-processing-addendum|accessibility|cart|checkout|my-account|product-category|shop)(?:/.*)?$|^${LOC}/product/.+$`;
+export const WP_NOCACHE_RE = `^${LOC}/(?:cart|checkout|my-account|start)(?:/.*)?$|^/wp-(?:json|admin|login\\.php)(?:/.*)?$|^/wc-(?:ajax|api)(?:/.*)?$`;
+export const WP_PAGES_RE = `^${LOC}/(?:pricing|privacy|terms|refund-policy|data-processing-addendum|accessibility|cart|checkout|my-account|start|product-category|shop)(?:/.*)?$|^${LOC}/product/.+$`;
 
 /** What each public site route is at the target state. Derived from docs/AUTHORITY.md + domain-migration.md A2. */
 export const TARGET_OWNER = {
