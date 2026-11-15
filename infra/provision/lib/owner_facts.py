@@ -31,6 +31,8 @@ ORDER = [
     "AICC_EXTRA_ACCESSIBLE_HOSTS",
     "AICC_TURNSTILE_ENABLED",
     "AICC_LM_PLUGIN_SIGNING_PUBKEYS",
+    # ---- P35 hand-added constants pinned as owner facts (production only; rendered as the three delimited blocks the P35 script appended on 2026-11-13; ABSENT = OFF = today's golden render byte for byte) ----
+    "AICC_OWNER_METRICS_TOKEN_FILE", "AICC_OWNER_METRICS_BASE", "AICC_OWNER_DASHBOARD_USER_IDS", "AICC_EA_LAUNCH_OFFER_MODE", "AICC_OWNER_OPS_SNAPSHOT_FILE",
     # ---- P38 Brevo API mail region (production only; renders into its own delimited region of the template, never into the owner-facts or P37 region; ABSENT = OFF = today's render byte for byte) ----
     "AICC_MAIL_PROVIDER", "AICC_MAIL_FROM_ADDRESS", "AICC_MAIL_FROM_NAME", "AICC_MAIL_REPLY_TO", "AICC_MAIL_DAILY_BUDGET", "AICC_MAIL_TEST_RECIPIENTS", "AICC_MAIL_STATUS_POLL_ENABLED",
     # ---- P37 self-service region (production only; everything below renders into the delimited P37 region, never into the owner-facts region; ABSENT = OFF = today's render byte for byte) ----
@@ -43,6 +45,7 @@ ORDER = [
     "AICC_PLAN_CHANGE_ENABLED", "AICC_PAY_RECONCILE_ENABLED", "AICC_PRIVACY_REQUESTS_ENABLED",
 ]
 P37_KEYS = ORDER[ORDER.index("AICC_TRIAL_SELF_SERVICE_ENABLED"):]
+P35_KEYS = ORDER[ORDER.index("AICC_OWNER_METRICS_TOKEN_FILE"):ORDER.index("AICC_MAIL_PROVIDER")]
 P38_KEYS = ORDER[ORDER.index("AICC_MAIL_PROVIDER"):ORDER.index("AICC_TRIAL_SELF_SERVICE_ENABLED")]
 FREE_TEXT = {  # key -> maximum length in characters
     "AICC_LEGAL_ENTITY_NAME": 200, "AICC_LEGAL_ENTITY_ADDRESS": 300, "AICC_LEGAL_GOVERNING_LAW": 300, "AICC_LEGAL_JURISDICTION": 300,
@@ -79,6 +82,21 @@ KEYS_FOR = {
     "stage": ["AICC_ACTIVATION_PROOF_KID", "AICC_LM_PAID_GATEWAYS", "AICC_LM_PAYMENT_EVIDENCE_PROVIDER", "AICC_LM_PAYMENT_GATE_STRICT", "AICC_EXTRA_ACCESSIBLE_HOSTS", "AICC_TURNSTILE_ENABLED"],
 }
 BASE_HOST = {"production": "api.copilt.org", "stage": "stage.copilt.org"}
+# ---- P35 owner-dashboard / launch-offer constants (the Control Plane reads: class-aicc-lm-owner-dashboard.php, class-aicc-lm-ea-requests.php) ---------------------------------------------------------------------------------
+# These five lines were appended BY HAND to the live wp-config.php on 2026-11-13 (P35 gates B2, OFFER, SNAP: evidence in execution-reset/cp-dark/p35/b2-exec/wpconfig-add.sh), so every render would silently remove them. They are now owner facts; the renderer writes
+# the SAME three delimited blocks, in the order the P35 script applied them (B2, OFFER, SNAP), each followed by one blank line, between the "intentionally NOT defined" line and the bootstrap banner. None of them is a secret: the token itself is a FILE the renderer never reads.
+SHARED_DIR = "/srv/aicc/shared/"
+SHARED_FORBIDDEN_FIRST = ("uploads", "plugin-releases")        # the public uploads tree and the private release store: a token or snapshot path must never point into them
+SHARED_SEGMENT = r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}"             # no leading dot: no '.', no '..', no hidden file
+OWNER_METRICS_BASE = "https://api.copilt.org"                   # AICC_LM_Owner_Dashboard::ALLOWED_BASE_HOSTS = api.copilt.org, https, default port, no path: nothing else is accepted by the Control Plane in production
+EA_OFFER_MODES = ("announce",)                                  # the Control Plane also knows `open`, which depends on the request intake and the mail-provider constant: it stays a separate reviewed step; unset = off
+P35_BLOCKS = (   # (block id, keys, the exact comment line the P35 script wrote)
+    ("B2", ("AICC_OWNER_METRICS_TOKEN_FILE", "AICC_OWNER_METRICS_BASE", "AICC_OWNER_DASHBOARD_USER_IDS"),
+     "// ---- Owner Dashboard (P35 gate B2, 2026-11-13): the Backend token is read server-side from this root-owned file (never sent to a browser), the Backend base is fixed, only the listed administrator may open the page ----"),
+    ("OFFER", ("AICC_EA_LAUNCH_OFFER_MODE",), "// ---- Launch offer, ANNOUNCE mode only (2026-11-13 owner batch authorization): no request intake, no strike-through, no limited chip ----"),
+    ("SNAP", ("AICC_OWNER_OPS_SNAPSHOT_FILE",), '// ---- Owner Dashboard ops snapshot (backup + recovery-gate state, produced on the owner Mac; 2026-11-13): optional, a stale or missing file reads "Not reported" ----'),
+)
+
 # ---- P38: Brevo transactional e-mail over the HTTPS API (docs/cutover/p38-brevo-host-update.md). Everything below is production only and DEFAULT OFF: with no P38 fact the render is byte for byte the render before P38. -----------------
 # The ONE switch is AICC_MAIL_PROVIDER=brevo_api (`smtp` only says "use the smtp.env layer" when both secret files exist). The API KEY is never a fact and never a constant: it is the FILE /etc/aicc-mail/brevo-api.key, placed by the owner with
 # infra/provision/set-brevo-key.sh (aicc-set-brevo-key on the host); wp-config carries only its PATH (AICC_MAIL_API_KEY_FILE), exactly like the Turnstile secret. Names verified against the Control Plane source (worktree p38-brevo):
@@ -326,6 +344,29 @@ def parse_user_ids(key, v):
     return out
 
 
+# ---- P35 validators -------------------------------------------------------------------------------------------------------------------------------------
+def _shared_path(key, v):
+    """An absolute path under /srv/aicc/shared/ naming ONE regular file (the renderer never reads it): no traversal, no hidden segment, no trailing slash, not in the public uploads tree or the private release store, not wp-config itself."""
+    if len(v) > 200 or not re.fullmatch(re.escape(SHARED_DIR) + SHARED_SEGMENT + "(?:/" + SHARED_SEGMENT + "){0,3}", v):
+        raise OwnerFactsError("%s must be an absolute path under %s naming one file (letters, digits, . _ - only; no '..', no hidden segment, no trailing slash, at most 4 segments)" % (key, SHARED_DIR))
+    first = v[len(SHARED_DIR):].split("/")[0]
+    if first in SHARED_FORBIDDEN_FIRST or first.startswith("wp-config"):
+        raise OwnerFactsError("%s must not point into %s (the public uploads tree, the private release store) or at wp-config" % (key, first))
+    return v
+
+
+def _owner_metrics_base(key, v):
+    if v != OWNER_METRICS_BASE:
+        raise OwnerFactsError("%s must be exactly %s (an https origin: no path, no port, no trailing slash; the Control Plane accepts no other Backend host in production)" % (key, OWNER_METRICS_BASE))
+    return v
+
+
+def _offer_mode(key, v):
+    if v not in EA_OFFER_MODES:
+        raise OwnerFactsError("%s must be exactly 'announce' (the Control Plane's `open` needs the request intake and the mail-provider constant and is a separate reviewed step; to turn the offer off, unset it)" % key)
+    return v
+
+
 # ---- P38 validators -------------------------------------------------------------------------------------------------------------------------------------
 def _mail_provider(key, v):
     if v not in MAIL_PROVIDERS:
@@ -519,6 +560,14 @@ def validate_value(key, value, env):
     v = value.strip()
     if v == "":
         raise OwnerFactsError("%s has an empty value (use `unset` to remove it)" % key)
+    if key in ("AICC_OWNER_METRICS_TOKEN_FILE", "AICC_OWNER_OPS_SNAPSHOT_FILE"):
+        return _shared_path(key, v)
+    if key == "AICC_OWNER_METRICS_BASE":
+        return _owner_metrics_base(key, v)
+    if key == "AICC_OWNER_DASHBOARD_USER_IDS":
+        return ",".join(str(i) for i in parse_user_ids(key, v))
+    if key == "AICC_EA_LAUNCH_OFFER_MODE":
+        return _offer_mode(key, v)
     if key == "AICC_MAIL_FROM_NAME":
         return _from_name(key, v)
     if key in FREE_TEXT:
@@ -725,12 +774,26 @@ def render_p37(facts, env, ctx):
     return out
 
 
+def render_p35(facts, env):
+    """The text that replaces the P35 region of the template: for each block (B2, OFFER, SNAP, in the order the P35 script applied them) that has at least one fact, its comment line, its define() lines and ONE blank line; '' when no fact is set (the region
+    disappears and the render is the golden file byte for byte). The files named are never read."""
+    if env != "production":
+        return ""
+    out = []
+    for _bid, keys, comment in P35_BLOCKS:
+        have = [k for k in keys if k in facts]
+        if not have:
+            continue
+        out.append(comment + "\n" + "".join("define( '%s', %s );\n" % (k, php_str(facts[k])) for k in have) + "\n")
+    return "".join(out)
+
+
 def render(facts, env):
     """facts: validated dict. Returns (region_lines, extra_hosts): the PHP define() lines (each on ONE line) and the validated extra host list."""
     require_render_ready(facts, env)
     out = []
     for k in ORDER:
-        if k not in facts or k in ("AICC_EXTRA_ACCESSIBLE_HOSTS", "AICC_TURNSTILE_ENABLED") or k in P37_KEYS or k in P38_KEYS:
+        if k not in facts or k in ("AICC_EXTRA_ACCESSIBLE_HOSTS", "AICC_TURNSTILE_ENABLED") or k in P37_KEYS or k in P38_KEYS or k in P35_KEYS:
             continue
         v = facts[k]
         if k in TRUE_ONLY:

@@ -414,4 +414,95 @@ for k in AICC_MAIL_FROM_ADDRESS AICC_MAIL_FROM_NAME AICC_MAIL_REPLY_TO AICC_MAIL
 t_ok "rollback: every P38 fact unset, key file still there: the golden default again" bash -c "R() { :; }; env AICC_TEST_HARNESS=1 bash '$PROV/render-wp-config.sh' --env production --confirm-production --out '$OUT' --secrets-dir '$SEC' --mail-dir '$MAILD' --plugin-release-dir '$REL' --owner-facts-file '$OFF' --owner '$OFU' >/dev/null 2>&1; diff <(sed -E 's/[0-9a-f]{64}/HEX64/g' '$OUT') '$GOLD'"
 key_off; reset_facts
 
+
+echo "== I. the five constants P35 appended BY HAND to the live wp-config are pinned as owner facts: --compare against a synthetic live file =="
+mail_off; key_off; ts_off; reset_facts; R >/dev/null 2>&1; cp "$OUT" "$TMP/i-default.php"
+t_ok "(baseline) the default render is still the golden file untouched" bash -c "diff <(sed -E 's/[0-9a-f]{64}/HEX64/g' '$OUT') '$GOLD'"
+t_eq "the production template has the P35 region exactly once" "$(grep -c '@@P35_BEGIN@@' "$PROV/wp-config.production.template.php")/$(grep -c '^@@P35_OWNER_BLOCKS@@$' "$PROV/wp-config.production.template.php")/$(grep -c '@@P35_END@@' "$PROV/wp-config.production.template.php")" "1/1/1"
+t_eq "...and the stage template has none" "$(grep -c 'P35' "$PROV/wp-config.stage.template.php" || true)" "0"
+# the live file, built EXACTLY as p35/b2-exec/wpconfig-add.sh built it: three blocks inserted before the '// ---- bootstrap ' marker, in the order B2, OFFER, SNAP (backup sizes in the evidence logs: 12395 -> 12812 -> 13004)
+LIVE="$TMP/live.php"
+python3 - "$TMP/i-default.php" "$LIVE" <<'PY'
+import sys
+s = open(sys.argv[1], encoding="utf-8").read()
+blocks = [
+ """// ---- Owner Dashboard (P35 gate B2, 2026-11-13): the Backend token is read server-side from this root-owned file (never sent to a browser), the Backend base is fixed, only the listed administrator may open the page ----
+define( 'AICC_OWNER_METRICS_TOKEN_FILE', '/srv/aicc/shared/owner-metrics.token' );
+define( 'AICC_OWNER_METRICS_BASE', 'https://api.copilt.org' );
+define( 'AICC_OWNER_DASHBOARD_USER_IDS', '1' );
+""",
+ """// ---- Launch offer, ANNOUNCE mode only (2026-11-13 owner batch authorization): no request intake, no strike-through, no limited chip ----
+define( 'AICC_EA_LAUNCH_OFFER_MODE', 'announce' );
+""",
+ """// ---- Owner Dashboard ops snapshot (backup + recovery-gate state, produced on the owner Mac; 2026-11-13): optional, a stale or missing file reads "Not reported" ----
+define( 'AICC_OWNER_OPS_SNAPSHOT_FILE', '/srv/aicc/shared/owner-ops-snapshot.json' );
+""",
+]
+marker = "// ---- bootstrap "
+for add in blocks:
+    assert s.count(marker) == 1
+    s = s.replace(marker, add + "\n" + marker, 1)
+open(sys.argv[2], "w", encoding="utf-8").write(s)
+PY
+t_ok "(the synthetic live file is a valid PHP file)" php -l "$LIVE"
+FIVE="AICC_EA_LAUNCH_OFFER_MODE, AICC_OWNER_DASHBOARD_USER_IDS, AICC_OWNER_METRICS_BASE, AICC_OWNER_METRICS_TOKEN_FILE, AICC_OWNER_OPS_SNAPSHOT_FILE"
+CMP="$(R --compare --out "$LIVE" 2>&1)"; crc=$?
+t_eq "WITHOUT the five facts, --compare against the live file is DIFFERENT (exit 4)" "$crc" "4"
+t_contains "...and lists exactly those five names as removed" "$CMP" "removed: $FIVE"
+t_contains "...nothing added" "$CMP" "added  : -"
+t_contains "...nothing changed" "$CMP" "changed: -"
+t_not_contains "...and no value is printed" "$CMP" "owner-metrics.token"
+for kv in "AICC_OWNER_METRICS_TOKEN_FILE /srv/aicc/shared/owner-metrics.token" "AICC_OWNER_METRICS_BASE https://api.copilt.org" "AICC_OWNER_DASHBOARD_USER_IDS 1" "AICC_EA_LAUNCH_OFFER_MODE announce" "AICC_OWNER_OPS_SNAPSHOT_FILE /srv/aicc/shared/owner-ops-snapshot.json"; do T set $kv >/dev/null; done
+CMP="$(R --compare --out "$LIVE" 2>&1)"; crc=$?
+t_eq "WITH the five facts set to the live values, --compare against the live file is IDENTICAL (exit 0)" "$crc" "0"
+t_contains "...(the message)" "$CMP" "IDENTICAL"
+R >/dev/null 2>&1; t_ok "...and the rendered file equals the live file BYTE FOR BYTE (the same three blocks in the same order with the same blank lines)" cmp -s "$OUT" "$LIVE"
+t_ok "...php -l clean" php -l "$OUT"
+CV="$(cst "$OUT" AICC_OWNER_METRICS_TOKEN_FILE AICC_OWNER_METRICS_BASE AICC_OWNER_DASHBOARD_USER_IDS AICC_EA_LAUNCH_OFFER_MODE AICC_OWNER_OPS_SNAPSHOT_FILE)"
+t_eq "...PHP reads the five values" "$(echo "$CV" | jq -c '[.AICC_OWNER_METRICS_TOKEN_FILE,.AICC_OWNER_METRICS_BASE,.AICC_OWNER_DASHBOARD_USER_IDS,.AICC_EA_LAUNCH_OFFER_MODE,.AICC_OWNER_OPS_SNAPSHOT_FILE]')" '["/srv/aicc/shared/owner-metrics.token","https://api.copilt.org","1","announce","/srv/aicc/shared/owner-ops-snapshot.json"]'
+t_eq "...the user id list is a STRING (the Control Plane reads a comma list in a string)" "$(echo "$CV" | jq -r '.AICC_OWNER_DASHBOARD_USER_IDS|type')" "string"
+t_contains "...a second render says unchanged" "$(R 2>&1)" "unchanged"
+t_eq "...the render added only code lines named by these facts relative to the default" "$(added "$TMP/i-default.php" "$OUT" | sed -E "s/^define\( '([A-Z_]+)'.*/\1/" | sort | tr '\n' ' ')" "AICC_EA_LAUNCH_OFFER_MODE AICC_OWNER_DASHBOARD_USER_IDS AICC_OWNER_METRICS_BASE AICC_OWNER_METRICS_TOKEN_FILE AICC_OWNER_OPS_SNAPSHOT_FILE "
+t_eq "...and nothing in the P35 render path opens a file (the token and snapshot files are never read)" "$(sed -n '/^def render_p35/,/^def render(/p' "$PROV/lib/owner_facts.py" | grep -c 'open(\|os\.' || true)" "0"
+T unset AICC_EA_LAUNCH_OFFER_MODE >/dev/null; CMP="$(R --compare --out "$LIVE" 2>&1)"; t_contains "with one fact missing only that name is listed" "$CMP" "removed: AICC_EA_LAUNCH_OFFER_MODE"
+T set AICC_EA_LAUNCH_OFFER_MODE announce >/dev/null
+# with the Brevo region too
+key_file; setf AICC_MAIL_PROVIDER brevo_api; setf AICC_MAIL_FROM_ADDRESS notifications@copilt.org; t_ok "the five P35 facts and the Brevo region render together" R
+t_ok "...php -l clean" php -l "$OUT"
+t_eq "...all five P35 constants and the Brevo ones are there" "$(grep -c "^define( 'AICC_OWNER_\|^define( 'AICC_EA_LAUNCH_OFFER_MODE\|^define( 'AICC_MAIL_PROVIDER" "$OUT")" "6"
+key_off; for k in AICC_MAIL_PROVIDER AICC_MAIL_FROM_ADDRESS; do T unset $k >/dev/null; done
+for k in AICC_OWNER_METRICS_TOKEN_FILE AICC_OWNER_METRICS_BASE AICC_OWNER_DASHBOARD_USER_IDS AICC_EA_LAUNCH_OFFER_MODE AICC_OWNER_OPS_SNAPSHOT_FILE; do T unset $k >/dev/null; done
+R >/dev/null 2>&1; t_ok "unsetting the five facts returns the golden file byte for byte" bash -c "diff <(sed -E 's/[0-9a-f]{64}/HEX64/g' '$OUT') '$GOLD'"
+# hostile and invalid values
+OFV() { env AICC_TEST_HARNESS=1 bash "$PROV/owner-facts.sh" --file "$TMP/p35.env" --env production set "$@"; }
+for k in AICC_OWNER_METRICS_TOKEN_FILE AICC_OWNER_OPS_SNAPSHOT_FILE; do
+  for bad in "/srv/aicc/shared/../../etc/shadow" "/srv/aicc/shared/a/../b" "/srv/aicc/shared/.." "/etc/passwd" "/srv/aicc/shared" "/srv/aicc/shared/" "/srv/aicc/shared/x/" "/srv/aicc/shared//x" "/srv/aicc/shared/.hidden" "/srv/aicc/shared/uploads/x.token" "/srv/aicc/shared/uploads" "/srv/aicc/shared/plugin-releases/x" "/srv/aicc/shared/wp-config.php" "/srv/aicc/shared/wp-config.php.pre-B2-1" "/srv/aicc/shared/x') ; phpinfo(); //" "/srv/aicc/shared/x y" '/srv/aicc/shared/$x' "/srv/aicc/shared/a/b/c/d/e" "owner.token" "./srv/aicc/shared/x" "/srv/aicc/sharedx/a" "/srv/aicc/shared/x\\y" "/srv/aicc/shared/$(printf 'a%.0s' $(seq 70))" "file:///srv/aicc/shared/x" $'/srv/aicc/shared/x\ny' $'/srv/aicc/shared/x\x01'; do
+    t_rc "$k '${bad//[$'\n\x01']/~}' is REFUSED (absolute path under /srv/aicc/shared/, one file, no traversal)" 1 env AICC_TEST_HARNESS=1 bash "$PROV/owner-facts.sh" --file "$TMP/p35.env" --env production set "$k" "$bad"
+  done
+  t_rc "$k '/srv/aicc/shared/owner-x.token' is accepted" 0 env AICC_TEST_HARNESS=1 bash "$PROV/owner-facts.sh" --file "$TMP/p35.env" --env production set "$k" "/srv/aicc/shared/owner-x.token"
+  t_rc "$k '/srv/aicc/shared/owner/dir/x.json' (a sub directory) is accepted" 0 env AICC_TEST_HARNESS=1 bash "$PROV/owner-facts.sh" --file "$TMP/p35.env" --env production set "$k" "/srv/aicc/shared/owner/dir/x.json"
+done
+for bad in "http://api.copilt.org" "https://api.copilt.org/" "https://api.copilt.org/x" "https://api.copilt.org:443" "https://evil.example.com" "https://api.copilt.org.evil.com" "https://API.copilt.org" "https://127.0.0.1" "https://api.copilt.org?x=1" "https://user@api.copilt.org" "api.copilt.org" "https://www.copilt.org" "https://api.copilt.org#x" "https://api.copilt.org'); die(); //"; do
+  t_rc "metrics base '$bad' is REFUSED (exactly https://api.copilt.org)" 1 env AICC_TEST_HARNESS=1 bash "$PROV/owner-facts.sh" --file "$TMP/p35.env" --env production set AICC_OWNER_METRICS_BASE "$bad"
+done
+for bad in 0 -1 "1," ",1" a "1,1" "1 2" "1;2" "$(printf 'ab12%.0s' $(seq 16))" "01" "1.5" "99999999999" "$(seq -s, 1 51)"; do
+  t_rc "dashboard user ids '${bad:0:40}' is REFUSED (a comma list of positive whole numbers)" 1 env AICC_TEST_HARNESS=1 bash "$PROV/owner-facts.sh" --file "$TMP/p35.env" --env production set AICC_OWNER_DASHBOARD_USER_IDS "$bad"
+done
+t_eq "dashboard user ids '2, 7' is normalised to '2,7'" "$(rm -f "$TMP/p35.env"; OFV AICC_OWNER_DASHBOARD_USER_IDS "2, 7" >/dev/null 2>&1; env AICC_TEST_HARNESS=1 bash "$PROV/owner-facts.sh" --file "$TMP/p35.env" --env production list)" "AICC_OWNER_DASHBOARD_USER_IDS=2,7"
+for bad in off open Announce ANNOUNCE "announce,open" true 1 "announce'; x" ""; do
+  t_rc "launch offer mode '$bad' is REFUSED (only 'announce'; unset = off; 'open' is a separate reviewed step)" 1 env AICC_TEST_HARNESS=1 bash "$PROV/owner-facts.sh" --file "$TMP/p35.env" --env production set AICC_EA_LAUNCH_OFFER_MODE "$bad"
+done
+t_contains "...the refusal explains why 'open' is not accepted here" "$(OFV AICC_EA_LAUNCH_OFFER_MODE open 2>&1 || true)" "request intake"
+rm -f "$TMP/p35.env"
+for k in AICC_OWNER_METRICS_TOKEN_FILE AICC_OWNER_METRICS_BASE AICC_OWNER_DASHBOARD_USER_IDS AICC_EA_LAUNCH_OFFER_MODE AICC_OWNER_OPS_SNAPSHOT_FILE; do
+  t_rc "stage refuses the P35 fact $k" 1 env AICC_TEST_HARNESS=1 bash "$PROV/owner-facts.sh" --file "$TMP/p35s.env" --env stage set "$k" announce
+done
+t_eq "...and the production key list names all five" "$(T keys | grep -cxE 'AICC_OWNER_METRICS_TOKEN_FILE|AICC_OWNER_METRICS_BASE|AICC_OWNER_DASHBOARD_USER_IDS|AICC_EA_LAUNCH_OFFER_MODE|AICC_OWNER_OPS_SNAPSHOT_FILE')" "5"
+# a hand-edited file with a bad value refuses at render, writes nothing
+R >/dev/null 2>&1; KEEP="$(sha "$OUT")"
+printf 'AICC_OWNER_METRICS_TOKEN_FILE=/srv/aicc/shared/../x\n' > "$OFF"; chmod 600 "$OFF"; refused "a HAND-EDITED traversal path is REFUSED by the renderer" "AICC_OWNER_METRICS_TOKEN_FILE must be an absolute path under /srv/aicc/shared/"
+printf 'AICC_EA_LAUNCH_OFFER_MODE=open\n' > "$OFF"; refused "a HAND-EDITED offer mode 'open' is REFUSED by the renderer" "AICC_EA_LAUNCH_OFFER_MODE must be exactly 'announce'"
+printf 'AICC_OWNER_METRICS_BASE=https://evil.example.com\n' > "$OFF"; refused "a HAND-EDITED foreign Backend base is REFUSED by the renderer" "AICC_OWNER_METRICS_BASE must be exactly https://api.copilt.org"
+reset_facts
+
 t_summary

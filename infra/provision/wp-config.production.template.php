@@ -140,6 +140,10 @@ define( 'AICC_ENTITLEMENT_WEBHOOK_SECRET', '@@AICC_ENTITLEMENT_WEBHOOK_SECRET@@'
 // @@P37_END@@
 // AICC_LM_ALLOW_DEV_SECRET_BOOTSTRAP and AICC_LM_TEST_FIXTURE are intentionally NOT defined.
 
+// @@P35_BEGIN@@
+// (owner-dashboard / launch-offer constants of P35, rendered from owner facts by render-wp-config.sh; this whole region is replaced by those blocks, or removed when no such fact is set)
+@@P35_OWNER_BLOCKS@@
+// @@P35_END@@
 // ---- bootstrap -----------------------------------------------------------------------------------------------------------------------------------------
 // ABSPATH is defined by wp-load.php (the real release directory) BEFORE this file is read, even though this file is reached through a symlink.
 // Using __DIR__ here would resolve to /srv/aicc/shared and break every path, so refuse instead of guessing.

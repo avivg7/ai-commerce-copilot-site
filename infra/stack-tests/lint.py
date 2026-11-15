@@ -239,7 +239,7 @@ if os.path.exists(of_py):
     oexpect(re.search(r'TURNSTILE_SECRET_FILE = "/etc/aicc-mail/[a-z.-]+"', ofs2) is not None, of_py, "the Turnstile secret FILE path must be a fixed file under /etc/aicc-mail (PHP can traverse it; /etc/aicc it cannot)")
     ms = re.search(r'"stage": \[(.*?)\],\n\}', ofs2, re.S)
     oexpect(ms is not None and not any(k in ms.group(1) for k in P37_SWITCHES + P37_VALUES), of_py, "staging must not accept any P37 owner fact")
-    for bad in ("AICC_TRIAL_TURNSTILE", "AICC_NOTIFY_ALLOW_TEST_ACCOUNT_DELIVERY", "AICC_OWNER_DASHBOARD_USER_IDS", "AICC_TURNSTILE_SECRET_FILE", "AICC_MAIL_SMTP_PASS", "AICC_LM_TEST_FIXTURE"):
+    for bad in ("AICC_TRIAL_TURNSTILE", "AICC_NOTIFY_ALLOW_TEST_ACCOUNT_DELIVERY", "AICC_TURNSTILE_SECRET_FILE", "AICC_MAIL_SMTP_PASS", "AICC_LM_TEST_FIXTURE"):
         oexpect(bad not in keys2, of_py, "%s must never be an owner fact (a bypass, a test hatch or a secret)" % bad)
     for needle, why in (("def p37_problems", "the consistency rules"), ("needs AICC_TRIAL_SELF_SERVICE_CAP", "cap rule"), ("needs AICC_NOTIFY_ENABLED=true", "notify rule"), ("needs AICC_TURNSTILE_SITE_KEY", "turnstile key rule"),
                         ("def check_turnstile_secret_file", "the secret-file check"), ("equals the Turnstile secret", "the secret-as-site-key guard")):
@@ -283,6 +283,13 @@ if os.path.exists(of_py):
     oexpect(ms3 is not None and not any(k in ms3.group(1) for k in P38_FACTS), of_py, "staging must not accept any P38 owner fact")
     for bad in keys3:
         oexpect(not re.search(r"(?i)API_KEY|BREVO|_KEY_FILE", bad), of_py, "%s: no owner fact may carry or name the Brevo key (the key is a root-placed FILE)" % bad)
+    P35_FACTS = ["AICC_OWNER_METRICS_TOKEN_FILE", "AICC_OWNER_METRICS_BASE", "AICC_OWNER_DASHBOARD_USER_IDS", "AICC_EA_LAUNCH_OFFER_MODE", "AICC_OWNER_OPS_SNAPSHOT_FILE"]
+    for k in P35_FACTS:
+        oexpect(k in keys3, of_py, "P35 owner fact %s must be in ORDER (it was appended by hand to the live wp-config and every render would remove it)" % k)
+        oexpect(not re.search(r'"stage": \[[^\]]*"%s"' % k, ofs3, re.S), of_py, "staging must not accept the P35 fact %s" % k)
+    oexpect('OWNER_METRICS_BASE = "https://api.copilt.org"' in ofs3 and 'EA_OFFER_MODES = ("announce",)' in ofs3 and 'SHARED_DIR = "/srv/aicc/shared/"' in ofs3, of_py, "P35 facts: the Backend base is exactly https://api.copilt.org, the offer mode exactly announce, the paths under /srv/aicc/shared/")
+    for needle, why in (("def render_p35", "the P35 block renderer"), ("P35_BLOCKS", "the three blocks in the order the P35 script applied them"), ("def _shared_path", "the path validator")):
+        oexpect(needle in ofs3, of_py, "P35 rule lost: %s (%s)" % (needle, why))
     for needle, why in (("def p38_problems", "the consistency rules"), ("def render_p38", "the region renderer"), ("def check_brevo_key_file", "the key file shape check"), ("def mail_mode", "the provider decision"),
                         ("both /etc/aicc-mail/smtp.env and", "both-secret-files refusal"), ("is a Brevo host", "api.brevo.com only through the provider fact"), ("SMTP key (xsmtpsib-", "xsmtpsib refusal"),
                         ("def mask_address", "personal data masking in list"), ('"set-stdin"', "the stdin form for personal data")):
@@ -312,6 +319,10 @@ if os.path.exists(of_py):
         oexpect(bool(_m.p38_problems({"AICC_MAIL_STATUS_POLL_ENABLED": "true"}, "production")) and bool(_m.p38_problems(dict(_f, AICC_MAIL_DAILY_BUDGET="250", AICC_MAIL_MAX_PER_DAY="200"), "production")), of_py, "behaviour: a status poll without the provider and a budget above the day cap must be refused")
         oexpect(_m.p38_problems({"AICC_MAIL_FROM_ADDRESS": "notifications@copilt.org"}, "production") == [], of_py, "behaviour: sender facts without the provider are inert (one unset turns Brevo off)")
         oexpect(_m.render_p38(_f, "stage", {"mail": False, "brevo_key": True}) == ([], []), of_py, "behaviour: staging never renders the region")
+        oexpect(all(_refuses(_m.validate_value, k, v, "production") for k in ("AICC_OWNER_METRICS_TOKEN_FILE", "AICC_OWNER_OPS_SNAPSHOT_FILE") for v in ("/srv/aicc/shared/../x", "/etc/passwd", "/srv/aicc/shared/uploads/x", "/srv/aicc/shared/wp-config.php", "/srv/aicc/shared/x/", "/srv/aicc/shared/.h")), of_py, "behaviour P35: a traversal, foreign, hidden, uploads or wp-config path must be refused")
+        oexpect(_refuses(_m.validate_value, "AICC_OWNER_METRICS_BASE", "https://evil.example.com", "production") and _refuses(_m.validate_value, "AICC_OWNER_METRICS_BASE", "https://api.copilt.org/x", "production") and _m.validate_value("AICC_OWNER_METRICS_BASE", "https://api.copilt.org", "production") == "https://api.copilt.org", of_py, "behaviour P35: the Backend base is exactly https://api.copilt.org")
+        oexpect(_refuses(_m.validate_value, "AICC_EA_LAUNCH_OFFER_MODE", "open", "production") and _m.validate_value("AICC_EA_LAUNCH_OFFER_MODE", "announce", "production") == "announce", of_py, "behaviour P35: only the offer mode announce is accepted")
+        oexpect(_m.render_p35({}, "production") == "" and _m.render_p35({"AICC_OWNER_DASHBOARD_USER_IDS": "1"}, "stage") == "" and _m.render_p35({"AICC_OWNER_DASHBOARD_USER_IDS": "1"}, "production").endswith("define( 'AICC_OWNER_DASHBOARD_USER_IDS', '1' );\n\n"), of_py, "behaviour P35: no fact renders nothing; a block ends with ONE blank line, like the P35 script wrote it")
     except Exception as _e:   # a validator that cannot even be imported fails the lint, loudly
         fail(of_py, "behaviour checks could not run: %s: %s" % (type(_e).__name__, str(_e)[:120]))
 pt3 = os.path.join(INFRA, "provision/wp-config.production.template.php")
@@ -322,11 +333,15 @@ if os.path.exists(pt3):
     pcode3 = re.sub(r"(?m)^\s*//.*$", "", re.sub(r"(?s)/\*.*?\*/", "", ptt3))
     for k in ("AICC_MAIL_PROVIDER", "AICC_MAIL_API_KEY_FILE", "AICC_MAIL_API_KEY", "AICC_MAIL_DAILY_BUDGET", "AICC_MAIL_TEST_RECIPIENTS", "AICC_MAIL_STATUS_POLL_ENABLED", "AICC_MAIL_ALLOWED_FROM_DOMAINS"):
         oexpect(("'%s'" % k) not in pcode3, pt3, "%s must not be defined in the template: it is rendered only from the owner facts + the verified key file (default = absent = mail layer off)" % k)
+if os.path.exists(pt3):
+    oexpect(ptt3.count("// @@P35_BEGIN@@\n") == 1 and ptt3.count("// @@P35_END@@\n") == 1 and ptt3.count("\n@@P35_OWNER_BLOCKS@@\n") == 1, pt3, "exactly one P35 region (begin marker, @@P35_OWNER_BLOCKS@@, end marker)")
+    for k in ("AICC_OWNER_METRICS_TOKEN_FILE", "AICC_OWNER_METRICS_BASE", "AICC_OWNER_DASHBOARD_USER_IDS", "AICC_EA_LAUNCH_OFFER_MODE", "AICC_OWNER_OPS_SNAPSHOT_FILE"):
+        oexpect(("'%s'" % k) not in pcode3, pt3, "%s must not be defined in the template: it is rendered only from the owner facts (a hard-coded line would hide an unset fact)" % k)
 stt3 = os.path.join(INFRA, "provision/wp-config.stage.template.php")
 if os.path.exists(stt3):
     oexpect("BREVO" not in read(stt3) and "brevo" not in read(stt3).replace("smtp-relay.brevo.com", ""), stt3, "the stage template must carry no Brevo region")
 rw3 = read(os.path.join(INFRA, "provision/render-wp-config.sh"))
-for needle, why in (("check-brevo-key", "the key file shape check (python, never a shell variable)"), ("brevo-api.key", "the key file path"), ("--compare", "the no-write comparison"), ("mail-mode", "the provider decision"), ("a stage render may not carry the P38", "staging refusal"),
+for needle, why in (("check-brevo-key", "the key file shape check (python, never a shell variable)"), ("brevo-api.key", "the key file path"), ("--compare", "the no-write comparison"), ("mail-mode", "the provider decision"), ("a stage render may not carry the P38", "staging refusal"), ("a stage render may not carry the P35", "staging refusal for the owner-dashboard region"), ("render_p35", "the P35 block renderer"),
                     ("render_p38", "the region renderer"), ("--brevo-key-ready", "the host-state context for the preflight check"), ("must be mode 0640", "the key file mode check"), (".compare.", "the --compare temp file lives in the secrets directory")):
     oexpect(needle in rw3, os.path.join(INFRA, "provision/render-wp-config.sh"), "P38 gate lost: %s (%s)" % (needle, why))
 oexpect(not re.search(r'cat "\$BKF"|<\s*"\$BKF"|\$\(<\s*"?\$BKF|read [^\n]*"\$BKF"|echo "\$bk(out)?"', rw3), os.path.join(INFRA, "provision/render-wp-config.sh"), "the renderer must never read the Brevo key file into a shell variable, print it or copy it")

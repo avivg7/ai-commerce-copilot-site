@@ -278,6 +278,16 @@ if BB in s:
     s = s[:a] + (body.replace("@@BREVO_MAIL@@\n", "\n".join(p38) + "\n") if p38 else "") + s[b:]
 elif p38:
     sys.exit("REFUSED: the template has no P38 Brevo region but the owner facts / key file set values")
+# P35 hand-added constants (owner facts): the region is replaced by the owner-dashboard / launch-offer blocks, or removed (no fact = the golden render byte for byte)
+P5B, P5E = "// @@P35_BEGIN@@\n", "// @@P35_END@@\n"
+p35 = of.render_p35(facts, envn)
+if P5B in s:
+    if envn != "production": sys.exit("REFUSED: a stage render may not carry the P35 owner-dashboard region (a stage render may not carry the P35 blocks)")
+    a = s.index(P5B); b = s.index(P5E) + len(P5E)
+    if s.count(P5B) != 1 or s.count(P5E) != 1 or b < a or s.count("\n@@P35_OWNER_BLOCKS@@\n") != 1: sys.exit("REFUSED: the template's P35 region is malformed")
+    s = s[:a] + p35 + s[b:]
+elif p35:
+    sys.exit("REFUSED: the template has no P35 region but the owner facts set values")
 extra_hosts = list(extra_hosts) + p38_hosts
 if extra_hosts:
     base = {"production": "api.copilt.org", "stage": "stage.copilt.org"}[envn]

@@ -68,6 +68,35 @@ Other refusals (nothing is written; `--dry-run` shows the same refusal): the pro
 
 New renderer option: `--compare` renders to a temporary file (inside the 0700 secrets directory, mode 0600, removed by the trap, any leftover of a killed run swept at the next run; never in /tmp) and tells you whether it equals the current output: `IDENTICAL` (exit 0) or `DIFFERENT` (exit 4) with the constant NAMES added, removed or changed (never a value). It writes nothing and needs the normal root and secrets.
 
+## 3b. Step 0 before any render: pin the P35 hand-added constants as owner facts
+
+**Why.** On 2026-11-13 the P35 gates appended five constants BY HAND to the live `/srv/aicc/shared/wp-config.php` (script `execution-reset/cp-dark/p35/b2-exec/wpconfig-add.sh`, three blocks inserted before the `// ---- bootstrap` banner in the order B2, OFFER, SNAP; backup sizes 12395, 12812, 13004 bytes in the evidence logs). The renderer rewrites the whole file, so ANY render (Brevo, the P37 switches, a restore) would silently remove them: the owner dashboard would lose its Backend metrics, the ops snapshot and the launch-offer `announce` mode. The new renderer's `--compare` against the live file said DIFFERENT for exactly these five names. They are now production-only owner facts, rendered as the SAME three delimited, commented blocks (same comment lines, same order, one blank line after each block), so a render reproduces the live file byte for byte. With no such fact the render is the golden file, unchanged.
+
+**Complete list.** Reading every script and log in the p34, p35 and p36 evidence folders: the only hand-appended wp-config constants are these five (p34 touched no wp-config line, `p36/deploy-exec/run-p36-deploy.sh` states "No wp-config change", and nothing else in p35 edits the file: the other `define(` hits are the Plugin's own constants and a throwaway rehearsal config).
+
+| Block | Constant | Fact (production only) | Value on the live host | Accepted by the fact |
+|---|---|---|---|---|
+| B2 | `AICC_OWNER_METRICS_TOKEN_FILE` | same name | `/srv/aicc/shared/owner-metrics.token` | an absolute path under `/srv/aicc/shared/` naming one file: letters, digits, `. _ -`, no hidden segment, no `..`, no trailing slash, at most 4 segments, not inside `uploads` or `plugin-releases`, not `wp-config*`. The renderer never reads the file |
+| B2 | `AICC_OWNER_METRICS_BASE` | same name | `https://api.copilt.org` | exactly that origin (the Control Plane accepts no other Backend host in production: no path, no port, no slash) |
+| B2 | `AICC_OWNER_DASHBOARD_USER_IDS` | same name | `1` | a comma list of positive whole numbers (the Control Plane's own pattern; stored without blanks, rendered as a string) |
+| OFFER | `AICC_EA_LAUNCH_OFFER_MODE` | same name | `announce` | exactly `announce`. The Control Plane also knows `open`, which needs the request intake and the mail-provider constant; that stays a separate reviewed step (the fact refuses it). Unset = off |
+| SNAP | `AICC_OWNER_OPS_SNAPSHOT_FILE` | same name | `/srv/aicc/shared/owner-ops-snapshot.json` | same path rule as the token file |
+
+**Do this once, before the first render of any kind (after section 4 has put the tooling on the host):**
+
+```bash
+export PSSH=~/aicc-promotion/pssh
+$PSSH 'sudo aicc-owner-facts set AICC_OWNER_METRICS_TOKEN_FILE /srv/aicc/shared/owner-metrics.token'
+$PSSH 'sudo aicc-owner-facts set AICC_OWNER_METRICS_BASE https://api.copilt.org'
+$PSSH 'sudo aicc-owner-facts set AICC_OWNER_DASHBOARD_USER_IDS 1'
+$PSSH 'sudo aicc-owner-facts set AICC_EA_LAUNCH_OFFER_MODE announce'
+$PSSH 'sudo aicc-owner-facts set AICC_OWNER_OPS_SNAPSHOT_FILE /srv/aicc/shared/owner-ops-snapshot.json'
+$PSSH 'sudo aicc-render-wp-config --env production --confirm-production --compare'
+```
+Expectation: **`IDENTICAL`** (exit 0). The facts are not rendered by this step: `--compare` writes nothing. If it says DIFFERENT, read the constant names it prints (never values): a name under `added` or `changed` means the live file differs from the facts you just set (check the five values above against `sudo grep -n "AICC_OWNER\|AICC_EA_LAUNCH" /srv/aicc/shared/wp-config.php`); a name under `removed` means a hand-added line the facts do not cover: STOP, do not render, and add it as a fact or find out who added it. Only after `IDENTICAL` is a first real render safe: from then on `aicc-render-wp-config` preserves the five constants and `--compare` stays the gate before every render in sections 6 and 7. Without Step 0, `--compare` against the live file lists exactly `AICC_EA_LAUNCH_OFFER_MODE, AICC_OWNER_DASHBOARD_USER_IDS, AICC_OWNER_METRICS_BASE, AICC_OWNER_METRICS_TOKEN_FILE, AICC_OWNER_OPS_SNAPSHOT_FILE` as `removed` (proved against a synthetic live file built exactly as the P35 script built it).
+
+Rollback of Step 0: `sudo aicc-owner-facts unset <KEY>` for each (the live file is not touched by `set` or `unset`; only a render changes it).
+
 ## 4. Getting the new tooling onto the host (reversible; no behaviour change until a fact is set)
 
 How the host gets its tools: `infra/provision/push-bundle.sh` mirrors `infra/` and `scripts/ops/` (rsync `-a --delete`, secret-looking names excluded) into `~aicc/aicc-infra-bundle` on the host; `install-stack.sh --only scripts` then copies the files into `/usr/local/lib/aicc/` and `/usr/local/sbin/` (previous versions are kept under `/var/backups/aicc-config/<UTC>/`). The tools this change touches:
@@ -139,7 +168,7 @@ $PSSH 'sudo aicc-render-wp-config --env production --confirm-production --dry-ru
 $PSSH 'sudo aicc-set-brevo-key status'                                                                                         # absent: /etc/aicc-mail/brevo-api.key
 $PSSH 'sudo sha256sum /srv/aicc/shared/wp-config.php'                                                                          # unchanged from 4.2
 ```
-`--compare` is the gate: with the facts the host has today, the new renderer must reproduce the wp-config.php already in place. `DIFFERENT` here means the live file was rendered from other inputs than the current facts (or someone edited it): read the constant names it lists, do **not** continue to section 6 until you understand them.
+`--compare` is the gate: with the facts the host has today, the new renderer must reproduce the wp-config.php already in place. `DIFFERENT` here means the live file was rendered from other inputs than the current facts (or someone edited it): the known cause is the five P35 hand-added constants, fixed by **Step 0 (section 3b)**; any other name, read it and do **not** continue to section 6 until you understand it.
 
 ### 4.7 Rollback of the tooling
 
@@ -160,7 +189,7 @@ On the host `aicc-set-brevo-key` (modes `install`, `rotate`, `revoke`, `status`)
 
 ## 6. Activation (the exact lines; each render passes `php -l`)
 
-Prerequisite: section 4 done and its post-checks green; the owner created the restricted API key in Brevo (SMTP & API, API Keys, **an API key `xkeysib-...`, not an SMTP key**).
+Prerequisite: section 4 done and its post-checks green, **and Step 0 (section 3b) done: `--compare` says IDENTICAL**; the owner created the restricted API key in Brevo (SMTP & API, API Keys, **an API key `xkeysib-...`, not an SMTP key**).
 
 ```bash
 export PSSH=~/aicc-promotion/pssh
@@ -237,3 +266,7 @@ Not proven here, because it needs the real host or Brevo: that `sudo` on the hos
 | 10 | owner doc said `rotate` when nothing is installed | says `install` (`status` tells which) | |
 | 11 | rotate message | "gone from the host, still valid in Brevo until you revoke it"; optional Brevo authorised-IPs hardening documented in the owner steps | |
 | 12 | concurrent installs | non-blocking `flock` on `/etc/aicc-mail` | lock test |
+
+## 11. Step 0 found by the host update (2026-11-15): the five P35 hand-added constants
+
+See section 3b. Added to the renderer: five production-only owner facts (`AICC_OWNER_METRICS_TOKEN_FILE`, `AICC_OWNER_METRICS_BASE`, `AICC_OWNER_DASHBOARD_USER_IDS`, `AICC_EA_LAUNCH_OFFER_MODE`, `AICC_OWNER_OPS_SNAPSHOT_FILE`) and one template region (`@@P35_BEGIN@@` ... `@@P35_END@@`, removed when no fact is set so the golden render is unchanged). `AICC_OWNER_DASHBOARD_USER_IDS` is no longer a refused key (the P37 doc and lint list were updated). Proof: `test_p38_brevo.sh` section I (synthetic live file, byte equality, hostile values, traversal, mode enum, staging refusal, golden unchanged) and the lint behaviour block.
