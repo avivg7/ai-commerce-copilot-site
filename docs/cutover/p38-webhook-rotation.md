@@ -1,10 +1,10 @@
 # Rotating `AICC_ENTITLEMENT_WEBHOOK_SECRET` (Control Plane and Backend): a bounded maintenance procedure, NOT atomic
 
-Written 2026-11-17 (UTC). **Nothing in this file has been run against a host.** It describes `infra/provision/rotate-webhook-secret.sh` (Mac), `infra/provision/host/aicc-rotate-webhook-secret` (Control Plane host), `infra/provision/host/aicc-rotate-webhook-secret-api` (API host) and `infra/provision/host/webhook-probe.php`, proved by `infra/stack-tests/test_p38_rotation.sh` against a local simulation of both hosts (two scratch directories, a fake `ssh`, the real wp-config renderer, php, and a fake Backend that verifies the HMAC exactly like `app/routers/entitlement_webhook.py`): no network, no real host, no real secret.
+Written 2026-11-17 (UTC), revised after the independent security review the same day. **Nothing in this file has been run against a host.** It describes `infra/provision/rotate-webhook-secret.sh` (Mac), `infra/provision/host/aicc-rotate-webhook-secret` (Control Plane host), `infra/provision/host/aicc-rotate-webhook-secret-api` (API host), `infra/provision/host/webhook-probe.php`, `infra/provision/host/outbox-snapshot.php` and `infra/provision/retired-webhook-fingerprints.txt`, proved by `infra/stack-tests/test_p38_rotation.sh` against a local simulation of both hosts (two scratch directories, a fake `ssh`, the real wp-config renderer, php, and a fake Backend that verifies the HMAC exactly like `app/routers/entitlement_webhook.py`): no network, no real host, no real secret.
 
 ## 1. What this is and why
 
-The webhook secret is the HMAC key the Control Plane signs every entitlement event with (`AICC_LM_Entitlement_Dispatcher::sign()`, headers `X-AICC-Webhook-Timestamp` / `X-AICC-Webhook-Signature`) and the Backend verifies (`POST https://api.copilt.org/v1/internal/entitlement/webhook`). It is the **same 64-hex value on two hosts**, and the current value **was exposed in an assistant transcript**, so it must be replaced by a value nobody but the two hosts has ever seen.
+The webhook secret is the HMAC key the Control Plane signs every entitlement event with (`AICC_LM_Entitlement_Dispatcher::sign( $body, $timestamp, $secret )`, confirmed in `class-aicc-lm-entitlement-dispatcher.php` line 414: `hash_hmac( 'sha256', "aicc-entitlement-webhook-v1\n" . $timestamp . "\n" . $body, $secret )`; headers `X-AICC-Webhook-Timestamp` / `X-AICC-Webhook-Signature`) and the Backend verifies (`POST https://api.copilt.org/v1/internal/entitlement/webhook`). It is the **same 64-hex value on two hosts**, and the current value **was exposed in an assistant transcript**, so it must be replaced by a value nobody but the two hosts has ever seen.
 
 | Where | File | Rendered / read as |
 |---|---|---|
@@ -13,10 +13,13 @@ The webhook secret is the HMAC key the Control Plane signs every entitlement eve
 
 ## 2. What is and is not guaranteed (read this first)
 
-* **It is not atomic.** The Backend holds ONE secret (no "previous" slot; adding one needs a Backend code change and an image deploy, which this procedure does not do). So the two hosts cannot change at the same instant. Between the Backend restart and the Control Plane promote (target: well under 60 s; the script prints what it measured) **every delivery from the Control Plane is answered `401 webhook_signature_invalid`**.
-* **Events survive that window, and the script proves it instead of claiming it.** The Control Plane outbox is durable: 8 attempts with exponential backoff from 60 s to 1 h, a requeue reconciliation, `delivered_at` only after a 2xx; a 401 is a failed attempt, never a drop. On the Backend `event_id` is the primary key (a repeated delivery is a no-op) and only a strictly higher `sequence` changes an entitlement, so retries are idempotent and cannot reorder. After the cutover the script requires **`exhausted == 0`** and **`pending` back at or below the baseline** (taken before anything changed), polling for up to 10 minutes (`--drain-timeout`, `--no-wait-drain` skips it and says so).
+* **It is not atomic.** The Backend holds ONE secret (no "previous" slot; adding one needs a Backend code change and an image deploy, which this procedure does not do). So the two hosts cannot change at the same instant. Between the Backend restart and the Control Plane promote (target: well under 60 s; the script prints what it measured, an upper bound that includes the Backend health wait) **every delivery from the Control Plane is answered `401 webhook_signature_invalid`**.
+* **Events survive that window, and the script proves it event by event instead of claiming it.** What the real code does (read in `class-aicc-lm-entitlement-dispatcher.php`): `deliver_pending()` runs on the five-minute WP-Cron schedule `aicc_lm_entitlement_delivery` (and on a one-shot kick after an enqueue); a delivery that is not a 2xx that was actually applied is a **failed attempt**: `attempts + 1`, `next_attempt_at = now + min( 3600, 30 * 2^attempts )` seconds (60 s, 120 s, 240 s, 480 s, 960 s, 1920 s, then 3600 s); at `MAX_ATTEMPTS = 8` the row is exhausted (audit record `entitlement_delivery_exhausted`) and stays in the table, never deleted and never marked delivered; `delivered_at` is set only after the applied 2xx. A 401 is therefore a failed attempt, never a drop. On the Backend `event_id` is the primary key (a repeated delivery is a no-op) and only a strictly higher `sequence` changes an entitlement, so retries are idempotent and cannot reorder.
+  * **Before anything changes**, the Control Plane tool lists the outbox rows that are not delivered (`outbox-snapshot.php`, one read-only SELECT: event ids and attempt counters only) and keeps that list as the baseline. **The rotation does not start** while an event is already exhausted or while any pending event is at **6 or more** failed attempts (one failed delivery in the window could exhaust it).
+  * **After the cutover** the drain is checked **event by event**: every event that is still pending must have been pending **before** the rotation, and **nothing may be exhausted**, within a bounded wait (`--drain-timeout`, default 10 minutes: one 5-minute cron tick plus the 60-120 s first back-off). `--no-wait-drain` skips the wait and says so, **but `finalize` re-checks the drain and refuses until it passes**.
+* **The simulation's dispatcher is a MODEL of the real outbox** (it signs with the rendered config's secret, delivers to a fake Backend, counts attempts to 8). The real outbox behaviour, the real `aicc-mail health` / WP-Cron timing and the real Backend are verified **only in the owner's rehearsal and by the production preflight**, never by the test suite. A passed test is evidence that the tool's logic is right, not that the production outbox behaves as read in the code.
 * **What the merchant and the Plugin see:** a Backend restart of a few seconds (the container restarts; `/health` returns after a moment). Entitlement enforcement and every existing licence are untouched: they live in the Backend database, not in the secret. Only the **delivery of new entitlement events** waits during the window and then catches up.
-* **The exposed secret is rotated only when `verify` passes after the cutover**, and it is **retired** (its fingerprint recorded on both hosts so a backup restore cannot silently bring it back) only by the separate, explicit `finalize`.
+* **The exposed secret is rotated only when `verify` passes after the cutover**, and it is **retired** (its fingerprint recorded on both hosts AND in an off-host list, so a backup restore cannot silently bring it back) only by the separate, explicit `finalize`.
 * **The tool never deletes anything.** Every old secret, every env copy, every staged secret is kept (owner rule: complete historical backups are kept). That is also why section 8 exists.
 
 ## 3. Architecture and order
@@ -26,28 +29,30 @@ Mac (owner)                        Control Plane host (CP)                      
 rotate-webhook-secret.sh   --ssh-->  aicc-rotate-webhook-secret (root)   --ssh-->   aicc-rotate-webhook-secret-api (root)
   (orchestrator, no secret)           prepare / emit-next / promote                   stage / apply / probe
   CP key  aicc_cp_prod_operator       probe-new (PHP, aicc-cp) / probe-old            installed by `install-api-tool`
-  API key aicc_digitalocean_prod      finalize / rollback / status                    (sha256 verified before and after)
+  API key aicc_digitalocean_prod      outbox-snapshot (PHP, read-only)                (sha256 verified before and after)
+  off-host retired list (fingerprints) finalize / rollback / status
                   \_____ emit-next | stage: the secret exists on the Mac only inside this pipe ____/
 ```
 
 **Order: Backend first, then the Control Plane.** A failed Backend restart then leaves the Control Plane untouched (recovery is one host: the tool restores the env copy and restarts by itself). The other order would leave the Control Plane signing with a secret the Backend does not know, for as long as the Backend change takes.
 
-Fingerprint everywhere = first 16 hex of SHA-256(`aicc-webhook-secret-fingerprint-v1\n` + secret). It is the only thing ever printed about a secret; it cannot be used to reconstruct one.
+Fingerprint everywhere = first 16 hex of SHA-256(`aicc-webhook-secret-fingerprint-v1\n` + secret). It is the only thing ever printed about a secret; it cannot be used to reconstruct one (a 256-bit random secret, a domain-separated hash cut to 64 bits).
 
-**Probes that never touch the database.** The Backend checks the signature **before** it parses the payload. A request whose body is valid JSON without the required fields (`{"probe":"aicc-webhook-rotation"}`), signed with secret S, returns `400 webhook_payload_malformed` if S is the Backend's secret and `401 webhook_signature_invalid` otherwise. `probe-new` on the Control Plane runs `webhook-probe.php` as `aicc-cp` through `aicc-wp eval-file` (the RUNNING constant, signed by `AICC_LM_Entitlement_Dispatcher::sign`, sent with `wp_safe_remote_post`: exactly the production code path and the production allow-list); `probe-old` signs with the previous secret in memory (root, python) and must get 401; the API host repeats both locally against `127.0.0.1:8000`, independent of the Control Plane.
+**Probes that never touch the database.** The Backend checks the signature **before** it parses the payload. A request whose body is valid JSON without the required fields (`{"probe":"aicc-webhook-rotation"}`), signed with secret S, returns `400 webhook_payload_malformed` if S is the Backend's secret and `401 webhook_signature_invalid` otherwise. `probe-new` on the Control Plane runs `webhook-probe.php` as `aicc-cp` through `aicc-wp eval-file` (the RUNNING constant, signed by `AICC_LM_Entitlement_Dispatcher::sign`, sent with `wp_safe_remote_post`: the production code path and the production allow-list); `probe-old` signs with the previous secret in memory (root, python) and passes **only** on exactly `401 webhook_signature_invalid` (a transport error, another 401 code or a 400 is a FAIL) and only if that secret is the one the journal recorded; the API host repeats both locally against `127.0.0.1:8000`, independent of the Control Plane.
 
-## 4. The commands (Mac, from the Site checkout; every one needs `--confirm-production`)
+## 4. The commands (Mac, from the Site checkout; every one except `retired-list` needs `--confirm-production`)
 
 ```bash
 infra/provision/rotate-webhook-secret.sh plan     --confirm-production     # read-only, any time: both identities, every preflight, the exact steps; generates and changes NOTHING
 infra/provision/rotate-webhook-secret.sh run      --confirm-production     # inside a deploy window: the rotation; stops at READY TO FINALIZE
 infra/provision/rotate-webhook-secret.sh finalize --confirm-production --id <ID>   # the separate, explicit retirement of the old secret
 infra/provision/rotate-webhook-secret.sh verify   --confirm-production     # read-only, any time (and after ANY backup restore)
+infra/provision/rotate-webhook-secret.sh retired-list                      # prints the off-host retired fingerprints (no connection)
 ```
 
-Others: `status [--id ID]`, `resume [--id ID]`, `rollback [--id ID]` (before `finalize` only), `install-api-tool`, `run --finalize` (rotation and finalize in one go). Options: `--no-wait-drain`, `--drain-timeout SEC` (600), `--poll-interval SEC` (15), `--health-timeout SEC` (90), `--preflight-cmd EXECUTABLE` (an external **read-only** check, for example the launch preflight, run before and after), `--api-hostname NAME` (default `api.copilt.org`: **confirm it, see 10**), `--bystander NAME` (`nourishvik-care`), `--cp-key` / `--api-key` / `--known-hosts` / `--api-known-hosts`, `--force-new-rotation`, `--emergency-outside-window` (resume / rollback only), `--i-reinstate-a-retired-secret`.
+Others: `status [--id ID]`, `resume [--id ID]`, `rollback [--id ID]` (before `finalize` only), `install-api-tool`, `run --finalize` (rotation and finalize in one go). Options: `--no-wait-drain`, `--drain-timeout SEC` (600), `--poll-interval SEC` (15), `--health-timeout SEC` (90), `--preflight-cmd EXECUTABLE` (an external **read-only** check, for example `first-store-preflight-p35.sh`, run before and after), `--api-hostname NAME` (default `api.copilt.org`: **confirm it, see 10**), `--bystander NAME` (`nourishvik-care`), `--cp-key` / `--api-key` / `--known-hosts` / `--api-known-hosts`, `--force-new-rotation`, `--replace-retired-secret` (section 6c), `--emergency-outside-window` (resume / rollback only), `--i-reinstate-a-retired-secret`.
 
-**Gates the script applies before it changes anything:** no tracing (`set -x`, `BASH_XTRACEFD`, `SHELLOPTS`, a custom `PS4`), `umask 077`, no history, no core dump; operator keys present with mode 0600; the pinned host keys (`~/.ssh/known_hosts_aicc_prod`, `StrictHostKeyChecking=yes`, no trust on first use) with an entry for **both** addresses; ssh isolated from your config (`-F /dev/null`, `IdentitiesOnly`, `BatchMode`, no tty, no forwarding, no proxy); **host identity of both hosts**: Control Plane = `AICC_ENV=production`, `www.copilt.org`, stage id `3e897286...`; API host = `hostname`, an active `aicc-backend` unit, a Backend `/health` with `status ok`, `database connected`, a 40-hex `build`, an `entitlement_mode`; **deploy windows**: UTC minutes 18-26 and 48-56 of any hour, never UTC hours 02 and 03 (mutating commands only; `plan`, `status`, `verify` run any time); `--ignore-window` and every other address / identity override exist only for the test harness.
+**Gates the script applies before it changes anything:** no tracing (`set -x`, `BASH_XTRACEFD`, `SHELLOPTS`, a custom `PS4`), `umask 077`, no history, no core dump; operator keys present with mode 0600; the pinned host keys (`~/.ssh/known_hosts_aicc_prod`, `StrictHostKeyChecking=yes`, no trust on first use) with an entry for **both** addresses; ssh isolated from your config (`-F /dev/null`, `IdentitiesOnly`, `BatchMode`, no tty, no forwarding, no proxy); **host identity of both hosts**: Control Plane = `AICC_ENV=production`, `www.copilt.org`, stage id `3e897286...`; API host = `hostname`, an active `aicc-backend` unit, a Backend `/health` with `status ok`, `database connected`, a 40-hex `build`, an `entitlement_mode`; **deploy windows**: UTC minutes 18-26 and 48-56 of any hour, never UTC hours 02 and 03 (mutating commands only; `plan`, `status`, `verify` run any time). The window is checked **again right before `apply`** (at least 180 s must be left in it, so the promote follows inside the window), **right before the promote** (the window must still be open) and **right before `finalize`** (at least 60 s): when it has closed the run stops cleanly, says what is and is not changed and prints the `resume` command. `--ignore-window`, every other address / identity override and every test clock exist only for the test harness, and the harness itself is refused unless its scratch directory is a canonical path under `/tmp`, `/var/tmp`, `/private/tmp` or `/private/var/folders` (never `$TMPDIR`) that carries a sentinel file, and never for root under `sudo`.
 
 **A second run changes nothing:** `run` after a success prints `NO-OP: rotation <ID> reached phase ... (less than 24 h ago)`; `--force-new-rotation` rotates again on purpose. An unfinished rotation blocks a new one (`resume` or `rollback` it).
 
@@ -55,66 +60,87 @@ Others: `status [--id ID]`, `resume [--id ID]`, `rollback [--id ID]` (before `fi
 
 | # | Phase | Host and change | Time | Visible to merchants / Plugin |
 |---|---|---|---|---|
-| 1 | preflight (both) | none (the API tool of this checkout runs from stdin; with `run` the baseline is journalled) | seconds | nothing |
+| 1 | preflight (both) | none (the API tool of this checkout runs from stdin; with `run` the baseline is journalled): identity, file modes, exactly one secret line, render reproduces wp-config byte for byte, outbox events (none exhausted, none at 6+ attempts), tools present, php-fpm active, Backend health / build / mode, bystander healthy, WARN lines (sudo I/O logging, ACL / SELinux label on `backend.env`) | seconds | nothing |
 | 2 | install-api-tool | API: `/usr/local/sbin/aicc-rotate-webhook-secret-api` root:root 0755, sha256 checked before the move and after | seconds | nothing |
-| 3 | baseline | none: outbox `pending` / `exhausted`, Backend `build` + `entitlement_mode`, bystander `StartedAt`, optional `--preflight-cmd` | seconds | nothing |
-| 4 | prepare | CP: new 64-hex secret generated ON the host (`secrets.token_hex(32)`), `entitlement-webhook.secret.next-<ID>` (root 0600, O_EXCL temp + fsync + rename); live secret unchanged | seconds | nothing |
+| 3 | baseline | none: outbox counts, Backend `build` + `entitlement_mode`, bystander `StartedAt`, optional `--preflight-cmd` | seconds | nothing |
+| 4 | prepare | CP: the pending-event baseline `<ID>.events` (ids and attempts only), then the new 64-hex secret generated ON the host (`secrets.token_hex(32)`) as `entitlement-webhook.secret.next-<ID>` (root 0600, O_EXCL temp + fsync + rename); live secret unchanged | seconds | nothing |
 | 5 | transfer + stage | `ssh CP emit-next \| ssh API stage` (the Mac only forwards the bytes); API: `/etc/aicc/webhook-rotation/<ID>/next.secret` (0600); the two fingerprints are compared | seconds | nothing |
-| 6 | apply | API: complete copy `/etc/aicc/backend.env.pre-webhook-rotation-<ID>` (`cp -p`), ONLY the one line replaced (the rest asserted byte-identical), `systemctl restart aicc-backend`, wait up to 90 s for `/health` ok with the SAME build and mode, local probe | restart a few seconds | **the Backend restarts**; the window opens: Control Plane deliveries get 401 and wait |
+| 6 | apply | API (under a flock on `/etc/aicc/.backend.env.lock`): complete copy `/etc/aicc/backend.env.pre-webhook-rotation-<ID>` (`cp -p`), ONLY the one line replaced (the rest asserted byte-identical, mode / owner / ACL kept), `systemctl restart aicc-backend`, wait up to 90 s for `/health` ok with the SAME build and mode, local probe | restart a few seconds | **the Backend restarts**; the window opens: Control Plane deliveries get 401 and wait |
 | 7 | promote | CP: old kept as `.prev-<ID>`, new renamed over live, `aicc-render-wp-config --env production --confirm-production`, `php8.3-fpm` reload (one retry), the rendered constant's fingerprint compared; **the window closes** | seconds | php-fpm graceful reload |
 | 8 | probes | none: CP `probe-new` (400), CP `probe-old` (401), API `probe-old` (401), API `probe-new` (400) | seconds | nothing |
-| 9 | drain | none: outbox `exhausted == 0` and `pending <=` baseline | up to `--drain-timeout` | queued events are delivered |
+| 9 | drain | none: every event still pending was pending before; nothing exhausted | up to `--drain-timeout` | queued events are delivered |
 | 10 | observe | none: bystander container unchanged, Backend build and mode unchanged | seconds | nothing |
 | - | **READY TO FINALIZE** | the old secret is **not** retired yet; look, then `finalize` | | |
-| fin | finalize (separate) | both hosts: the OLD fingerprint appended to `/etc/aicc/webhook-secret-retired.fp` (0600, `<fp16> <UTC> <id>`); CP: `.prev-<ID>` renamed to `.retired-<ID>` (kept); API: the env copy kept; then `verify` | seconds | nothing |
+| fin | finalize (separate) | re-checks fingerprints, probes and the drain; appends the OLD fingerprint to the **off-host list** (`~/.aicc-rotation/retired-fingerprints`) and prints the line to commit; then, journal first, `/etc/aicc/webhook-secret-retired.fp` (0600, `<fp16> <UTC> <id>`) on both hosts; CP: `.prev-<ID>` renamed to `.retired-<ID>` (kept); API: the env copy kept; then `verify` | seconds | nothing |
 
 The bystander container `nourishvik-care` shares the API host. The tool only **reads** it (`docker inspect`): it refuses to start when it is not healthy, records its `StartedAt` before and compares after. If something else restarts it during the run (an unattended libc6 upgrade restarted a container on this host on 2026-11-14) the script reports `BYSTANDER CHANGED` and withholds `READY TO FINALIZE`; the rotation itself is then complete and you decide.
 
 ## 6. When something fails: every message says the phase, whether anything live changed, and the exact next command
 
-Every step inspects the actual files and does nothing that is already done, so **`resume` is always safe**; a process killed at any point leaves the old file or the new file, never a partial one (the tests kill it with `-9` at every stage of every write).
+Every step inspects the actual files and does nothing that is already done, so **`resume` is always safe**; a process killed at any point leaves the old file or the new file, never a partial one (the tests kill it with `-9` at every stage of every write). Every recovery below is also a line of the owner package in section 12.
 
 | Failed in | What may have changed | The tool does by itself | You run |
 |---|---|---|---|
 | preflight / baseline | nothing | refuses | fix the cause, `plan`, `run` |
+| a RETIRED secret is live (`RETIRED_SECRET_IN_USE` in `run`) | nothing | refuses | `run --replace-retired-secret` (6c) |
 | prepare / stage | nothing live (a prepared or staged secret exists, unused; kept) | refuses | `resume --id <ID>` (or `rollback`) |
+| the window is too short or closed before apply / promote / finalize | nothing live before apply; before promote the Backend is already on the new secret (deliveries queue) | stops cleanly, says which | `resume --id <ID>` in the next window; at once with `--emergency-outside-window` if the hosts disagree |
 | apply: restart fails, health fails, probe fails | the Backend env, briefly | **restores the env copy, restarts, waits for health, confirms the old secret is accepted**, then fails loudly; the Control Plane was never touched | `resume --id <ID>` after the cause is fixed, or `rollback` |
 | apply: the restore ALSO fails (`CRITICAL ... STATE UNKNOWN`) | the env file is the old one if the restore wrote it; the Backend may not be running | prints the exact manual commands (`cp -p` the copy back, `systemctl restart aicc-backend`) | follow them, then `rollback --id <ID>` |
 | apply: connection or tool died (exit 137, 255) | **unknown**: the env may hold the new secret | nothing | `status --id <ID>`, then `resume` (it detects whether the Backend already runs the new secret) |
-| promote: render, reload or fingerprint check fails | the CP live file, briefly | **restores `.prev`, re-renders, reloads**, keeps the new secret as `.next-<ID>`; the Backend is already on the NEW secret, so deliveries wait | `resume --id <ID>` (retry) or `rollback --id <ID>` |
+| promote: render, reload or fingerprint check fails (including a renderer that exits 0 but writes the old secret) | the CP live file, briefly | **restores `.prev`, re-renders, reloads**, keeps the new secret as `.next-<ID>`; the Backend is already on the NEW secret, so deliveries wait | `resume --id <ID>` (retry) or `rollback --id <ID>` |
 | promote: the restore ALSO fails | unknown CP state | prints `CRITICAL`, `STATE UNKNOWN` and the `.prev` path | `status --id <ID>`, fix, `rollback --id <ID>` |
 | promote: connection or tool died | the CP file may be new while the rendered config is still old (`CONFIG_MISMATCH`) | nothing | `resume --id <ID>` re-renders and reloads |
 | probes | both hosts hold the new secret but it is not verified (or the Backend still accepts the old one) | refuses to continue; `finalize` refuses | investigate, `rollback --id <ID>` |
-| drain | cutover verified; events are queued (not lost) | refuses `READY` | wait, `resume --id <ID>` re-checks the drain; exhausted events: do not finalize until understood |
+| drain: timeout | cutover verified; events are queued (not lost) | refuses `READY` | wait, `resume --id <ID>` re-checks the drain |
+| drain: exhausted events | cutover verified; some events gave up | refuses `READY`; `finalize` refuses | 6b, then `resume --id <ID>` |
 | observe | rotation complete; the bystander or the build changed | withholds `READY` | read, decide, `finalize` |
+| finalize interrupted | one host (or the off-host list) may already list the old secret as retired | every part is idempotent; `rollback` is refused from that moment | `finalize --id <ID>` again |
 
-`rollback` (before `finalize` only) restores the **OLD secret on both hosts** (Control Plane first, then the Backend): the Control Plane `.prev` file, re-render and reload; the Backend env copy and restart with a health wait; then both probes and the drain. It ends with, in capitals, that **the OLD secret, which is the EXPOSED one, is back in service and the rotation must be re-run**. `verify` after a rollback fails `ROLLED_BACK_EXPOSED_SECRET_IN_SERVICE`. After `finalize`, `rollback` is refused: see 8.
+`rollback` (before `finalize` only) first reads **both hosts' journals, both registries and the off-host list** and refuses, before touching anything, when any of them says the rotation was finalized or lists its old secret as retired (a finalize that was interrupted half-way included: the journal line is written before the registry line, and the registry is consulted too). Then it restores the **OLD secret on both hosts** (Control Plane first, then the Backend): the Control Plane `.prev` file, re-render and reload; the Backend env copy and restart with a health wait; then both probes and the drain. It ends with, in capitals, that **the OLD secret, which is the EXPOSED one, is back in service and the rotation must be re-run**. `verify` after a rollback fails `ROLLED_BACK_EXPOSED_SECRET_IN_SERVICE`. After `finalize`, `rollback` is refused: see 8.
 
-Outside a deploy window a half-rotated state should not wait for the next window: `resume` / `rollback` accept `--emergency-outside-window` (loud; the identity gates still apply). `run` and `finalize` never do.
+### 6b. Exhausted events and the requeue step
+
+Events are never deleted. An exhausted row (8 failed attempts) is re-queued by `AICC_LM_Entitlement_Dispatcher::reconcile_exhausted()`, which the real plugin runs on the same five-minute cron hook (`aicc_lm_entitlement_delivery`, priority 20). It re-queues **only the newest exhausted row of each activation**, **only after that row's own last back-off has elapsed**, resets its attempts to 0, keeps its `event_id` and sequence, and gives up loudly after 12 re-queues; an older, superseded row of the same activation stays exhausted (the Backend would answer it as stale). After the cause is fixed (the rotation verified), either wait one cron tick or run the reconciliation yourself on the Control Plane:
+
+```bash
+sudo aicc-wp eval 'echo AICC_LM_Entitlement_Dispatcher::reconcile_exhausted(), " re-queued\n";'
+sudo aicc-wp aicc-mail health          # license_outbox.exhausted should fall; pending rises then drains
+```
+
+Then `rotate-webhook-secret.sh resume --confirm-production --id <ID>` re-checks the drain. This tool deliberately does not run the reconciliation itself: it never changes outbox rows. Whether the real reconciliation behaves as read here is verified only in the rehearsal.
+
+### 6c. A RETIRED secret is live (an old backup was restored): the rotation is the cure
+
+`verify` fails `RETIRED_SECRET_IN_USE` and `run` refuses with the sentence "re-run with --replace-retired-secret". That flag is the explicit decision to start a rotation although the live secret is a retired one: the preflight prints a WARNING instead of failing, the NO-OP guard does not apply, and the rotation proceeds as usual. **The NEW secret is still refused if it is itself retired** (the Control Plane `prepare` and the API `stage` compare it with the registries). After `finalize`, `verify` passes again and the registries hold the retired fingerprint once per rotation that replaced it. `resume` takes the same flag.
 
 ## 7. Secret hygiene
 
-* The new secret is generated on the Control Plane host and written to `/etc/aicc/secrets/` (root 0600) and, after the transfer, to the API host's root-only files, the env file and `/etc/aicc/webhook-rotation/<ID>/next.secret`. **Nowhere else.** Not in an argument, an environment variable, a log, the journal, the registry, the audit line, a Git file, a terminal, a temp file outside those names.
-* **It passes through the Mac only inside one pipeline** (`ssh CP 'sudo ... emit-next --id X' | ssh API 'sudo ... stage --id X'`, `set -o pipefail`, both exit codes read from `PIPESTATUS`): kernel pipe buffers, never a variable or a file of the script. After it, the script compares **fingerprints** returned by each host. `emit-next` refuses to write to a terminal; `stage` refuses to read from one.
-* State journal `/var/lib/aicc/webhook-rotation/<ID>.state` (0600, one phase line with a UTC time, fingerprints only); audit line per change `logger -t aicc-webhook-rotate` (action, id, phase, fingerprint **prefixes** of 8 hex); `flock` on `/var/lib/aicc/webhook-rotation/.lock` (a second concurrent run is refused at once).
-* The tests hunt two canary secrets through every captured output, log, journal, temp tree and (on a pseudo terminal, sampling every few milliseconds) the argument list **and environment** of every process of a complete rotation.
+* The new secret is generated on the Control Plane host and written to `/etc/aicc/secrets/` (root 0600) and, after the transfer, to the API host's root-only files, the env file and `/etc/aicc/webhook-rotation/<ID>/next.secret`. **Nowhere else.** Not in an argument, an environment variable, a log, the journal, the registry, the audit line, a Git file, a terminal, a temp file outside those names. The tools disable core dumps (`RLIMIT_CORE` 0) and mark themselves not dumpable (`PR_SET_DUMPABLE`, best effort) so a crash does not write the secret out.
+* **It passes through the Mac only inside one pipeline** (`ssh CP 'sudo ... emit-next --id X' | ssh API 'sudo ... stage --id X'`, `set -o pipefail`, both exit codes read from `PIPESTATUS`): kernel pipe buffers, never a variable or a file of the script. After it, the script compares **fingerprints** returned by each host (a sender that fails after writing, or sends something else, is caught by the exit code or the fingerprint comparison). `emit-next` refuses to write to a terminal; `stage` refuses to read from one.
+* **sudo I/O logging:** the secret passes through `sudo` here (stdout of `emit-next`, stdin of `stage`). `sudo` can record it when `Defaults log_output` / `log_input` / `iolog_dir` is set. Both tools grep `/etc/sudoers` and `/etc/sudoers.d` in the preflight and print `WARN: sudo I/O logging ...` naming the file. Also look at `sudo -l` and at any auditd rule that records the tty / pty of root sessions (`auditctl -l`); the tool cannot see those. A WARN is not a failure: remove the setting for this tool first, or accept it knowingly (a root-only I/O log on a host that already holds the secret).
+* State journal `/var/lib/aicc/webhook-rotation/<ID>.state` (0600, one phase line with a UTC time, fingerprints only); audit line per change `logger -t aicc-webhook-rotate` (action, id, phase, fingerprint **prefixes** of 8 hex); `flock` on `/var/lib/aicc/webhook-rotation/.lock` (a second concurrent run is refused at once); `apply` and `rollback` also hold a flock on `/etc/aicc/.backend.env.lock`: **other deploy tooling that writes `backend.env` can take the same lock** (none was found in this repository, so the post-write compare stays as the second guard: the tool reads the file back and checks it byte for byte and by mode and owner).
+* **ACL / SELinux:** the atomic replacement creates a new file; the tool copies the extended attributes of the old file onto it (best effort) and the preflight WARNs when any exist (`getfacl`, `ls -Z`). Check them after the rotation.
+* The tests hunt two canary secrets through every captured output, log, journal, temp tree and (on a pseudo terminal, sampling every few milliseconds) the argument list **and environment** of every process of a complete rotation, with positive controls that prove the scanners can see a leak; one full rotation also runs with the real `secrets.token_hex` generator and checks only shape and absence from logs.
 
 ## 8. The backup-restore boundary (read before restoring ANYTHING)
 
 The tool keeps every old secret **on purpose**: the old Control Plane secret (`.prev-<ID>`, then `.retired-<ID>`), the env copy `backend.env.pre-webhook-rotation-<ID>`, and every older backup of `/etc/aicc/secrets`, `/etc/aicc/backend.env` and the rendered `wp-config.php` taken by the backup jobs before this rotation. **All of those contain the retired (exposed) secret.** Consequences:
 
-1. **After ANY restore of those files, run `rotate-webhook-secret.sh verify --confirm-production`.** It fails loudly with `RETIRED_SECRET_IN_USE` when the live secret of either host (file, rendered config or Backend env) has a fingerprint in the retired registry. (`status` fails the same way.) The registry itself is on both hosts (`/etc/aicc/webhook-secret-retired.fp`) and is **not** restored by restoring the old files; a restore of an older `/etc/aicc` could remove it from one host, which is why both keep it and why `verify` reads both.
-2. A restore that brings the retired secret back is **not a recovery of the rotation**: the exposed secret is live again. The only way out is **a new rotation** (`run`, then `finalize`). `verify` keeps failing until then.
-3. Restoring a pre-rotation state on **one host only** gives a fingerprint mismatch (`FINGERPRINT_MISMATCH`, and `CONFIG_MISMATCH` when only the secret file came back and the rendered config did not), which `verify` and `status` also flag. Deliveries then get 401 and queue: the situation of section 2 without an end.
-4. Rolling back a **finalized** rotation is refused (`rollback` says why). A manual decision to reinstate the retired secret exists: `rollback --id <ID> --i-reinstate-a-retired-secret`. It restores the retired secret on both hosts with a loud warning, journals `reinstated`, **removes nothing from the registry**, and `verify` keeps failing `RETIRED_SECRET_IN_USE` until a new rotation.
-5. The two pre-rotation copies and `.retired-<ID>` stay readable only by root (`0600` / `0640 root:aicc`). If you ever decide to delete them, that is a deliberate manual act outside this tool.
+1. **After ANY restore of those files, run `rotate-webhook-secret.sh verify --confirm-production`.** It fails loudly with `RETIRED_SECRET_IN_USE` when the live secret of either host (file, rendered config or Backend env) has a fingerprint in a retired list, and with `FINGERPRINT_MISMATCH` when the two hosts disagree.
+2. **There are three retired lists, on purpose.** The registry on each host (`/etc/aicc/webhook-secret-retired.fp`) lives in the same backup scope as the secrets: a full restore of `/etc/aicc` on both hosts wipes it. So `finalize` also appends the old fingerprint to an **off-host list on the Mac** (`~/.aicc-rotation/retired-fingerprints`, 0600 in a 0700 directory, `<fp16> <UTC> <id>`, fingerprints only), and prints the line to commit to the Site repo file `infra/provision/retired-webhook-fingerprints.txt`, which `verify`, `run` and `status` also read. `rotate-webhook-secret.sh retired-list` prints both. `verify` fails `RETIRED_SECRET_IN_USE (off-host list)` even when both host registries are empty. A fingerprint is 16 hex of a domain-separated hash: it cannot be used as a secret, so committing it is safe.
+3. **Residual risk, stated plainly:** a workstation that has neither the Mac list nor a checkout containing the committed repo list, run after a restore that also wiped both host registries, cannot know and `verify` passes. Mitigation: commit the printed fingerprint line to the Site repo right after `finalize` (the owner step in section 12), and run `verify` from a checkout that has it.
+4. A restore that brings the retired secret back is **not a recovery of the rotation**: the exposed secret is live again. The only way out is **a new rotation** (`run --replace-retired-secret`, then `finalize`), see 6c. `verify` keeps failing until then.
+5. Restoring a pre-rotation state on **one host only** gives a fingerprint mismatch (`FINGERPRINT_MISMATCH`, and `CONFIG_MISMATCH` when only the secret file came back and the rendered config did not), which `verify` and `status` also flag. Deliveries then get 401 and queue: the situation of section 2 without an end.
+6. Rolling back a **finalized** rotation is refused (`rollback` says why). A manual decision to reinstate the retired secret exists: `rollback --id <ID> --i-reinstate-a-retired-secret`. It restores the retired secret on both hosts with a loud warning, **keeps the new secret as `.next-<ID>`** (Control Plane) and the staged copy (Backend), journals `reinstated`, **removes nothing from any list**, and `verify` keeps failing `RETIRED_SECRET_IN_USE` until a new rotation.
+7. The two pre-rotation copies and `.retired-<ID>` stay readable only by root (`0600` / `0640 root:aicc`). If you ever decide to delete them, that is a deliberate manual act outside this tool.
 
 ## 9. What this procedure does NOT do
 
 * No Backend code change and no dual-secret acceptance (a `previous` slot would remove the window; it needs a Backend change and an image deploy: a separate decision).
-* No deletion of any backup, copy, staged or retired secret.
+* No deletion of any backup, copy, staged or retired secret, and no change to any outbox row (it only reads them; re-queueing is the plugin's own reconciliation, 6b).
 * No other secret: `ACTIVATION_PROOF_SECRET_CURRENT`, `ACTIVATION_PROOF_KID_CURRENT`, `INTERNAL_JOBS_BEARER_TOKEN`, `DATABASE_URL` and every other line of `backend.env` are byte-for-byte unchanged (asserted before the rename, after it and in the tests); the Control Plane's other secrets and every other constant of `wp-config.php` are unchanged (the preflight refuses when a render would change anything but the secret).
-* No change to the Plugin, the licences, the entitlement mode, the bystander container, DNS or any other host.
+* No change to the Plugin, the licences, the entitlement mode, the bystander container, the Backend image or build, DNS or any other host.
 * It does not prove the **running php-fpm workers** hold the new constant: the probe runs in a fresh `wp` CLI process after the reload. The reload is a graceful `systemctl reload` and its exit code is checked (one retry); the drain check then shows real deliveries from the cron.
 
 ## 10. Assumptions and what could not be verified locally
@@ -125,39 +151,73 @@ The tool keeps every old secret **on purpose**: the old Control Plane secret (`.
 * **The API host name:** `--api-hostname` defaults to `api.copilt.org`; the real `hostname` of the droplet was not available. `plan` fails with the real name in the message if it differs; pass it explicitly.
 * **`nourishvik-care` health:** accepted when `State.Status=running` and the health status is `healthy` or absent; its real healthcheck configuration was not available.
 * **Outbound HTTPS from the Control Plane host as root** (`probe-old`) to `api.copilt.org`: the PHP `WP_ACCESSIBLE_HOSTS` allow-list is WordPress-level; no host firewall rule was seen that blocks root. The Control Plane `probe-new` uses the same path as production deliveries.
-* **`aicc-mail health` output shape:** the tool reads `license_outbox.{available,pending,exhausted,oldest_pending_age_seconds}` from the JSON; any other shape makes the preflight fail (nothing is changed).
+* **Plugin interfaces** read in `aicc-license-manager`: `sign( $body, $timestamp, $secret )` (line 414), `MAX_ATTEMPTS = 8`, the back-off, `reconcile_exhausted()`, the table `{prefix}aicc_lm_entitlement_outbox` (columns `event_id`, `attempts`, `delivered_at`) and the `aicc-mail health` JSON `license_outbox.{available,pending,exhausted,oldest_pending_age_seconds}`. If the real outputs differ from what the tools parse, the preflight fails and nothing is changed. `outbox-snapshot.php` and `webhook-probe.php` were syntax-checked and statically reviewed only; they run for the first time in the rehearsal.
+* **ACL / xattr copy:** `os.listxattr` / `os.setxattr` exist on Linux only; on the Mac (and so in the tests) the copy and the warning run through a seam.
 * The host tools are Python 3 (3.9 tested on the Mac, 3.12 expected on Ubuntu 24.04) rather than bash with an embedded program; same conventions (root only, flock, O_EXCL temp + fsync + rename, journal audit).
 
 ## 11. Installing the tools
 
-* **Control Plane host:** `install-stack.sh --only scripts` (from the pushed bundle, like `aicc-set-brevo-key`) installs `/usr/local/sbin/aicc-rotate-webhook-secret` (root 0755) and `/usr/local/lib/aicc/webhook-probe.php` (root 0644). Check with `sudo aicc-rotate-webhook-secret status --expect-stage-id 3e897286ce82e55f4d866acf0d526a5f`.
+* **Control Plane host:** `install-stack.sh --only scripts` (from the pushed bundle, like `aicc-set-brevo-key`) installs `/usr/local/sbin/aicc-rotate-webhook-secret` (root 0755), `/usr/local/lib/aicc/webhook-probe.php` and `/usr/local/lib/aicc/outbox-snapshot.php` (root 0644). Check with `sudo aicc-rotate-webhook-secret status --expect-stage-id 3e897286ce82e55f4d866acf0d526a5f`.
 * **API host:** nothing to install by hand: `rotate-webhook-secret.sh run` (or `install-api-tool`) uploads the file over ssh and checks its sha256 before and after. The `aicc` user needs `sudo` for `python3`, `sh`, `mv` and the tool (it has passwordless sudo today).
 
-## 12. Owner execution package (skeleton: to be completed)
+## 12. Owner execution package
 
-**Before you start (all must be true):** [ ] the Control Plane tool is installed (section 11) [ ] `plan --confirm-production` ends `PLAN OK` [ ] the API host name in the plan matches [ ] the time is inside a deploy window (UTC minutes 18-26 or 48-56, not hour 02 or 03) [ ] nobody else is deploying to either host [ ] _[TO COMPLETE: owner decision on the optional `--preflight-cmd` script]_ [ ] _[TO COMPLETE: how long the owner can watch: the run is about 3 minutes plus the drain, up to 10]_
+**What you are about to do:** replace the shared webhook secret on both production hosts with a new one that was generated on the Control Plane host. It is **not atomic**: for well under a minute (the script prints what it measured) the Control Plane's entitlement deliveries are answered 401 and queue in the durable outbox, then catch up; the Backend container restarts once (a few seconds); merchants and licences are not affected; the container `nourishvik-care` on the API host is only read.
 
-**Run, in this order:**
+**Pre-flight checklist (all must be true):**
 
-```bash
-cd <the Site checkout that contains this change>
-infra/provision/rotate-webhook-secret.sh plan     --confirm-production
-infra/provision/rotate-webhook-secret.sh run      --confirm-production            # prints the id, ends READY TO FINALIZE
-infra/provision/rotate-webhook-secret.sh verify   --confirm-production
-infra/provision/rotate-webhook-secret.sh finalize --confirm-production --id <ID>  # only after you have read the run output
-infra/provision/rotate-webhook-secret.sh verify   --confirm-production
-```
+* [ ] The Control Plane tool is installed (section 11) and `plan --confirm-production` ends `PLAN OK`.
+* [ ] The pins from `first-store-preflight-p35.sh` still hold on the day (run it read-only, or pass it as `--preflight-cmd` so it runs before and after): Backend image `aicc-backend:launch-p37-32db289` **started 2026-11-14T16:19:24Z** (`build` unchanged); Control Plane release `20261117T140823Z-42f047ea`; `nourishvik-care` running and healthy. The rotation changes none of them and reports `BYSTANDER CHANGED` / `BACKEND BUILD/MODE CHANGED` if they move.
+* [ ] The API host name in the plan matches (`--api-hostname` if not).
+* [ ] The preflight shows no WARN you did not read (sudo I/O logging, ACL / SELinux label), and `sudo -l` / `auditctl -l` on both hosts show no recording of root's sessions that you do not accept.
+* [ ] The outbox baseline in the plan: `OUTBOX pending=<n> exhausted=0` and `outbox events: ... none at 6 or more failed attempts`. If not, the plan says FAIL and why: wait (events deliver) or 6b.
+* [ ] The time is inside a deploy window (UTC minutes 18-26 or 48-56, not hour 02 or 03) with at least **5 minutes left** (the run needs 3 at the apply step). Nobody else is deploying to either host.
+* [ ] You can stay at the terminal for about 3 minutes plus the drain wait (up to 10), and again for a minute at `finalize`.
+* [ ] You have the Site checkout that contains this change, and a way to commit one line to `infra/provision/retired-webhook-fingerprints.txt` afterwards.
 
-**Paste back (nothing else, never a secret):** the `new rotation id`; the lines `fingerprints equal: ...`, `probe-new: PASS`, `probe-old: PASS` (4 lines), `outbox: pending=... (baseline ...) exhausted=0`, `READY TO FINALIZE`; the final `VERIFY OK` after finalize. If anything says `FAILED in phase`, paste that block (it contains no secret) and **do not retry**: it names the next command.
+**The run, in this order, with what you will see and how long it takes:**
 
-**Stop conditions:** any `CRITICAL`, any `STATE UNKNOWN`, `BYSTANDER CHANGED`, `exhausted` above 0, `RETIRED_SECRET_IN_USE`: stop and paste.
+| Step | Command | You will see | Takes |
+|---|---|---|---|
+| 1 | `infra/provision/rotate-webhook-secret.sh plan --confirm-production` | `Control Plane identity verified`, `API host identity verified`, every `ok:` line of both preflights, the exact steps, `PLAN OK ... Nothing was changed.` | 10-20 s |
+| 2 | `infra/provision/rotate-webhook-secret.sh run --confirm-production` | `new rotation id: <ID>` (write it down), phases 1 to 10, `fingerprints equal: <16 hex>`, `applied: ...`, `promoted: ...`, `probe-new: PASS`, `probe-old: PASS` (twice), `drain: state=ok ...`, `bystander ... unchanged`, then `READY TO FINALIZE: id <ID>` and the sentence that it is NOT ATOMIC | 1-2 minutes, plus the drain wait |
+| 3 | `infra/provision/rotate-webhook-secret.sh verify --confirm-production` | `VERIFY OK: same secret on both hosts, neither retired, ...` | 15 s |
+| 4 | `infra/provision/rotate-webhook-secret.sh finalize --confirm-production --id <ID>` (only after reading step 2's output) | `RETIRED FINGERPRINT (off-host list ...): <fp16> <ID>`, `finalized: ...` on both hosts, then `VERIFY OK` | 20-30 s |
+| 5 | add the printed `<fp16> <UTC> <ID>` line to `infra/provision/retired-webhook-fingerprints.txt` and commit it (or run `retired-list` to print it again) | a commit; fingerprints only | a minute |
+| 6 | `infra/provision/rotate-webhook-secret.sh verify --confirm-production` from the checkout that has the committed line | `VERIFY OK` and `off-host retired list: no live fingerprint is listed` | 15 s |
 
-**Approval sentence:** _[TO COMPLETE by the owner]_ **Rollback:** `rotate-webhook-secret.sh rollback --confirm-production --id <ID>` before `finalize`; it puts the EXPOSED secret back, so it is only a pause, never a fix. **After this procedure:** the previous secret is retired on both hosts; keep (do not delete) the files named in section 8; any restore of old files is followed by `verify`.
+**Paste back (nothing else, never a secret):** the `new rotation id`; the lines `fingerprints equal: ...`, `probe-new: PASS`, `probe-old: PASS` (the three that follow), `drain: state=ok ...`, `READY TO FINALIZE`, the `measured mismatch window` line, the final `VERIFY OK`, and the retired fingerprint line. If anything says `FAILED in phase`, paste that block (it contains no secret) and **do not retry blindly**: it names the next command.
+
+**Stop conditions (stop and paste):** any `CRITICAL`, any `STATE UNKNOWN`, `BYSTANDER CHANGED`, `BACKEND BUILD/MODE CHANGED`, `drain: state=exhausted`, `RETIRED_SECRET_IN_USE`, `FINGERPRINT_MISMATCH`, a `window` failure.
+
+**Recovery, one line per failure (the full table is section 6):**
+
+| If | The tool already | You run |
+|---|---|---|
+| `plan` or the preflight says FAIL | changed nothing | fix the named cause; `plan` again |
+| `FAILED in phase: window` | stopped cleanly | `resume --confirm-production --id <ID>` in the next window (`--emergency-outside-window` if the hosts disagree) |
+| `FAILED in phase: apply` | restored the Backend env copy and restarted it (or says CRITICAL) | `resume --confirm-production --id <ID>` or `rollback --confirm-production --id <ID>` |
+| `FAILED in phase: promote` | restored the Control Plane's old secret; the Backend is on the new one (deliveries queue) | `resume --confirm-production --id <ID>` or `rollback --confirm-production --id <ID>` |
+| `FAILED in phase: probes` | nothing more | `rollback --confirm-production --id <ID>` (then investigate) |
+| `FAILED in phase: drain` | cutover verified | wait, `resume --confirm-production --id <ID>`; exhausted: 6b first |
+| `RETIRED_SECRET_IN_USE` after a restore | nothing | `run --confirm-production --replace-retired-secret --finalize` |
+| anything unclear | nothing | `status --confirm-production --id <ID>` |
+
+`rollback` puts the EXPOSED secret back on both hosts: it is a pause, never a fix, and it is refused after `finalize` (section 8).
+
+**What is NOT changed:** the Backend image, build and `entitlement_mode`; every other line of `backend.env`; every other constant of `wp-config.php`; the Plugin and all licences; `nourishvik-care` (read only); DNS; no backup or old secret is deleted; the Backend code is not touched and there is no dual-secret period.
+
+**Approval sentence** (copy, change if you wish, and send it before step 2): "I approve rotating AICC_ENTITLEMENT_WEBHOOK_SECRET with infra/provision/rotate-webhook-secret.sh on the Control Plane 157.230.110.211 and the API host 139.59.157.231 in the next deploy window: one aicc-backend restart, Control Plane deliveries queued for under a minute (not atomic), nourishvik-care read only, the old secret kept as a retired backup, rollback puts the exposed secret back and is a pause only. I will run finalize after reading the run output and commit the retired fingerprint line."
+
+**After this procedure:** the previous secret is retired on both hosts and off-host; keep (do not delete) the files named in section 8; any restore of old files is followed by `verify`; commit the fingerprint line.
 
 ## 13. Tests
 
 ```bash
-bash infra/stack-tests/test_p38_rotation.sh        # this procedure (about five minutes: it simulates both hosts and runs about eighty rotations or refusals)
-npm run infra:lint                                  # includes the static rules over the three scripts
+bash infra/stack-tests/test_p38_rotation.sh        # this procedure (about eight minutes: it simulates both hosts and runs about a hundred rotations or refusals)
+P38R_ONLY=M bash infra/stack-tests/test_p38_rotation.sh   # only the "tests with teeth" section (M1-M5), about a minute
+npm run infra:lint                                  # includes the static rules over the scripts (and the negative tests of them in test_lint.sh)
 npm run infra:test                                  # the whole infra suite (test_p38_rotation.sh is in it)
 ```
+
+Section M exists to kill specific mutants: an orchestrator that ignores the exit code of `emit-next` or the fingerprint comparison, an API `finalize` without its own probe, a Control Plane `promote` that does not verify the rendered fingerprint, a `probe-old` that accepts a transport error or any 401. `P38R_PROV=<copy of infra/provision with a mutation>` runs the section against a mutated tree (this is how the review round proved each one is now caught).
