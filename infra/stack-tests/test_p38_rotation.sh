@@ -1227,7 +1227,7 @@ t_ok "gate(api): the sentinel-bearing canonical prefix still works" bash -c "env
 mkdir -p "$GT/nosent"; cp "$TMP/fakessh" "$GT/nosent/fakessh"; ln -s "$TMP" "$GT/tl"
 t_contains "gate(orchestrator): a fake ssh next to no sentinel is refused" "$(env -i "PATH=$BASEPATH" "HOME=$HOMED" AICC_TEST_HARNESS=1 "AICC_TEST_SSH=$GT/nosent/fakessh" bash "$ROT" plan --confirm-production 2>&1 </dev/null || true)" "no .aicc-test-harness-root sentinel"
 t_contains "gate(orchestrator): a fake ssh reached through a symlinked directory is refused" "$(env -i "PATH=$BASEPATH" "HOME=$HOMED" AICC_TEST_HARNESS=1 "AICC_TEST_SSH=$GT/tl/fakessh" bash "$ROT" plan --confirm-production 2>&1 </dev/null || true)" "under the system temp dir"
-t_contains "gate(orchestrator): TMPDIR does not widen the allow-list" "$(env -i "PATH=$BASEPATH" "HOME=$HOMED" "TMPDIR=$REPO/infra" AICC_TEST_HARNESS=1 "AICC_TEST_SSH=$ROT" bash "$ROT" plan --confirm-production 2>&1 </dev/null || true)" "under the system temp dir"
+t_contains "gate(orchestrator): TMPDIR does not widen the allow-list" "$(env -i "PATH=$BASEPATH" "HOME=$HOMED" "TMPDIR=/bin" AICC_TEST_HARNESS=1 "AICC_TEST_SSH=/bin/sh" bash "$ROT" plan --confirm-production 2>&1 </dev/null || true)" "under the system temp dir"
 # 8: the re-exec comes before every other import
 EV="$TMP/evil"; rm -rf "$EV"; mkdir -p "$EV"; for t in cp api; do
   src="$CPTOOL"; [ "$t" = api ] || true; [ "$t" != api ] || src="$APITOOL"
