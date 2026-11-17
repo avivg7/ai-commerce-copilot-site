@@ -379,19 +379,23 @@ rot_sh = os.path.join(INFRA, "provision/rotate-webhook-secret.sh")
 rot_cp = os.path.join(INFRA, "provision/host/aicc-rotate-webhook-secret")
 rot_api = os.path.join(INFRA, "provision/host/aicc-rotate-webhook-secret-api")
 rot_php = os.path.join(INFRA, "provision/host/webhook-probe.php")
-for pth, what in ((rot_sh, "the Mac orchestrator"), (rot_cp, "the Control Plane host tool"), (rot_api, "the API host tool"), (rot_php, "the probe script")):
+rot_snap = os.path.join(INFRA, "provision/host/outbox-snapshot.php")
+rot_list = os.path.join(INFRA, "provision/retired-webhook-fingerprints.txt")
+for pth, what in ((rot_sh, "the Mac orchestrator"), (rot_cp, "the Control Plane host tool"), (rot_api, "the API host tool"), (rot_php, "the probe script"), (rot_snap, "the outbox snapshot script"), (rot_list, "the repo list of retired fingerprints")):
     if not os.path.exists(pth):
         fail(pth, "the rotation %s must exist" % what)
 if all(os.path.exists(x) for x in (rot_sh, rot_cp, rot_api, rot_php)):
     rsh, rcp_, rapi_, rphp = read(rot_sh), read(rot_cp), read(rot_api), read(rot_php)
     for needle, why in (("must run as root", "the non-root refusal"), ("fcntl.flock", "the non-blocking lock"), ("os.O_EXCL", "exclusive temp files"), ("os.replace", "atomic rename"), ("os.fsync", "fsync"), ("os.fstat(fd).st_size", "the short-write check"),
-                        ("O_NOFOLLOW", "no symlinks"), ("S_ISREG", "regular files only"), ("logger", "the audit line"), ("aicc-webhook-rotate", "the audit tag"), ("TEST HARNESS ACTIVE", "seam banner"), ("under_tmp", "seam gate"), ("sys.flags.isolated", "python isolated mode"),
+                        ("O_NOFOLLOW", "no symlinks"), ("S_ISREG", "regular files only"), ("logger", "the audit line"), ("aicc-webhook-rotate", "the audit tag"), ("TEST HARNESS ACTIVE", "seam banner"), ("harness_gate", "seam gate"), ("HARNESS_SENTINEL", "the sentinel file the seams need"), ("RLIMIT_CORE", "no core dump"), ("PR_SET_DUMPABLE", "not dumpable"), ("sys.flags.isolated", "python isolated mode"),
+                        ("--replace-retired-secret", "a retired live secret is the cure"), ("drain_state", "the event-by-event drain proof"), ("outbox_problems", "refuse to start near exhaustion"), ("registry-check", "rollback consults the registry"),
                         ("RETIRED_SECRET_IN_USE", "the retired-secret failure"), ("webhook-secret-retired.fp", "the registry"), ("aicc-webhook-secret-fingerprint-v1", "the fingerprint domain tag"), ("secrets.token_hex(32)", "the secret is generated on the host"),
                         ("--backend-already-restarted", "the Backend-first guard"), ("--i-reinstate-a-retired-secret", "the explicit reinstatement"), ("STATE UNKNOWN", "post-failure wording"), ("stdout is a terminal", "emit-next refuses a terminal"),
                         ("aicc-render-wp-config", "the renderer"), ("php8.3-fpm", "the reload"), ("webhook_payload_malformed", "the non-mutating probe verdict"), ("webhook_signature_invalid", "the old-secret verdict"), ("aicc-entitlement-webhook-v1", "the signing domain tag")):
         oexpect(needle in rcp_, rot_cp, "rotation CP tool lost: %s (%s)" % (needle, why))
     for needle, why in (("must run as root", "the non-root refusal"), ("fcntl.flock", "the non-blocking lock"), ("os.O_EXCL", "exclusive temp files"), ("os.replace", "atomic rename"), ("os.fsync", "fsync"), ("os.fstat(fd).st_size", "the short-write check"),
-                        ("logger", "the audit line"), ("aicc-webhook-rotate", "the audit tag"), ("TEST HARNESS ACTIVE", "seam banner"), ("under_tmp", "seam gate"), ("sys.flags.isolated", "python isolated mode"),
+                        ("logger", "the audit line"), ("aicc-webhook-rotate", "the audit tag"), ("TEST HARNESS ACTIVE", "seam banner"), ("harness_gate", "seam gate"), ("HARNESS_SENTINEL", "the sentinel file the seams need"), ("RLIMIT_CORE", "no core dump"), ("PR_SET_DUMPABLE", "not dumpable"), ("sys.flags.isolated", "python isolated mode"),
+                        ("take_env_lock", "the backend.env lock"), ("env_xattrs", "the xattr / ACL precondition"), ("sudo_logging_warnings", "sudo I/O logging warning"), ("--replace-retired-secret", "a retired live secret is the cure"), ("registry-check", "rollback consults the registry"),
                         ("RETIRED_SECRET_IN_USE", "the retired-secret failure"), ("--env-file", "the unit must read the env file"), ("systemctl", "restart"), ("backend.env.pre-webhook-rotation-", "the complete env copy"),
                         ("ENTITLEMENT_WEBHOOK_SECRET=", "only that line"), ("nourishvik-care", "the bystander"), ("inspect", "the bystander is only inspected"), ("STATE UNKNOWN", "post-failure wording"), ("stdin is a terminal", "stage refuses a terminal"),
                         ("webhook_payload_malformed", "the probe verdict"), ("wait_health", "the health wait"), ("restore_env", "the automatic restore")):
@@ -408,6 +412,15 @@ if all(os.path.exists(x) for x in (rot_sh, rot_cp, rot_api, rot_php)):
                 if nm == "os.unlink" and hasattr(_ast, "unparse") and _ast.unparse(n_.args[0]) not in ("tmp", "p", "os.path.join(sd, n)"):
                     bad.append("os.unlink(%s)" % _ast.unparse(n_.args[0]))
         oexpect(not bad, pth, "the rotation tools must never delete a secret or a backup (only their own temp files): %s" % ", ".join(bad))
+        early_ = []
+        for n_ in tree.body:
+            if isinstance(n_, _ast.If) and hasattr(_ast, "unparse") and "isolated" in _ast.unparse(n_.test):
+                break
+            if isinstance(n_, (_ast.Import, _ast.ImportFrom)):
+                early_ += [a_.name for a_ in n_.names]
+        else:
+            early_ = ["<no isolation check>"]
+        oexpect(sorted(early_) == ["os", "sys"], pth, "nothing but os and sys may be imported before the isolated-mode re-exec: %s" % ", ".join(early_))
         oexpect(not re.search(r"(?m)^\s*(set -x|bash -x)|\b(curl|wget)\b *[-h]|\beval\(|\bexec\(", src), pth, "the rotation tools must never trace, fetch or eval")
         oexpect(not re.search(r"subprocess\.\w+\(\s*\[\s*\"(rm|shred|truncate)\"", src), pth, "the rotation tools must never run rm, shred or truncate")
         leaks_ = []
@@ -430,7 +443,11 @@ if all(os.path.exists(x) for x in (rot_sh, rot_cp, rot_api, rot_php)):
                         ("PIPESTATUS", "both ends of the transfer pipe are checked"), ("emit-next", "the transfer"), ("set -euo pipefail", "strict mode"), ("NOT ATOMIC", "the honest statement"), ("READY TO FINALIZE", "finalize is a separate step"),
                         ("RETIRED_SECRET_IN_USE", "verify's loud failure"), ("TEST HARNESS ACTIVE", "seam banner"), ("under_tmp", "seam gate"), ("harness_only", "the test-only flags"), ("UNKNOWN: the", "post-failure wording"),
                         ('[ "$h" -ne 2 ] && [ "$h" -ne 3 ]', "never UTC hours 02 and 03"), ('[ "$m" -ge 18 ] && [ "$m" -le 26 ]', "window minutes 18-26"), ('[ "$m" -ge 48 ] && [ "$m" -le 56 ]', "window minutes 48-56"),
-                        ("--emergency-outside-window", "resume / rollback only"), ("--i-reinstate-a-retired-secret", "the explicit reinstatement"), ("sha256sum", "the API tool is verified before and after"), ("API_TOOL_SRC", "the API tool is delivered from this checkout")):
+                        ("--emergency-outside-window", "resume / rollback only"), ("--i-reinstate-a-retired-secret", "the explicit reinstatement"), ("sha256sum", "the API tool is verified before and after"), ("API_TOOL_SRC", "the API tool is delivered from this checkout"),
+                        ("window_recheck", "the window is evaluated again before apply, promote and finalize"), ("clock_hms", "one clock reading per window decision"), ("WINDOW_MIN_LEFT=180", "at least 3 minutes before apply"),
+                        ("--replace-retired-secret", "a retired live secret is the cure"), ("retired_gate", "run refuses a retired live secret without the flag"), ("mac_retired_hits", "the off-host retired list"), ("retired_add", "finalize appends to the off-host list"),
+                        ("retired-list", "the list can be printed for the repo"), ("registry-check", "rollback reads both registries first"), ("drain-check", "the event-by-event drain"), ("AICC_ROT_RETIRED_FILE", "the off-host list location"),
+                        (".aicc-test-harness-root", "the seam needs a sentinel"), ("/private/var/folders", "the fixed temp allow-list")):
         oexpect(needle in rsh, rot_sh, "rotation orchestrator lost: %s (%s)" % (needle, why))
     oexpect(re.search(r'--ignore-window\) harness_only "\$1"', rsh) is not None, rot_sh, "--ignore-window must exist only for the test harness")
     oexpect(re.search(r'--cp-ip\) need_arg "\$@"; harness_only', rsh) is not None and re.search(r'--api-ip\) need_arg "\$@"; harness_only', rsh) is not None, rot_sh, "a different host address must exist only for the test harness")
@@ -442,7 +459,13 @@ if all(os.path.exists(x) for x in (rot_sh, rot_cp, rot_api, rot_php)):
                         ("AICC_ENTITLEMENT_WEBHOOK_SECRET", "the running constant"), ("ABSPATH", "wp eval-file only"), ("https://api.copilt.org", "the default Backend")):
         oexpect(needle in rphp, rot_php, "rotation probe lost: %s (%s)" % (needle, why))
     oexpect(not re.search(r"echo[^;\n]*\$aicc_probe_(secret|sig)\b[^;\n]*;", re.sub(r"hash\([^;]*;", "", rphp)) and "print_r" not in rphp and "var_dump" not in rphp, rot_php, "the probe must print only the fingerprint, the status and the error code")
+    snp_ = read(rot_snap)
+    code_ = re.sub(r"(?s)/\*.*?\*/", "", snp_)
+    oexpect(len(re.findall(r"(?i)\bselect\b", code_)) == 1 and not re.search(r"(?i)\b(update|insert|delete|replace|drop|alter|truncate)\b|update_option|add_option|delete_option|wp_schedule|do_action", code_), rot_snap, "the outbox snapshot must be ONE read-only SELECT (no write statement, no option or cron call)")
+    for needle, why in (("MAX_ATTEMPTS", "exhaustion is the dispatcher's own constant"), ("outbox_table()", "the real table name"), ("delivered_at IS NULL", "only undelivered events"), ("EXHAUSTED", "exhausted events are listed"), ("TOTAL pending=", "the totals line")):
+        oexpect(needle in snp_, rot_snap, "outbox snapshot lost: %s (%s)" % (needle, why))
     isr_rot = read(os.path.join(INFRA, "provision/install-stack.sh"))
+    oexpect("provision/host/outbox-snapshot.php" in isr_rot, os.path.join(INFRA, "provision/install-stack.sh"), "must install the outbox snapshot script (outbox-snapshot.php)")
     oexpect("provision/host/aicc-rotate-webhook-secret\" " in isr_rot and "aicc-rotate-webhook-secret\"" in isr_rot, os.path.join(INFRA, "provision/install-stack.sh"), "must install the rotation tool (aicc-rotate-webhook-secret)")
     oexpect("provision/host/webhook-probe.php" in isr_rot, os.path.join(INFRA, "provision/install-stack.sh"), "must install the probe script (webhook-probe.php)")
     if not os.environ.get("AICC_LINT_INFRA"):
