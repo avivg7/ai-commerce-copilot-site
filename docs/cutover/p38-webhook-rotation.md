@@ -120,6 +120,7 @@ The tool keeps every old secret **on purpose**: the old Control Plane secret (`.
 ## 10. Assumptions and what could not be verified locally
 
 * **`sudo` over ssh with stdin:** `emit-next` and `stage` rely on `ssh ... 'sudo ...'` passing a pipe through to the command with no tty (`use_pty` allocates a pty only when a tty is involved). Not verified against the real sudoers; `plan` does not exercise it. If `stage` fails with a refusal about stdin, stop: nothing was changed.
+* **sudo rules:** the `aicc` operator user must be allowed to run `/usr/local/sbin/aicc-rotate-webhook-secret` on the Control Plane host (the same rule that already lets it run `aicc-set-brevo-key` and `aicc-render-wp-config`) and `python3`, `sh`, `mv`, `sha256sum` and the API tool on the API host (passwordless sudo today). A missing rule shows up in `plan` as a sudo error, before anything is changed.
 * **Real `systemctl restart` timing** of the Backend container (the tests use a fake that restarts instantly). The health wait is 90 s by default.
 * **The API host name:** `--api-hostname` defaults to `api.copilt.org`; the real `hostname` of the droplet was not available. `plan` fails with the real name in the message if it differs; pass it explicitly.
 * **`nourishvik-care` health:** accepted when `State.Status=running` and the health status is `healthy` or absent; its real healthcheck configuration was not available.

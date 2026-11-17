@@ -262,6 +262,9 @@ preflight_both() { # <id or empty>
   banner "preflight: Control Plane"
   cpc preflight $idarg
   [ "$CPRC" = 0 ] || rc=1
+  if [ "$CPRC" != 0 ] && printf '%s\n' "$CPOUT" | grep -qiE 'command not found|No such file|cannot execute|not allowed|a password is required|sudo:'; then
+    echo "  hint: the Control Plane tool is probably not installed or sudo does not allow it (install-stack.sh --only scripts installs /usr/local/sbin/aicc-rotate-webhook-secret; docs/cutover/p38-webhook-rotation.md section 11)"
+  fi
   banner "preflight: API host (the tool of THIS checkout, run from stdin: nothing is installed by this step)"
   apic_stdin preflight $idarg
   [ "$APIRC" = 0 ] || rc=1

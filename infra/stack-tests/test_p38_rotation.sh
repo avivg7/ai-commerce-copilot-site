@@ -302,7 +302,7 @@ EOF
 chmod 755 "$TMP/fakessh"
 ssh-keygen -q -t ed25519 -N '' -f "$TMP/hostkey" -C fake-host
 printf '157.230.110.211 %s\n139.59.157.231 %s\n' "$(cut -d' ' -f1,2 "$TMP/hostkey.pub")" "$(cut -d' ' -f1,2 "$TMP/hostkey.pub")" > "$HOMED/.ssh/known_hosts_aicc_prod"
-printf 'fake operator key file, not a key\n' > "$HOMED/.ssh/aicc_cp_prod_operator"; printf 'fake api key file, not a key\n' > "$HOMED/.ssh/aicc_digitalocean_prod"; chmod 600   # the production operator identities (fake files) "$HOMED/.ssh/"aicc_*
+printf 'fake operator key file, not a key\n' > "$HOMED/.ssh/aicc_cp_prod_operator"; printf 'fake api key file, not a key\n' > "$HOMED/.ssh/aicc_digitalocean_prod"; chmod 600 "$HOMED/.ssh/"aicc_*   # the production operator identities (fake files)
 
 # ---- the world ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 ENV_ORIG_TEXT=$'# Backend environment (fixture)\nDATABASE_URL=postgresql://aicc:fixture-db-pass@127.0.0.1:5432/aicc_prod\nACTIVATION_PROOF_SECRET_CURRENT=canary-activation-proof-FIXTURE-NOT-A-SECRET-0001\nACTIVATION_PROOF_KID_CURRENT=kid-2026-11\nENTITLEMENT_WEBHOOK_SECRET=__OLD__\nINTERNAL_JOBS_BEARER_TOKEN=canary-internal-jobs-token-111111111111111111111111\n\nENTITLEMENT_MODE_NOTE=unrelated line after a blank line\n'
