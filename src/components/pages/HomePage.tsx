@@ -8,7 +8,7 @@ import { COMMERCE_OPEN, getStartedUrl } from "@/lib/site";
 import { EA_ON, EA_OPEN } from "@/lib/earlyAccess";
 import { EaClosingLead, EaCta, EaHeroBadge, EaHeroSupport, EaStatusNote } from "@/components/ea/Ea";
 import { SoonBandActions } from "@/components/ui/Soon";
-import { SS_ON } from "@/lib/selfService";
+import { SS_INITIAL, SS_ON } from "@/lib/selfService";
 import { SsBand, SsTerms } from "@/components/ss/Ss";
 import { localePath } from "@/lib/routes";
 import { Button } from "@/components/ui/Button";
@@ -322,7 +322,7 @@ export function HomePage({ locale, t }: { locale: Locale; t: Dictionary }) {
                   {SS_ON ? (
                     /* P37: the self-service sign-up is the primary band action; Try Live Demo and See Pricing stay */
                     <SsBand locale={locale} t={t}>
-                      {demoCta("secondary")}
+                      {demoCta(SS_INITIAL === "link" ? "secondary" : "primary")}
                       <Button href={localePath(locale, "pricing")} variant="ghost" size="lg" {...tx("common.seePricing")}>{t.common.seePricing}</Button>
                     </SsBand>
                   ) : (

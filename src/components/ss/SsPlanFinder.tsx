@@ -51,8 +51,8 @@ export function SsPlanFinder({ s, hrefs, labels, initial, facts, lang, dir }: { 
                 </ul>
                 <div role="group" aria-label={facts.datesLabel} style={{ inlineSize: "100%" }}>
                   <dl className="aicc-ssdates" data-ss-dates>
-                    <div data-ss-date="registration"><dt>{facts.regLabel}</dt><dd><bdi>{facts.regValue}</bdi></dd></div>
-                    <div data-ss-date="end"><dt>{facts.endLabel}</dt><dd><bdi>{facts.endValue}</bdi></dd></div>
+                    <div data-ss-date="registration"><dt>{facts.regLabel}</dt><dd>{facts.regValue}</dd></div>
+                    <div data-ss-date="end"><dt>{facts.endLabel}</dt><dd>{facts.endValue}</dd></div>
                   </dl>
                 </div>
               </div>

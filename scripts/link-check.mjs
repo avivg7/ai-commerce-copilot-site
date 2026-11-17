@@ -10,7 +10,8 @@ const browser = await launch();
 const page = await browser.newPage();
 const failed = [];
 page.on("requestfailed", (r) => { const e = r.failure()?.errorText || ""; if (!/ERR_ABORTED/.test(e)) failed.push(`request failed (${e}): ${r.url()}`); }); // aborted = prefetch cancelled by navigation
-page.on("response", (r) => { if (r.status() >= 400 && r.url().startsWith(origin)) failed.push(`${r.status()} ${r.url()}`); });
+// P39: a self-service build asks GET /wp-json/aicc/v1/signup/status (served by WordPress, not part of the export): a static server answers 404 for it; every other 4xx / 5xx is still a failure
+page.on("response", (r) => { if (r.status() >= 400 && r.url().startsWith(origin) && !r.url().endsWith("/wp-json/aicc/v1/signup/status")) failed.push(`${r.status()} ${r.url()}`); });
 const seen = new Set();
 let pages = 0, links = 0;
 for (const l of LOCALES) for (const r of ROUTES) {

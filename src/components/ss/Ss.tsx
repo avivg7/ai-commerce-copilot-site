@@ -55,8 +55,8 @@ export function SsDates({ locale, t, wide = false, inverse = false, band = false
   return (
     <div role="group" aria-label={s.plan.datesLabel} {...A(locale, "ea.ss.plan")}>
       <dl className={cls} data-ss-dates>
-        <div data-ss-date="registration"><dt>{s.plan.regLabel}</dt><dd><bdi>{reg}</bdi></dd></div>
-        <div data-ss-date="end"><dt>{s.plan.endLabel}</dt><dd><bdi>{end}</bdi></dd></div>
+        <div data-ss-date="registration"><dt>{s.plan.regLabel}</dt><dd>{reg}</dd></div>
+        <div data-ss-date="end"><dt>{s.plan.endLabel}</dt><dd>{end}</dd></div>
       </dl>
     </div>
   );

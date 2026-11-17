@@ -9,7 +9,7 @@ import { EA_ON, EA_OPEN } from "@/lib/earlyAccess";
 
 import { EaAfterNote, EaClosingLead, EaCta, EaPlanTerms, EaPricingNote, EaSection, EaStatusNote } from "@/components/ea/Ea";
 import { SoonBandActions } from "@/components/ui/Soon";
-import { SS_ON } from "@/lib/selfService";
+import { SS_INITIAL, SS_ON } from "@/lib/selfService";
 import { SsBand, SsPlanFinderSlot, SsTerms } from "@/components/ss/Ss";
 import { Container, Section, SectionHeading } from "@/components/ui/Primitives";
 import { PricingCard } from "@/components/ui/PricingCard";
@@ -205,7 +205,7 @@ export function PricingPage({ locale, t }: { locale: Locale; t: Dictionary }) {
                   {SS_ON ? (
                     /* P37: the self-service sign-up is the primary band action; Try Live Demo stays */
                     <SsBand locale={locale} t={t}>
-                      <Button href={`${localePath(locale)}#demo`} variant="secondary" size="lg">{t.home.hero.ctaDemo}</Button>
+                      <Button href={`${localePath(locale)}#demo`} variant={SS_INITIAL === "link" ? "secondary" : "primary"} size="lg">{t.home.hero.ctaDemo}</Button>
                     </SsBand>
                   ) : (
                   <div className="aicc-hero-actions">
