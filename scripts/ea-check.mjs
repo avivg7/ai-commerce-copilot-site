@@ -20,7 +20,7 @@ import path from "node:path";
 import vm from "node:vm";
 import { spawnSync } from "node:child_process";
 import { ROOT, loadTs, loadDictionaries } from "./lib/load.mjs";
-import { REQUIRED, REQUIRED_DATES, eaDisclosureProblems } from "./lib/early-access-truth.mjs";
+import { REQUIRED, REQUIRED_DATES, REQUIRED_REG, SS_REG_UNIX, ssDisclosureProblems, eaDisclosureProblems } from "./lib/early-access-truth.mjs";
 
 const args = process.argv.slice(2);
 const arg = (n) => { const i = args.indexOf(`--${n}`); return i >= 0 ? args[i + 1] : undefined; };
@@ -261,6 +261,18 @@ const flat = (o, pre = "", out = []) => { if (typeof o === "string") out.push([p
       const row = toks.EA_DATES[l][step], days = ea.EA_STEP_DAYS[step];
       check(nbn(row.until).replace(/ г\.$/, "") === fmtUntil(days.last), `${l} step ${step}: {until} "${nbn(row.until)}" is what Intl prints for the Israel calendar day ${days.last}`);
     }
+    // P39: the registration cutoff of the free trial: the token table equals the independent literals, the instant equals the Control Plane constant (REGISTRATION_CUTOFF_UNIX 1798070400 = 2026-12-24T00:00:00Z) and the "last day" is the UTC day before it
+    {
+      const rt = toks.SS_REG_DATES[l], rq = REQUIRED_REG[l];
+      check(toks.SS_REG_CLOSE_UTC_MS === SS_REG_UNIX * 1000 && toks.SS_REG_CLOSE_UTC_MS === Date.parse("2026-12-24T00:00:00Z"), `${l}: the registration cutoff of the Site is 2026-12-24T00:00:00Z (unix ${SS_REG_UNIX}, the Control Plane constant)`);
+      check(nbn(rt.regDate) === nbn(rq.regDate) && nbn(rt.regShort) === nbn(rq.regShort) && nbn(rt.regLast) === nbn(rq.regLast), `${l}: the registration tokens equal the independent literals (${nbn(rt.regDate)} / ${nbn(rt.regShort)} / ${nbn(rt.regLast)})`);
+      const fmtU = (ms, o) => nbn(new Intl.DateTimeFormat(tag, { timeZone: "UTC", ...o }).format(ms)).replace(/ г\.$/, "");
+      const close = toks.SS_REG_CLOSE_UTC_MS, last = close - 1; // 23:59:59.999 UTC on December 23: the last instant at which the server accepts a registration
+      check(fmtU(close, { year: "numeric", month: "long", day: "numeric" }) === nbn(rt.regDate).replace(/ г\.$/, "") && fmtU(last, { year: "numeric", month: "long", day: "numeric" }) === nbn(rt.regLast).replace(/ г\.$/, ""), `${l}: {regDate} / {regLast} are what Intl prints for the UTC days of the cutoff instant and of its last accepted millisecond`);
+      check(fmtU(close, { year: "numeric", month: l === "he" ? "long" : "short", day: "numeric" }) === nbn(rt.regShort).replace(/ г\.$/, ""), `${l}: {regShort} is what Intl prints in the short form (Hebrew keeps the long month)`);
+      const rawSsProblems = ssDisclosureProblems(l, idx.getEaDictionary(l, 0), 0, raw[l].ss);
+      check(rawSsProblems.length === 0, `${l}: the free-trial block states the two dates, the automatic-conversion denial and the payment rule, and carries the date tokens${rawSsProblems.length ? " -> " + rawSsProblems.join("; ") : ""}`);
+    }
     // no date of another step is ever rendered in a step's text (the one exception: the extension note names the INITIAL last day, on purpose)
     for (const step of [0, 1, 2]) {
       const strings = flat(idx.getEaDictionary(l, step)).filter(([p]) => !(step > 0 && (p === "extended.note" || p === "extended.noteAnnounce")));
@@ -323,7 +335,7 @@ if (out) {
         const pre = l === "en" ? "" : `${l}/`, mine = idx.getEaDictionary(l, step);
         const tp = text(`${pre}pricing/index.html`), th = text(`${pre}index.html`);
         check(th.includes(nbn(mine.ss.bar.text)) && tp.includes(nbn(mine.ss.bar.text)), `${l}: the bar says the free trial ('ss.bar.text' of step ${step})`);
-        const missing = ["terms.label", "terms.store", "terms.payment", "terms.paid", "terms.state", "plan.trial", "plan.noPayment"].filter((k) => !tp.includes(nbn(k.split(".").reduce((a, x) => a[x], mine.ss))));
+        const missing = ["terms.label", "terms.regValue", "terms.endValue", "terms.store", "terms.payment", "terms.noAuto", "terms.paid", "terms.state", "plan.trial", "plan.noPayment", "plan.noAuto", "plan.regLabel", "plan.regValue", "plan.endLabel", "plan.endValue", "cta.soon"].filter((k) => !tp.includes(nbn(k.split(".").reduce((a, x) => a[x], mine.ss))));
         check(missing.length === 0, `${l}: Pricing says the free-trial terms and the card allowance${missing.length ? " -> missing " + missing.join(", ") : ""}`);
         for (const other of [0, 1, 2].filter((o) => o !== step)) { let n = 0; for (const k of ["last", "until"]) { const lit = REQUIRED_DATES[l][other][k]; n += (tp.match(new RegExp(`(?<![0-9])${lit.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`, "g")) || []).length; } check(n === 0, `${l}: Pricing carries no date of step ${other}`); }
       }

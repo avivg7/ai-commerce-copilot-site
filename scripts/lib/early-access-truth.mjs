@@ -49,7 +49,13 @@ const swap = (re, from, why) => { const src = re.source.split(from).join(""); if
 export const SS_EXTRA_RULES = [
   // English: "free trial" and "Start free trial" are the feature; a free PLAN / tier / forever / lifetime offer is still not
   [/\bfree (plan|tier|version|forever|for ever|for life|for the first|for founding|for early|to try|to start|download)\b|freemium|start free(?! trial\b)|forever free|lifetime|for life/i, "en: the free trial is not a free plan, a free tier or a lifetime offer"],
-  EA_EXTRA_RULES[1], EA_EXTRA_RULES[2], EA_EXTRA_RULES[3], EA_EXTRA_RULES[4], EA_EXTRA_RULES[5],
+  EA_EXTRA_RULES[1], EA_EXTRA_RULES[2], EA_EXTRA_RULES[3],
+  // P39 (owner decision: "no automatic paid conversion" is now a required claim): the word "conversion" stays banned (result / sales claims) EXCEPT in the exact phrase "No automatic conversion to a paid plan"; the phrase itself
+  // must be complete (an "automatic conversion ..." sentence that does not end up at a paid plan is caught too). Everything else of the old rule (guarantee, results, increase, boost, revenue, sales, rated, trusted ...) is unchanged.
+  [swap(EA_EXTRA_RULES[4][0], "|conversion", "en result rule"), EA_EXTRA_RULES[4][1]],
+  [/(?<!\bno automatic )\bconversions?\b/i, "en: \"conversion\" only inside the exact claim \"No automatic conversion to a paid plan\""],
+  [/\bno automatic conversion\b(?! to a paid plan\b)/i, "en: the claim must read exactly \"No automatic conversion to a paid plan\""],
+  EA_EXTRA_RULES[5],
   [swap(EA_EXTRA_RULES[6][0], "תקופת ניסיון|ניסיון חינם|", "he"), EA_EXTRA_RULES[6][1].replace("no trial, ", "")],
   [swap(EA_EXTRA_RULES[7][0], "prueba|", "es"), EA_EXTRA_RULES[7][1].replace("no trial, ", "")],
   [swap(EA_EXTRA_RULES[8][0], "пробн|", "ru"), EA_EXTRA_RULES[8][1].replace("no trial, ", "")],
@@ -64,6 +70,23 @@ export const SS_EXTRA_RULES = [
   // no promise the trial cannot keep
   [/unlimited|no (commitment|obligation|strings)|cancel any ?time|instant(ly)?\b|ללא התחייבות|sin compromiso|без обязательств|мгновенно|inmediat/i, "no unlimited / no-commitment / instant claim"],
 ];
+/**
+ * P39 registration cutoff (Control Plane AICC_LM_Trial::REGISTRATION_CUTOFF_UNIX = 1798070400 = 2026-12-24T00:00:00Z; registration is accepted while the server clock is BEFORE it), written out as literals on purpose
+ * (NOT read from src/i18n/eaTokens.ts: two independent statements of the same calendar fact; `ea:check` compares them and the IANA/UTC arithmetic). regLast = the last day a trial can be started (UTC).
+ */
+export const REQUIRED_REG = {
+  en: { regDate: "December 24, 2026", regShort: "Dec 24, 2026", regLast: "December 23, 2026" },
+  he: { regDate: "24 בדצמבר 2026", regShort: "24 בדצמבר 2026", regLast: "23 בדצמבר 2026" },
+  es: { regDate: "24 de diciembre de 2026", regShort: "24 dic 2026", regLast: "23 de diciembre de 2026" },
+  ru: { regDate: "24 декабря 2026 г.", regShort: "24 дек. 2026 г.", regLast: "23 декабря 2026 г." },
+};
+export const SS_REG_UNIX = 1798070400;
+/** The ONLY two strings of the whole pack that may state "00:00" (the registration instant), and the form they must take. */
+export const SS_REG_PATHS = ["ss.plan.regValue", "ss.terms.regValue"];
+/** The ONLY strings that may name an end or registration DATE (so every date is a labelled line, never a loose "until <date>"): path -> the tokens it carries. */
+export const SS_DATE_PATHS = { "plan.regValue": ["regShort"], "plan.endValue": ["until"], "terms.regValue": ["regDate", "regLast"], "terms.endValue": ["lastDay"] };
+/** The ONLY strings that may make the "no automatic conversion to a paid plan" claim. */
+export const SS_NOAUTO_PATHS = ["plan.noAuto", "hero.support.noAuto", "terms.noAuto"];
 export const SS_PAID_STORES = [1, 3, 10]; // the Backend allowance table: AICC_LM_Early_Access::PLAN_SEATS (trial: 1)
 /** Inclusive line range (0-based indexes of `text.split("\n")`) of the top-level `  ss: {` block of a campaign file, as a Set; empty when the file has none. */
 export function ssBlockLines(text) {
@@ -73,52 +96,80 @@ export function ssBlockLines(text) {
   for (let i = a; i < lines.length; i++) { out.add(i); if (i > a && /^  \},?\s*$/.test(lines[i])) break; }
   return out;
 }
-/** The words each language uses for the two facts the trial copy must carry: "payment method" and "trial". */
+/** The words each language uses for the facts the trial copy must carry: "payment method", "trial", the automatic-conversion denial, "paid plan", "explicit decision". */
 const SS_WORDS = {
-  en: { pay: "payment method", trial: /trial/i, store: /store/i },
-  he: { pay: "אמצעי תשלום", trial: /ניסיון/, store: /חנו/ },
-  es: { pay: "método de pago", trial: /prueba/i, store: /tienda/i },
-  ru: { pay: "способ оплаты", trial: /пробн/i, store: /магазин/i },
+  en: { pay: "payment method", trial: /trial/i, store: /store/i, auto: /automatic/i, paid: /paid plan/i, decision: /explicit decision/i },
+  he: { pay: "אמצעי תשלום", trial: /ניסיון/, store: /חנו/, auto: /אוטומטי/, paid: /בתשלום/, decision: /החלטה מפורשת/ },
+  es: { pay: "método de pago", trial: /prueba/i, store: /tienda/i, auto: /automátic/i, paid: /plan de pago/i, decision: /decisión expresa/i },
+  ru: { pay: "способ оплаты", trial: /пробн/i, store: /магазин/i, auto: /автоматическ/i, paid: /платн/i, decision: /явное решение/i },
 };
+const escRe = (x) => String(x).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 /**
  * Problems of the self-service block of one locale's (resolved) campaign dictionary: present and complete, one store for the trial, the paid allowance exactly 1 / 3 / 10 (never more: those are the numbers
- * the Backend enforces), "no payment method is required for the trial" where payment is mentioned and nowhere an unqualified "no card" claim, the end stated in UTC, four distinct state labels.
+ * the Backend enforces), "no payment method is required for the trial" where payment is mentioned and nowhere an unqualified "no card" claim, the end stated in UTC, five distinct state labels.
+ * P39 additions (owner-required claims, each allowed in exactly its strings): "no automatic conversion to a paid plan" (SS_NOAUTO_PATHS only, and nowhere else in the block), the TWO labelled dates (registration closes {regShort} at
+ * 00:00 UTC / trial access ends {until} at 22:00 UTC, with the long variants in the terms), no loose date anywhere else (SS_DATE_PATHS), "00:00" only in the registration strings (SS_REG_PATHS), the trial state "opens soon" without a date or promise.
+ * `ea` is the RESOLVED dictionary (date tokens replaced), so the date checks compare the literal dates of REQUIRED_DATES / REQUIRED_REG; `raw` (optional) is the unresolved ss block of the pack, which proves the token wiring.
  */
-export function ssDisclosureProblems(locale, ea, step = 0) {
+export function ssDisclosureProblems(locale, ea, step = 0, raw = null) {
   const problems = [], ss = ea?.ss, W = SS_WORDS[locale];
-  const nb = (x) => String(x).replace(/ /g, " ");
+  const nb = (x) => String(x).replace(/[\u00a0\u2066\u2069]/g, (c) => (c === "\u00a0" ? " " : "")); // no-break spaces read as spaces; the bidi isolates of the Hebrew times are invisible
   const at = (p) => p.split(".").reduce((a, k) => a?.[k], ss);
   if (!ss) return [`${locale}: ea.ss (the self-service block) is missing`];
-  for (const k of ["bar.label", "bar.text", "bar.link", "cta.start", "cta.waitlist", "cta.closed", "cta.paused", "cta.notOpen", "plan.trial", "plan.paidOne", "plan.paidMany", "plan.noPayment", "plan.checksLabel", "hero.supportLabel", "hero.support.noPayment", "hero.support.oneStore", "band.lead", "link", "terms.label", "terms.store", "terms.payment", "terms.paid", "terms.state"]) if (typeof at(k) !== "string" || !at(k).trim()) problems.push(`${locale}: ea.ss.${k} is missing or empty`);
+  const KEYS = ["bar.label", "bar.text", "bar.link", "cta.soon", "cta.start", "cta.waitlist", "cta.closed", "cta.paused", "plan.trial", "plan.paidOne", "plan.paidMany", "plan.noPayment", "plan.noAuto", "plan.checksLabel", "plan.datesLabel", "plan.regLabel", "plan.regValue", "plan.endLabel", "plan.endValue",
+    "hero.badge", "hero.supportLabel", "hero.support.noPayment", "hero.support.oneStore", "hero.support.noAuto", "band.lead", "link", "meta.pricingDescription", "terms.label", "terms.regValue", "terms.endValue", "terms.store", "terms.payment", "terms.noAuto", "terms.paid", "terms.state"];
+  for (const k of KEYS) if (typeof at(k) !== "string" || !at(k).trim()) problems.push(`${locale}: ea.ss.${k} is missing or empty`);
+  if ("cta" in ss && "notOpen" in ss.cta) problems.push(`${locale}: ea.ss.cta.notOpen exists: the P39 state "off" reads "opens soon" (ea.ss.cta.soon); the old label is retired`);
   if (problems.length) return problems;
+  const R = REQUIRED_REG[locale], D = REQUIRED_DATES[locale][step];
   // the trial covers ONE store, said on the card and in the terms
-  for (const k of ["plan.trial", "terms.store", "hero.support.oneStore"]) if (!/(^|[^\d])1([^\d]|$)/.test(at(k)) && !/אחת|una\b|одн/i.test(at(k))) problems.push(`${locale}: ea.ss.${k} must state that the trial covers one store`);
+  for (const k of ["plan.trial", "terms.store", "hero.support.oneStore", "hero.badge"]) if (!/(^|[^\d])1([^\d]|$)/.test(at(k)) && !/אחת|una\b|одн/i.test(at(k))) problems.push(`${locale}: ea.ss.${k} must state that the trial covers one store`);
   // paid allowance: {n} comes from plans.ts at render time; the literal numbers in the terms are exactly 1, 3, 10
   if (!at("plan.paidMany").includes("{n}")) problems.push(`${locale}: ea.ss.plan.paidMany must carry the {n} token (the store count of plans.ts)`);
   const paid = nb(at("terms.paid")).match(/\d+/g) || [];
   // Solo's single store may be a number or the word "one" (Hebrew writes "לחנות אחת"); Studio 3 and Agency 10 are always numbers
   const pj = JSON.stringify(paid.map(Number));
   if (pj !== JSON.stringify(SS_PAID_STORES) && pj !== JSON.stringify(SS_PAID_STORES.slice(1))) problems.push(`${locale}: ea.ss.terms.paid must state the paid allowance ${SS_PAID_STORES.join(" / ")} stores (the Backend table) and nothing larger, found [${paid}]`);
-  // no store count anywhere else in the block except the allowed ones, and no capacity above the Backend table; 22:00 is the clock
+  // no number anywhere else except the allowed ones: store allowance 1/3/10, the two clocks (22:00 end, 00:00 registration) and the resolved dates; no capacity above the Backend table
   for (const [p, v] of walk(ss, "", [])) {
-    const d = REQUIRED_DATES[locale][step];
-    const nums = (nb(v).replace(/22:00/g, "").split(nb(d.last)).join("").split(nb(d.until)).join("").match(/\d+/g) || []).map(Number); // the resolved dates of the build's step are not store counts
+    let x = nb(v);
+    for (const d of [D.last, D.until, R.regDate, R.regShort, R.regLast]) x = x.split(nb(d)).join("");
+    const nums = (x.replace(/22:00/g, "").replace(/00:00/g, "").match(/\d+/g) || []).map(Number);
     const bad = nums.filter((n) => !SS_PAID_STORES.includes(n));
-    if (bad.length) problems.push(`${locale}: ea.ss.${p} carries the number(s) ${bad.join(", ")}: the only numbers allowed are the store allowance ${SS_PAID_STORES.join(" / ")} and the 22:00 UTC clock`);
+    if (bad.length) problems.push(`${locale}: ea.ss.${p} carries the number(s) ${bad.join(", ")}: the only numbers allowed are the store allowance ${SS_PAID_STORES.join(" / ")}, the two UTC clocks (22:00 end, 00:00 registration) and the resolved dates`);
   }
-  // payment: only the qualified sentence, in the four places that mention it
+  // payment: only the qualified sentence, in the places that mention it
   for (const k of ["plan.noPayment", "hero.support.noPayment", "terms.payment", "band.lead"]) { const v = nb(at(k)).toLowerCase(); if (!v.includes(nb(W.pay).toLowerCase()) || !W.trial.test(v)) problems.push(`${locale}: ea.ss.${k} must say "${W.pay}" together with the trial (the only payment claim allowed is: no payment method is required for the trial)`); }
-  // the end is stated in UTC with the last day (the same instant as the Control Plane trial expiry)
-  const need = { ...REQUIRED_DATES[locale][step] };
-  if (!nb(at("terms.payment")).includes(nb("22:00 UTC")) || !at("terms.payment").includes("{lastDay}") && !nb(at("terms.payment")).includes(nb(need.last))) problems.push(`${locale}: ea.ss.terms.payment must state the end as {lastDay} and 22:00 UTC`);
-  if (!at("bar.text").includes("{until}") && !nb(at("bar.text")).includes(nb(need.until))) problems.push(`${locale}: ea.ss.bar.text must state the last day`);
-  // four distinct labels, the trial wording on every state label, the waitlist label names the waitlist
-  const labels = ["cta.start", "cta.waitlist", "cta.closed", "cta.paused", "cta.notOpen"].map(at);
+  // P39: "no automatic conversion to a paid plan" is REQUIRED in exactly three strings, names the paid plan, and appears NOWHERE else in the block (no other automatic claim)
+  for (const k of SS_NOAUTO_PATHS) { const v = nb(at(k)); if (!W.auto.test(v) || !W.paid.test(v)) problems.push(`${locale}: ea.ss.${k} must state that nothing converts to a paid plan automatically (an "automatic" denial that names the paid plan)`); }
+  if (!W.decision.test(nb(at("terms.noAuto")))) problems.push(`${locale}: ea.ss.terms.noAuto must say that continuing after the trial needs an explicit decision`);
+  for (const [p, v] of walk(ss, "", [])) if (W.auto.test(nb(v)) && !SS_NOAUTO_PATHS.includes(p) && !/^terms\.paid$|^meta\./.test(p)) problems.push(`${locale}: ea.ss.${p} makes an "automatic" claim: the only strings that may are ${SS_NOAUTO_PATHS.join(", ")}`);
+  // P39: THE TWO DATES. Registration closes at 00:00 UTC on {regShort} / {regDate}; trial access ends at 22:00 UTC on {until} / {lastDay}: two labelled lines, nowhere a loose date
+  const has = (k, tok) => nb(at(k)).includes(nb(tok));
+  if (!has("plan.regValue", R.regShort) || !has("plan.regValue", "00:00 UTC") || has("plan.regValue", "22:00")) problems.push(`${locale}: ea.ss.plan.regValue must state the registration close as "${R.regShort}" and "00:00 UTC" (and not the 22:00 end)`);
+  if (!has("plan.endValue", D.until) || !has("plan.endValue", "22:00 UTC") || has("plan.endValue", "00:00")) problems.push(`${locale}: ea.ss.plan.endValue must state the trial end as "${D.until}" and "22:00 UTC" (and not the 00:00 registration instant)`);
+  if (!has("terms.regValue", R.regDate) || !has("terms.regValue", R.regLast) || !has("terms.regValue", "00:00 UTC")) problems.push(`${locale}: ea.ss.terms.regValue must state the registration close ("${R.regDate}", "00:00 UTC") and the last day to start a trial ("${R.regLast}")`);
+  if (!has("terms.endValue", D.last) || !has("terms.endValue", "22:00 UTC") || has("terms.endValue", "00:00")) problems.push(`${locale}: ea.ss.terms.endValue must state the trial end ("${D.last}", "22:00 UTC")`);
+  if (at("plan.regLabel") === at("plan.endLabel")) problems.push(`${locale}: ea.ss.plan.regLabel and endLabel must differ (two separate labelled lines)`);
+  for (const [p, v] of walk(ss, "", [])) {
+    const x = nb(v), isDatePath = Object.prototype.hasOwnProperty.call(SS_DATE_PATHS, p);
+    const dateWords = [D.last, D.until, R.regDate, R.regShort, R.regLast].filter((d) => x.includes(nb(d)));
+    if (dateWords.length && !isDatePath) problems.push(`${locale}: ea.ss.${p} states a date ("${dateWords[0]}"): dates live only in the labelled lines ${Object.keys(SS_DATE_PATHS).join(", ")} (a loose "until <date>" hides the second date)`);
+    if (/\b(22|00):00\b/.test(x) && !isDatePath) problems.push(`${locale}: ea.ss.${p} states a clock time: only the four labelled date lines may`);
+  }
+  // the unresolved pack must carry the tokens (the wiring of the dates to the token table) and only the four date strings may
+  if (raw) for (const [p, toks] of Object.entries(SS_DATE_PATHS)) for (const t of toks) if (!String(p.split(".").reduce((a, k) => a?.[k], raw)).includes(`{${t}}`)) problems.push(`${locale}: ea.ss.${p} must carry the token {${t}} (the dates come from src/i18n/eaTokens.ts)`);
+  // the end is stated in UTC with the last day (the same instant as the Control Plane trial expiry); the registration instant is the Control Plane constant
+  // four distinct labels, the trial wording on every state label, the waitlist label names the waitlist; the "opens soon" state carries no date, no "request" and is a statement, not an invitation
+  const labels = ["cta.soon", "cta.start", "cta.waitlist", "cta.closed", "cta.paused"].map(at);
   if (new Set(labels).size !== labels.length) problems.push(`${locale}: the five self-service state labels must all differ`);
-  for (const k of ["cta.start", "cta.closed", "cta.paused", "cta.notOpen"]) if (!W.trial.test(at(k))) problems.push(`${locale}: ea.ss.${k} must name the trial`);
+  for (const k of ["cta.soon", "cta.start", "cta.closed", "cta.paused"]) if (!W.trial.test(at(k))) problems.push(`${locale}: ea.ss.${k} must name the trial`);
+  if (/^(start|join|empez|unir|начать|встать|התחילו|הצטרפו)/i.test(nb(at("cta.soon")))) problems.push(`${locale}: ea.ss.cta.soon is a status statement, not an invitation (it must not start with a verb of action)`);
+  // the pricing meta description: the trial in one sentence, payment qualified, the three prices as tokens, paid purchases not open
+  { const m = nb(at("meta.pricingDescription")); for (const t of ["{priceSolo}", "{priceStudio}", "{priceAgency}"]) if (!m.includes(t)) problems.push(`${locale}: ea.ss.meta.pricingDescription must carry ${t}`); if (!m.toLowerCase().includes(nb(W.pay).toLowerCase()) || !W.trial.test(m)) problems.push(`${locale}: ea.ss.meta.pricingDescription must say "${W.pay}" together with the trial`); }
   // short support lines (one line each)
-  for (const k of ["hero.support.noPayment", "hero.support.oneStore"]) if (nb(at(k)).length > 64 || /[.!;:]/.test(at(k))) problems.push(`${locale}: ea.ss.${k} must be one short line (at most 64 characters, no sentence punctuation)`);
+  for (const k of ["hero.support.noPayment", "hero.support.oneStore", "hero.support.noAuto"]) if (nb(at(k)).length > 64 || /[.!;:]/.test(at(k))) problems.push(`${locale}: ea.ss.${k} must be one short line (at most 64 characters, no sentence punctuation)`);
   return problems;
 }
 
@@ -276,13 +327,13 @@ export function eaDisclosureProblems(locale, ea, step = 0) {
     if (/e-?mail|דוא״ל|correo|почт/i.test(v) && !v.includes(nb(facts.soft))) problems.push(`${locale}: ea.${p} promises e-mail without "${facts.soft}" (no e-mail sender exists yet)`);
   }
   // typography and register (Production 21 review R1-n3, n4): the clock moment never breaks between the word before "00:00" and the time (a no-break space), and Spanish addresses the merchant as usted throughout
-  const NBSP_RULES = { en: [/\bat 22:00/i, "the time 22:00 must follow \"at\" with a no-break space"], he: [/בשעה 22:00/, "22:00 must follow בשעה with a no-break space (a wrap left \"00:00,\" at the start of a line)"], es: [/a las 22:00/i, "22:00 must follow \"a las\" with no-break spaces"] };
+  const NBSP_RULES = { en: [/\bat (?:22|00):00/i, "the time 22:00 / 00:00 must follow \"at\" with a no-break space"], he: [/בשעה (?:22|00):00/, "22:00 / 00:00 must follow בשעה with a no-break space (a wrap left \"00:00,\" at the start of a line)"], es: [/a las (?:22|00):00/i, "22:00 / 00:00 must follow \"a las\" with no-break spaces"] };
   if (NBSP_RULES[locale]) for (const [p, v] of walk(ea, "", [])) if (NBSP_RULES[locale][0].test(v)) problems.push(`${locale}: ea.${p}: ${NBSP_RULES[locale][1]}`);
   if (locale === "es") for (const [p, v] of walk(ea, "", [])) if (/(?<!usted )\bcompra (el|un) plan/i.test(v)) problems.push(`es: ea.${p} uses an informal or ambiguous "compra" (write "usted compra")`);
   for (const p of ["extended.barAnnounce", "extended.noteAnnounce"]) { const v = nb(p.split(".").reduce((a, k) => a?.[k], ea) || ""); if (v.includes(nb(facts.extEvery)) || v.includes(nb(facts.noteEvery))) problems.push(`${locale}: ea.${p} must not say "for every store" (an announce build admits nobody)`); }
   for (const bad of FORBIDDEN_SENTENCES[locale]) for (const [p, v] of walk(ea, "", [])) if (v.includes(bad)) problems.push(`${locale}: ea.${p} must not say "${bad}" (the Plugin no longer shows a money-back message on a free grant)`);
   // no date token may be left unresolved in a resolved dictionary
-  for (const [p, v] of walk(ea, "", [])) if (/\{(lastDay|lastDayShort|endDate|firstLastDay|until)\}/.test(v)) problems.push(`${locale}: ea.${p} still contains an unresolved date token`);
+  for (const [p, v] of walk(ea, "", [])) if (/\{(lastDay|lastDayShort|endDate|firstLastDay|until|regDate|regShort|regLast)\}/.test(v)) problems.push(`${locale}: ea.${p} still contains an unresolved date token`);
   // P36 (owner rule: global-first branding, UTC-based deadlines): no customer string names a country or a local time zone, none states the end as midnight, and none prints the day after the last day (the expiry is 22:00 UTC on the last day)
   {
     const GEO = /israel|israeli|jerusalem|ישראל|израил|asia\/jerusalem/i;
@@ -290,7 +341,8 @@ export function eaDisclosureProblems(locale, ea, step = 0) {
     const NEXTDAY = { en: /(?<!\d)january 1,? 2027/i, he: /(?<!\d)1 בינואר 2027/, es: /(?<!\d)1 de enero de 2027/i, ru: /(?<!\d)1 января 2027/i }[locale];
     for (const [p, v] of walk(ea, "", [])) {
       if (GEO.test(v)) problems.push(`${locale}: ea.${p} names a country or local time zone (the deadline is stated in UTC only)`);
-      if (MIDNIGHT.test(v)) problems.push(`${locale}: ea.${p} states a 00:00 end (the end instant is 22:00 UTC)`);
+      // P39: the ONLY exception is the registration cutoff (Control Plane REGISTRATION_CUTOFF_UNIX, 2026-12-24T00:00:00Z) in exactly the two registration strings, in the form "<registration date> ... 00:00 UTC"
+      if (MIDNIGHT.test(v) && !(SS_REG_PATHS.includes(p) && new RegExp(`(${escRe(nb(REQUIRED_REG[locale].regShort))}|${escRe(nb(REQUIRED_REG[locale].regDate))})[^\\d]{0,14}00:00 UTC`).test(nb(v)))) problems.push(`${locale}: ea.${p} states a 00:00 end (the end instant is 22:00 UTC; "00:00" is allowed only as the registration cutoff in ${SS_REG_PATHS.join(" and ")})`);
       if (NEXTDAY && NEXTDAY.test(nb(v))) problems.push(`${locale}: ea.${p} prints the day after the last day without the UTC instant`);
     }
   }

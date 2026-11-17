@@ -9,6 +9,10 @@ import type { Locale } from "./config";
  *   {until}         the last day, short, WITH the year, for the bar, the Hero pill and the cards (Dec 31, 2026; Hebrew keeps the full month)
  *   {endDate}       the day after the last day (INTERNAL: kept for the calendar checks; customer copy never prints it, because the end instant is stated in UTC only)
  *   {firstLastDay}  the INITIAL last day, whatever the step (only the extension note says it: "first announced to end on ...")
+ * P39 (free-trial REGISTRATION cutoff, independent of the extension step: the Control Plane constant AICC_LM_Trial::REGISTRATION_CUTOFF_UNIX = 1798070400 = 2026-12-24T00:00:00Z; a registration is accepted while the server clock is BEFORE it):
+ *   {regDate}   the day the registration closes, long                (December 24, 2026; "closes December 24, 2026 at 00:00 UTC")
+ *   {regShort}  the same day, short, with the year, for the cards    (Dec 24, 2026)
+ *   {regLast}   the LAST day a trial can be started, long (UTC)      (December 23, 2026)
  */
 export type EaDates = { lastDay: string; lastDayShort: string; endDate: string; until: string };
 export const EA_DATES: Record<Locale, readonly [EaDates, EaDates, EaDates]> = {
@@ -34,8 +38,18 @@ export const EA_DATES: Record<Locale, readonly [EaDates, EaDates, EaDates]> = {
   ],
 };
 
+/** P39: the registration cutoff of the self-service free trial (2026-12-24T00:00:00Z = unix 1798070400). NOT part of the extension steps: the trial END moves with an extension, the registration cutoff does not. */
+export const SS_REG_CLOSE_UTC_MS = Date.UTC(2026, 11, 24, 0, 0, 0);
+export type SsRegDates = { regDate: string; regShort: string; regLast: string };
+export const SS_REG_DATES: Record<Locale, SsRegDates> = {
+  en: { regDate: "December 24, 2026", regShort: "Dec 24, 2026", regLast: "December 23, 2026" },
+  he: { regDate: "24 בדצמבר 2026", regShort: "24 בדצמבר 2026", regLast: "23 בדצמבר 2026" },
+  es: { regDate: "24 de diciembre de 2026", regShort: "24 dic 2026", regLast: "23 de diciembre de 2026" },
+  ru: { regDate: "24 декабря 2026 г.", regShort: "24 дек. 2026 г.", regLast: "23 декабря 2026 г." },
+};
+
 export type EaStepIndex = 0 | 1 | 2;
-export const EA_DATE_TOKENS = ["lastDay", "lastDayShort", "endDate", "firstLastDay", "until"] as const;
+export const EA_DATE_TOKENS = ["lastDay", "lastDayShort", "endDate", "firstLastDay", "until", "regDate", "regShort", "regLast"] as const;
 /** Tokens that other code resolves later (not dates): they pass through untouched. */
 const PASS_THROUGH = new Set(["contactEmail", "mailProvider", "priceSolo", "priceStudio", "priceAgency", "n"]);
 
@@ -47,6 +61,7 @@ export function resolveEaTokens(text: string, locale: Locale, step: EaStepIndex)
   const row = EA_DATES[locale][step];
   return text.replace(/\{([A-Za-z]+)\}/g, (whole, name: string) => {
     if (name === "firstLastDay") return EA_DATES[locale][0].lastDay;
+    if (name === "regDate" || name === "regShort" || name === "regLast") return SS_REG_DATES[locale][name];
     if (name === "lastDay" || name === "lastDayShort" || name === "endDate" || name === "until") return row[name];
     if (PASS_THROUGH.has(name)) return whole;
     throw new Error(`ea: unknown token {${name}} in "${text.slice(0, 60)}"`);
