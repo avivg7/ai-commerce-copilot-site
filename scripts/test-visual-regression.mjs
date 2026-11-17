@@ -49,17 +49,18 @@ async function open(m, route, w, locale) {
   await page.waitForTimeout(700);
   // finish every image / font, then freeze everything that moves
   await page.evaluate(async () => { await document.fonts.ready; document.querySelectorAll("img[loading=lazy]").forEach((i) => { i.loading = "eager"; }); await Promise.race([Promise.all([...document.images].map((i) => (i.complete ? 1 : new Promise((r) => { i.onload = i.onerror = r; })))), new Promise((r) => setTimeout(r, 4000))]); });
-  await page.addStyleTag({ content: "*,*::before,*::after{animation:none!important;transition:none!important;caret-color:transparent!important}.aicc-site-header{position:absolute!important}" });
+  await page.addStyleTag({ content: "*,*::before,*::after{animation:none!important;transition:none!important;caret-color:transparent!important}.aicc-site-header{position:absolute!important}.aicc-skip,.aicc-suggest{display:none!important}" });
   await page.waitForTimeout(150);
   return { ctx, page };
 }
 
+const BASELINES_ONLY = args.includes("--baselines-only");
 console.log("== before / after full-page screenshots (evidence): " + SHOTS);
 const HERO = [
   ["headline", ".aicc-hero--home h1"], ["subtitle", ".aicc-hero--home .aicc-hero-lead"], ["hero actions (Try Live Demo, See Pricing)", ".aicc-hero--home .aicc-hero-actions"],
   ["Reco visual", ".aicc-hero--home .aicc-hero__visual"], ["pillars", ".aicc-pillars"], ["interactive demo #demo", "#demo"], ["header", "header.aicc-site-header"],
 ];
-for (const l of LOCALES) for (const w of WIDTHS) {
+for (const l of LOCALES) for (const w of WIDTHS) if (!BASELINES_ONLY) {
   for (const [name, route] of [["home", `${pre(l)}/`], ["pricing", `${pre(l)}/pricing/`]]) {
     const b = await open(mb, route, w, l), a = await open(ma, route, w, l);
     await b.page.screenshot({ path: path.join(SHOTS, "before", `${l}-${name}-${w}.png`), fullPage: true });
