@@ -6,6 +6,7 @@ import { allStaticParams, parseSlug, type RouteId } from "@/lib/routes";
 import { isRequestRoute, parseRequestSlug, requestStaticParams } from "@/lib/requestRoutes";
 import { SITE_URL, absoluteUrl } from "@/lib/site";
 import { EA_ON } from "@/lib/earlyAccess";
+import { SS_ON } from "@/lib/selfService";
 import { kitAsset } from "@/lib/brand";
 import { formatPlain } from "@/lib/rich";
 import { HomePage } from "@/components/pages/HomePage";
@@ -60,7 +61,7 @@ export async function generateMetadata({ params }: { params: Promise<Params> }):
   const ctx = { locale, t };
   const title = formatPlain(m.title, ctx);
   // a launch-offer build leaves the 14-day guarantee out of the Pricing description (no payment is taken, the cards say nothing about it); the text names no offer and no date, so it never goes stale
-  const description = formatPlain(EA_ON && route === "pricing" ? t.ea.meta.pricingDescription : m.description, ctx);
+  const description = formatPlain(SS_ON && route === "pricing" ? t.ea.ss.meta.pricingDescription : EA_ON && route === "pricing" ? t.ea.meta.pricingDescription : m.description, ctx);
   const url = absoluteUrl(locale, route);
   const ogImage = `${SITE_URL}/og/${locale}-${route === "home" ? "home" : route}.jpg`;
   const languages: Record<string, string> = {};

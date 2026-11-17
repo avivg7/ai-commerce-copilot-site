@@ -1,42 +1,65 @@
 /**
- * P37 self-service sign-up status: the ONE place that knows the Control Plane answer, the state -> label/link table and the status fetch.
+ * P37/P39 self-service sign-up status: the ONE place that knows the Control Plane answer, the state -> label/link table and the status fetch.
  * Pure (no React, no process.env): it is imported by the card button (client), by the build (server) and by `scripts/test-selfservice.mjs`, which pins the table below.
  *
  * The truthful states live on the Control Plane /start/ page (open | waitlist | cutoff | paused). The static Site only reads, at run time and best effort,
  *   GET /wp-json/aicc/v1/signup/status   (same origin as the Site: the edge routes /wp-json/ to WordPress, exactly like the request form)
  *   -> { open: boolean, mode: "open" | "waitlist" | "closed_cutoff" | "paused" | "off", plan_options?: [...], cap_remaining?: coarse bucket }
- * and switches the card button to the truthful label. Nothing here grants, reserves or promises a place; the Control Plane decides at sign-up time with its own clock.
+ * and UPGRADES the card to a real link only when the answer says sign-up can be used. Nothing here grants, reserves or promises a place; the Control Plane decides at sign-up time with its own clock.
  *
- * Failure rule: ANY answer that is not a complete, valid, consistent status (network error, timeout, non-200, malformed JSON, unknown mode, `open` contradicting `mode`) keeps the STATIC button: a link to
- * /start/, which renders the truthful state itself. A visitor is never shown a fake button, a dead button or a link that cannot work from a guess.
+ * P39 (owner rule: a signup-oriented control NEVER links to a page that may be a 404 and never to the Live Demo): the STATIC state (server HTML, first client render, and every failed or invalid answer) is decided by the
+ * BUILD, `NEXT_PUBLIC_AICC_SS_INITIAL`:
+ *   coming_soon (the default and the fail-safe: any other value, empty or unset means coming_soon)   PLAIN TEXT "Free trial registration opens soon" (role="status", no button look, no link)
+ *   link        (a rebuild made when the owner activates sign-up)                                      LINK {CP}/start/?plan=<id> "Start free trial"
+ * Failure rule: ANY answer that is not a complete, valid, consistent status (network error, timeout, non-200, malformed JSON, unknown mode, `open` contradicting `mode`) keeps the build's static state. A visitor is never shown a fake button,
+ * a dead button or a link that is not known to work: with the default build a link appears ONLY after the server said open or waitlist.
  */
 export const SS_STATUS_PATH = "/wp-json/aicc/v1/signup/status";
 export const SS_MODES = ["open", "waitlist", "closed_cutoff", "paused", "off"] as const;
 export type SsMode = (typeof SS_MODES)[number];
-/** What the button shows: "static" = not asked yet or no valid answer (the build-time button), otherwise the server mode. */
+/** What the control shows: "static" = not asked yet or no valid answer (the build's initial state), otherwise the server mode. */
 export type SsView = "static" | SsMode;
-export type SsLabelKey = "start" | "waitlist" | "closed" | "paused" | "notOpen";
+/** The build-time initial state (NEXT_PUBLIC_AICC_SS_INITIAL). */
+export type SsInitial = "coming_soon" | "link";
+export const SS_INITIAL_DEFAULT: SsInitial = "coming_soon";
+/** Only the exact string "link" selects the link build; everything else (unset, empty, "LINK", "true", a typo) is the truthful default. */
+export function parseSsInitial(v: unknown): SsInitial {
+  return v === "link" ? "link" : SS_INITIAL_DEFAULT;
+}
+export type SsLabelKey = "soon" | "start" | "waitlist" | "closed" | "paused";
 export type SsDecision = { kind: "link"; label: SsLabelKey } | { kind: "text"; label: SsLabelKey };
 
 /**
  * THE TABLE (state -> what the visitor sees). `link` = a real <a> to {CP}/start/?plan=<id> (the sign-up page, which shows the matching form or notice); `text` = plain text, never a button, never a link.
- *   static / open  link  "Start free trial"          (the page decides at submit time; the static build cannot know better)
- *   waitlist       link  "Join the waitlist"         (the sign-up page shows the waitlist form: a real action)
+ *   static (coming_soon build)  text  "Free trial registration opens soon"   (the build default; also the state of every failed or invalid status answer)
+ *   static (link build)         link  "Start free trial"                     (only a build made after sign-up was activated)
+ *   open           link  "Start free trial"
+ *   waitlist       link  "Join the waitlist"        (the sign-up page shows the waitlist form: a real action)
  *   closed_cutoff  text  "Free trial registration closed"
  *   paused         text  "Free trial registration paused"
- *   off            text  "Free trial registration is not open"   (the route may not exist: no link)
+ *   off            text  "Free trial registration opens soon"    (the Control Plane switch is not on: the same statement as the initial state, so the card does not change its words when the answer arrives; it promises no date)
  */
-export const SS_STATE_TABLE: Readonly<Record<SsView, SsDecision>> = Object.freeze({
-  static: { kind: "link", label: "start" },
+export const SS_INITIAL_TABLE: Readonly<Record<SsInitial, SsDecision>> = Object.freeze({
+  coming_soon: { kind: "text", label: "soon" },
+  link: { kind: "link", label: "start" },
+});
+export const SS_STATE_TABLE: Readonly<Record<SsMode, SsDecision>> = Object.freeze({
   open: { kind: "link", label: "start" },
   waitlist: { kind: "link", label: "waitlist" },
   closed_cutoff: { kind: "text", label: "closed" },
   paused: { kind: "text", label: "paused" },
-  off: { kind: "text", label: "notOpen" },
+  off: { kind: "text", label: "soon" },
 });
 
-export function ssDecision(view: SsView): SsDecision {
-  return SS_STATE_TABLE[view] ?? SS_STATE_TABLE.static;
+/** The decision for a view. `static` (and any unknown view) takes the build's initial state; the default build is the truthful plain text. */
+export function ssDecision(view: SsView, initial: SsInitial = SS_INITIAL_DEFAULT): SsDecision {
+  if (view !== "static" && Object.prototype.hasOwnProperty.call(SS_STATE_TABLE, view)) return SS_STATE_TABLE[view as SsMode];
+  return SS_INITIAL_TABLE[initial] ?? SS_INITIAL_TABLE[SS_INITIAL_DEFAULT];
+}
+
+/** Does this decision, in this view, use the sign-up URL of the card's plan? Header / Product "Get started" use the same rule: the start page only when sign-up is known (or built) to work. */
+export function ssStartsSignup(view: SsView, initial: SsInitial = SS_INITIAL_DEFAULT): boolean {
+  return ssDecision(view, initial).kind === "link";
 }
 
 /** The mode of a status answer, or null when the answer is not a complete, valid and consistent one (null = keep the static button). */

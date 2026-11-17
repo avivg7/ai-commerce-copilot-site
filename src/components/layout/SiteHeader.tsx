@@ -9,7 +9,8 @@ import { LangMenu } from "@/components/brand/LangMenu";
 import { A11yTrigger } from "./A11yControl";
 import { kitAsset } from "@/lib/brand";
 import { EA_OPEN } from "@/lib/earlyAccess";
-import { SS_ON, startUrl } from "@/lib/selfService";
+import { SS_ON } from "@/lib/selfService";
+import { SsGetStartedSlot } from "@/components/ss/Ss";
 import { EaHeaderCta } from "@/components/ea/Ea";
 
 /**
@@ -19,8 +20,9 @@ import { EaHeaderCta } from "@/components/ea/Ea";
 export function SiteHeader({ locale, route, t }: { locale: Locale; route: PageId; t: Dictionary }) {
   const c = t.common;
   const account = getStartedUrl(locale);
-  // P37: with self-service on, "Get started" leads to the sign-up page; "Sign in" and the Account link stay on the account page (a returning customer signs in, not up)
-  const getStarted = SS_ON ? startUrl(locale) : account;
+  // P37/P39: with self-service on, "Get started" is the account page (S0) until sign-up is KNOWN to work and then the sign-up page (SsGetStarted: a build with initial "link", or a run-time status of open / waitlist);
+  // it is never a link to /start/ while that page may be a 404. "Sign in" and the Account link always stay on the account page (a returning customer signs in, not up).
+  const getStarted = account;
   const nav: { route: RouteId | "account"; label: string }[] = [
     { route: "product", label: c.nav.product },
     { route: "pricing", label: c.nav.pricing },
@@ -52,9 +54,13 @@ export function SiteHeader({ locale, route, t }: { locale: Locale; route: PageId
           <A11yTrigger label={c.a11y.title} iconOnly className="aicc-iconbtn aicc-a11y-trigger" />
           <a href={account} className="aicc-btn aicc-btn--quiet aicc-site-header__desktop-only">{t.brand.signIn}</a>
           <EaHeaderCta locale={locale} t={t} hidden={isRequestRoute(route)} className="aicc-btn aicc-btn--primary aicc-site-header__desktop-only" />
-          <a href={getStarted} className="aicc-btn aicc-btn--primary aicc-site-header__desktop-only" {...(EA_OPEN && !SS_ON ? { "data-ea-after": "" } : {})}>
-            {c.getStarted}
-          </a>
+          {SS_ON ? (
+            <SsGetStartedSlot locale={locale} className="aicc-btn aicc-btn--primary aicc-site-header__desktop-only">{c.getStarted}</SsGetStartedSlot>
+          ) : (
+            <a href={getStarted} className="aicc-btn aicc-btn--primary aicc-site-header__desktop-only" {...(EA_OPEN ? { "data-ea-after": "" } : {})}>
+              {c.getStarted}
+            </a>
+          )}
           <button type="button" className="aicc-iconbtn aicc-site-header__menu-btn" data-aicc-menu-btn aria-expanded="false" aria-controls="aicc-menu-panel" aria-label={c.nav.menu}>
             <Menu size={22} aria-hidden="true" className="aicc-menu-icon-open" />
             <X size={22} aria-hidden="true" className="aicc-menu-icon-close" />
@@ -70,7 +76,11 @@ export function SiteHeader({ locale, route, t }: { locale: Locale; route: PageId
           <div><A11yTrigger label={c.a11y.title} className="aicc-btn aicc-btn--quiet aicc-btn--sm" /></div>
           <a href={account} className="aicc-btn aicc-btn--quiet aicc-btn--block">{t.brand.signIn}</a>
           <EaHeaderCta locale={locale} t={t} hidden={isRequestRoute(route)} className="aicc-btn aicc-btn--primary aicc-btn--lg aicc-btn--block" />
-          <a href={getStarted} className="aicc-btn aicc-btn--primary aicc-btn--lg aicc-btn--block" {...(EA_OPEN && !SS_ON ? { "data-ea-after": "" } : {})}>{c.getStarted}</a>
+          {SS_ON ? (
+            <SsGetStartedSlot locale={locale} className="aicc-btn aicc-btn--primary aicc-btn--lg aicc-btn--block">{c.getStarted}</SsGetStartedSlot>
+          ) : (
+            <a href={getStarted} className="aicc-btn aicc-btn--primary aicc-btn--lg aicc-btn--block" {...(EA_OPEN ? { "data-ea-after": "" } : {})}>{c.getStarted}</a>
+          )}
         </div>
       </div>
     </header>

@@ -2,7 +2,8 @@
 import { useState } from "react";
 import { FormField, Badge } from "@/components/ui/Primitives";
 import { PLANS } from "@/data/plans";
-import type { SsLabelKey } from "@/lib/ssStatus";
+import { Check } from "lucide-react";
+import type { SsInitial, SsLabelKey } from "@/lib/ssStatus";
 import { SsCta } from "./SsCta";
 
 /**
@@ -20,7 +21,10 @@ export interface SsPlanFinderStrings {
   names: { solo: string; studio: string; agency: string };
 }
 
-export function SsPlanFinder({ s, hrefs, labels, lang, dir }: { s: SsPlanFinderStrings; hrefs: Record<"solo" | "studio" | "agency", string>; labels: Record<SsLabelKey, string>; lang?: string; dir?: "ltr" | "rtl" }) {
+/** The trial facts shown with the suggested plan (the same strings as the plan card: one store, no payment method, no automatic conversion, the two labelled dates). */
+export interface SsPlanFinderFacts { trial: string; noPayment: string; noAuto: string; datesLabel: string; regLabel: string; regValue: string; endLabel: string; endValue: string; lang?: string; dir?: "ltr" | "rtl" }
+
+export function SsPlanFinder({ s, hrefs, labels, initial, facts, lang, dir }: { s: SsPlanFinderStrings; hrefs: Record<"solo" | "studio" | "agency", string>; labels: Record<SsLabelKey, string>; initial: SsInitial; facts: SsPlanFinderFacts; lang?: string; dir?: "ltr" | "rtl" }) {
   const [raw, setRaw] = useState("");
   const [touched, setTouched] = useState(false);
   const n = /^\d+$/.test(raw.trim()) ? Number(raw.trim()) : NaN;
@@ -41,7 +45,18 @@ export function SsPlanFinder({ s, hrefs, labels, lang, dir }: { s: SsPlanFinderS
                 <Badge tone="success">{s.suggestion}</Badge>{" "}
                 <strong>{s.results[plan.id]}</strong>
               </p>
-              <SsCta href={hrefs[plan.id]} labels={labels} variant="primary" size="md" srName={s.names[plan.id]} />
+              <div lang={facts.lang} dir={facts.dir} data-ss-finder-facts style={{ display: "grid", gap: "0.75rem", justifyItems: "start", inlineSize: "100%" }}>
+                <ul className="aicc-plan__checks" style={{ display: "grid", gap: "0.375rem", margin: 0, padding: 0, listStyle: "none" }}>
+                  {[facts.trial, facts.noPayment, facts.noAuto].map((x) => (<li key={x} style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}><Check size={16} aria-hidden="true" /><span>{x}</span></li>))}
+                </ul>
+                <div role="group" aria-label={facts.datesLabel} style={{ inlineSize: "100%" }}>
+                  <dl className="aicc-ssdates" data-ss-dates>
+                    <div data-ss-date="registration"><dt>{facts.regLabel}</dt><dd><bdi>{facts.regValue}</bdi></dd></div>
+                    <div data-ss-date="end"><dt>{facts.endLabel}</dt><dd><bdi>{facts.endValue}</bdi></dd></div>
+                  </dl>
+                </div>
+              </div>
+              <SsCta href={hrefs[plan.id]} initial={initial} labels={labels} variant="primary" size="md" srName={s.names[plan.id]} />
             </div>
           ) : (
             <p className="aicc-muted aicc-small">{error ? "" : s.empty}</p>

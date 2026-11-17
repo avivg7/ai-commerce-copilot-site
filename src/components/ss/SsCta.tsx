@@ -1,16 +1,19 @@
 "use client";
 import { useEffect, useSyncExternalStore } from "react";
+import { Clock } from "lucide-react";
 import { Button } from "@/components/ui/Button";
-import { ssDecision, ssServerSnapshot, ssSnapshot, ssStart, ssSubscribe, type SsLabelKey } from "@/lib/ssStatus";
+import { ssDecision, ssServerSnapshot, ssSnapshot, ssStart, ssSubscribe, type SsInitial, type SsLabelKey } from "@/lib/ssStatus";
 
 /**
- * P37: the one self-service button. Server HTML and first client render are the STATIC button (a link to the Control Plane sign-up page: the same markup whatever the Control Plane says, so
- * hydration always matches). After hydration the shared store asks GET /wp-json/aicc/v1/signup/status ONCE; on a valid answer the state table of src/lib/ssStatus.ts decides:
- * a link ("Start free trial" / "Join the waitlist") or PLAIN TEXT ("Free trial registration closed / paused / not open"): never an inert button, never a link to a page that cannot work. A failed answer changes nothing.
- * This module is imported only by builds that carry the self-service code (next.config.ts NEXT_PUBLIC_AICC_SS_CODE), so every other build has no trace of it.
+ * P37/P39: the one self-service control of a plan card, band or finder result. Server HTML and first client render are the build's STATIC state (src/lib/ssStatus.ts: `initial`, default coming_soon = PLAIN TEXT
+ * "Free trial registration opens soon"; the same markup whatever the Control Plane says, so hydration always matches). After hydration the shared store asks GET /wp-json/aicc/v1/signup/status ONCE; on a valid answer
+ * the state table decides: a LINK to {CP}/start/?plan=<id> ("Start free trial" for open, "Join the waitlist" for waitlist) or PLAIN TEXT ("registration opens soon / closed / paused"): never an inert button, never a link to
+ * a page that is not known to work. A failed or invalid answer changes nothing (the build's static state stays). This module is imported only by builds that carry the self-service code (next.config.ts NEXT_PUBLIC_AICC_SS_CODE).
  */
-export function SsCta({ href, labels, variant = "primary", size = "lg", block = false, srName, inverse = false, lang, dir }: {
+export function SsCta({ href, labels, initial, variant = "primary", size = "lg", block = false, srName, inverse = false, lang, dir }: {
   href: string;
+  /** The build-time initial state (NEXT_PUBLIC_AICC_SS_INITIAL, resolved on the server). */
+  initial: SsInitial;
   labels: Record<SsLabelKey, string>;
   variant?: "primary" | "secondary" | "outline" | "ghost";
   size?: "md" | "lg";
@@ -24,9 +27,9 @@ export function SsCta({ href, labels, variant = "primary", size = "lg", block = 
 }) {
   const view = useSyncExternalStore(ssSubscribe, ssSnapshot, ssServerSnapshot);
   useEffect(() => { void ssStart(); }, []);
-  const d = ssDecision(view);
+  const d = ssDecision(view, initial);
   if (d.kind === "text") {
-    return <p className={inverse ? "aicc-sstate aicc-sstate--inverse" : "aicc-sstate"} data-ss-state={view} role="status" lang={lang} dir={dir}>{labels[d.label]}</p>;
+    return <p className={inverse ? "aicc-sstate aicc-sstate--inverse" : "aicc-sstate"} data-ss-state={view} role="status" lang={lang} dir={dir}><Clock size={16} aria-hidden="true" /><span>{labels[d.label]}</span></p>;
   }
   return (
     <Button href={href} variant={variant} size={size} block={block} lang={lang} dir={dir}>

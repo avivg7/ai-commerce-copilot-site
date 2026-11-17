@@ -9,7 +9,7 @@ import { COMMERCE_OPEN, planUrl, type PlanId } from "@/lib/site";
 import { EA_ON, EA_OPEN, EA_STRIKE, EA_INTAKE_CLOSES, eaUrl } from "@/lib/earlyAccess";
 import { txProps, type Dictionary } from "@/i18n";
 import { SS_ON } from "@/lib/selfService";
-import { SsCtaSlot } from "@/components/ss/Ss";
+import { SsCtaSlot, SsDates, SsDemoLink } from "@/components/ss/Ss";
 import type { Locale } from "@/i18n/config";
 
 export interface PricingCardProps {
@@ -56,11 +56,14 @@ export function PricingCard(p: PricingCardProps) {
   const ss = SS_ON ? p.ss : undefined;
   const ssStores = ss ? (planById(p.id).stores === 1 ? ss.plan.paidOne : ss.plan.paidMany.replace("{n}", String(planById(p.id).stores))) : "";
   const ssButton = ss && p.t ? <SsCtaSlot locale={loc} t={p.t} plan={p.id} variant={p.featuredLabel ? "primary" : "outline"} block size="lg" srName={p.name} /> : null;
+  // P39: the checks state the payment rule and "no automatic conversion"; the trial allowance ("Free trial: 1 store") is the line under FREE, the two dates are the labelled lines above the checks
   const ssChecks = ss ? (
     <ul className="aicc-plan__checks" aria-label={ss.plan.checksLabel} data-ss-checks {...E("ea.ss.plan")}>
-      {[ss.plan.trial, ss.plan.noPayment].map((x) => (<li key={x}><Check size={16} aria-hidden="true" /><span>{x}</span></li>))}
+      {(ea ? [ss.plan.noPayment, ss.plan.noAuto] : [ss.plan.trial, ss.plan.noPayment, ss.plan.noAuto]).map((x) => (<li key={x}><Check size={16} aria-hidden="true" /><span>{x}</span></li>))}
     </ul>
   ) : null;
+  const ssDemo = ss ? <SsDemoLink locale={loc} label={p.demoLabel ?? ""} planName={p.name} /> : null;
+  const ssDates = ss && p.t ? <SsDates locale={loc} t={p.t} /> : null;
   const featured = p.featuredLabel ? <span {...A("common.plan.recommended")}><Badge tone="brand">{p.featuredLabel}</Badge></span> : null;
   // The ordinary purchase control (Purchases open soon, or the choose-a-plan button): the only one shown after the Early Access end date.
   const standardCta = COMMERCE_OPEN ? (
@@ -95,10 +98,21 @@ export function PricingCard(p: PricingCardProps) {
               <span className="aicc-plan__regular-per"> {ea.regularPer}{currencySuffix(p.locale ?? "en")}</span>
             </span>
           </p>
-          <p className="aicc-plan__free" {...E("ea.plan")}>
-            <span className="aicc-plan__free-word">{ea.freeWord}</span>
-            <span className="aicc-plan__free-until">{ea.freeUntil}</span>
-          </p>
+          {ss ? (
+            /* P39: FREE + the trial allowance ("Free trial: 1 store"); the two dates follow as labelled lines (never "FREE until <date>": registration and access end on different dates) */
+            <>
+              <p className="aicc-plan__free" data-ss-free {...E("ea.ss.plan")}>
+                <span className="aicc-plan__free-word">{ea.freeWord}</span>
+                <span className="aicc-plan__free-until">{ss.plan.trial}</span>
+              </p>
+              {ssDates}
+            </>
+          ) : (
+            <p className="aicc-plan__free" {...E("ea.plan")}>
+              <span className="aicc-plan__free-word">{ea.freeWord}</span>
+              <span className="aicc-plan__free-until">{ea.freeUntil}</span>
+            </p>
+          )}
         </div>
       ) : null}
       <p className="aicc-plan__stores" {...(ea ? { "data-ea-hide-live": "" } : {})} {...(ss && !ea ? E("ea.ss.plan") : A(storesPath))}>{ss && !ea ? ssStores : p.storesLabel}</p>
@@ -120,8 +134,8 @@ export function PricingCard(p: PricingCardProps) {
         <>
           <div data-ea-live {...(EA_INTAKE_CLOSES && !ss ? { "data-ea-intake": "" } : {})}>
             {ss ? (
-              /* P37: the ONE action is the self-service sign-up (never #demo, never /request-access/) */
-              ssButton
+              /* P37/P39: the checks, then the ONE sign-up control (plain status text until sign-up is known to work; never #demo, never /request-access/); the demo is a separate secondary link below */
+              <div className="aicc-plan__ssctl">{ssChecks}{ssButton}</div>
             ) : EA_OPEN ? (
               <Button href={eaUrl(loc, p.id)} variant={p.featuredLabel ? "primary" : "outline"} block size="lg" {...E("ea.plan")}>{ea.ctaOpen}<span className="aicc-sr-only"> ({p.name})</span></Button>
             ) : (
@@ -135,7 +149,7 @@ export function PricingCard(p: PricingCardProps) {
             </div>
           ) : null}
           {ss ? (
-            <div data-ea-live>{ssChecks}</div>
+            <div data-ea-live>{ssDemo}</div>
           ) : (
             <ul className="aicc-plan__checks" data-ea-live>
               {[ea.noCard, ea.noAuto, ea.approved].map((x) => (<li key={x}><Check size={16} aria-hidden="true" /><span {...E("ea.plan")}>{x}</span></li>))}
@@ -145,8 +159,10 @@ export function PricingCard(p: PricingCardProps) {
         </>
       ) : ss ? (
         <>
-          {ssButton}
+          {ssDates}
           {ssChecks}
+          {ssButton}
+          {ssDemo}
         </>
       ) : standardCta}
     </article>

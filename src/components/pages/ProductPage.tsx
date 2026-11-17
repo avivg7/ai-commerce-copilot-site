@@ -13,8 +13,8 @@ import { breadcrumbLd, faqLd, softwareLd } from "@/lib/jsonld";
 import { Button } from "@/components/ui/Button";
 import { COMMERCE_OPEN, getStartedUrl } from "@/lib/site";
 import { SoonBandActions } from "@/components/ui/Soon";
-import { SS_ON, startUrl } from "@/lib/selfService";
-import { SsBand } from "@/components/ss/Ss";
+import { SS_ON } from "@/lib/selfService";
+import { SsBand, SsGetStartedSlot } from "@/components/ss/Ss";
 import { Fb, Pair, Ruled, SlotRows, Strip, Track } from "@/components/blocks/Blocks";
 import { DashPreview, Flow, Loop, RecoAskPanel, RulesDemo } from "@/components/blocks/KitMounts";
 import { PLANS } from "@/data/plans";
@@ -52,7 +52,12 @@ export function ProductPage({ locale, t }: { locale: Locale; t: Dictionary }) {
       <div>
         <PageHead locale={locale} t={t} pageName={t.common.pageNames.product} title={<span {...fb("product.hero")}>{p.hero.title}</span>} lead={<span {...fb("product.hero")}>{p.hero.lead}</span>}>
           <div className="aicc-hero-actions">
-            <Button href={SS_ON ? startUrl(locale) : getStartedUrl(locale)} variant="primary" size="lg" {...tx("common.getStarted")} icon={<ArrowRight size={16} className="aicc-flip" aria-hidden="true" />}>{t.common.getStarted}</Button>
+            {SS_ON ? (
+              /* P39: the account page until sign-up is known to work, then the sign-up page (never /start/ while it may be a 404, never the demo) */
+              <SsGetStartedSlot locale={locale} className="aicc-btn aicc-btn--primary aicc-btn--lg" icon={<ArrowRight size={16} className="aicc-flip" aria-hidden="true" />}>{t.common.getStarted}</SsGetStartedSlot>
+            ) : (
+              <Button href={getStartedUrl(locale)} variant="primary" size="lg" {...tx("common.getStarted")} icon={<ArrowRight size={16} className="aicc-flip" aria-hidden="true" />}>{t.common.getStarted}</Button>
+            )}
             <WatchDemo locale={locale} t={t} />
           </div>
         </PageHead>

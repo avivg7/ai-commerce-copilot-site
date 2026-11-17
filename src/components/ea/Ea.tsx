@@ -13,6 +13,7 @@ import { RecoImage } from "@/components/ui/RecoImage";
 import { Accordion } from "@/components/ui/Accordion";
 import { Rich } from "@/lib/rich";
 import { SS_ON } from "@/lib/selfService";
+import { SsTerms } from "@/components/ss/Ss";
 
 /**
  * Early Access presentation (Production 20). Every export renders nothing in a normal build (EA_ON false).
@@ -120,11 +121,11 @@ export function EaBar({ locale, t }: { locale: Locale; t: Dictionary }) {
 export function EaHeroSupport({ locale, t }: { locale: Locale; t: Dictionary }) {
   if (!EA_ON) return null;
   if (SS_ON) {
-    // P37: the two short facts of the free trial (no payment method for the trial, one store); no "approval", no status note
+    // P37/P39: the three short facts of the free trial (no payment method for the trial, one store, no automatic conversion to a paid plan); no dates here (they are the labelled lines on the cards), no "approval", no status note
     const ss = t.ea.ss;
     return (
       <ul className="aicc-easupport aicc-fade-up" style={{ ["--i" as string]: 4 }} data-ea-live data-ea-support="hero" data-ss-support aria-label={ss.hero.supportLabel} {...A(locale, "ea.ss.hero")}>
-        {[ss.hero.support.noPayment, ss.hero.support.oneStore].map((x) => (<li key={x}><Check size={16} aria-hidden="true" /><span>{x}</span></li>))}
+        {[ss.hero.support.noPayment, ss.hero.support.oneStore, ss.hero.support.noAuto].map((x) => (<li key={x}><Check size={16} aria-hidden="true" /><span>{x}</span></li>))}
       </ul>
     );
   }
@@ -145,8 +146,10 @@ export function EaHeroSupport({ locale, t }: { locale: Locale; t: Dictionary }) 
  * P36: while requests are not open the status is PLAIN INFORMATIONAL TEXT ("Free access requests coming soon"): no button class, no border, no fill, no role. Nothing that can be
  * mistaken for an action is ever inert. Renders nothing in an OPEN build (the request buttons are real links there) and in an ordinary build.
  */
-export function EaStatusNote({ locale, t }: { locale: Locale; t: Dictionary }) {
-  if (!EA_ON || EA_OPEN || SS_ON) return null; // P37: with self-service on nothing "comes soon": the sign-up page shows the real state
+export function EaStatusNote({ locale, t, terms = false }: { locale: Locale; t: Dictionary; terms?: boolean }) {
+  // P39: `terms` = the slot under the Home plan cards: with self-service on it carries the free-trial terms (the same slot in every build, so no other build gains a child)
+  if (SS_ON && terms && EA_ON) return <div style={{ marginBlockStart: "1.5rem" }}><SsTerms locale={locale} t={t} /></div>;
+  if (!EA_ON || EA_OPEN || SS_ON) return null; // P37: with self-service on the status is the sign-up control itself (the plain "registration opens soon" status, or a link once sign-up is known to work)
   return (
     <p className="aicc-eanote" data-ea-live data-ea-status {...A(locale, "ea.hero")}>
       <Sparkles size={16} aria-hidden="true" />
@@ -167,9 +170,10 @@ export function EaHeroBadge({ locale, t, ordinary }: { locale: Locale; t: Dictio
   return (
     <>
       {/* the date inside the badge is set with no-break spaces: it never wraps in the middle at 390 px */}
-      <span className="aicc-eabadge" data-ea-live {...A(locale, "ea.hero")}>
+      <span className="aicc-eabadge" data-ea-live {...A(locale, SS_ON ? "ea.ss.hero" : "ea.hero")}>
+        {/* P39: a self-service pill says the trial ("FREE trial for 1 store"), never "FREE until <date>": registration closes and trial access ends on two different dates, which the cards state as two labelled lines */}
         <span className="aicc-eabadge__tag">{EA_OPEN ? t.ea.hero.badgeTag : t.ea.hero.badgeTagAnnounce}</span>{" "}
-        <span className="aicc-eabadge__text">{nbBadge(t.ea.hero.badge, locale)}</span>
+        <span className="aicc-eabadge__text">{SS_ON ? t.ea.ss.hero.badge : nbBadge(t.ea.hero.badge, locale)}</span>
       </span>
       <span data-ea-after {...A(locale, "home.hero")}>{ordinary}</span>
     </>

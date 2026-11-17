@@ -9,7 +9,7 @@ import { EA_ON, EA_OPEN } from "@/lib/earlyAccess";
 import { EaClosingLead, EaCta, EaHeroBadge, EaHeroSupport, EaStatusNote } from "@/components/ea/Ea";
 import { SoonBandActions } from "@/components/ui/Soon";
 import { SS_ON } from "@/lib/selfService";
-import { SsBand } from "@/components/ss/Ss";
+import { SsBand, SsTerms } from "@/components/ss/Ss";
 import { localePath } from "@/lib/routes";
 import { Button } from "@/components/ui/Button";
 import { Container, Section, SectionHeading } from "@/components/ui/Primitives";
@@ -271,8 +271,8 @@ export function HomePage({ locale, t }: { locale: Locale; t: Dictionary }) {
                An ordinary build renders exactly the old single list (byte-identical pages). */}
           {EA_ON ? (
             <>
-              {/* P36: ONE plain line under the cards (the cards carry the checks; the exact end instant is in the terms block on /pricing/) */}
-              <EaStatusNote locale={locale} t={t} />
+              {/* P36: ONE plain line under the cards while requests are not open; P39: with self-service on the same slot carries the free-trial terms (the two labelled dates and the facts) */}
+              <EaStatusNote locale={locale} t={t} terms />
               <p className="aicc-small" data-ea-live style={{ marginBlockStart: "0.75rem", textAlign: "center" }} {...tx(SS_ON ? "ea.ss" : "ea.section")}>
                 <LocaleLink locale={locale} route="pricing" hash={SS_ON ? "free-trial" : "early-access"} className="aicc-link">{SS_ON ? t.ea.ss.link : t.ea.section.link}</LocaleLink>
               </p>
@@ -287,6 +287,7 @@ export function HomePage({ locale, t }: { locale: Locale; t: Dictionary }) {
           ) : SS_ON ? (
             <>
               {confidence}
+              <div style={{ marginBlockStart: "1.5rem" }}><SsTerms locale={locale} t={t} /></div>
               <p className="aicc-small" style={{ marginBlockStart: "0.75rem", textAlign: "center" }} {...tx("ea.ss")}>
                 <LocaleLink locale={locale} route="pricing" hash="free-trial" className="aicc-link">{t.ea.ss.link}</LocaleLink>
               </p>

@@ -86,7 +86,7 @@ export function PricingPage({ locale, t }: { locale: Locale; t: Dictionary }) {
             ))
               // the terms every plan shares take the full width under the three cards (a campaign build only; an ordinary build adds nothing here, so its page is byte-identical);
               // P34 (owner list): the three short support lines come first, right under the cards
-              .concat(SS_ON ? [<SsTerms key="ss-terms" locale={locale} t={t} />] : EA_ON ? [<EaStatusNote key="ea-status" locale={locale} t={t} />, <EaPlanTerms key="ea-terms" locale={locale} t={t} />] : [])}
+              .concat(SS_ON ? [<SsTerms key="ss-terms" locale={locale} t={t} anchor />] : EA_ON ? [<EaStatusNote key="ea-status" locale={locale} t={t} />, <EaPlanTerms key="ea-terms" locale={locale} t={t} />] : [])}
           </div>
           <p className="aicc-countline" style={{ marginBlockStart: "1.5rem" }}>{EA_ON && !SS_ON ? <EaPricingNote locale={locale} t={t} ordinary={p.plansSection.note} /> : p.plansSection.note} {t.common.plan.renewal}</p>
           <p className="aicc-countline" style={{ marginBlockStart: "0.5rem" }} {...tx("pricing.teaser")}>
