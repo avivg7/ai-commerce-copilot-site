@@ -335,7 +335,7 @@ if (out) {
         const pre = l === "en" ? "" : `${l}/`, mine = idx.getEaDictionary(l, step);
         const tp = text(`${pre}pricing/index.html`), th = text(`${pre}index.html`);
         check(th.includes(nbn(mine.ss.bar.text)) && tp.includes(nbn(mine.ss.bar.text)), `${l}: the bar says the free trial ('ss.bar.text' of step ${step})`);
-        const missing = ["terms.label", "terms.regValue", "terms.endValue", "terms.store", "terms.payment", "terms.noAuto", "terms.paid", "terms.state", "plan.trial", "plan.noPayment", "plan.noAuto", "plan.regLabel", "plan.regValue", "plan.endLabel", "plan.endValue", "cta.soon"].filter((k) => !tp.includes(nbn(k.split(".").reduce((a, x) => a[x], mine.ss))));
+        const missing = ["terms.label", "terms.regValue", "terms.endValue", "terms.store", "terms.payment", "terms.noAuto", "terms.paid", "terms.state", "plan.trial", "plan.noPayment", "plan.noAuto", "plan.regLabel", "plan.regValue", "plan.endLabel", "plan.endValue", /data-ss-state="static"/.test(html(`${pre}pricing/index.html`)) ? "cta.soon" : "cta.start"].filter((k) => !tp.includes(nbn(k.split(".").reduce((a, x) => a[x], mine.ss))));
         check(missing.length === 0, `${l}: Pricing says the free-trial terms and the card allowance${missing.length ? " -> missing " + missing.join(", ") : ""}`);
         for (const other of [0, 1, 2].filter((o) => o !== step)) { let n = 0; for (const k of ["last", "until"]) { const lit = REQUIRED_DATES[l][other][k]; n += (tp.match(new RegExp(`(?<![0-9])${lit.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`, "g")) || []).length; } check(n === 0, `${l}: Pricing carries no date of step ${other}`); }
       }

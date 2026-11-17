@@ -23,7 +23,7 @@ import { compare } from "./lib/export-fingerprint.mjs";
 const args = process.argv.slice(2);
 const arg = (n) => { const i = args.indexOf(`--${n}`); return i >= 0 ? path.resolve(args[i + 1]) : undefined; };
 const dirs = { off: arg("off"), announce: arg("announce"), open: arg("open"), verify: arg("verify") };
-const SS = { off: arg("ss-off"), announce: arg("ss-announce"), open: arg("ss-open") };
+const SS = { off: arg("ss-off"), announce: arg("ss-announce"), open: arg("ss-open") }, SS_LINK = arg("ss-link");
 const BASES = { announce: arg("base-announce"), open: arg("base-open"), verify: arg("base-verify") };
 const BASE = arg("base"), OFF_SUB = arg("off-subswitches"), LIMITED = arg("limited"), ANN_LIMITED = arg("announce-limited"), ANN_STRIKE = arg("announce-strike");
 if (!dirs.off || !dirs.announce || !dirs.open || !dirs.verify) { console.error("usage: --off <dir> --announce <dir> --open <dir> --verify <dir> [--base <dir>]"); process.exit(2); }
@@ -332,9 +332,9 @@ const anchorsOf = (h) => [...nb(h).matchAll(/<a\b([^>]*)href="([^"]*)"([^>]*)>([
 const sectionOf = (h, labelledBy) => { const i = h.indexOf(`aria-labelledby="${labelledBy}"`); if (i < 0) return ""; const a = h.lastIndexOf("<section", i); return h.slice(a, h.indexOf("</section>", i)); };
 const articlesOf = (h) => nb(h).split("<article").slice(1).map((a) => a.slice(0, a.indexOf("</article>"))).filter((a) => /class="aicc-plan\b/.test(a));
 const STORE_NUMS = /(?:(\d+)\s+(?:stores?|tiendas?|магазин\p{L}*|חנויות|חנות)|חנות אחת)/giu;
-function ssChecks(mode, root) {
-  const tag = `ss-${mode}`;
-  console.log(`== SELF-SERVICE + ${mode.toUpperCase()}: CTA targets, Hero, allowance, links, no inert chip (four languages)`);
+function ssChecks(mode, root, initial = "coming_soon") {
+  const tag = `ss-${mode}${initial === "link" ? "-link" : ""}`, soon = initial !== "link";
+  console.log(`== SELF-SERVICE + ${mode.toUpperCase()} (initial ${initial}): CTA state, Hero, dates, allowance, links, no inert chip (four languages)`);
   const requestHits = [];
   for (const l of LOCALES) {
     const e = ea(l), ss = e.ss, P = pre(l), dict = D[l];
@@ -353,25 +353,40 @@ function ssChecks(mode, root) {
       check(an.length === 2 && !/<p\b|aicc-btn--soon|data-ea-soon/.test(hero), `${l} ${tag}: the Hero has exactly its two actions (no sign-up button, no request button, no inert chip)`);
       check(/\bid="demo"/.test(h), `${l} ${tag}: the #demo target exists on Home`);
     }
-    // ---- cards (Home and Pricing): one sign-up link each, honest allowance, order
+    // ---- cards (Home and Pricing): P39 the sign-up control follows the build's initial state; the demo is a separate secondary link; the two dates are two labelled lines
     for (const [name, page] of [["Home", home], ["Pricing", pricing]]) {
       const cards = articlesOf(page);
       check(cards.length === 3, `${l} ${tag} ${name}: three plan cards`);
       cards.forEach((a, i) => {
         const plan = PLANS[i], planName = dict.pricing.plans[plan.id].name;
-        const links = anchorsOf(a).filter((x) => /(^|\s)aicc-btn(\s|$)/.test(x.cls));
-        check(links.length === 1 && links[0].href === startOf(l, plan.id), `${l} ${tag} ${name} ${plan.id}: the card's ONE action is the sign-up link ${startOf(l, plan.id)} (${links.map((x) => x.href).join(", ") || "none"})`);
-        check(links.length === 1 && links[0].text.startsWith(norm(ss.cta.start)) && links[0].text.includes(planName), `${l} ${tag} ${name} ${plan.id}: the label is "${ss.cta.start}" (${planName} for screen readers)`);
-        check(!/#demo|request-access/.test(links.map((x) => x.href).join(" ")) && !/href="[^"]*(#demo|request-access)/.test(a), `${l} ${tag} ${name} ${plan.id}: the card never targets #demo or /request-access/`);
+        const live = mode === "off" ? a : a.replace(/<(div|ul)\b[^>]*data-ea-after[\s\S]*?<\/\1>/g, " ");
+        const buttons = anchorsOf(live).filter((x) => /(^|\s)aicc-btn(\s|$)/.test(x.cls));
+        const demos = anchorsOf(live).filter((x) => /data-ss-demo/.test(live.slice(Math.max(0, x.at - 60), x.at)));
+        const states = [...live.matchAll(/<p class="aicc-sstate"[^>]*data-ss-state="(\w+)"[^>]*role="status"[^>]*>([\s\S]*?)<\/p>/g)];
+        if (soon) {
+          check(buttons.length === 0 && !/<button\b/.test(live) && !/\/start\//.test(live.replace(/<script[\s\S]*?<\/script>/g, "")), `${l} ${tag} ${name} ${plan.id}: the static card has NO sign-up button or link (no /start/ link, no button) while registration is not known to be open`);
+          check(states.length === 1 && states[0][1] === "static" && norm(states[0][2].replace(/<[^>]+>/g, " ")) === norm(ss.cta.soon), `${l} ${tag} ${name} ${plan.id}: the static status is the plain text "${ss.cta.soon}" (<p role="status">, not a link, not a button)`);
+          check(!/<(a|button)\b[^>]*>(?:(?!<\/(a|button)>)[\s\S])*aicc-sstate/.test(live), `${l} ${tag} ${name} ${plan.id}: the status text is not inside a link or a button`);
+        } else {
+          check(buttons.length === 1 && buttons[0].href === startOf(l, plan.id) && buttons[0].text.startsWith(norm(ss.cta.start)) && buttons[0].text.includes(planName), `${l} ${tag} ${name} ${plan.id}: the link build's ONE sign-up control is "${ss.cta.start}" -> ${startOf(l, plan.id)} (${planName} for screen readers)`);
+          check(states.length === 0, `${l} ${tag} ${name} ${plan.id}: the link build carries no static status text`);
+        }
+        check(demos.length === 1 && /(^|\s)aicc-link(\s|$)/.test(demos[0].cls) && !/aicc-btn/.test(demos[0].cls) && demos[0].href === `${P ? "/" + P.replace(/\/$/, "") : ""}/#demo`.replace("//", "/") && demos[0].text.startsWith(norm(dict.home.hero.ctaDemo)), `${l} ${tag} ${name} ${plan.id}: ONE secondary "${dict.home.hero.ctaDemo}" text link to the demo (never a button, never the sign-up control) -> ${demos[0]?.href}`);
+        check(!/request-access/.test(a) && !buttons.some((x) => /#demo/.test(x.href)), `${l} ${tag} ${name} ${plan.id}: no card control targets #demo or /request-access/`);
         const text = norm(a.replace(/<[^>]+>/g, " | "));
         const paid = plan.stores === 1 ? ss.plan.paidOne : ss.plan.paidMany.replace("{n}", String(plan.stores));
-        check(text.includes(norm(ss.plan.trial)) && text.includes(norm(paid)) && text.includes(norm(ss.plan.noPayment)), `${l} ${tag} ${name} ${plan.id}: the card states the trial ("${ss.plan.trial}"), the paid allowance ("${paid}") and the payment rule`);
+        check(text.includes(norm(ss.plan.trial)) && text.includes(norm(paid)) && text.includes(norm(ss.plan.noPayment)) && text.includes(norm(ss.plan.noAuto)), `${l} ${tag} ${name} ${plan.id}: the card states the trial ("${ss.plan.trial}"), the paid allowance ("${paid}"), the payment rule and "${ss.plan.noAuto}"`);
+        // P39: THE TWO DATES, two labelled lines, registration first
+        const dl = (live.match(/<dl class="aicc-ssdates"[\s\S]*?<\/dl>/) || [""])[0];
+        const rows = [...nb(dl).matchAll(/<div data-ss-date="(\w+)"><dt>([\s\S]*?)<\/dt><dd>([\s\S]*?)<\/dd><\/div>/g)].map((m) => [m[1], norm(m[2].replace(/<[^>]+>/g, " ")), norm(m[3].replace(/<[^>]+>/g, " "))]);
+        check(rows.length === 2 && rows[0][0] === "registration" && rows[0][1] === norm(ss.plan.regLabel) && rows[0][2] === norm(ss.plan.regValue) && rows[1][0] === "end" && rows[1][1] === norm(ss.plan.endLabel) && rows[1][2] === norm(ss.plan.endValue), `${l} ${tag} ${name} ${plan.id}: two labelled date lines: "${norm(ss.plan.regLabel)}: ${norm(ss.plan.regValue)}" and "${norm(ss.plan.endLabel)}: ${norm(ss.plan.endValue)}"`);
+        check(!text.includes(norm(D[l].ea.plan.freeUntil)) && !/FREE until/i.test(text), `${l} ${tag} ${name} ${plan.id}: no loose "FREE until <date>" line (the dates are the two labelled lines)`);
         const nums = [...text.matchAll(STORE_NUMS)].map((m) => (m[1] ? Number(m[1]) : 1)); // Hebrew writes one store as "חנות אחת"
         check(nums.length >= 2 && nums.every((n) => [1, 3, 10].includes(n)) && nums.includes(plan.stores) && nums.includes(1), `${l} ${tag} ${name} ${plan.id}: the only store counts on the card are 1 and ${plan.stores}, from the 1 / 3 / 10 table [${nums}]`);
-        const n = a.indexOf('class="aicc-plan__name"'), c = a.search(/<a\b[^>]*class="aicc-btn/), k = a.indexOf("aicc-plan__checks");
-        if (mode === "off") check(n >= 0 && n < c && c < k, `${l} ${tag} ${name} ${plan.id}: order: plan name, button, trial and payment checks`);
-        else { const r = a.indexOf("aicc-plan__regular-line"), f = a.indexOf("aicc-plan__free-word"); check(n >= 0 && n < r && r < f && f < c && c < k, `${l} ${tag} ${name} ${plan.id}: P36 order kept: name, regular price, FREE, the sign-up button, the checks`); }
-        check(!/<p class="aicc-btn|aicc-sstate/.test(a.replace(/<div data-ea-after[\s\S]*?<\/div>/, "")) || false, `${l} ${tag} ${name} ${plan.id}: no inert button-looking element and no run-time state text in the static card`);
+        const n = a.indexOf('class="aicc-plan__name"'), d = a.indexOf('data-ss-dates'), k = a.indexOf("aicc-plan__checks"), c = Math.max(a.indexOf("aicc-sstate"), a.search(/<a\b[^>]*class="aicc-btn/)), dm = a.indexOf("data-ss-demo");
+        if (mode === "off") check(n >= 0 && n < d && d < k && k < c && c < dm, `${l} ${tag} ${name} ${plan.id}: order: plan name, the two dates, the checks, the control, the demo link`);
+        else { const r = a.indexOf("aicc-plan__regular-line"), f = a.indexOf("aicc-plan__free-word"); check(n >= 0 && n < r && r < f && f < d && d < k && k < c && c < dm, `${l} ${tag} ${name} ${plan.id}: order: name, regular price, FREE + trial line, the two dates, the checks, the sign-up control, the demo link`); }
+        check(!/<p class="aicc-btn/.test(live), `${l} ${tag} ${name} ${plan.id}: no inert button-looking element on the live card`);
       });
       // the inert "Purchases open soon" chip: only in the hidden ended view of a launch-offer build, never visible; in self-service-only builds nowhere
       const bad = []; const h = nb(page);
@@ -383,16 +398,25 @@ function ssChecks(mode, root) {
         check(name !== "Home" || (free > reg && reg >= 2 && free / reg >= 1.4), `${l} ${tag}: FREE (${free}rem) stays dominant over the regular price (${reg}rem)`);
       }
     }
-    // ---- terms, bar, links to the terms
-    check(/\bid="free-trial"/.test(pricing) && [ss.terms.label, ss.terms.store, ss.terms.payment, ss.terms.paid, ss.terms.state].every((x) => tp.includes(norm(x))), `${l} ${tag}: Pricing carries the free-trial terms block (#free-trial): one store, no payment method for the trial, the UTC end, the 1 / 3 / 10 paid allowance, the state note`);
-    check(tp.includes("22:00 UTC") && norm(ss.terms.payment).includes("22:00 UTC"), `${l} ${tag}: the end is stated in UTC ("22:00 UTC")`);
+    // ---- terms (Pricing: #free-trial; Home: the same block without the id): the two dates, then the facts
+    {
+      const termsOf = (page) => (nb(page).match(/<div class="aicc-eaterms"[^>]*data-ss-terms[\s\S]*?<\/ul><\/div>/) || [""])[0];
+      for (const [name, page, anchor] of [["Pricing", pricing, true], ["Home", home, false]]) {
+        const t = termsOf(page), tt = norm(t.replace(/<[^>]+>/g, " "));
+        check(t !== "" && /\bid="free-trial"/.test(t) === anchor && [ss.terms.label, ss.plan.regLabel, ss.terms.regValue, ss.plan.endLabel, ss.terms.endValue, ss.terms.store, ss.terms.payment, ss.terms.noAuto, ss.terms.paid, ss.terms.state].every((x) => tt.includes(norm(x))), `${l} ${tag} ${name}: the free-trial terms block${anchor ? " (#free-trial)" : ""} states the two dates (long form), one store, no payment method for the trial, no automatic conversion, the 1 / 3 / 10 paid allowance and the state note`);
+      }
+      check(!/\bid="free-trial"/.test(home), `${l} ${tag}: Home has no id="free-trial" (one anchor per page, on Pricing)`);
+    }
+    check(tp.includes("22:00 UTC") && tp.includes("00:00 UTC") && norm(ss.terms.endValue).includes("22:00 UTC") && norm(ss.terms.regValue).includes("00:00 UTC"), `${l} ${tag}: the registration close (00:00 UTC) and the trial end (22:00 UTC) are both stated in UTC`);
     check(norm(ss.terms.paid).match(/\d+/g).map(Number).every((n) => [1, 3, 10].includes(n)) && !tp.match(/\b(11|12|15|20|25|30|50|100)\s+(stores|tiendas|магазин)/i), `${l} ${tag}: no page text claims a paid capacity above the Backend table (1 / 3 / 10)`);
     if (mode !== "off") {
       check(th.includes(norm(ss.bar.text)) && !th.includes(norm(e.bar.live)), `${l} ${tag}: the bar says the free trial ("${ss.bar.text}") and not the launch-offer request wording`);
       const barLink = anchorsOf(home).find((a) => a.text === norm(ss.bar.link));
       check(!!barLink && barLink.href === `/${P}pricing/#free-trial`, `${l} ${tag}: the bar link leads to /${P}pricing/#free-trial (${barLink?.href})`);
-      const sup = (nb(home).match(/data-ea-support="hero"[\s\S]*?<\/ul>/) || [""])[0];
-      check(sup.includes(norm(ss.hero.support.noPayment)) && sup.includes(norm(ss.hero.support.oneStore)) && !sup.includes(norm(e.hero.support.approval)) && !sup.includes(norm(e.hero.support.noCard)), `${l} ${tag}: the Hero support lines are the two trial facts (no "approval", no "no credit card")`);
+      const sup = (nb(home).match(/data-ea-support="hero"[\s\S]*?<\/ul>(?:<p class="aicc-eanote"[^>]*data-ss-support-note[\s\S]*?<\/p>)?/) || [""])[0];
+      check(sup.includes(norm(ss.hero.support.noPayment)) && sup.includes(norm(ss.hero.support.oneStore)) && sup.includes(norm(ss.hero.support.noAuto)) && !sup.includes(norm(e.hero.support.approval)) && !sup.includes(norm(e.hero.support.noCard)), `${l} ${tag}: the Hero support lines are the three trial facts (no "approval", no "no credit card")`);
+      const pill = (nb(home).match(/class="aicc-eabadge"[\s\S]*?<\/span><\/span>/) || [""])[0];
+      check(norm(pill.replace(/<[^>]+>/g, " ")).includes(norm(ss.hero.badge)) && !/(Dec|dic|дек|דצמבר)/i.test(pill.replace(/<[^>]+>/g, " ")), `${l} ${tag}: the Hero pill says "${ss.hero.badge}" and names no date (the dates are the labelled lines on the cards)`);
     }
     // ---- no launch-offer request wording while self-service is on: nothing says "approved", "request", or "no credit card"
     {
@@ -402,26 +426,31 @@ function ssChecks(mode, root) {
       const hits2 = banned.filter((w) => [live(home), live(pricing), live(product)].some((t) => t.includes(w)));
       check(hits2.length === 0, `${l} ${tag}: no launch-offer request / approval / "no credit card" wording is shown while self-service is on${hits2.length ? " -> " + hits2[0] : ""}`);
     }
-    // ---- header (desktop and menu): Get started -> sign-up; Sign in stays on the account page; no request button
+    // ---- header (desktop and menu): "Get started" -> the account page until sign-up is known to work (a build with initial link: the sign-up page); Sign in stays on the account page; no request button
     {
       const hdr = nb(home).slice(nb(home).indexOf('<header class="aicc-site-header"'), nb(home).indexOf("</header>"));
       const an = anchorsOf(hdr), gs = an.filter((a) => a.text === norm(dict.common.getStarted)), si = an.filter((a) => a.text === norm(dict.brand.signIn));
-      check(gs.length >= 2 && gs.every((a) => a.href === startOf(l) && !/data-ea-after/.test(hdr.slice(Math.max(0, a.at - 10), a.at + 400).replace(/[\s\S]*?(<a\b)/, "$1").slice(0, 400))), `${l} ${tag}: the header "Get started" (desktop and menu) leads to ${startOf(l)} and is visible (not in the ended view)`);
+      const want = soon ? accountOf(l) : startOf(l);
+      check(gs.length >= 2 && gs.every((a) => a.href === want) && !/data-ea-after/.test(hdr), `${l} ${tag}: the header "Get started" (desktop and menu) leads to ${want} (${soon ? "a page that exists: never /start/ while it may be a 404" : "the sign-up page of a link build"}) and is visible (not in the ended view)`);
       check(si.length >= 2 && si.every((a) => a.href === accountOf(l)), `${l} ${tag}: "Sign in" (desktop and menu) stays on the account page ${accountOf(l)}`);
-      check(!anchorsOf(hdr).some((a) => /request-access/.test(a.href)), `${l} ${tag}: the header has no request link`);
+      check(!anchorsOf(hdr).some((a) => /request-access|#demo/.test(a.href)), `${l} ${tag}: the header has no request link and no demo link`);
     }
-    // ---- closing bands (Home, Pricing, Product x2) and the Product hero
+    // ---- closing bands (Home, Pricing, Product x2): lead sentence, the two dates, the sign-up control; the demo / pricing links stay as secondary actions
     for (const [name, page, id] of [["Home", home, "final-title"], ["Pricing", pricing, "pricing-final"], ["Product", product, "safety-cta"], ["Product", product, "product-final"]]) {
       const sec = sectionOf(page, id), an = anchorsOf(sec);
       const live = mode === "off" ? sec : sec.slice(0, sec.indexOf("data-ea-after") > 0 ? sec.indexOf("data-ea-after") : sec.length);
+      const txt = norm(live.replace(/<[^>]+>/g, " "));
       const cta = anchorsOf(live).filter((a) => a.text.startsWith(norm(ss.cta.start)));
-      check(cta.length === 1 && cta[0].href === startOf(l) && norm(live.replace(/<[^>]+>/g, " ")).includes(norm(ss.band.lead)), `${l} ${tag}: the ${name} closing band (${id}) leads with "${ss.cta.start}" -> ${startOf(l)} and its lead sentence`);
-      check(!an.some((a) => /request-access/.test(a.href)), `${l} ${tag}: the ${name} band (${id}) has no request link`);
+      if (soon) check(cta.length === 0 && (live.match(/data-ss-state="static"/g) || []).length === 1 && txt.includes(norm(ss.cta.soon)) && !/\/start\//.test(live.replace(/<script[\s\S]*?<\/script>/g, "")), `${l} ${tag}: the ${name} closing band (${id}) shows the plain status "${ss.cta.soon}" and no sign-up link`);
+      else check(cta.length === 1 && cta[0].href === startOf(l), `${l} ${tag}: the ${name} closing band (${id}) leads with "${ss.cta.start}" -> ${startOf(l)}`);
+      check(txt.includes(norm(ss.band.lead)) && txt.includes(norm(ss.plan.regLabel)) && txt.includes(norm(ss.plan.regValue)) && txt.includes(norm(ss.plan.endLabel)) && txt.includes(norm(ss.plan.endValue)), `${l} ${tag}: the ${name} band (${id}) has its lead sentence and the two labelled dates`);
+      check(!an.some((a) => /request-access/.test(a.href)) && !anchorsOf(live).some((a) => /aicc-btn--primary/.test(a.cls) && /#demo/.test(a.href) && id !== "final-title" && id !== "pricing-final"), `${l} ${tag}: the ${name} band (${id}) has no request link`);
     }
     {
       const hero = nb(product).slice(nb(product).indexOf('class="aicc-hero-actions'), nb(product).indexOf("</div>", nb(product).indexOf('class="aicc-hero-actions')));
       const gs = anchorsOf(hero).find((a) => a.text === norm(dict.common.getStarted));
-      check(!!gs && gs.href === startOf(l), `${l} ${tag}: the Product "Get started" leads to ${startOf(l)}`);
+      const want = soon ? accountOf(l) : startOf(l);
+      check(!!gs && gs.href === want, `${l} ${tag}: the Product "Get started" leads to ${want}`);
     }
     for (const [name, page] of [["Home", home], ["Pricing", pricing], ["Product", product]]) if (/request-access/.test(page)) requestHits.push(`${l} ${name}`);
   }
@@ -456,12 +485,14 @@ function ssChecks(mode, root) {
     const chunkDir = path.join(root, "_next/static/chunks"), refs = new Set();
     for (const c of walk(chunkDir, (p) => p.endsWith(".js"))) { const t = fs.readFileSync(c, "utf8"); if (t.includes("signup/status")) for (const m of t.matchAll(/\/wp-json\/[^"'`\s\\)]*/g)) refs.add(m[0]); }
     check([...refs].length === 1 && [...refs][0] === "/wp-json/aicc/v1/signup/status", `${tag}: the only API surface the self-service button names is GET /wp-json/aicc/v1/signup/status (${[...refs].join(", ")})`);
-    check(htmlFiles(root).every((f) => !/class="aicc-sstate|data-ss-state=/.test(fs.readFileSync(f, "utf8"))), `${tag}: no page ships a run-time state text in its static HTML (the static button is always the sign-up link)`);
+    check(htmlFiles(root).every((f) => { const h = fs.readFileSync(f, "utf8"); return (soon ? [...h.matchAll(/data-ss-state="(\w+)"/g)].every((m) => m[1] === "static") : !/data-ss-state=/.test(h)); }), `${tag}: no page ships a RUN-TIME state (open / waitlist / closed / paused / off) in its static HTML; the static state is ${soon ? "the plain text of the default build" : "the link of the link build"}`);
+    check(htmlFiles(root).every((f) => !/<a\b[^>]*href="[^"]*\/start\/[^"]*"/.test(fs.readFileSync(f, "utf8").replace(/<script[\s\S]*?<\/script>/g, "")) || !soon), `${tag}: ${soon ? "no <a> to the Control Plane /start/ page exists in any static page (the page may be a 404 while sign-up is off)" : "link build: /start/ links allowed"}`);
   }
 }
 if (SS.off || SS.announce || SS.open) {
-  console.log("\n== P37 SELF-SERVICE");
+  console.log("\n== P37/P39 SELF-SERVICE");
   for (const m of ["off", "announce", "open"]) if (SS[m]) ssChecks(m, SS[m]); else console.log(`  note --ss-${m} not given: the self-service + ${m} cell of the matrix was not run`);
+  if (SS_LINK) ssChecks("announce", SS_LINK, "link"); else console.log("  note --ss-link not given: the link-initial build (NEXT_PUBLIC_AICC_SS_INITIAL=link) was not audited");
   // the self-service OFF side of the matrix: the build of each launch-offer environment WITHOUT the switch is byte-equivalent to the P36 export of the same environment
   for (const [m, dir] of [["announce", dirs.announce], ["open", dirs.open], ["verify", dirs.verify]]) if (BASES[m]) {
     const r = compare(BASES[m], dir);
@@ -497,10 +528,14 @@ console.log("\n== UTC and geographic neutrality: every mode, every language");
 {
   const GEO = /israel|israeli|jerusalem|ישראל|израил/i;
   const NEXT = /(?<!\d)(january 1,? 2027|1 בינואר 2027|1 de enero de 2027|1 января 2027)/i;
-  for (const [name, root] of [["off", dirs.off], ["announce", dirs.announce], ["open", dirs.open], ["verify", dirs.verify], ...(ANN_STRIKE ? [["announce-strike", ANN_STRIKE]] : []), ...Object.entries(SS).filter(([, d]) => d).map(([m, d]) => [`ss-${m}`, d])]) {
+  for (const [name, root] of [["off", dirs.off], ["announce", dirs.announce], ["open", dirs.open], ["verify", dirs.verify], ...(ANN_STRIKE ? [["announce-strike", ANN_STRIKE]] : []), ...Object.entries(SS).filter(([, d]) => d).map(([m, d]) => [`ss-${m}`, d]), ...(SS_LINK ? [["ss-link", SS_LINK]] : [])]) {
     const bad = [], mid = [], next = [];
     for (const f of htmlFiles(root)) {
-      const raw = fs.readFileSync(f, "utf8"), t = visibleText(raw), rel = path.relative(root, f);
+      const raw = fs.readFileSync(f, "utf8"), rel = path.relative(root, f);
+      // P39: the registration cutoff ("<date> at 00:00 UTC", the two registration strings of a self-service build) is the ONE allowed 00:00; every other clock stays 22:00 UTC
+      const loc = ["he", "es", "ru"].find((x) => rel.startsWith(x + "/")) || "en";
+      let t = visibleText(raw);
+      if (name.startsWith("ss-")) { const se = ea(loc).ss; for (const v of [se.terms.regValue, se.plan.regValue]) t = t.split(norm(v)).join(" "); }
       const meta = [...raw.matchAll(/<meta[^>]+content="([^"]*)"/g)].map((m) => decode(m[1])).join(" ") + " " + [...raw.matchAll(/<script type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/g)].map((m) => m[1]).join(" ") + " " + ((raw.match(/<title>([^<]*)<\/title>/) || [])[1] || "");
       if (GEO.test(t) || GEO.test(meta)) bad.push(rel);
       if (/\b00:00\b/.test(t)) mid.push(rel);

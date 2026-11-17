@@ -11,7 +11,7 @@ const THEME = path.join(CP, "admin/wp-content/themes/aicc-admin");
 const { createJiti } = await import(path.join(SITE, "node_modules/jiti/lib/jiti.mjs")).catch(() => import("jiti"));
 const jiti = createJiti(path.join(SITE, "scripts/x.mjs"), { alias: { "@": path.join(SITE, "src") }, moduleCache: false });
 const { getEaDictionary, getDictionary } = await jiti.import(path.join(SITE, "src/i18n/index.ts"));
-const { EA_DATES } = await jiti.import(path.join(SITE, "src/i18n/eaTokens.ts"));
+const { EA_DATES, SS_REG_DATES } = await jiti.import(path.join(SITE, "src/i18n/eaTokens.ts"));
 
 // ---- CP strings (msgids) and date table
 const php = fs.readFileSync(path.join(THEME, "inc/launch-offer.php"), "utf8");
@@ -22,7 +22,12 @@ for (const m of body.matchAll(/'([A-Za-z0-9_.]+)'\s*=>\s*__\(\s*'((?:[^'\\]|\\.)
 if (process.argv.includes("--self-test")) { cp.set("plan.free", cp.get("plan.free") + " x"); cp.delete("section.faq.end.q"); cp.set("bar.live", cp.get("bar.live").replace("approved stores", "stores")); } // negative control: three injected defects MUST be reported
 const cpDates = {};
 const dtab = php.slice(php.indexOf("function aicc_lo_dates()"), php.indexOf("function aicc_lo_strings()"));
-for (const m of dtab.matchAll(/'(en|he|es|ru)'\s*=>\s*array\(\s*'lastDay'\s*=>\s*'([^']*)',\s*'lastDayShort'\s*=>\s*'([^']*)',\s*'until'\s*=>\s*'([^']*)'/g)) cpDates[m[1]] = { lastDay: m[2], lastDayShort: m[3], until: m[4] };
+for (const m of dtab.matchAll(/'(en|he|es|ru)'\s*=>\s*array\(\s*'lastDay'\s*=>\s*'([^']*)',\s*'lastDayShort'\s*=>\s*'([^']*)',\s*'until'\s*=>\s*'([^']*)'/g)) {
+  cpDates[m[1]] = { lastDay: m[2], lastDayShort: m[3], until: m[4] };
+  // P39: the registration tokens ({regDate}, {regShort}, {regLast}) are optional until the Control Plane mirror lands: read them when present
+  const tail = dtab.slice(m.index, m.index + 700);
+  for (const t of ["regDate", "regShort", "regLast"]) { const r = new RegExp(`'${t}'\\s*=>\\s*'([^']*)'`).exec(tail); if (r) cpDates[m[1]][t] = r[1]; }
+}
 
 // ---- compiled catalogues (.mo, little or big endian)
 function readMo(file) {
@@ -51,6 +56,8 @@ for (const l of ["en", "he", "es", "ru"]) {
     // CP resolves the date tokens with its own table (inside aicc_lo_resolved); do the same here, with the CP table
     const d = cpDates[l];
     have = have.replace(/\{(lastDay|lastDayShort|until)\}/g, (_, t) => d[t]);
+    // P39: the registration tokens: the Control Plane table when it has them, else the Site's literal (the missing table is reported below, and FAILS with --require-ss)
+    have = have.replace(/\{(regDate|regShort|regLast)\}/g, (_, t) => d[t] ?? SS_REG_DATES[l][t]);
     // the Site resolves {firstLastDay} etc. itself; tokens both sides pass through ({contactEmail}, {mailProvider}, {priceSolo}...) are compared literally
     if (nrm(have) === nrm(want)) ok++; else fails.push(`${l} ${k} (ea.${sp}):\n    SITE: ${nrm(want)}\n    CP  : ${nrm(have)}`);
   }
@@ -59,8 +66,11 @@ for (const l of ["en", "he", "es", "ru"]) {
 for (const l of ["en", "he", "es", "ru"]) { // P36 owner rule: the compared customer strings carry no country, no local time zone, no 00:00 end and no 1 January date
   const site = getEaDictionary(l, 0);
   const bad = /israel|jerusalem|ישראל|израил|\b00:00\b/i;
-  for (const [k, v] of cp) if (bad.test(l === "en" ? v : (CAT[l].get(v) || ""))) fails.push(`${l} CP ${k}: names a country or a local time zone or a 00:00 end`);
-  const walk = (o, p) => typeof o === "string" ? (bad.test(o) ? fails.push(`${l} Site ea.${p}: names a country or a local time zone or a 00:00 end`) : 0) : o && typeof o === "object" ? Object.entries(o).forEach(([k, v]) => walk(v, p ? p + "." + k : k)) : 0;
+  // P39 exception (owner-decided, Control Plane REGISTRATION_CUTOFF_UNIX 2026-12-24T00:00:00Z): "00:00" is the registration cutoff and only in the two registration strings
+  const REGP = new Set(["ss.plan.regValue", "ss.terms.regValue"]);
+  const badFor = (k) => (REGP.has(k) ? /israel|jerusalem|ישראל|израил/i : bad);
+  for (const [k, v] of cp) if (badFor(k).test(l === "en" ? v : (CAT[l].get(v) || ""))) fails.push(`${l} CP ${k}: names a country or a local time zone or a 00:00 end`);
+  const walk = (o, p) => typeof o === "string" ? (badFor(p).test(o) ? fails.push(`${l} Site ea.${p}: names a country or a local time zone or a 00:00 end`) : 0) : o && typeof o === "object" ? Object.entries(o).forEach(([k, v]) => walk(v, p ? p + "." + k : k)) : 0;
   walk(site, "");
 }
 // P37 self-service strings (the `ss.*` keys of src/i18n/ea/<locale>.ts; the list for the Control Plane theme is scripts/snapshots/selfservice-msgids.txt). Every `ss.*` key the Control Plane defines in aicc_lo_strings()
@@ -72,6 +82,10 @@ for (const l of ["en", "he", "es", "ru"]) { // P36 owner rule: the compared cust
   const missing = siteSs.filter((k) => !cp.has(k));
   const mirrored = siteSs.length - missing.length;
   console.log(`self-service strings: ${siteSs.length} on the Site, ${mirrored} mirrored by the Control Plane, ${missing.length} not yet${missing.length ? " (first: " + missing.slice(0, 3).join(", ") + ")" : ""}`);
+  for (const l of ["en", "he", "es", "ru"]) for (const t of ["regDate", "regShort", "regLast"]) {
+    if (cpDates[l]?.[t] === undefined) { console.log(`  note ${l}: the Control Plane date table has no {${t}} yet`); if (process.argv.includes("--require-ss")) fails.push(`${l} date token ${t}: the Control Plane date table (aicc_lo_dates) does not define it`); }
+    else if (cpDates[l][t] !== SS_REG_DATES[l][t]) fails.push(`${l} date token ${t}: CP "${cpDates[l][t]}" vs Site "${SS_REG_DATES[l][t]}"`);
+  }
   if (process.argv.includes("--require-ss") && missing.length) for (const k of missing) fails.push(`self-service string ${k}: the Control Plane theme (inc/launch-offer.php aicc_lo_strings) does not define it`);
 }
 console.log(`CP strings: ${cp.size}; compared per language; matching: ${ok}; CP-only declared: ${rows.length}; mismatches: ${fails.length}`);

@@ -123,10 +123,17 @@ export function EaHeroSupport({ locale, t }: { locale: Locale; t: Dictionary }) 
   if (SS_ON) {
     // P37/P39: the three short facts of the free trial (no payment method for the trial, one store, no automatic conversion to a paid plan); no dates here (they are the labelled lines on the cards), no "approval", no status note
     const ss = t.ea.ss;
+    // the same two-part structure as the P36 Hero (one short list, then one status line) so the Hero copy column keeps the height it had and the headline and the actions stay where they were: the two trial facts as the list, "no automatic conversion" as the line under it
     return (
-      <ul className="aicc-easupport aicc-fade-up" style={{ ["--i" as string]: 4 }} data-ea-live data-ea-support="hero" data-ss-support aria-label={ss.hero.supportLabel} {...A(locale, "ea.ss.hero")}>
-        {[ss.hero.support.noPayment, ss.hero.support.oneStore, ss.hero.support.noAuto].map((x) => (<li key={x}><Check size={16} aria-hidden="true" /><span>{x}</span></li>))}
-      </ul>
+      <>
+        <ul className="aicc-easupport aicc-fade-up" style={{ ["--i" as string]: 4 }} data-ea-live data-ea-support="hero" data-ss-support aria-label={ss.hero.supportLabel} {...A(locale, "ea.ss.hero")}>
+          {[ss.hero.support.noPayment, ss.hero.support.oneStore].map((x) => (<li key={x}><Check size={16} aria-hidden="true" /><span>{x}</span></li>))}
+        </ul>
+        <p className="aicc-eanote" data-ea-live data-ss-support-note {...A(locale, "ea.ss.hero")}>
+          <Check size={16} aria-hidden="true" />
+          <span>{ss.hero.support.noAuto}</span>
+        </p>
+      </>
     );
   }
   const s = t.ea.hero.support;

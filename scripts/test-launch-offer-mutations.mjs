@@ -10,12 +10,12 @@ import { spawnSync } from "node:child_process";
 const args = process.argv.slice(2);
 const arg = (n) => { const i = args.indexOf(`--${n}`); return i >= 0 ? path.resolve(args[i + 1]) : undefined; };
 const dirs = { off: arg("off"), announce: arg("announce"), open: arg("open"), verify: arg("verify") };
-const ssDirs = { off: arg("ss-off"), announce: arg("ss-announce"), open: arg("ss-open") };
+const ssDirs = { off: arg("ss-off"), announce: arg("ss-announce"), open: arg("ss-open") }, ssLink = arg("ss-link");
 if (!dirs.off || !dirs.announce || !dirs.open || !dirs.verify) { console.error("usage: --off <dir> --announce <dir> --open <dir> --verify <dir>"); process.exit(2); }
 let total = 0, failed = 0;
 const check = (c, m) => { total++; if (!c) { failed++; console.error("  FAIL " + m); } else console.log("  ok   " + m); };
 const run = (announce) => spawnSync("node", ["scripts/test-launch-offer.mjs", "--off", dirs.off, "--announce", announce, "--open", dirs.open, "--verify", dirs.verify], { encoding: "utf8", env: { ...process.env, AICC_CP_DIR: "none" }, maxBuffer: 1 << 28 });
-const runSs = (cell, copy) => spawnSync("node", ["scripts/test-launch-offer.mjs", "--off", dirs.off, "--announce", dirs.announce, "--open", dirs.open, "--verify", dirs.verify, ...Object.entries({ ...ssDirs, [cell]: copy }).flatMap(([k, v]) => (v ? [`--ss-${k}`, v] : []))], { encoding: "utf8", env: { ...process.env, AICC_CP_DIR: "none" }, maxBuffer: 1 << 28 });
+const runSs = (cell, copy) => spawnSync("node", ["scripts/test-launch-offer.mjs", "--off", dirs.off, "--announce", dirs.announce, "--open", dirs.open, "--verify", dirs.verify, ...Object.entries({ ...ssDirs, ...(ssLink && cell !== "link" ? { link: ssLink } : {}), [cell]: copy }).flatMap(([k, v]) => (v ? [`--ss-${k}`, v] : []))], { encoding: "utf8", env: { ...process.env, AICC_CP_DIR: "none" }, maxBuffer: 1 << 28 });
 const edit = (dir, rel, fn) => { const f = path.join(dir, rel); const t = fs.readFileSync(f, "utf8"); const n = fn(t); if (n === t) throw new Error(`mutation did not change ${rel}`); fs.writeFileSync(f, n); };
 const heroActions = (t) => { const i = t.indexOf('class="aicc-hero-actions'); return [i, t.indexOf("</div>", i)]; };
 const MUTATIONS = [
@@ -26,33 +26,47 @@ const MUTATIONS = [
   ["FREE is made smaller than the regular price", "dominant", (d) => edit(d, "index.html", (t) => t.replace(/(\.aicc-plan \.aicc-plan__free-word\{font-size:)3\.5rem/, "$11.5rem"))],
   ["a plan card links to the request page while requests are not open", "request-access", (d) => edit(d, "index.html", (t) => t.replace(/(<a\b[^>]*class="aicc-btn[^"]*"[^>]*href=")\/#demo/, "$1/request-access/?plan=solo"))],
 ];
-// ----- P37 self-service mutations: [cell, name, expected failure text, mutate]
-const firstCard = (t, plan) => t.replace(new RegExp(`(<a\\b[^>]*href=")https://www\\.copilt\\.org/start/\\?plan=${plan}(")`), "$1@@$2");
+// ----- P37/P39 self-service mutations: [cell, name, expected failure text, mutate]. Cells: off / announce / open = the default (coming_soon) builds; link = the build made with NEXT_PUBLIC_AICC_SS_INITIAL=link.
+const STATUS_P = /<p class="aicc-sstate[^"]*"[^>]*data-ss-state="static"[^>]*>[\s\S]*?<\/p>/;
+const asLink = (plan, label = "Start free trial") => `<a class="aicc-btn aicc-btn--outline aicc-btn--lg aicc-btn--block" href="https://www.copilt.org/start/?plan=${plan}">${label}</a>`;
 const SS_MUTATIONS = [
   ["announce", "the Hero loses Try Live Demo (self-service on)", "Hero keeps|primary link to #demo|exactly its two actions", (d) => edit(d, "index.html", (t) => { const [a, b] = heroActions(t); return t.slice(0, a) + t.slice(a, b).replace(/<a\b[^>]*href="#demo"[\s\S]*?<\/a>/, "") + t.slice(b); })],
-  ["announce", "a plan card button is changed to #demo", "targets #demo|ONE action", (d) => edit(d, "pricing/index.html", (t) => firstCard(t, "solo").replace("@@", "/#demo"))],
-  ["announce", "a plan card button leads to /request-access/ while self-service is on", "request-access|ONE action", (d) => edit(d, "pricing/index.html", (t) => firstCard(t, "studio").replace("@@", "/request-access/?plan=studio"))],
-  ["announce", "a plan card button leads to a relative route that does not exist", "resolves|ONE action", (d) => edit(d, "pricing/index.html", (t) => firstCard(t, "agency").replace("@@", "/get-started/?plan=agency"))],
-  ["off", "a plan card button leads to a Control Plane path outside the allow-list", "resolves|ONE action", (d) => edit(d, "pricing/index.html", (t) => firstCard(t, "solo").replace("@@", "https://www.copilt.org/signup/"))],
-  ["off", "the plan query of a card button is wrong (studio card asks for solo)", "ONE action", (d) => edit(d, "index.html", (t) => t.replace("start/?plan=studio", "start/?plan=solo"))],
-  ["announce", "the status-only inert button comes back on a card", "inert", (d) => edit(d, "pricing/index.html", (t) => t.replace('<ul class="aicc-plan__checks"', '<p class="aicc-btn aicc-btn--lg aicc-btn--block aicc-btn--soon" data-commerce="closed">Purchases open soon</p><ul class="aicc-plan__checks"'))],
-  ["off", "the status-only inert button comes back on a card (self-service without a launch offer)", "inert", (d) => edit(d, "index.html", (t) => t.replace('<ul class="aicc-plan__checks"', '<p class="aicc-btn aicc-btn--lg aicc-btn--block aicc-btn--soon" data-commerce="closed">Purchases open soon</p><ul class="aicc-plan__checks"'))],
-  ["announce", "the trial allowance disappears from a card", "trial|allowance", (d) => edit(d, "pricing/index.html", (t) => t.replace(/<li><svg(?:(?!<li>)[\s\S])*?<span[^>]*>Free trial: 1 store<\/span><\/li>/, ""))],
+  ["announce", "a real /start/ sign-up link is put back on a card while sign-up is off", "NO sign-up button or link|plain text", (d) => edit(d, "pricing/index.html", (t) => t.replace(STATUS_P, asLink("solo")))],
+  ["announce", "a plan card sign-up control is changed to the Live Demo", "NO sign-up button or link|targets #demo|plain text", (d) => edit(d, "pricing/index.html", (t) => t.replace(STATUS_P, '<a class="aicc-btn aicc-btn--outline aicc-btn--lg aicc-btn--block" href="/#demo">Start free trial</a>'))],
+  ["announce", "a plan card sign-up control leads to /request-access/ while self-service is on", "request-access|NO sign-up button or link", (d) => edit(d, "pricing/index.html", (t) => t.replace(STATUS_P, asLink("studio").replace("https://www.copilt.org/start/?plan=studio", "/request-access/?plan=studio")))],
+  ["announce", "the plain status text turns into an inert button-looking element", "plain text|inert", (d) => edit(d, "pricing/index.html", (t) => t.replace('<p class="aicc-sstate"', '<p class="aicc-btn aicc-btn--lg aicc-sstate"'))],
+  ["announce", "the status text invites an action it cannot offer (\"Start free trial\" as plain text)", "plain text", (d) => edit(d, "index.html", (t) => t.replace(/(<p class="aicc-sstate"[^>]*>(?:<svg[\s\S]*?<\/svg>)?<span>)Free trial registration opens soon/, "$1Start free trial"))],
+  ["announce", "a card loses the registration date line", "two labelled date lines", (d) => edit(d, "pricing/index.html", (t) => t.replace(/<div data-ss-date="registration">[\s\S]*?<\/div>/, ""))],
+  ["announce", "the registration line states the wrong instant (22:00 UTC on Dec 24)", "two labelled date lines|00:00", (d) => edit(d, "pricing/index.html", (t) => t.replace("Dec 24, 2026 at\u00a000:00 UTC", "Dec 24, 2026 at\u00a022:00 UTC").replace(/Dec 24, 2026 at.00:00 UTC/, "Dec 24, 2026 at 22:00 UTC"))],
+  ["announce", "a loose \"FREE until <date>\" line comes back on a card", "loose|labelled", (d) => edit(d, "index.html", (t) => t.replace(/(class="aicc-plan__free-until"[^>]*>)Free trial: 1 store/, "$1until Dec 31, 2026"))],
+  ["announce", "\"No automatic conversion to a paid plan\" disappears from a card", "automatic|allowance", (d) => edit(d, "pricing/index.html", (t) => t.replace(/<li><svg(?:(?!<li>)[\s\S])*?No automatic conversion to a paid plan<\/span><\/li>/, ""))],
+  ["announce", "the trial allowance disappears from a card", "trial|allowance", (d) => edit(d, "pricing/index.html", (t) => t.replace(/(class="aicc-plan__free-until"[^>]*>)Free trial: 1 store/, "$1"))],
   ["announce", "a card claims more than 10 stores", "store counts|capacity", (d) => edit(d, "pricing/index.html", (t) => t.replace("Paid plan: up to 10 stores", "Paid plan: up to 25 stores"))],
-  ["announce", "the header Get started goes back to the account page", "header", (d) => edit(d, "index.html", (t) => t.replace(/(<header[\s\S]*?)href="https:\/\/www\.copilt\.org\/start\/"/, '$1href="https://www.copilt.org/my-account/"'))],
-  ["announce", "a closing band loses the sign-up button", "closing band", (d) => edit(d, "pricing/index.html", (t) => { const i = t.indexOf('aria-labelledby="pricing-final"'); const j = t.indexOf("</section>", i); return t.slice(0, i) + t.slice(i, j).replace(/<a\b[^>]*href="https:\/\/www\.copilt\.org\/start\/"[\s\S]*?<\/a>/, "") + t.slice(j); })],
-  ["announce", "launch-offer approval wording returns on a card", "approval|request", (d) => edit(d, "pricing/index.html", (t) => t.replace("Free trial: 1 store", "Approved stores only"))],
+  ["announce", "the header Get started points at /start/ while sign-up is off", "header", (d) => edit(d, "index.html", (t) => t.replace(/(<header[\s\S]*?<a href=")https:\/\/www\.copilt\.org\/my-account\/("[^>]*data-ss-getstarted)/, "$1https://www.copilt.org/start/$2"))],
+  ["announce", "the Product Get started points at /start/ while sign-up is off", "Product \"Get started\"", (d) => edit(d, "product/index.html", (t) => { const i = t.indexOf('class="aicc-hero-actions'); return t.slice(0, i) + t.slice(i).replace("https://www.copilt.org/my-account/", "https://www.copilt.org/start/") ; })],
+  ["announce", "a closing band shows a sign-up link while sign-up is off", "closing band", (d) => edit(d, "pricing/index.html", (t) => { const i = t.indexOf('aria-labelledby="pricing-final"'); const j = t.indexOf("</section>", i); return t.slice(0, i) + t.slice(i, j).replace(STATUS_P, asLink("solo").replace("?plan=solo", "")) + t.slice(j); })],
+  ["announce", "a closing band loses its two dates", "closing band|labelled dates", (d) => edit(d, "pricing/index.html", (t) => { const i = t.indexOf('aria-labelledby="pricing-final"'); const j = t.indexOf("</section>", i); return t.slice(0, i) + t.slice(i, j).replace(/<dl class="aicc-ssdates[\s\S]*?<\/dl>/, "") + t.slice(j); })],
+  ["announce", "the terms block loses the trial end line", "terms block", (d) => edit(d, "pricing/index.html", (t) => t.replace(/(<div class="aicc-eaterms"[\s\S]*?)<div data-ss-date="end">[\s\S]*?<\/div>/, "$1"))],
+  ["announce", "launch-offer approval wording returns on a card", "approval|request", (d) => edit(d, "pricing/index.html", (t) => t.replace("No payment method required for the trial", "Approved stores only"))],
   ["off", "a request button is shown in the header while self-service is on", "request", (d) => edit(d, "index.html", (t) => t.replace('<a href="https://www.copilt.org/my-account/"', '<a href="/request-access/" class="aicc-btn">Request Free Access</a><a href="https://www.copilt.org/my-account/"'))],
   ["open", "the Hero of an open build gets a request link back while self-service is on", "request-access|exactly its two actions", (d) => edit(d, "index.html", (t) => { const [a] = heroActions(t); const e = t.indexOf(">", a) + 1; return t.slice(0, e) + '<a class="aicc-btn aicc-btn--primary aicc-btn--lg" href="/request-access/">Request Free Access</a>' + t.slice(e); })],
+  ["off", "the plain status disappears from a card of a self-service-only build", "plain status|plain text", (d) => edit(d, "index.html", (t) => t.replace(STATUS_P, ""))],
+  ["link", "(link build) a card sign-up link is changed to #demo", "ONE sign-up control|targets #demo", (d) => edit(d, "pricing/index.html", (t) => t.replace("https://www.copilt.org/start/?plan=solo", "/#demo"))],
+  ["link", "(link build) the plan query of a card link is wrong (studio card asks for solo)", "ONE sign-up control", (d) => edit(d, "index.html", (t) => t.replace("start/?plan=studio", "start/?plan=solo"))],
+  ["link", "(link build) a card link leads to a Control Plane path outside the allow-list", "resolves|ONE sign-up control", (d) => edit(d, "pricing/index.html", (t) => t.replace("https://www.copilt.org/start/?plan=agency", "https://www.copilt.org/signup/"))],
+  ["link", "(link build) the header Get started goes back to the account page", "header", (d) => edit(d, "index.html", (t) => t.replace(/(<header[\s\S]*?<a href=")https:\/\/www\.copilt\.org\/start\/("[^>]*data-ss-getstarted)/, "$1https://www.copilt.org/my-account/$2"))],
 ];
-if (Object.values(ssDirs).every(Boolean)) {
+const ssAll = () => Object.values(ssDirs).every(Boolean);
+if (ssAll()) {
   for (const [cell, name, expect, mutate] of SS_MUTATIONS) {
-    const copy = fs.mkdtempSync(path.join(path.dirname(ssDirs[cell]), "mut-ss-"));
+    if (cell === "link" && !ssLink) continue;
+    const dirOf = cell === "link" ? ssLink : ssDirs[cell];
+    const copy = fs.mkdtempSync(path.join(path.dirname(dirOf), "mut-ss-"));
     fs.rmSync(copy, { recursive: true });
-    spawnSync("cp", ["-Rc", ssDirs[cell], copy]);
+    spawnSync("cp", ["-Rc", dirOf, copy]);
     try {
       mutate(copy);
-      const r = runSs(cell, copy), out = r.stdout + r.stderr;
+      const r = cell === "link" ? runSs("link", copy) : runSs(cell, copy), out = r.stdout + r.stderr;
       check(r.status !== 0 && /FAIL (en|he|es|ru)|FAIL ss-/.test(out), `self-service (${cell}) mutation "${name}": the suite FAILS (exit ${r.status})`);
       check(new RegExp(expect, "i").test(out.split("\n").filter((l) => /FAIL/.test(l)).join("\n")), `self-service (${cell}) mutation "${name}": the failure names the broken guard (${expect})`);
     } finally { fs.rmSync(copy, { recursive: true, force: true }); }

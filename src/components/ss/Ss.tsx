@@ -42,6 +42,7 @@ export const SS_CSS = [
   ".aicc-plan__ssctl{display:grid;gap:0.75rem}",
   ".aicc-plan__demo{margin:0;display:flex;align-items:center;gap:0.375rem;font-size:var(--aicc-text-sm)}",
   ".aicc-plan__demo svg{flex:none}",
+  ".aicc-plan__demo a{display:flex;align-items:center;inline-size:fit-content;min-block-size:2.75rem}",
 ].join("");
 
 /** The two labelled dates, ALWAYS two separate lines: "Registration closes <date> at 00:00 UTC" and "Trial access ends <date> at 22:00 UTC". `wide` = the long terms variant; `inverse` = on a dark band. */

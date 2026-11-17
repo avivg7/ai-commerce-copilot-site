@@ -197,11 +197,15 @@ async function selfTest() {
   {
     const ssPage = (extra, marked = true) => { const h = cleanPage({ extraBody: extra }); return marked ? h.replace('<html lang="en"', '<html lang="en" data-ss-mode="on"') : h; };
     const c = { ...ctx, ssPhrases: SS_PHRASES };
-    check("self-service: 'Start free trial' passes on a marked page", analyzeDocument(ssPage('<a href="https://www.copilt.org/start/">Start free trial</a><p>The free trial covers 1 store, whichever plan you choose.</p>'), c).length === 0, JSON.stringify(analyzeDocument(ssPage('<a href="https://www.copilt.org/start/">Start free trial</a>'), c)));
+    check("self-service: 'Start free trial' passes on a marked page", analyzeDocument(ssPage('<a href="https://www.copilt.org/start/">Start free trial</a><p>The free trial covers 1 store, whichever plan you choose. The plan you pick is only your preference.</p>'), c).length === 0, JSON.stringify(analyzeDocument(ssPage('<a href="https://www.copilt.org/start/">Start free trial</a>'), c)));
     check("self-service: the same words on an UNMARKED page are caught", analyzeDocument(ssPage('<a href="https://www.copilt.org/start/">Start free trial</a>', false), c).some((x) => x.id === "free-trial"));
     check("self-service: a trial length on a marked page is caught", analyzeDocument(ssPage("<p>Start your 14-day free trial today.</p>"), c).some((x) => x.id === "free-trial"));
     check("self-service: 'try it free' on a marked page is caught", analyzeDocument(ssPage("<p>Try it free.</p>"), c).some((x) => x.id === "free-trial"));
     check("self-service: 'free for 30 days' on a marked page is caught", analyzeDocument(ssPage("<p>Use AICC free for 30 days.</p>"), c).some((x) => x.id === "free-trial"));
+    // P39: the owner-required claims (two dates, no automatic conversion, "opens soon") pass ONLY as the pack's exact strings
+    check("self-service P39: the pack's registration / end / no-conversion / opens-soon strings pass on a marked page", analyzeDocument(ssPage("<p>Free trial registration opens soon</p><p>No automatic conversion to a paid plan</p><p>Registration closes</p><p>Dec 24, 2026 at 00:00 UTC</p><p>Free trial: 1 store</p>"), c).length === 0, JSON.stringify(analyzeDocument(ssPage("<p>Free trial registration opens soon</p><p>No automatic conversion to a paid plan</p>"), c)));
+    check("self-service P39: the same sentences on an UNMARKED page are caught", analyzeDocument(ssPage("<p>Free trial registration opens soon</p>", false), c).some((x) => x.id === "free-trial"));
+    check("self-service P39: a loose trial deadline claim on a marked page is caught", analyzeDocument(ssPage("<p>Free trial ends soon, register by Dec 24.</p>"), c).some((x) => x.id === "free-trial"));
     check("self-service: without ssPhrases a marked page gets no allowance", analyzeDocument(ssPage('<a href="https://www.copilt.org/start/">Start free trial</a>'), ctx).some((x) => x.id === "free-trial"));
   }
   // noindex is allowed on transactional pages, not on the pricing page

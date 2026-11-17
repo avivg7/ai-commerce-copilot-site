@@ -76,6 +76,11 @@
     "test:wording-parity": "node scripts/wording-parity.mjs",
     "test:selfservice": "node scripts/test-selfservice.mjs",
     "test:selfservice-browser": "node scripts/test-selfservice-browser.mjs",
+    "test:link-resolution": "node scripts/test-link-resolution.mjs",
+    "test:pricing-consistency-mutations": "node scripts/test-pricing-consistency-mutations.mjs",
+    "test:ss-guards": "node scripts/test-ss-guards.mjs",
+    "test:pricing-consistency": "node scripts/test-pricing-consistency.mjs",
+    "test:visual-regression": "node scripts/test-visual-regression.mjs",
     "export:hash": "node scripts/export-hash.mjs"
   },
   "dependencies": {

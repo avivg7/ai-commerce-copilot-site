@@ -11,27 +11,35 @@ const SS = await loadTs("src/lib/ssStatus.ts");
 const D = await loadDictionaries();
 
 console.log("== state table (state -> label / link): pinned exactly");
-// The table is the contract with the Control Plane /start/ page. A change here is a decision, not a refactor: update the S-REPORT and the Control Plane page together.
+// The table is the contract with the Control Plane /start/ page and the owner rule "a signup control never links to a page that may be a 404". A change here is a decision, not a refactor: update docs/cutover/p39-marketing.md and the Control Plane page together.
+eq(SS.SS_INITIAL_TABLE, { coming_soon: { kind: "text", label: "soon" }, link: { kind: "link", label: "start" } }, "the build-time initial state: coming_soon (the default) -> plain text 'opens soon'; link (a rebuild after activation) -> link 'Start free trial'");
 eq(SS.SS_STATE_TABLE, {
-  static: { kind: "link", label: "start" },
   open: { kind: "link", label: "start" },
   waitlist: { kind: "link", label: "waitlist" },
   closed_cutoff: { kind: "text", label: "closed" },
   paused: { kind: "text", label: "paused" },
-  off: { kind: "text", label: "notOpen" },
-}, "the table is exactly: static/open -> link Start; waitlist -> link Join the waitlist; closed_cutoff, paused, off -> plain text (never a link or a button)");
+  off: { kind: "text", label: "soon" },
+}, "the run-time table is exactly: open -> link Start; waitlist -> link Join the waitlist; closed_cutoff, paused, off -> plain text (never a link or a button)");
 eq([...SS.SS_MODES], ["open", "waitlist", "closed_cutoff", "paused", "off"], "the five modes of GET /signup/status");
-check(Object.isFrozen(SS.SS_STATE_TABLE), "the table is frozen");
-check(SS.SS_MODES.every((m) => SS.ssDecision(m) === SS.SS_STATE_TABLE[m]) && SS.ssDecision("static").kind === "link" && SS.ssDecision("nonsense").label === "start", "ssDecision reads the table; an unknown view falls back to the static link");
+check(Object.isFrozen(SS.SS_STATE_TABLE) && Object.isFrozen(SS.SS_INITIAL_TABLE), "both tables are frozen");
+check(SS.SS_INITIAL_DEFAULT === "coming_soon", "the default initial state is coming_soon (the truthful one: /start/ is a 404 while sign-up is off)");
+for (const [v, want] of [["link", "link"], ["coming_soon", "coming_soon"], [undefined, "coming_soon"], ["", "coming_soon"], ["LINK", "coming_soon"], ["Link", "coming_soon"], [" link", "coming_soon"], ["true", "coming_soon"], ["1", "coming_soon"], ["on", "coming_soon"], [null, "coming_soon"], [1, "coming_soon"]]) eq(SS.parseSsInitial(v), want, `NEXT_PUBLIC_AICC_SS_INITIAL=${JSON.stringify(v)} -> ${want} (only the exact string "link" selects the link build)`);
+// THE decision matrix: every view x both initial states
+for (const initial of ["coming_soon", "link"]) {
+  const exp = { static: initial === "link" ? { kind: "link", label: "start" } : { kind: "text", label: "soon" }, ...SS.SS_STATE_TABLE };
+  for (const view of ["static", ...SS.SS_MODES]) eq(SS.ssDecision(view, initial), exp[view], `ssDecision(${view}, ${initial})`);
+}
+check(SS.ssDecision("static").kind === "text" && SS.ssDecision("nonsense").kind === "text" && SS.ssDecision("nonsense", "link").kind === "link" && SS.ssDecision("static", "garbage").kind === "text" && SS.ssDecision("__proto__").kind === "text", "an unknown view or initial falls back to the BUILD's initial state / the truthful default (never a guessed link)");
+check(SS.ssStartsSignup("open") && SS.ssStartsSignup("waitlist") && !SS.ssStartsSignup("static") && !SS.ssStartsSignup("off") && !SS.ssStartsSignup("paused") && !SS.ssStartsSignup("closed_cutoff") && SS.ssStartsSignup("static", "link") && !SS.ssStartsSignup("paused", "link"), "'Get started' targets the sign-up page only for open / waitlist (or a link build's static state), never for off / paused / closed / the default static state");
 check(SS.SS_STATUS_PATH === "/wp-json/aicc/v1/signup/status", "the status path is /wp-json/aicc/v1/signup/status (same origin, like the request form)");
 for (const l of ["en", "he", "es", "ru"]) {
   const c = D[l].ea.ss.cta;
-  const labels = ["start", "waitlist", "closed", "paused", "notOpen"].map((k) => c[k]);
-  check(labels.every((x) => typeof x === "string" && x.trim()) && new Set(labels).size === 5, `${l}: all five labels exist and differ: ${labels.join(" | ")}`);
-  const textStates = SS.SS_MODES.filter((m) => SS.ssDecision(m).kind === "text").map((m) => c[SS.ssDecision(m).label]);
-  check(textStates.length === 3 && textStates.every((x) => !/^(start|join)/i.test(x)), `${l}: the three plain-text states are statements, not invitations`);
+  const labels = ["soon", "start", "waitlist", "closed", "paused"].map((k) => c[k]);
+  check(labels.every((x) => typeof x === "string" && x.trim()) && new Set(labels).size === 5 && !("notOpen" in c), `${l}: all five labels exist and differ (and the retired notOpen label is gone): ${labels.join(" | ")}`);
+  const textStates = ["soon", "closed", "paused"].map((k) => c[k]);
+  check(textStates.every((x) => !/^(start|join)/i.test(x)) && !labels.slice(0, 1).some((x) => /\d/.test(x)), `${l}: the plain-text states are statements, not invitations, and carry no date`);
 }
-check(D.en.ea.ss.cta.start === "Start free trial" && D.en.ea.ss.cta.waitlist === "Join the waitlist" && D.en.ea.ss.cta.closed === "Free trial registration closed", "en: the labels are 'Start free trial', 'Join the waitlist', 'Free trial registration closed'");
+check(D.en.ea.ss.cta.soon === "Free trial registration opens soon" && D.en.ea.ss.cta.start === "Start free trial" && D.en.ea.ss.cta.waitlist === "Join the waitlist" && D.en.ea.ss.cta.closed === "Free trial registration closed" && D.en.ea.ss.cta.paused === "Free trial registration paused", "en: the labels are 'Free trial registration opens soon', 'Start free trial', 'Join the waitlist', 'Free trial registration closed', 'Free trial registration paused'");
 
 console.log("== status answer parser: only a complete, valid, consistent answer is used");
 const P = SS.parseSsStatus;
@@ -102,6 +110,8 @@ await withEnv({ ...CLEAN, SITE_URL: "https://stage.copilt.org" }, (m) => eq(m.st
 await withEnv({ ...CLEAN, NEXT_PUBLIC_AICC_START_URL: "https://shop.example.com/wp/start/" }, (m) => { eq(m.startUrl("en", "studio"), "https://shop.example.com/wp/start/?plan=studio", "an override with a base path (en)"); eq(m.startUrl("he", "studio"), "https://shop.example.com/wp/he/start/?plan=studio", "an override with a base path: the prefix goes before the last segment"); });
 await withEnv({ ...CLEAN, NEXT_PUBLIC_AICC_START_URL: "https://shop.example.com/start/?src=site#x" }, (m) => eq(m.startUrl("es", "solo"), "https://shop.example.com/es/start/?src=site&plan=solo#x", "query and hash are kept; the plan is appended"));
 
+console.log("== build switch NEXT_PUBLIC_AICC_SS_INITIAL: exactly 'link' selects the link build, everything else is coming_soon");
+for (const [v, want] of [["link", "link"], ["coming_soon", "coming_soon"], [undefined, "coming_soon"], ["", "coming_soon"], ["LINK", "coming_soon"], ["open", "coming_soon"]]) await withEnv({ ...CLEAN, NEXT_PUBLIC_AICC_SS_INITIAL: v }, (m) => check(m.SS_INITIAL === want, `NEXT_PUBLIC_AICC_SS_INITIAL=${JSON.stringify(v)} -> ${want}`));
 console.log("== build switch: exactly 'on'; ignored at or after the end");
 for (const [v, want] of [["on", true], ["ON", false], ["true", false], ["1", false], ["", false], [undefined, false], [" on", false], ["off", false]]) await withEnv({ ...CLEAN, NEXT_PUBLIC_AICC_SELFSERVICE: v }, (m) => check(m.SS_ON === want, `NEXT_PUBLIC_AICC_SELFSERVICE=${JSON.stringify(v)} -> ${want ? "ON" : "OFF"}`));
 await withEnv({ ...CLEAN, AICC_EA_TEST_SEAM: "1", AICC_BUILD_NOW_MS: String(Date.UTC(2026, 11, 31, 22, 0, 0) - 1) }, (m) => check(m.SS_ON === true, "one millisecond before the end: ON"));
