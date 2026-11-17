@@ -10,13 +10,15 @@
 #     infra/provision/rotate-webhook-secret.sh finalize  --confirm-production --id ID         verify, then RETIRE the old secret on both hosts (registry); a separate, explicit step
 #     infra/provision/rotate-webhook-secret.sh verify    --confirm-production                 read-only, any time (also after ANY backup restore): same secret on both hosts, neither retired, the Backend accepts the CP's signature
 #     infra/provision/rotate-webhook-secret.sh install-api-tool --confirm-production          (run does it) installs the API host tool: sha256 checked before and after
+#     infra/provision/rotate-webhook-secret.sh retired-list                                   prints the OFF-HOST retired fingerprints (Mac list + the repo file); no connection
 #   options: --id ID  --no-wait-drain  --drain-timeout SEC (600)  --poll-interval SEC (15)  --health-timeout SEC (90)  --preflight-cmd EXECUTABLE (read-only check run before and after)
 #            --api-hostname NAME  --bystander NAME  --cp-key FILE  --api-key FILE  --known-hosts FILE  --api-known-hosts FILE  --force-new-rotation  --emergency-outside-window  --i-reinstate-a-retired-secret
+#            --replace-retired-secret (a RETIRED secret is live, e.g. after a backup restore: the rotation is the cure; the new secret is still refused when it is retired)
 #
 # WHAT IS AND IS NOT GUARANTEED. The Backend knows ONE webhook secret (no previous slot), so the two hosts CANNOT change at the same instant. Between the Backend restart and the Control Plane promote
 #   (target well under 60 s) every delivery of the Control Plane is answered 401 and RE-QUEUED. Events survive because the Control Plane's outbox is durable (8 attempts with exponential backoff
 #   60 s .. 1 h, a requeue reconciliation, delivered_at only after a 2xx; a 401 is a failed attempt, never a drop), `event_id` is the Backend's primary key (a repeated delivery is a no-op) and the
-#   Backend applies only a strictly higher `sequence`. The script PROVES it afterwards: outbox exhausted == 0 and pending back to (at or below) the baseline, within a bounded wait.
+#   Backend applies only a strictly higher `sequence`. The script PROVES it afterwards, event by event: the Control Plane lists the undelivered outbox events before anything changes; afterwards every event still pending must have been pending before, nothing may be exhausted, within a bounded wait (finalize re-checks).
 #   The exposed secret is rotated ONLY when `verify` passes after the cutover, and RETIRED only by `finalize`.
 # ORDER: BACKEND FIRST, then the Control Plane (a failed Backend restart leaves the Control Plane untouched: one host to restore). Backend restart = a few seconds; the Plugin and the merchants keep
 #   their licences (entitlement lives in the Backend database); only the delivery of NEW events waits.
@@ -25,7 +27,7 @@
 #   terminal; this script refuses to run with tracing on, sets umask 077 and no core dump, and only ever compares FINGERPRINTS (first 16 hex of a salted SHA-256) afterwards.
 # SAFETY: --confirm-production is required; the host identity of BOTH hosts is verified before anything else (CP: stage id + host name; API: host name, the aicc-backend unit, /health); ssh is
 #   isolated (-F /dev/null, only the named identity and the pinned known hosts, no forwarding, no tty). Deploy windows: UTC minutes 18-26 and 48-56 of any hour, never UTC hours 02 and 03 (mutating
-#   commands only; plan / status / verify run any time). THE TOOLS NEVER DELETE A BACKUP, a retired secret or a staged secret.
+#   commands only; plan / status / verify run any time); the window is evaluated AGAIN right before apply (>= 180 s left), promote and finalize (>= 60 s). THE TOOLS NEVER DELETE A BACKUP, a retired secret or a staged secret.
 # Exit codes: 0 done, 1 refused or failed (the output says whether anything live changed and the exact next command), 2 usage.
 set -euo pipefail
 die() { printf 'REFUSED: %s\n' "$*" >&2; exit 1; }
@@ -33,16 +35,20 @@ usage() { sed -n 2,13p "${BASH_SOURCE[0]}" >&2; exit 2; }
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HARNESS=0
 
-# TEST SEAMS: AICC_TEST_HARNESS=1 swaps the ssh binary for a fake. It is refused unless AICC_TEST_SSH is an executable file under the system temp dir, and it is never silent.
+# TEST SEAMS: AICC_TEST_HARNESS=1 swaps the ssh binary for a fake. It is refused unless AICC_TEST_SSH is an executable file with a CANONICAL absolute path (no symlinked component) strictly below the FIXED temp allow-list
+#   (/tmp, /var/tmp, /private/tmp, /private/var/folders: $TMPDIR is never consulted), next to a `.aicc-test-harness-root` sentinel file, and never when running as root under sudo. It is never silent.
 under_tmp() {
-  local p d t; p="$1"; [ -e "$p" ] || return 1; [ ! -L "$p" ] || return 1
-  if [ -d "$p" ]; then d="$(cd "$p" && pwd -P)"; else d="$(cd "$(dirname "$p")" && pwd -P)/$(basename "$p")"; fi
-  for t in "${TMPDIR:-}" /tmp /var/tmp; do [ -n "$t" ] || continue; t="$(cd "$t" 2>/dev/null && pwd -P)" || continue; case "$d/" in "$t"/*) return 0 ;; esac; done
-  case "$d/" in /private/var/folders/*) return 0 ;; esac
+  local p canon t; p="$1"; [ -e "$p" ] || return 1; [ ! -L "$p" ] || return 1
+  case "$p" in /*) ;; *) return 1 ;; esac
+  if [ -d "$p" ]; then canon="$(cd "$p" && pwd -P)"; else canon="$(cd "$(dirname "$p")" && pwd -P)/$(basename "$p")"; fi
+  [ "$canon" = "$p" ] || return 1
+  for t in /tmp /var/tmp /private/tmp /private/var/folders; do case "$p" in "$t"/*) return 0 ;; esac; done
   return 1
 }
 if [ "${AICC_TEST_HARNESS:-0}" = "1" ]; then
   [ -n "${AICC_TEST_SSH:-}" ] && [ -x "${AICC_TEST_SSH:-}" ] && under_tmp "$AICC_TEST_SSH" || die "AICC_TEST_HARNESS=1 needs AICC_TEST_SSH to be an executable file under the system temp dir (the seam is for tests only)"
+  [ -f "$(dirname "$AICC_TEST_SSH")/.aicc-test-harness-root" ] && [ ! -L "$(dirname "$AICC_TEST_SSH")/.aicc-test-harness-root" ] || die "AICC_TEST_HARNESS=1: the fake ssh directory has no .aicc-test-harness-root sentinel file (the seam is for tests only)"
+  { [ "$(id -u)" != 0 ] || [ -z "${SUDO_USER:-}" ]; } || die "the test seams are never honoured by root running under sudo"
   HARNESS=1
   printf '*** TEST HARNESS ACTIVE: ssh is replaced by %s. Never set AICC_TEST_HARNESS on the Mac you use for production. ***\n' "$AICC_TEST_SSH" >&2
 fi
@@ -66,11 +72,14 @@ API_KNOWN_HOSTS=""
 CP_TOOL="/usr/local/sbin/aicc-rotate-webhook-secret"; API_TOOL="/usr/local/sbin/aicc-rotate-webhook-secret-api"
 API_TOOL_SRC="$HERE/host/aicc-rotate-webhook-secret-api"
 SUB=""; ID=""; CONFIRM=0; FINALIZE=0; WAIT_DRAIN=1; DRAIN_TIMEOUT=600; POLL=15; HEALTH_TIMEOUT=90; PREFLIGHT_CMD=""
-IGNORE_WINDOW=0; EMERGENCY=0; FORCE_NEW=0; REINSTATE=0; BACKEND_URL=""
+IGNORE_WINDOW=0; EMERGENCY=0; FORCE_NEW=0; REINSTATE=0; BACKEND_URL=""; REPLACE_RETIRED=0; WINDOW_MIN_LEFT=180
+# the OFF-HOST list of retired fingerprints (fingerprints only, never secrets): a full restore of /etc/aicc on both hosts wipes the host registries, this file is not on those hosts
+RETIRED_MAC="${AICC_ROT_RETIRED_FILE:-$HOME/.aicc-rotation/retired-fingerprints}"; RETIRED_REPO="$HERE/retired-webhook-fingerprints.txt"
+[ "$HARNESS" != 1 ] || [ -z "${AICC_ROT_RETIRED_REPO_FILE:-}" ] || RETIRED_REPO="$AICC_ROT_RETIRED_REPO_FILE"      # test seam: the repo-committed list
 [ $# -ge 1 ] || usage
 case "$1" in -h|--help) sed -n 2,40p "${BASH_SOURCE[0]}"; exit 0 ;; esac
 SUB="$1"; shift
-case "$SUB" in plan|--dry-run|run|resume|status|rollback|finalize|verify|install-api-tool) ;; *) echo "unknown subcommand: $SUB" >&2; usage ;; esac
+case "$SUB" in plan|--dry-run|run|resume|status|rollback|finalize|verify|install-api-tool|retired-list) ;; *) echo "unknown subcommand: $SUB" >&2; usage ;; esac
 [ "$SUB" != "--dry-run" ] || SUB="plan"
 need_arg() { [ $# -ge 2 ] || { echo "missing value for $1" >&2; usage; }; }
 harness_only() { [ "$HARNESS" = 1 ] || die "$1 exists only for the test harness (AICC_TEST_HARNESS=1)"; }
@@ -94,6 +103,7 @@ while [ $# -gt 0 ]; do
     --dry-run) [ "$SUB" = plan ] || die "--dry-run is the alias of the plan subcommand only"; shift ;;
     --emergency-outside-window) EMERGENCY=1; shift ;;
     --i-reinstate-a-retired-secret) REINSTATE=1; shift ;;
+    --replace-retired-secret) REPLACE_RETIRED=1; shift ;;
     --ignore-window) harness_only "$1"; IGNORE_WINDOW=1; shift ;;
     --cp-ip) need_arg "$@"; harness_only "$1"; CP_IP="$2"; shift 2 ;;
     --cp-user) need_arg "$@"; harness_only "$1"; CP_USER="$2"; shift 2 ;;
@@ -105,7 +115,7 @@ while [ $# -gt 0 ]; do
     *) echo "unknown argument: $1" >&2; usage ;;
   esac
 done
-[ "$CONFIRM" = 1 ] || die "every subcommand needs --confirm-production (this connects to the PRODUCTION hosts)"
+[ "$CONFIRM" = 1 ] || [ "$SUB" = retired-list ] || die "every subcommand needs --confirm-production (this connects to the PRODUCTION hosts)"
 [ -n "$API_KNOWN_HOSTS" ] || API_KNOWN_HOSTS="$KNOWN_HOSTS"
 [ -z "$ID" ] || [[ "$ID" =~ ^[0-9]{8}T[0-9]{6}Z$ ]] || die "--id must look like 20261117T182030Z (the UTC time the rotation started)"
 [[ "$DRAIN_TIMEOUT" =~ ^[0-9]{1,5}$ ]] && [[ "$HEALTH_TIMEOUT" =~ ^[0-9]{1,3}$ ]] || die "--drain-timeout / --health-timeout must be whole seconds"
@@ -174,19 +184,40 @@ field() { # <text> <LINE-TAG> <key>: the value of key=value on the last line tha
 banner() { printf '\n== %s ==\n' "$*"; }
 
 # ---- the gates ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-now_hhmm() { if [ "$HARNESS" = 1 ] && [ -n "${AICC_TEST_UTC_HHMM:-}" ]; then printf '%s' "$AICC_TEST_UTC_HHMM"; else date -u +%H:%M; fi; }
-in_window() {
-  local t h m; t="$(now_hhmm)"; h=$((10#${t%%:*})); m=$((10#${t##*:}))
-  [ "$h" -ne 2 ] && [ "$h" -ne 3 ] || return 1
-  if [ "$m" -ge 18 ] && [ "$m" -le 26 ]; then return 0; fi
-  if [ "$m" -ge 48 ] && [ "$m" -le 56 ]; then return 0; fi
-  return 1
+clock_hms() { # UTC HH:MM:SS; the harness can feed a SEQUENCE of readings (one line per reading) through AICC_TEST_CLOCK_FILE, or one fixed HH:MM through AICC_TEST_UTC_HHMM
+  if [ "$HARNESS" = 1 ] && [ -n "${AICC_TEST_CLOCK_FILE:-}" ] && [ -s "$AICC_TEST_CLOCK_FILE" ]; then
+    local first n; first="$(head -1 "$AICC_TEST_CLOCK_FILE")"; n="$(wc -l < "$AICC_TEST_CLOCK_FILE" | tr -d ' ')"
+    if [ "$n" -gt 1 ]; then tail -n +2 "$AICC_TEST_CLOCK_FILE" > "$AICC_TEST_CLOCK_FILE.t" && mv "$AICC_TEST_CLOCK_FILE.t" "$AICC_TEST_CLOCK_FILE"; fi
+    case "$first" in ??:??) first="$first:00" ;; esac
+    printf '%s' "$first"
+  elif [ "$HARNESS" = 1 ] && [ -n "${AICC_TEST_UTC_HHMM:-}" ]; then printf '%s:00' "$AICC_TEST_UTC_HHMM"
+  else date -u +%H:%M:%S; fi
 }
+window_eval() { # reads the clock ONCE: WIN_NOW, WIN_OPEN (0/1) and WIN_LEFT (seconds until the end of the current window)
+  local t h m s; t="$(clock_hms)"; WIN_NOW="$t"; h=$((10#${t%%:*})); m=$((10#$(printf '%s' "$t" | cut -d: -f2))); s=$((10#${t##*:}))
+  WIN_OPEN=0; WIN_LEFT=0
+  [ "$h" -ne 2 ] && [ "$h" -ne 3 ] || return 0
+  if [ "$m" -ge 18 ] && [ "$m" -le 26 ]; then WIN_OPEN=1; WIN_LEFT=$((26 * 60 + 59 - m * 60 - s)); fi
+  if [ "$m" -ge 48 ] && [ "$m" -le 56 ]; then WIN_OPEN=1; WIN_LEFT=$((56 * 60 + 59 - m * 60 - s)); fi
+  return 0
+}
+in_window() { window_eval; [ "$WIN_OPEN" = 1 ]; }
 window_gate() { # <what>: mutating commands only
   [ "$IGNORE_WINDOW" = 1 ] && return 0
   in_window && return 0
   case "$1" in resume|rollback) if [ "$EMERGENCY" = 1 ]; then echo "*** --emergency-outside-window: continuing OUTSIDE the deploy window because the hosts may be half rotated (the identity gates still apply) ***"; return 0; fi ;; esac
-  die "$1 is outside the deploy windows (UTC minutes 18-26 and 48-56 of any hour, never UTC hours 02 and 03; now is $(now_hhmm) UTC). Nothing was changed. Run it inside a window."
+  die "$1 is outside the deploy windows (UTC minutes 18-26 and 48-56 of any hour, never UTC hours 02 and 03; now is ${WIN_NOW:0:5} UTC). Nothing was changed. Run it inside a window."
+}
+window_recheck() { # <what> <minimum seconds left>: the window is evaluated AGAIN right before each live step; an abort is clean and resumable
+  [ "$IGNORE_WINDOW" = 1 ] && return 0
+  { [ "$EMERGENCY" = 1 ] && { [ "$SUB" = resume ] || [ "$SUB" = rollback ]; }; } && return 0
+  window_eval
+  if [ "$WIN_OPEN" != 1 ]; then
+    fail_phase window "the deploy window is CLOSED right before $1 (now $WIN_NOW UTC): nothing further is started" "\`$0 resume --confirm-production --id $ID\` inside the next window, or at once with --emergency-outside-window if the hosts disagree (deliveries only queue meanwhile, nothing is lost)"
+  fi
+  if [ "$WIN_LEFT" -lt "$2" ]; then
+    fail_phase window "only ${WIN_LEFT}s are left in this deploy window right before $1 (at least $2 s are required; now $WIN_NOW UTC): nothing further is started" "\`$0 resume --confirm-production --id $ID\` in the next window"
+  fi
 }
 local_gates() {
   local f
@@ -230,6 +261,36 @@ age_seconds() { python3 -I -c 'import calendar,sys,time; print(int(time.time() -
 cp_phase() { QUIET=1 cpc status --id "$1"; { printf '%s\n' "$CPOUT" | grep -E "^rotation: id=$1 " | sed -n 's/.* phase=\([a-z-]*\).*/\1/p' | tail -1; } || true; }
 unfinished_ids() { QUIET=1 cpc status; QUIET=1 apic status; { printf '%s\n' "$CPOUT"; printf '%s\n' "$APIOUT"; } | sed -n 's/^UNFINISHED id=\([0-9T]*Z\) .*/\1/p' | sort -u; }
 
+# ---- the OFF-HOST retired list -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+fp_ok() { [[ "$1" =~ ^[0-9a-f]{16}$ ]]; }
+retired_lookup() { # <fp>: prints "<file>" when the fingerprint is listed on this Mac or in the repo list (fingerprints only)
+  local f; for f in "$RETIRED_MAC" "$RETIRED_REPO"; do [ -f "$f" ] || continue; if grep -qE "^$1 " "$f" 2>/dev/null; then printf '%s\n' "$f"; fi; done
+}
+retired_add() { # <fp> <id>: idempotent per id, 0600 in a 0700 directory
+  local d; d="$(dirname "$RETIRED_MAC")"; mkdir -p "$d" && chmod 700 "$d" || die "cannot create $d"
+  grep -qE "^$1 [^ ]+ $2\$" "$RETIRED_MAC" 2>/dev/null || printf '%s %s %s\n' "$1" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$2" >> "$RETIRED_MAC"
+  chmod 600 "$RETIRED_MAC"
+}
+retired_listed_id() { # <id>: is a rotation's retirement listed off-host?
+  local f; for f in "$RETIRED_MAC" "$RETIRED_REPO"; do [ -f "$f" ] || continue; grep -qE " $1\$" "$f" 2>/dev/null && return 0; done; return 1
+}
+MAC_HITS=""
+mac_retired_hits() { # the three live fingerprints (CP file, CP rendered config, Backend env) against the off-host lists; sets MAC_HITS (text) and returns 0 when something is listed
+  local label fpv w
+  MAC_HITS=""
+  for w in "cp live" "cp config" "api env"; do
+    case "$w" in
+      "cp live") label="Control Plane secret file"; QUIET=1 cpc fingerprint --which live; fpv="$CPOUT"; [ "$CPRC" = 0 ] || continue ;;
+      "cp config") label="Control Plane rendered wp-config"; QUIET=1 cpc fingerprint --which config; fpv="$CPOUT"; [ "$CPRC" = 0 ] || continue ;;
+      *) label="Backend env file"; QUIET=1 apic fingerprint --which env; fpv="$APIOUT"; [ "$APIRC" = 0 ] || continue ;;
+    esac
+    fp_ok "$fpv" || continue
+    if [ -n "$(retired_lookup "$fpv")" ]; then MAC_HITS="$MAC_HITS
+  RETIRED_SECRET_IN_USE (off-host list): the $label holds fingerprint $fpv, which is listed as RETIRED in $(retired_lookup "$fpv" | head -1)"; fi
+  done
+  [ -n "$MAC_HITS" ]
+}
+
 # ---- install-api-tool ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 install_api_tool() {
   local want have got up_script tmp="${API_TOOL}.new"
@@ -258,15 +319,15 @@ fail_phase() { # <phase> <detail> <next>
 cmds_hint() { printf '`%s resume --confirm-production --id %s` (continue) or `%s rollback --confirm-production --id %s` (put the OLD, EXPOSED secret back on both hosts)' "$0" "$ID" "$0" "$ID"; }
 
 preflight_both() { # <id or empty>
-  local rc=0 idarg=""; [ -z "$1" ] || idarg="--id $1"
+  local rc=0 idarg="" rflag=""; [ -z "$1" ] || idarg="--id $1"; [ "$REPLACE_RETIRED" != 1 ] || rflag="--replace-retired-secret"
   banner "preflight: Control Plane"
-  cpc preflight $idarg
+  cpc preflight $idarg $rflag
   [ "$CPRC" = 0 ] || rc=1
   if [ "$CPRC" != 0 ] && printf '%s\n' "$CPOUT" | grep -qiE 'command not found|No such file|cannot execute|not allowed|a password is required|sudo:'; then
     echo "  hint: the Control Plane tool is probably not installed or sudo does not allow it (install-stack.sh --only scripts installs /usr/local/sbin/aicc-rotate-webhook-secret; docs/cutover/p38-webhook-rotation.md section 11)"
   fi
   banner "preflight: API host (the tool of THIS checkout, run from stdin: nothing is installed by this step)"
-  apic_stdin preflight $idarg
+  apic_stdin preflight $idarg $rflag
   [ "$APIRC" = 0 ] || rc=1
   return "$rc"
 }
@@ -292,16 +353,20 @@ transfer_and_stage() {
   [ "${rcs[0]}" = 0 ] && [ "${rcs[1]}" = 0 ] || return 1
 }
 
-drain_wait() { # <baseline pending>
-  local base="$1" start now p e
+drain_wait() { # event by event: every event still pending must have been pending BEFORE the rotation; nothing exhausted. Needs the baseline snapshot the Control Plane took at prepare.
+  local start now st line
   start="$(date +%s)"
   while :; do
-    QUIET=1 cpc outbox
-    p="$(field "$CPOUT" OUTBOX pending)"; e="$(field "$CPOUT" OUTBOX exhausted)"
-    if [ -z "$p" ] || [ -z "$e" ]; then echo "  outbox: could not be read ($(printf '%s' "$CPOUT" | tail -1))"; return 1; fi
-    echo "  outbox: pending=$p (baseline $base) exhausted=$e"
-    if [ "$e" != 0 ]; then echo "  EXHAUSTED EVENTS: $e. They are not deleted (the outbox keeps them) but they will not retry by themselves."; return 2; fi
-    if [ "$p" -le "$base" ]; then return 0; fi
+    QUIET=1 cpc drain-check --id "$ID"
+    line="$({ printf '%s\n' "$CPOUT" | grep -E '^DRAIN ' | tail -1; } || true)"
+    st="$(field "$line" DRAIN state)"
+    echo "  drain: ${line#DRAIN }"
+    case "$st" in
+      ok) return 0 ;;
+      exhausted) printf '%s\n' "$CPOUT" | grep -E '^EXHAUSTED_EVENT ' | sed 's/^/  /' || true; return 2 ;;
+      waiting) ;;
+      *) return 1 ;;
+    esac
     now="$(date +%s)"
     if [ $((now - start)) -ge "$DRAIN_TIMEOUT" ]; then return 3; fi
     sleep "$POLL"
@@ -344,10 +409,19 @@ observe_checks() { # bystander + Backend build/mode compared with the baseline r
 
 do_finalize_steps() {
   banner "finalize $ID: verify, then retire the old secret"
-  local u=""; [ -z "$BACKEND_URL" ] || u="--backend-url $BACKEND_URL"
+  local u="" oldfp=""; [ -z "$BACKEND_URL" ] || u="--backend-url $BACKEND_URL"
+  window_recheck "finalize" 60
   fingerprints_equal live env || fail_phase finalize "the fingerprints of the Control Plane and the Backend differ (or could not be read): refusing to retire anything" "run \`$0 status --confirm-production --id $ID\`"
   echo "  both hosts hold fingerprint $FP"
   probes || fail_phase finalize "a probe failed: the old secret is NOT retired" "investigate with \`$0 status\`; \`$0 rollback --id $ID\` is still possible (not finalized)"
+  QUIET=1 cpc drain-check --id "$ID"
+  echo "  $(printf '%s\n' "$CPOUT" | grep -E '^DRAIN ' | tail -1 || true)"
+  [ "$CPRC" = 0 ] || fail_phase finalize "the outbox is not drained or has exhausted events (re-checked event by event): the old secret is NOT retired" "wait and run \`$0 finalize --confirm-production --id $ID\` again; exhausted events: docs/cutover/p38-webhook-rotation.md section 6b"
+  QUIET=1 cpc fingerprint --which prev --id "$ID"; oldfp="$CPOUT"; [ "$CPRC" = 0 ] || { QUIET=1 cpc fingerprint --which retired --id "$ID"; oldfp="$CPOUT"; }
+  fp_ok "$oldfp" || fail_phase finalize "the previous secret's fingerprint could not be read from the Control Plane" "run \`$0 status --confirm-production --id $ID\`"
+  retired_add "$oldfp" "$ID"
+  echo "  RETIRED FINGERPRINT (off-host list $RETIRED_MAC): $oldfp $ID"
+  echo "  Store this line in the Site repo too (infra/provision/retired-webhook-fingerprints.txt): a 16-hex domain-separated hash is not usable as a secret, and a restore of /etc/aicc on both hosts wipes the host registries but not this list."
   apic finalize --id "$ID"; [ "$APIRC" = 0 ] || fail_phase finalize "the API host refused to finalize" "see the output above; nothing was deleted anywhere"
   cpc finalize --id "$ID"; [ "$CPRC" = 0 ] || fail_phase finalize "the Control Plane refused to finalize (the API host already did: its registry holds the retired fingerprint)" "run \`$0 finalize --confirm-production --id $ID\` again (every step is idempotent)"
   jlog finalized
@@ -364,6 +438,7 @@ do_verify_steps() { # <quiet-summary-wanted>
   all="$all
 $APIOUT"
   if fingerprints_equal live env; then echo "  both hosts hold the same secret: fingerprint $FP"; else echo "  FINGERPRINT_MISMATCH: the Control Plane and the Backend do NOT hold the same secret (or a fingerprint could not be read)"; bad=1; fi
+  if mac_retired_hits; then printf '%s\n' "$MAC_HITS"; all="$all$MAC_HITS"; bad=1; else echo "  off-host retired list: no live fingerprint is listed ($RETIRED_MAC, $(basename "$RETIRED_REPO"))"; fi
   cpc probe-new $u; [ "$CPRC" = 0 ] || bad=1
   apic probe-new; [ "$APIRC" = 0 ] || bad=1
   if [ -n "$latest" ] && [ "$(field "$latest" LATEST phase)" = "rolled-back" ]; then echo "  ROLLED_BACK_EXPOSED_SECRET_IN_SERVICE: the last rotation ($(field "$latest" LATEST id)) was rolled back: the EXPOSED secret is in service. Run the rotation again."; bad=1; fi
@@ -385,7 +460,7 @@ do_rotation() {
   if [ "$cp_ph" = rolled-back ]; then die "id $ID was rolled back; start a new rotation with \`$0 run --confirm-production\`"; fi
 
   banner "phase 1/10: preflight (both hosts, read-only)"
-  preflight_both "$ID" || fail_phase preflight "a preflight check failed on a host (see FAIL lines)" "fix the cause, then \`$0 plan --confirm-production\` and \`$0 run --confirm-production\`"
+  preflight_both "$ID" || fail_phase preflight "a preflight check failed on a host (see FAIL lines)$(printf '%s\n%s\n' "$CPOUT" "$APIOUT" | grep -q RETIRED_SECRET_IN_USE && echo "; a RETIRED secret is live: re-run with --replace-retired-secret")" "fix the cause, then \`$0 plan --confirm-production\` and \`$0 run --confirm-production\`"
   base_p="$(field "$CPOUT" OUTBOX pending)"
   QUIET=1 cpc status --id "$ID"
   if printf '%s\n' "$CPOUT" | grep -q 'baseline_pending='; then base_p="$(printf '%s\n' "$CPOUT" | sed -n 's/.*baseline_pending=\([0-9]*\).*/\1/p' | head -1)"; base_e="$(printf '%s\n' "$CPOUT" | sed -n 's/.*baseline_exhausted=\([0-9]*\).*/\1/p' | head -1)"; fi
@@ -429,6 +504,7 @@ do_rotation() {
   jlog staged "fp=$cpnext"
 
   banner "phase 6/10: apply (API host): complete env copy, ONLY the one line replaced, restart aicc-backend, wait for health with the SAME build"
+  window_recheck "the Backend change (apply)" "$WINDOW_MIN_LEFT"
   window_start="$(date +%s)"
   apic apply --id "$ID"
   if [ "$APIRC" != 0 ]; then
@@ -443,6 +519,7 @@ do_rotation() {
   jlog applied
 
   banner "phase 7/10: promote (Control Plane): keep the old as .prev, rename the new into place, render wp-config, reload php-fpm, confirm the rendered fingerprint"
+  window_recheck "the Control Plane promote" 1
   cpc promote --id "$ID" --backend-already-restarted
   if [ "$CPRC" != 0 ]; then
     case "$CPRC" in
@@ -460,16 +537,16 @@ do_rotation() {
   probes || fail_phase probes "a probe failed (see FAIL above): the cutover happened but is NOT verified" "investigate with \`$0 status --confirm-production --id $ID\`; \`$0 rollback --confirm-production --id $ID\` puts the OLD secret back on both hosts"
   jlog probes-ok
 
-  banner "phase 9/10: drain: the outbox must be back at the baseline with nothing exhausted"
+  banner "phase 9/10: drain: no event sent in the window may still be pending, and nothing may be exhausted"
   if [ "$WAIT_DRAIN" = 1 ]; then
-    local drc=0; drain_wait "$base_p" || drc=$?
+    local drc=0; drain_wait || drc=$?
     case "$drc" in
-      0) echo "  the outbox is back at (or below) the baseline and nothing is exhausted" ;;
-      2) fail_phase drain "outbox events are EXHAUSTED after the rotation" "look at the events with \`sudo aicc-wp aicc-mail health\` on the Control Plane; do NOT finalize until they are understood; $(cmds_hint)" ;;
+      0) echo "  every event that is still pending was already pending before the rotation, and nothing is exhausted" ;;
+      2) fail_phase drain "outbox events are EXHAUSTED after the rotation" "do NOT finalize. They are never deleted; the reconciliation (docs/cutover/p38-webhook-rotation.md section 6b: AICC_LM_Entitlement_Dispatcher::reconcile_exhausted(), run by the cron hook aicc_lm_entitlement_delivery) re-queues the newest row per activation; then \`$0 resume --confirm-production --id $ID\`. Or $(cmds_hint)" ;;
       3) fail_phase drain "the outbox did not drain within ${DRAIN_TIMEOUT}s (events are NOT lost: the outbox is durable and keeps retrying with backoff up to 1 h)" "wait and \`$0 resume --confirm-production --id $ID\` (it re-checks the drain), or $(cmds_hint)" ;;
       *) fail_phase drain "the outbox could not be read" "$(cmds_hint)" ;;
     esac
-  else echo "  --no-wait-drain: the drain was NOT checked. Before you finalize, confirm with \`$0 status\` and \`sudo aicc-wp aicc-mail health\` that pending is at the baseline ($base_p) and exhausted is 0."; fi
+  else echo "  --no-wait-drain: the drain was NOT checked. \`finalize\` re-checks it event by event and refuses until it passes (baseline: $base_p pending event(s) before the rotation)."; fi
   jlog drain-ok
 
   banner "phase 10/10: bystander + Backend build unchanged"
@@ -490,7 +567,7 @@ cmd_plan() {
   local_gates
   verify_identity_cp; verify_identity_api
   in_window && w="OPEN" || true
-  echo "Deploy window right now: $w (UTC $(now_hhmm); windows are minutes 18-26 and 48-56, never UTC hours 02/03). A mutating command refuses outside a window."
+  echo "Deploy window right now: $w (UTC ${WIN_NOW:0:5}, ${WIN_LEFT}s left in it; windows are minutes 18-26 and 48-56, never UTC hours 02/03). A mutating command refuses outside a window."
   preflight_both "" || rc=1
   base_p="$(field "$CPOUT" OUTBOX pending)"
   local have want
@@ -518,9 +595,24 @@ EOF
   echo; echo "PLAN OK: every preflight passed. Nothing was changed. Next: $0 run --confirm-production   (inside a deploy window)"
 }
 
+retired_gate() { # a RETIRED secret live on either host is the situation a rotation cures: it needs the explicit flag (and prints a warning); the NEW secret is still refused by the tools when it is retired
+  local live_retired=0
+  QUIET=1 cpc status; QUIET=1 apic status
+  { printf '%s\n%s\n' "$CPOUT" "$APIOUT" | grep -q RETIRED_SECRET_IN_USE; } && live_retired=1
+  mac_retired_hits && live_retired=1
+  RETIRED_LIVE=$live_retired
+  [ "$live_retired" = 0 ] && return 0
+  printf '%s\n' "$MAC_HITS"
+  if [ "$REPLACE_RETIRED" != 1 ]; then
+    die "a RETIRED (exposed) secret is live on at least one host (see above / run \`$0 status --confirm-production\`). A rotation is exactly the cure: re-run with --replace-retired-secret. Nothing was changed."
+  fi
+  echo "WARNING: --replace-retired-secret: a RETIRED secret is live; this rotation replaces it. It stays exposed until the cutover is verified."
+}
+RETIRED_LIVE=0
 cmd_run() {
   gates 1 "run"
   local latest lid lph lat
+  retired_gate
   if [ -n "$ID" ]; then
     local ph; ph="$(cp_phase "$ID")"
     [ -z "$ph" ] || echo "id $ID exists on the Control Plane (phase $ph): continuing it (same as resume)"
@@ -528,7 +620,7 @@ cmd_run() {
   fi
   QUIET=1 cpc status
   latest="$(printf '%s\n' "$CPOUT" | grep -E '^LATEST ' | tail -1 || true)"
-  if [ -n "$latest" ] && [ "$FORCE_NEW" != 1 ]; then
+  if [ -n "$latest" ] && [ "$FORCE_NEW" != 1 ] && [ "$RETIRED_LIVE" != 1 ]; then
     lid="$(field "$latest" LATEST id)"; lph="$(field "$latest" LATEST phase)"; lat="$(field "$latest" LATEST at)"
     if { [ "$lph" = promoted ] || [ "$lph" = finalized ]; } && [ "$(age_seconds "$lat")" -lt 86400 ]; then
       echo "NO-OP: rotation $lid reached phase '$lph' at $lat (less than 24 h ago). Nothing was changed."
@@ -546,6 +638,7 @@ cmd_run() {
 
 cmd_resume() {
   gates 1 "resume"
+  retired_gate
   if [ -z "$ID" ]; then
     local u; u="$(unfinished_ids)"
     [ -n "$u" ] || { echo "nothing to resume: no unfinished rotation on either host. (A failure before the first host step leaves nothing behind: run \`$0 run --confirm-production\`.)"; return 0; }
@@ -561,6 +654,7 @@ cmd_status() {
   banner "Control Plane"; cpc status ${ID:+--id "$ID"}; local a="$CPRC"
   banner "API host"; apic status ${ID:+--id "$ID"}; local b="$APIRC"
   if [ "$a" != 0 ] || [ "$b" != 0 ]; then echo; echo "STATUS: problems reported (exit codes CP $a, API $b)"; printf '%s\n%s\n' "$CPOUT" "$APIOUT" | grep -q RETIRED_SECRET_IN_USE && echo "RETIRED_SECRET_IN_USE: see above"; exit 1; fi
+  if mac_retired_hits; then printf '%s\n' "$MAC_HITS"; echo; echo "STATUS: problems reported (the off-host retired list)"; exit 1; fi
   QUIET=1 cpc outbox; echo; echo "STATUS OK. $(printf '%s' "$CPOUT" | tail -1)"
 }
 
@@ -572,9 +666,17 @@ cmd_rollback() {
     [ "$(printf '%s\n' "$u" | wc -l | tr -d ' ')" = 1 ] || die "more than one unfinished rotation ($(printf '%s' "$u" | tr '\n' ' ')): name one with --id"
     ID="$u"
   fi
-  local ph; ph="$(cp_phase "$ID")"
+  # EVERYTHING is read first, from BOTH hosts and the off-host list, and nothing is touched when any of them says the rotation was finalized or its old secret was retired
+  local ph aph fin=""
+  ph="$(cp_phase "$ID")"
+  QUIET=1 apic status --id "$ID"; aph="$({ printf '%s\n' "$APIOUT" | sed -n "s/^rotation: id=$ID phase=\([a-z-]*\).*/\1/p" | tail -1; } || true)"
   [ -n "$ph" ] || die "the Control Plane has no rotation with id $ID"
-  if [ "$ph" = finalized ] && [ "$REINSTATE" != 1 ]; then die "rotation $ID is FINALIZED: its old secret is RETIRED (it was exposed). Rolling back would put an exposed secret back in service. If you really must, a manual decision: --i-reinstate-a-retired-secret (verify then keeps failing RETIRED_SECRET_IN_USE until a new rotation). Nothing was changed."; fi
+  [ "$ph" != finalized ] || fin="$fin the Control Plane journal says finalized;"
+  [ "$aph" != finalized ] || fin="$fin the API host journal says finalized;"
+  QUIET=1 cpc registry-check --id "$ID"; printf '%s\n' "$CPOUT" | grep -q 'listed=yes' && fin="$fin the Control Plane registry lists this rotation's old secret as retired;"
+  QUIET=1 apic registry-check --id "$ID"; printf '%s\n' "$APIOUT" | grep -q 'listed=yes' && fin="$fin the API host registry lists this rotation's old secret as retired;"
+  if retired_listed_id "$ID"; then fin="$fin the off-host retired list names this rotation;"; fi
+  if [ -n "$fin" ] && [ "$REINSTATE" != 1 ]; then die "rotation $ID: ${fin%;}. Its old secret is RETIRED (it was exposed): rolling back would put an exposed secret back in service. If you really must, a manual decision: --i-reinstate-a-retired-secret (verify then keeps failing RETIRED_SECRET_IN_USE until a new rotation). Nothing was changed on either host."; fi
   local re=""; [ "$REINSTATE" != 1 ] || re="--i-reinstate-a-retired-secret"
   banner "rollback $ID: Control Plane first, then the Backend"
   cpc rollback --id "$ID" $re
@@ -584,7 +686,7 @@ cmd_rollback() {
   jlog rolled-back
   local u=""; [ -z "$BACKEND_URL" ] || u="--backend-url $BACKEND_URL"
   cpc probe-new $u; apic probe-new
-  if [ "$WAIT_DRAIN" = 1 ]; then local drc=0; QUIET=1 cpc status --id "$ID"; local bp; bp="$(printf '%s\n' "$CPOUT" | sed -n 's/.*baseline_pending=\([0-9]*\).*/\1/p' | head -1)"; drain_wait "${bp:-0}" || drc=$?; [ "$drc" = 0 ] || echo "  (the outbox has not drained yet: events are not lost; check \`$0 status\` later)"; fi
+  if [ "$WAIT_DRAIN" = 1 ]; then local drc=0; drain_wait || drc=$?; [ "$drc" = 0 ] || echo "  (the outbox has not drained yet: events are not lost; check \`$0 status\` later)"; fi
   echo
   echo "ROLLED BACK. THE OLD SECRET IS BACK IN SERVICE ON BOTH HOSTS, AND THAT SECRET IS THE EXPOSED ONE. THE ROTATION IS NOT DONE: RE-RUN \`$0 run --confirm-production\` AS SOON AS THE CAUSE IS FIXED."
 }
@@ -598,6 +700,14 @@ cmd_finalize() {
 cmd_verify() {
   local_gates; verify_identity_cp; verify_identity_api
   do_verify_steps 0 || exit 1
+}
+
+cmd_retired_list() {
+  echo "off-host retired fingerprints (fingerprints only, never secrets):"
+  local f n=0; for f in "$RETIRED_MAC" "$RETIRED_REPO"; do
+    if [ -f "$f" ]; then echo "  $f:"; grep -E '^[0-9a-f]{16} ' "$f" | sed 's/^/    /' || true; n=$((n + 1)); else echo "  $f: (absent)"; fi
+  done
+  echo "Store the lines of the first file in $RETIRED_REPO (commit it): the host registries are wiped by a full restore of /etc/aicc, these lists are not on the hosts."
 }
 
 cmd_install() {
@@ -614,4 +724,5 @@ case "$SUB" in
   finalize) cmd_finalize ;;
   verify) cmd_verify ;;
   install-api-tool) cmd_install ;;
+  retired-list) cmd_retired_list ;;
 esac

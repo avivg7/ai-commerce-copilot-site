@@ -351,6 +351,7 @@ step_scripts() {
   # the webhook-secret rotation tool (Control Plane half) and its non-mutating Backend probe (run by `wp eval-file` as aicc-cp): docs/cutover/p38-webhook-rotation.md. The API half is delivered over ssh by rotate-webhook-secret.sh (that host has no installer)
   install_file "$INFRA/provision/host/aicc-rotate-webhook-secret" "$SBIN/aicc-rotate-webhook-secret" 0755 root:root
   install_file "$INFRA/provision/host/webhook-probe.php" "$LIB_DIR/webhook-probe.php" 0644 root:root
+  install_file "$INFRA/provision/host/outbox-snapshot.php" "$LIB_DIR/outbox-snapshot.php" 0644 root:root       # read-only list of the outbox events not yet delivered (ids and counters only)
   # release tooling (host side)
   [ -f "$INFRA/release/activate-release.sh" ] || die "infra/release missing from the bundle"
   for f in activate-release.sh rollback-release.sh smoke-cp.sh smoke-site.sh warm-cp.sh; do install_file "$INFRA/release/$f" "$LIB_DIR/release/$f" 0755 root:root; done

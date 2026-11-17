@@ -1,0 +1,4 @@
+# Retired AICC_ENTITLEMENT_WEBHOOK_SECRET fingerprints (one per line: <16 hex> <UTC time> <rotation id>). FINGERPRINTS ONLY, never a secret:
+# a fingerprint is the first 16 hex of SHA-256("aicc-webhook-secret-fingerprint-v1\n" + secret) and cannot be used as a secret.
+# `rotate-webhook-secret.sh finalize` prints the line to add. `verify` / `run` / `status` fail RETIRED_SECRET_IN_USE when a LIVE fingerprint is listed here or in ~/.aicc-rotation/retired-fingerprints,
+# even when a restore of /etc/aicc wiped the registries on both hosts. Commit this file.
