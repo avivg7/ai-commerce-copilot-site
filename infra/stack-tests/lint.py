@@ -54,7 +54,7 @@ SH = [p for p in files(".sh")]
 # files that are sourced libraries or test runners (tests deliberately continue after a failing command, so they use `set -uo pipefail`)
 EXEMPT_SET_E = {
     "lib/common.sh": "sourced library", "lib/ip-guard.sh": "sourced library", "lib/ssh-session.sh": "sourced library", "lib/release-common.sh": "sourced library", "lib/backup-common.sh": "sourced library", "lib/t.sh": "sourced test harness",
-    "test_provision.sh": "test runner (must continue after a failing assertion)", "test_p37_wpconfig.sh": "test runner (must continue after a failing assertion)", "test_p38_brevo.sh": "test runner (must continue after a failing assertion)", "test_p38_key.sh": "test runner (must continue after a failing assertion)", "test_promote.sh": "test runner (must continue after a failing assertion)", "test_plugin_publish.sh": "test runner (must continue after a failing assertion)", "test_release.sh": "test runner (must continue after a failing assertion)",
+    "test_provision.sh": "test runner (must continue after a failing assertion)", "test_p37_wpconfig.sh": "test runner (must continue after a failing assertion)", "test_p38_brevo.sh": "test runner (must continue after a failing assertion)", "test_p38_key.sh": "test runner (must continue after a failing assertion)", "test_p38_rotation.sh": "test runner (must continue after a failing assertion)", "test_promote.sh": "test runner (must continue after a failing assertion)", "test_plugin_publish.sh": "test runner (must continue after a failing assertion)", "test_release.sh": "test runner (must continue after a failing assertion)",
     "test_backup.sh": "test runner (must continue after a failing assertion)", "test_lint.sh": "test runner (must continue after a failing assertion)", "run-all.sh": "runs every suite even when one fails", "test_ubuntu.sh": "test runner (cleans up through a trap, must report every failure)", "ubuntu-inner.sh": "test runner inside the container (must continue after a failing assertion)",
     "verify-droplet.sh": "pre-existing stage-1 script (read-only verifier that reports every failure), not changed here",
     "aicc-security-updates.sh": "records the exit code of each step (list refresh, upgrade) and ALWAYS writes the status file for AICC Ops, then fails the unit itself; -e would skip the status write",
@@ -373,6 +373,86 @@ oexpect("provision/host/aicc-set-brevo-key" in isr3 and "aicc-set-brevo-key" in 
 if not os.environ.get("AICC_LINT_INFRA"):      # the negative tests lint a copy of infra/ only (no docs/)
     for d3 in ("docs/cutover/p38-brevo-host-update.md", "docs/cutover/p38-brevo-owner-steps.md"):
         oexpect(os.path.exists(os.path.join(ROOT, d3)), os.path.join(ROOT, d3), "the P38 procedure must be documented")
+print("== P38 webhook-secret rotation: the three scripts and the probe (presence / structure; what they DO is proved by test_p38_rotation.sh) ==")
+import ast as _ast
+rot_sh = os.path.join(INFRA, "provision/rotate-webhook-secret.sh")
+rot_cp = os.path.join(INFRA, "provision/host/aicc-rotate-webhook-secret")
+rot_api = os.path.join(INFRA, "provision/host/aicc-rotate-webhook-secret-api")
+rot_php = os.path.join(INFRA, "provision/host/webhook-probe.php")
+for pth, what in ((rot_sh, "the Mac orchestrator"), (rot_cp, "the Control Plane host tool"), (rot_api, "the API host tool"), (rot_php, "the probe script")):
+    if not os.path.exists(pth):
+        fail(pth, "the rotation %s must exist" % what)
+if all(os.path.exists(x) for x in (rot_sh, rot_cp, rot_api, rot_php)):
+    rsh, rcp_, rapi_, rphp = read(rot_sh), read(rot_cp), read(rot_api), read(rot_php)
+    for needle, why in (("must run as root", "the non-root refusal"), ("fcntl.flock", "the non-blocking lock"), ("os.O_EXCL", "exclusive temp files"), ("os.replace", "atomic rename"), ("os.fsync", "fsync"), ("os.fstat(fd).st_size", "the short-write check"),
+                        ("O_NOFOLLOW", "no symlinks"), ("S_ISREG", "regular files only"), ("logger", "the audit line"), ("aicc-webhook-rotate", "the audit tag"), ("TEST HARNESS ACTIVE", "seam banner"), ("under_tmp", "seam gate"), ("sys.flags.isolated", "python isolated mode"),
+                        ("RETIRED_SECRET_IN_USE", "the retired-secret failure"), ("webhook-secret-retired.fp", "the registry"), ("aicc-webhook-secret-fingerprint-v1", "the fingerprint domain tag"), ("secrets.token_hex(32)", "the secret is generated on the host"),
+                        ("--backend-already-restarted", "the Backend-first guard"), ("--i-reinstate-a-retired-secret", "the explicit reinstatement"), ("STATE UNKNOWN", "post-failure wording"), ("stdout is a terminal", "emit-next refuses a terminal"),
+                        ("aicc-render-wp-config", "the renderer"), ("php8.3-fpm", "the reload"), ("webhook_payload_malformed", "the non-mutating probe verdict"), ("webhook_signature_invalid", "the old-secret verdict"), ("aicc-entitlement-webhook-v1", "the signing domain tag")):
+        oexpect(needle in rcp_, rot_cp, "rotation CP tool lost: %s (%s)" % (needle, why))
+    for needle, why in (("must run as root", "the non-root refusal"), ("fcntl.flock", "the non-blocking lock"), ("os.O_EXCL", "exclusive temp files"), ("os.replace", "atomic rename"), ("os.fsync", "fsync"), ("os.fstat(fd).st_size", "the short-write check"),
+                        ("logger", "the audit line"), ("aicc-webhook-rotate", "the audit tag"), ("TEST HARNESS ACTIVE", "seam banner"), ("under_tmp", "seam gate"), ("sys.flags.isolated", "python isolated mode"),
+                        ("RETIRED_SECRET_IN_USE", "the retired-secret failure"), ("--env-file", "the unit must read the env file"), ("systemctl", "restart"), ("backend.env.pre-webhook-rotation-", "the complete env copy"),
+                        ("ENTITLEMENT_WEBHOOK_SECRET=", "only that line"), ("nourishvik-care", "the bystander"), ("inspect", "the bystander is only inspected"), ("STATE UNKNOWN", "post-failure wording"), ("stdin is a terminal", "stage refuses a terminal"),
+                        ("webhook_payload_malformed", "the probe verdict"), ("wait_health", "the health wait"), ("restore_env", "the automatic restore")):
+        oexpect(needle in rapi_, rot_api, "rotation API tool lost: %s (%s)" % (needle, why))
+    oexpect(re.search(r'\["docker", "(?!inspect")', rapi_) is None and 'run(["docker", "inspect"' in rapi_, rot_api, "the API tool may only INSPECT the bystander container (never stop, restart, exec or remove it)")
+    for pth, src in ((rot_cp, rcp_), (rot_api, rapi_)):
+        tree = _ast.parse(src)
+        bad = []
+        for n_ in _ast.walk(tree):
+            if isinstance(n_, _ast.Call):
+                nm = _ast.unparse(n_.func) if hasattr(_ast, "unparse") else ""
+                if nm in ("os.remove", "os.truncate", "os.rmdir", "shutil.rmtree", "os.removedirs", "shutil.move"):
+                    bad.append(nm)
+                if nm == "os.unlink" and hasattr(_ast, "unparse") and _ast.unparse(n_.args[0]) not in ("tmp", "p", "os.path.join(sd, n)"):
+                    bad.append("os.unlink(%s)" % _ast.unparse(n_.args[0]))
+        oexpect(not bad, pth, "the rotation tools must never delete a secret or a backup (only their own temp files): %s" % ", ".join(bad))
+        oexpect(not re.search(r"(?m)^\s*(set -x|bash -x)|\b(curl|wget)\b *[-h]|\beval\(|\bexec\(", src), pth, "the rotation tools must never trace, fetch or eval")
+        oexpect(not re.search(r"subprocess\.\w+\(\s*\[\s*\"(rm|shred|truncate)\"", src), pth, "the rotation tools must never run rm, shred or truncate")
+        leaks_ = []
+        for n_ in _ast.walk(tree):
+            if isinstance(n_, _ast.Call) and hasattr(_ast, "unparse") and _ast.unparse(n_.func) in ("say", "die", "print", "audit", "append_state", "sys.stdout.write", "sys.stderr.write", "os.write"):
+                safe_ = set()
+                for a_ in list(n_.args) + [k_.value for k_ in n_.keywords]:
+                    for sub_ in _ast.walk(a_):
+                        if isinstance(sub_, _ast.Call) and _ast.unparse(sub_.func) in ("fp", "len"):
+                            safe_ |= {id(x_) for x_ in _ast.walk(sub_)}
+                for a_ in list(n_.args) + [k_.value for k_ in n_.keywords]:
+                    for sub_ in _ast.walk(a_):
+                        if isinstance(sub_, _ast.Name) and sub_.id in ("new", "secret", "v", "data", "nv", "pv", "rv", "old_val", "cur", "curv", "val", "raw", "chk") and id(sub_) not in safe_:
+                            leaks_.append("%s(... %s ...) line %d" % (_ast.unparse(n_.func), sub_.id, n_.lineno))
+        oexpect(not leaks_ or (pth == rot_cp and all("os.write" in x_ for x_ in leaks_)), pth, "the rotation tools must never print a secret variable (fingerprints and lengths only): %s" % "; ".join(leaks_[:3]))
+    for needle, why in (('CP_IP="157.230.110.211"', "the Control Plane address"), ('API_IP="139.59.157.231"', "the API address"), ('CP_STAGE_ID="3e897286ce82e55f4d866acf0d526a5f"', "the production stage id gate"), ("aicc_cp_prod_operator", "the CP operator identity"),
+                        ("aicc_digitalocean_prod", "the API operator identity"), ("known_hosts_aicc_prod", "the pinned host keys"), ("StrictHostKeyChecking=yes", "pinned host key"), ("BatchMode=yes", "no password prompts"), ("IdentitiesOnly=yes", "only the named identity"),
+                        ("-F /dev/null", "ssh isolated from the owner's config"), ("ClearAllForwardings=yes", "no forwarding"), ("ProxyJump=none", "no jump host"), ("GlobalKnownHostsFile=/dev/null", "only the pinned known hosts"), ("RequestTTY=no", "no tty"),
+                        ("--confirm-production", "the explicit confirmation"), ("umask 077", "private files"), ("unset HISTFILE", "no history"), ("ulimit -c 0", "no core dump"), ("BASH_XTRACEFD", "tracing refusal"), ("SHELLOPTS", "tracing refusal"),
+                        ("PIPESTATUS", "both ends of the transfer pipe are checked"), ("emit-next", "the transfer"), ("set -euo pipefail", "strict mode"), ("NOT ATOMIC", "the honest statement"), ("READY TO FINALIZE", "finalize is a separate step"),
+                        ("RETIRED_SECRET_IN_USE", "verify's loud failure"), ("TEST HARNESS ACTIVE", "seam banner"), ("under_tmp", "seam gate"), ("harness_only", "the test-only flags"), ("UNKNOWN: the", "post-failure wording"),
+                        ('[ "$h" -ne 2 ] && [ "$h" -ne 3 ]', "never UTC hours 02 and 03"), ('[ "$m" -ge 18 ] && [ "$m" -le 26 ]', "window minutes 18-26"), ('[ "$m" -ge 48 ] && [ "$m" -le 56 ]', "window minutes 48-56"),
+                        ("--emergency-outside-window", "resume / rollback only"), ("--i-reinstate-a-retired-secret", "the explicit reinstatement"), ("sha256sum", "the API tool is verified before and after"), ("API_TOOL_SRC", "the API tool is delivered from this checkout")):
+        oexpect(needle in rsh, rot_sh, "rotation orchestrator lost: %s (%s)" % (needle, why))
+    oexpect(re.search(r'--ignore-window\) harness_only "\$1"', rsh) is not None, rot_sh, "--ignore-window must exist only for the test harness")
+    oexpect(re.search(r'--cp-ip\) need_arg "\$@"; harness_only', rsh) is not None and re.search(r'--api-ip\) need_arg "\$@"; harness_only', rsh) is not None, rot_sh, "a different host address must exist only for the test harness")
+    oexpect(not re.search(r"(?m)^\s*(set -x|bash -x)\b", rsh), rot_sh, "the rotation orchestrator must never trace")
+    oexpect(not re.search(r"(?m)^[^#\n]*(^|[;&|(] *)(tee|history)[ \t]", rsh), rot_sh, "the rotation orchestrator must not tee or record history")
+    oexpect(not re.search(r"(?i)(echo|printf)[^|\n]*\$\{?(secret|new_secret|old_secret|token)\b", rsh), rot_sh, "the rotation orchestrator must never print a secret variable")
+    oexpect(not re.search(r"(?m)^[^#\n]*\b(rm|shred|truncate)\b", re.sub(r'rm -rf "\$WORK"|rm -f "\$ef" "\$of"|rm -f \\"\\\$t\\"|sudo rm -f \$tmp|rm -f \$tmp', "", rsh.replace('rm -f "\\$t"', ""))), rot_sh, "the rotation orchestrator may only remove its own scratch files and the failed upload temp copy")
+    for needle, why in (("AICC_LM_Entitlement_Dispatcher::sign", "the production signing path"), ("wp_safe_remote_post", "the production HTTP path (allow-list)"), ('{"probe":"aicc-webhook-rotation"}', "the malformed, non-mutating body"), ("constant_fp", "the running constant's fingerprint"),
+                        ("AICC_ENTITLEMENT_WEBHOOK_SECRET", "the running constant"), ("ABSPATH", "wp eval-file only"), ("https://api.copilt.org", "the default Backend")):
+        oexpect(needle in rphp, rot_php, "rotation probe lost: %s (%s)" % (needle, why))
+    oexpect(not re.search(r"echo[^;\n]*\$aicc_probe_(secret|sig)\b[^;\n]*;", re.sub(r"hash\([^;]*;", "", rphp)) and "print_r" not in rphp and "var_dump" not in rphp, rot_php, "the probe must print only the fingerprint, the status and the error code")
+    isr_rot = read(os.path.join(INFRA, "provision/install-stack.sh"))
+    oexpect("provision/host/aicc-rotate-webhook-secret\" " in isr_rot and "aicc-rotate-webhook-secret\"" in isr_rot, os.path.join(INFRA, "provision/install-stack.sh"), "must install the rotation tool (aicc-rotate-webhook-secret)")
+    oexpect("provision/host/webhook-probe.php" in isr_rot, os.path.join(INFRA, "provision/install-stack.sh"), "must install the probe script (webhook-probe.php)")
+    if not os.environ.get("AICC_LINT_INFRA"):
+        d_ = os.path.join(ROOT, "docs/cutover/p38-webhook-rotation.md")
+        oexpect(os.path.exists(d_), d_, "the webhook rotation procedure must be documented")
+        if os.path.exists(d_):
+            dt_ = read(d_)
+            for needle in ("NOT atomic", "not atomic", "RETIRED_SECRET_IN_USE", "backup-restore boundary", "does NOT do"):
+                oexpect(needle in dt_, d_, "the rotation doc lost its statement: %s" % needle)
+
 print("== secrets and addresses ==")
 SECRET_RES = [
     ("private key block", re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----")), ("AWS key", re.compile(r"AKIA[0-9A-Z]{16}")), ("token", re.compile(r"(gh[pousr]_[A-Za-z0-9]{30,}|xox[baprs]-[0-9A-Za-z-]{10,}|sk_live_[0-9A-Za-z]{16,})")),

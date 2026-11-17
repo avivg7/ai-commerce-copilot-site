@@ -147,8 +147,14 @@ cpc() {
   return 0
 }
 API_TAIL() { printf -- '--expect-hostname %s --bystander %s --health-timeout %s' "$API_HOSTNAME_WANT" "$BYSTANDER" "$HEALTH_TIMEOUT"; }
+API_INST=""      # unknown / 1 installed / 0 not installed: a read-only call falls back to the checkout's file over stdin
 apic() {
-  local out rc=0
+  local out rc=0 first="${1:-}"
+  case "$first" in
+    status|fingerprint|probe-new|preflight)
+      if [ -z "$API_INST" ]; then if rapi "test -x $API_TOOL" </dev/null >/dev/null 2>&1; then API_INST=1; else API_INST=0; fi; fi
+      if [ "$API_INST" = 0 ]; then apic_stdin "$@"; return 0; fi ;;
+  esac
   out="$(rapi "sudo $API_TOOL $* $(API_TAIL)" </dev/null 2>&1)" || rc=$?
   APIOUT="$(printf '%s\n' "$out" | { grep -v 'TEST HARNESS ACTIVE' || true; } | redact)"; APIRC=$rc
   [ "$QUIET" = 1 ] || printf '%s\n' "$APIOUT" | sed 's/^/  [API] /'
@@ -229,7 +235,7 @@ install_api_tool() {
   local want have got up_script tmp="${API_TOOL}.new"
   want="$(shasum -a 256 "$API_TOOL_SRC" | cut -d' ' -f1)"
   have="$(rapi "sha256sum $API_TOOL 2>/dev/null | cut -d' ' -f1" </dev/null 2>/dev/null)" || have=""
-  if [ "$have" = "$want" ]; then echo "API host tool: already installed, sha256 ${want:0:16}... matches this checkout (nothing changed)"; return 0; fi
+  if [ "$have" = "$want" ]; then API_INST=1; echo "API host tool: already installed, sha256 ${want:0:16}... matches this checkout (nothing changed)"; return 0; fi
   read -r -d '' up_script <<EOS || true
 set -e; umask 077; t=$tmp; rm -f "\$t"; cat > "\$t"; chown root:root "\$t"; chmod 0755 "\$t"; sha256sum "\$t" | cut -d" " -f1
 EOS
@@ -238,6 +244,7 @@ EOS
   rapi "sudo mv -f $tmp $API_TOOL" </dev/null >/dev/null 2>&1 || die "could not move the verified API host tool into place"
   got="$(rapi "sudo sha256sum $API_TOOL | cut -d' ' -f1" </dev/null 2>/dev/null)" || got=""
   [ "$got" = "$want" ] || die "the installed API host tool does not match this checkout after the move (sha256 '${got:0:16}'): investigate before going on"
+  API_INST=1
   echo "API host tool: installed $API_TOOL root:root 0755, sha256 ${want:0:16}... verified before and after"
 }
 
@@ -389,7 +396,7 @@ do_rotation() {
 
   banner "phase 3/10: baseline"
   echo "  outbox baseline: pending=$base_p exhausted=$base_e (taken from the Control Plane; after the cutover pending must be back at or below $base_p and exhausted must be 0)"
-  run_preflight_cmd before || fail_phase baseline "the external preflight (--preflight-cmd) failed" "fix it; nothing live has changed"
+  run_preflight_cmd before || fail_phase baseline "the external preflight (--preflight-cmd) failed" "fix the cause, then \`$0 run --confirm-production --id $ID\` (nothing live has changed)"
   QUIET=1 apic status --id "$ID"
   printf '%s\n' "$APIOUT" | grep -E '^(HEALTH|BYSTANDER|BASELINE) ' | sed 's/^/  [API] /' || true
 
@@ -422,8 +429,12 @@ do_rotation() {
   window_start="$(date +%s)"
   apic apply --id "$ID"
   if [ "$APIRC" != 0 ]; then
-    [ "$APIRC" != 3 ] || CHANGED="UNKNOWN: the automatic restore of the Backend FAILED (see the CRITICAL lines)"
-    fail_phase apply "the Backend change failed; the tool restored the previous env file and restarted the Backend (unless it says CRITICAL). The Control Plane was not touched" "$(cmds_hint)"
+    case "$APIRC" in
+      1) ;;
+      3) CHANGED="UNKNOWN: the automatic restore of the Backend FAILED (see the CRITICAL lines)" ;;
+      *) CHANGED="UNKNOWN: the connection to the API host or the tool itself died (exit $APIRC); the Backend env file may already hold the NEW secret (run \`$0 status --confirm-production --id $ID\`). The Control Plane was not touched" ;;
+    esac
+    fail_phase apply "the Backend change did not complete; when the tool ran to its end it restored the previous env file and restarted the Backend (unless it says CRITICAL). The Control Plane was not touched" "$(cmds_hint)"
   fi
   CHANGED="the Backend now runs the NEW secret; the Control Plane still runs the OLD one (its deliveries are answered 401 and re-queued until the promote)"
   jlog applied
@@ -431,7 +442,11 @@ do_rotation() {
   banner "phase 7/10: promote (Control Plane): keep the old as .prev, rename the new into place, render wp-config, reload php-fpm, confirm the rendered fingerprint"
   cpc promote --id "$ID" --backend-already-restarted
   if [ "$CPRC" != 0 ]; then
-    [ "$CPRC" != 3 ] || CHANGED="UNKNOWN: the automatic restore of the Control Plane FAILED (see the CRITICAL lines)"
+    case "$CPRC" in
+      1) CHANGED="the Backend now runs the NEW secret; the Control Plane runs the OLD one again (restored)" ;;
+      3) CHANGED="UNKNOWN: the automatic restore of the Control Plane FAILED (see the CRITICAL lines); the Backend runs the NEW secret" ;;
+      *) CHANGED="UNKNOWN: the connection to the Control Plane or the tool itself died (exit $CPRC); the Control Plane may already hold the NEW secret (run \`$0 status --confirm-production --id $ID\`); the Backend runs the NEW secret" ;;
+    esac
     fail_phase promote "the Control Plane promote failed (it restored the old secret unless it says CRITICAL). The Backend already holds the NEW secret: until you resume or roll back, every delivery is answered 401 and re-queued (nothing is lost)" "$(cmds_hint)"
   fi
   window_end="$(date +%s)"
