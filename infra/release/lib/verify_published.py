@@ -393,19 +393,25 @@ def check_record(a, tool, keys):
 
 
 # ---------------------------------------------------------------------------------------------------------------- C: customer path
-def customer_flow(a, http, man, tool, keys, workdir):
-    user, pw = a.creds
-    sha, size, ver = man["sha256"], man["size"], man["version"]
+def login(http, user, pw):
+    """Sign in through the My Account form. Returns (ok, note). The password is only ever in the POST body."""
     page = http.get("/my-account/", follow=3)
     inp = InputParser()
     inp.feed(page.text())
     nonce = inp.inputs.get("woocommerce-login-nonce", "")
     if page.status != 200 or not nonce:
-        return report("C1", "the My Account sign-in form is reachable", False, "HTTP %d, login nonce %s" % (page.status, "present" if nonce else "absent"))
+        return False, "the sign-in form is not reachable (HTTP %d, login nonce %s)" % (page.status, "present" if nonce else "absent")
     fields = {"username": user, "password": pw, "woocommerce-login-nonce": nonce, "_wp_http_referer": inp.inputs.get("_wp_http_referer", "/my-account/"), "login": "Log in"}
     r = http.post_form("/my-account/", fields, follow=3)
     del fields
-    if not report("C1", "sign in with the test customer's own credentials (HTTP %d, session cookie set)" % r.status, http.has_cookie("wordpress_logged_in_"), "no session cookie: wrong credentials, login throttle, or Turnstile on sign-in"):
+    return http.has_cookie("wordpress_logged_in_"), "HTTP %d" % r.status
+
+
+def customer_flow(a, http, man, tool, keys, workdir):
+    user, pw = a.creds
+    sha, size, ver = man["sha256"], man["size"], man["version"]
+    ok_login, note = login(http, user, pw)
+    if not report("C1", "sign in with the test customer's own credentials (%s, session cookie set)" % note, ok_login, "no session cookie: wrong credentials, login throttle, or Turnstile on sign-in; %s" % note):
         return False
     pg = http.get("/my-account/aicc-licenses/", follow=3)
     pp = PanelParser()
@@ -427,13 +433,36 @@ def customer_flow(a, http, man, tool, keys, workdir):
            and hdrs.get("x-content-type-options") == "nosniff" and "no-store" in hdrs.get("cache-control", ""), "%s" % {k: hdrs.get(k) for k in ("x-aicc-sha256", "content-type", "cache-control")})
     ok, msg = tool.verify(a.manifest, a.sig, zip_path=path)
     report("C6", "the DOWNLOADED ZIP verifies against the signed manifest with its baked public keys (Plugin repo verify tool)", ok, msg)
-    ok, msg = tool.verify(a.manifest, a.sig, pubkeys=a.pubkeys)
     f = zip_facts(path)
     listed = {b64 for b64, _ in keys}
-    report("C7", "Version header == AICC_VERSION == manifest version == release record (%s); baked keys are on the owner's list" % ver,
-           not f["problems"] and f["version_header"] == f["const_version"] == ver and bool(f["baked"]) and set(f["baked"]) <= listed, "%s %s/%s baked=%s" % (f["problems"], f["version_header"], f["const_version"], len(f["baked"])))
+    by_fp = {fingerprint(raw): b64 for b64, raw in keys}
+    signer = by_fp.get(str(sig.get("key_id", "")))
+    report("C7", "Version header == AICC_VERSION == manifest version == release record (%s); baked keys are on the owner's list and include the signing key (key_id %s)" % (ver, sig.get("key_id")),
+           not f["problems"] and f["version_header"] == f["const_version"] == ver and bool(f["baked"]) and set(f["baked"]) <= listed and signer is not None and signer in f["baked"],
+           "%s %s/%s baked=%s signer-baked=%s" % (f["problems"], f["version_header"], f["const_version"], len(f["baked"]), signer in f["baked"] if signer else "unknown key_id"))
     http.downloaded = path
     return True
+
+
+def cross_tenant_download(a, http, base, man):
+    """Another tenant's session and nonce: a nonce is bound to the session that rendered the page, so it is useless in the other customer's hands (and the reverse)."""
+    user, pw = a.other_creds
+    other = Http(base)
+    ok_login, note = login(other, user, pw)
+    if not report("U21", "the OTHER test customer signs in (%s)" % note, ok_login, "needed for the cross-tenant download check"):
+        return
+
+    def link(client):
+        pg = client.get("/my-account/aicc-licenses/", follow=3)
+        pp = PanelParser()
+        pp.feed(pg.text())
+        return html.unescape(pp.links[0]) if pp.links else ""
+    la, lb = link(http), link(other)
+    if not la or not lb:
+        return report("U22", "both customers' panels carry a download link (the other account needs an active plan too)", False, "links: A=%s other=%s" % (bool(la), bool(lb)))
+    for label, client, url in (("this customer's session with the OTHER customer's nonce link", http, lb), ("the other customer's session with THIS customer's nonce link", other, la)):
+        r = client.get(url)
+        report("U22", "%s: HTTP 403, no ZIP" % label, r.status == 403 and r.body[:2] != b"PK" and "x-aicc-sha256" not in r.headers, "HTTP %d" % r.status)
 
 
 # ---------------------------------------------------------------------------------------------------------------- U: uniform refusals
@@ -637,7 +666,7 @@ def download_safety(a, client, man, workdir):
 # ---------------------------------------------------------------------------------------------------------------- main
 def main():
     ap = argparse.ArgumentParser(add_help=False)
-    for n in ("mode", "base_url", "version", "sha256", "plugin_dir", "manifest", "sig", "pubkeys", "expect_key_id", "previous_version", "local_zip", "credentials_file", "user_env", "pass_env", "store_file", "out", "php", "anon_base_url"):
+    for n in ("mode", "base_url", "version", "sha256", "plugin_dir", "manifest", "sig", "pubkeys", "expect_key_id", "previous_version", "local_zip", "credentials_file", "other_credentials_file", "user_env", "pass_env", "store_file", "out", "php", "anon_base_url"):
         ap.add_argument("--" + n.replace("_", "-"), dest=n, default="")
     ap.add_argument("--no-updater-probes", action="store_true")
     ap.add_argument("--package-download", action="store_true")
@@ -685,6 +714,12 @@ def main():
         if a.mode == "fixture" and not (host in ("127.0.0.1", "localhost", "::1") and pu.scheme in ("http", "https")):
             die(3, "fixture mode talks to a loopback address only (got %s)" % a.base_url)
         a.creds = None
+        a.other_creds = None
+        if a.other_credentials_file:
+            c = read_secret_file(a.other_credentials_file, {"AICC_VERIFY_USER", "AICC_VERIFY_PASS"})
+            if not (c.get("AICC_VERIFY_USER") and c.get("AICC_VERIFY_PASS")):
+                die(2, "the other credentials file must hold AICC_VERIFY_USER=... and AICC_VERIFY_PASS=...")
+            a.other_creds = (c["AICC_VERIFY_USER"], c["AICC_VERIFY_PASS"])
         if a.credentials_file:
             c = read_secret_file(a.credentials_file, {"AICC_VERIFY_USER", "AICC_VERIFY_PASS"})
             if c.get("AICC_VERIFY_USER") and c.get("AICC_VERIFY_PASS"):
@@ -702,6 +737,8 @@ def main():
         if a.creds:
             good = customer_flow(a, http, man, tool, keys, workdir)
             account_refusals(a, http, man, a.base_url)
+            if good and a.other_creds:
+                cross_tenant_download(a, http, a.base_url, man)
             if good:
                 download_safety(a, http, man, workdir)
         else:

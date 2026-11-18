@@ -90,26 +90,27 @@ t_rc "usage: a malformed key list is refused (rc 2)" 2 bash "$REL/verify-publish
 
 echo "== B. the customer path against a MOCK Control Plane (one fault per negative control) =="
 printf 'AICC_VERIFY_USER=cust\nAICC_VERIFY_PASS=Pw-%s\n' "ZZtop-1234567890-sentinel" > "$TMP/creds.env"; chmod 600 "$TMP/creds.env"
-PWSENT="Pw-ZZtop-1234567890-sentinel"; REF=11111111-2222-4333-8444-555555555555; OREF=aaaaaaaa-2222-4333-8444-555555555555
+PWSENT="Pw-ZZtop-1234567890-sentinel"; OPWSENT="Pw-Other-0987654321-sentinel"; printf 'AICC_VERIFY_USER=other\nAICC_VERIFY_PASS=%s\n' "$OPWSENT" > "$TMP/creds-other.env"; chmod 600 "$TMP/creds-other.env"; REF=11111111-2222-4333-8444-555555555555; OREF=aaaaaaaa-2222-4333-8444-555555555555
 printf 'AICC_STORE_ACTIVATION_REF=%s\nAICC_STORE_ORIGIN=https://shop-a.example\nAICC_OTHER_ACTIVATION_REF=%s\n' "$REF" "$OREF" > "$TMP/store.env"; chmod 600 "$TMP/store.env"
 mock_up() { # fault [zip]
   [ -z "$MOCKPID" ] || { kill "$MOCKPID" 2>/dev/null; wait "$MOCKPID" 2>/dev/null; }
-  python3 "$HERE/lib/mock_cp.py" --zip "${2:-$ZIP}" --manifest "$MAN" --sig "$SIG" --user cust --password "$PWSENT" --ref "$REF" --origin https://shop-a.example --other-ref "$OREF" --fault "$1" > "$TMP/mock.out" 2>&1 &
+  python3 "$HERE/lib/mock_cp.py" --zip "${2:-$ZIP}" --manifest "$MAN" --sig "$SIG" --user cust --password "$PWSENT" --other-user other --other-password "$OPWSENT" --ref "$REF" --origin https://shop-a.example --other-ref "$OREF" --fault "$1" > "$TMP/mock.out" 2>&1 &
   MOCKPID=$!; disown "$MOCKPID" 2>/dev/null; for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do grep -q '^PORT' "$TMP/mock.out" 2>/dev/null && break; sleep 0.25; done
   MPORT="$(sed -n 's/^PORT //p' "$TMP/mock.out")"
 }
-VPM() { bash "$REL/verify-published-plugin.sh" --mode fixture --base-url "http://127.0.0.1:$MPORT" --version "$V" --sha256 "$SHA" --manifest "$MAN" --sig "$SIG" --plugin-dir "$PD" --credentials-file "$TMP/creds.env" --store-file "$TMP/store.env" --package-download --out "$TMP/out-b" "$@" 2>&1; }
+VPM() { bash "$REL/verify-published-plugin.sh" --mode fixture --base-url "http://127.0.0.1:$MPORT" --version "$V" --sha256 "$SHA" --manifest "$MAN" --sig "$SIG" --plugin-dir "$PD" --credentials-file "$TMP/creds.env" --other-credentials-file "$TMP/creds-other.env" --store-file "$TMP/store.env" --package-download --out "$TMP/out-b" "$@" 2>&1; }
 mock_up none; OUTB="$(VPM --local-zip "$ZIP" --previous-version 1.1.0 --expect-key-id "$FP")"; rc=$?
 t_eq "positive: a correct server passes every check (rc 0)" "$rc" "0"
-t_eq "...all of R, C, U and D ran (counts)" "$(printf '%s\n' "$OUTB" | grep -c '^PASS')/$(printf '%s\n' "$OUTB" | grep -c '^FAIL')" "45/0"
+t_eq "...all of R, C, U and D ran (counts)" "$(printf '%s\n' "$OUTB" | grep -c '^PASS')/$(printf '%s\n' "$OUTB" | grep -c '^FAIL')" "48/0"
 t_not_contains "...the password never appears in the output" "$OUTB" "$PWSENT"
-t_eq "...nor in the report, the work directory's file names or the downloaded ZIP's name" "$(grep -rl "$PWSENT" "$TMP/out-b" 2>/dev/null | wc -l | tr -d ' ')" "0"
+t_not_contains "...nor the OTHER customer's password" "$OUTB" "$OPWSENT"
+t_eq "...nor in the report, the work directory's file names or the downloaded ZIP's name" "$(grep -rl -e "$PWSENT" -e "$OPWSENT" "$TMP/out-b" 2>/dev/null | wc -l | tr -d ' ')" "0"
 t_not_contains "...the nonce is never printed" "$OUTB" "_wpnonce=n0nce"
 t_eq "...the verified download is kept under its final name, the .part file is gone" "$(find "$TMP/out-b" -maxdepth 1 -name '*.part' | wc -l | tr -d ' ')/$(find "$TMP/out-b" -maxdepth 1 -name "$ZN" | wc -l | tr -d ' ')" "0/1"
 t_ok "...and it is byte-identical to the published ZIP" cmp -s "$TMP/out-b/$ZN" "$ZIP"
 for spec in "tamper|C4|the server serves bytes that differ from the signed manifest (a swapped ZIP)" "truncate|C4|the server cuts the connection half way through the ZIP" \
             "panel-version|C2|the panel shows another version" "panel-sha|C2|the panel shows another SHA-256" "no-sig-key|C3|the panel shows no signing key" \
-            "leak-unauth|U1|a signed-out caller receives the ZIP" "stale-nonce-ok|U3|a stale nonce is accepted" "unknown-offer|U5|an unknown proof gets an offer (non-uniform refusal)" \
+            "leak-unauth|U1|a signed-out caller receives the ZIP" "stale-nonce-ok|U3|a stale nonce is accepted" "cross-tenant-ok|U22|ANOTHER customer's nonce link works in this session (cross-tenant download)" "unknown-offer|U5|an unknown proof gets an offer (non-uniform refusal)" \
             "downgrade-offer|U14|a store that already has a newer version is offered the release (downgrade)" "wrong-origin-ok|U15|a WRONG ORIGIN is accepted" "wrong-tenant-ok|U17|ANOTHER TENANT's ref is accepted" \
             "bad-offer-signature|U11|the offer carries a signature that is not the owner's" "package-open|U8|the package route serves any proof"; do
   IFS='|' read -r fault id what <<< "$spec"; mock_up "$fault"; rm -rf "$TMP/out-b"; exp_fail "NEGATIVE CONTROL ($fault): $what -> FAIL $id" "$id" VPM
@@ -196,4 +197,41 @@ php "$REL/../stack-tests/lib/forge_sig.php" "$PD" "$MAN" "$KEYS/attacker.key" "$
 OUT3="$(FSR 3)"; rc=$?
 t_eq "stage 3 with a signature by the ATTACKER key: FAILS (rc 1)" "$rc" "1"
 t_contains "stage 2 prints the owner's wrapper command (not a bare sign-release.php call)" "$(FSR 2 < /dev/null)" "sign-plugin-release.sh"
+echo "== Y. yank-plugin-release.sh (the stop switch; ssh is a STUB that runs the host-side python on a scratch release store) =="
+RS="$TMP/relstore"; mkdir -p "$RS/$V"; cp "$ZIP" "$MAN" "$SIG" "$RS/$V/"; chmod 640 "$RS/$V/ai-commerce-copilot-$V.manifest.json"; echo "$V" > "$RS/current"
+YSTUB="$TMP/ystub"; mkdir -p "$YSTUB"; : > "$TMP/ystub.calls"
+cat > "$YSTUB/ssh" <<EOS
+#!/usr/bin/env bash
+echo "ssh \$*" >> "$TMP/ystub.calls"
+cmd="\${@: -1}"
+case "\$cmd" in
+  "cat /etc/aicc-stage-identity") printf 'AICC_ENV=production\nAICC_HOSTNAME=www.copilt.org\nAICC_STAGE_ID=0123456789abcdef0123456789abcdef\n' ;;
+  "sudo python3 -I - "*) set -- \$cmd; python3 -I - "\$5" "$RS" "\$7" ;;
+  *"sudo aicc-wp eval"*) jq -c '(.yanked // false)' "$RS/$V/ai-commerce-copilot-$V.manifest.json" ;;
+  *) exit 0 ;;
+esac
+EOS
+chmod +x "$YSTUB/ssh"
+YK() { env PATH="$YSTUB:$PATH" bash "$REL/yank-plugin-release.sh" --stage-host www.copilt.org --stage-ip 203.0.113.9 --stage-id "$SID" --key "$PKEY" --known-hosts "$KH" --confirm-production "$V" "$@" 2>&1; }
+OUTY="$(YK --version "$V")"; rc=$?
+t_eq "production without --apply is a DRY RUN: plan printed, rc 0, the host is never contacted" "$rc/$(grep -c . "$TMP/ystub.calls")" "0/0"
+t_contains "...the plan names the manifest and the atomic rewrite" "$OUTY" "set \"yanked\": true"
+M="$RS/$V/ai-commerce-copilot-$V.manifest.json"; MODE0="$(stat -f '%Lp' "$M" 2>/dev/null || stat -c '%a' "$M")"
+OUTY="$(YK --version "$V" --apply)"; rc=$?
+t_eq "--apply yanks it: rc 0 and WordPress reads yanked=true" "$rc/$(jq -r .yanked "$M")" "0/true"
+t_contains "...the output says VERIFIED and that the signature is unaffected" "$OUTY" "VERIFIED through WordPress: $V is now YANKED"
+t_eq "...the file mode is preserved" "$(stat -f '%Lp' "$M" 2>/dev/null || stat -c '%a' "$M")" "$MODE0"
+t_ok "...and the owner's signature STILL verifies (yanked is not a signed field)" php "$PD/bin/sign-release.php" verify --manifest "$M" --sig "$RS/$V/ai-commerce-copilot-$V.manifest.sig" --zip "$RS/$V/$ZN"
+t_eq "...nothing else in the manifest changed (every other field equals the original)" "$(jq -c 'del(.yanked)' "$M")" "$(jq -c . "$MAN")"
+t_ok "...no file was deleted (ZIP, manifest, signature, current all present)" bash -c "[ -f '$RS/$V/$ZN' ] && [ -f '$M' ] && [ -f '$RS/$V/ai-commerce-copilot-$V.manifest.sig' ] && [ -f '$RS/current' ]"
+OUTY="$(YK --version "$V" --apply --unyank)"; rc=$?
+t_eq "--unyank restores it: rc 0, the field is gone, WordPress reads false" "$rc/$(jq -r 'has("yanked")' "$M")" "0/false"
+t_rc "a wrong --confirm-production is refused (rc 3)" 3 env PATH="$YSTUB:$PATH" bash "$REL/yank-plugin-release.sh" --version "$V" --stage-host www.copilt.org --stage-ip 203.0.113.9 --stage-id "$SID" --key "$PKEY" --known-hosts "$KH" --confirm-production 9.9.9 --apply
+t_rc "another host name is refused (rc 3)" 3 env PATH="$YSTUB:$PATH" bash "$REL/yank-plugin-release.sh" --version "$V" --stage-host stage.copilt.org --stage-ip 203.0.113.9 --stage-id "$SID" --key "$PKEY" --known-hosts "$KH" --confirm-production "$V" --apply
+t_rc "a non-strict version is refused (rc 3)" 3 env PATH="$YSTUB:$PATH" bash "$REL/yank-plugin-release.sh" --version "1.1.1-dev.1" --stage-host www.copilt.org --stage-ip 203.0.113.9 --stage-id "$SID" --key "$PKEY" --known-hosts "$KH" --confirm-production 1.1.1-dev.1 --apply
+t_rc "a version that is not installed fails on the host side, nothing changed (rc 1)" 1 env PATH="$YSTUB:$PATH" bash "$REL/yank-plugin-release.sh" --version 7.7.7 --stage-host www.copilt.org --stage-ip 203.0.113.9 --stage-id "$SID" --key "$PKEY" --known-hosts "$KH" --confirm-production 7.7.7 --apply
+mv "$M" "$TMP/real-manifest"; ln -s "$TMP/real-manifest" "$M"
+t_rc "a symlinked manifest is refused on the host side (rc 1)" 1 YK --version "$V" --apply
+rm -f "$M"; mv "$TMP/real-manifest" "$M"
+t_rc "a host with another stage id is refused (rc 3)" 3 env PATH="$YSTUB:$PATH" bash "$REL/yank-plugin-release.sh" --version "$V" --stage-host www.copilt.org --stage-ip 203.0.113.9 --stage-id ffffffffffffffffffffffffffffffff --key "$PKEY" --known-hosts "$KH" --confirm-production "$V" --apply
 t_summary

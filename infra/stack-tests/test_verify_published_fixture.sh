@@ -3,7 +3,7 @@
 # php -S) on loopback ports 9910-9919 (builder R's range), with THROWAWAY keys only. The release goes through the owner's REAL signing wrapper (sign-plugin-release.sh) and the Control Plane's REAL host
 # installer (scripts/plugin-release/install-plugin-release.sh); the customers are synthetic. Nothing leaves this Mac, no production host or key is touched.
 # Opt-in (it starts mysqld and php -S, ~1 minute): AICC_VERIFY_FIXTURE=1 bash infra/stack-tests/test_verify_published_fixture.sh   [AICC_CP_DIR=<CP worktree>] [AICC_PLUGIN_DIR/AICC_PLUGIN_COMMIT as in test_verify_published.sh]
-#   F1  the owner signs (wrapper), the host installer installs, the fixture comes up                F2  positive: a customer with an active plan passes every check (45)
+#   F1  the owner signs (wrapper), the host installer installs, the fixture comes up                F2  positive: a customer with an active plan passes every check (48, incl. the cross-tenant download)
 #   F3  another tenant's customer also passes; the REVOKED customer cannot download (FAIL C2); a wrong password FAILS C1
 #   F4  the Control Plane trusts ANOTHER key: the panel withholds the release and the store gets no offer (FAIL C2, U10)
 #   F5  the stored ZIP is tampered on the host: the Control Plane refuses to serve it (FAIL C4), then restored          F6  a yanked release is withheld (FAIL C2) and comes back
@@ -36,9 +36,9 @@ VP() { local creds="$1"; shift; bash "$REL/verify-published-plugin.sh" --mode fi
 exp_fail() { local n="$1" id="$2"; shift 2; local out rc=0; out="$("$@" 2>&1)" || rc=$?; if [ "$rc" = 1 ] && printf '%s' "$out" | grep -q "^FAIL  $id"; then t_pass "$n"; else t_bad "$n" "rc=$rc; $(printf '%s' "$out" | grep '^FAIL' | head -3 | tr '\n' '|')"; fi; }
 
 echo "== F2. positive: a customer with an ACTIVE plan, a connected store, the real routes =="
-OUT="$(VP "$ST/creds.env" --store-file "$ST/store.env" --package-download --local-zip "$ZIP" --previous-version 1.1.0 --expect-key-id "$FP")"; rc=$?
+OUT="$(VP "$ST/creds.env" --other-credentials-file "$ST/creds-b.env" --store-file "$ST/store.env" --package-download --local-zip "$ZIP" --previous-version 1.1.0 --expect-key-id "$FP")"; rc=$?
 t_eq "every check passes (rc 0)" "$rc" "0"
-t_eq "...45 PASS, 0 FAIL" "$(printf '%s\n' "$OUT" | grep -c '^PASS')/$(printf '%s\n' "$OUT" | grep -c '^FAIL')" "45/0"
+t_eq "...48 PASS, 0 FAIL" "$(printf '%s\n' "$OUT" | grep -c '^PASS')/$(printf '%s\n' "$OUT" | grep -c '^FAIL')" "48/0"
 t_ok "...the downloaded ZIP is byte-identical to the published one" cmp -s "$TMP/out/ai-commerce-copilot-$V.zip" "$ZIP"
 t_eq "...the Control Plane logged ONE plugin_downloaded for the account and ONE for the updater (package) download" "$(WPF eval 'global $wpdb; echo (int) $wpdb->get_var("SELECT COUNT(*) FROM " . AICC_LM_Activator::audit_table() . " WHERE event_type = \"plugin_downloaded\"");' 2>/dev/null | tail -1)" "2"
 

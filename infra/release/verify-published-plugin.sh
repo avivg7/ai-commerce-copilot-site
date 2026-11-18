@@ -11,6 +11,7 @@
 #        [--base-url https://www.copilt.org]   production: exactly that origin; stage: https://stage.copilt.org; fixture: a loopback origin
 #        [--credentials-file F | --user-env NAME --pass-env NAME]   a customer with an ACTIVE plan (the owner's own test account): F is a regular file, mode 0600, owned by you, lines
 #                                           AICC_VERIFY_USER=<login or e-mail> and AICC_VERIFY_PASS=<password>. The password is never an argument, never printed, never written to a report.
+#        [--other-credentials-file F]       a SECOND customer (same format): the cross-tenant download check (this session with the other customer's nonce link and the reverse must both be 403). Fixture: created. Production: optional.
 #        [--store-file F]                   0600 file: AICC_STORE_ACTIVATION_REF / AICC_STORE_ORIGIN of a store of an active plan (+ optional AICC_OTHER_ACTIVATION_REF of another tenant's store).
 #                                           Fixture: created for you. Production: omit it unless the owner has a connected TEST store of the test account (then it is read-only: update-check only).
 #        [--package-download]               also download through the updater's package route (fixture/stage; it is logged as a system download, so not on production by default)
@@ -31,6 +32,6 @@
 # (counted by the rate limiter only). Nothing else. Never run with a real customer's credentials.
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-case "${1:-}" in -h|--help|"") sed -n 2,34p "${BASH_SOURCE[0]}"; [ -n "${1:-}" ] && exit 0 || exit 2 ;; esac
+case "${1:-}" in -h|--help|"") sed -n 2,32p "${BASH_SOURCE[0]}"; [ -n "${1:-}" ] && exit 0 || exit 2 ;; esac
 command -v python3 >/dev/null 2>&1 || { echo "verify-published-plugin: python3 is required" >&2; exit 2; }
 exec python3 -I "$HERE/lib/verify_published.py" "$@"

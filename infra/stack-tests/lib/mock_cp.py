@@ -6,14 +6,14 @@ with FAULT switches so each negative control is a server that misbehaves in exac
 Faults: none | tamper (the served ZIP has other bytes than the manifest) | truncate (the connection is cut half way) | panel-version (the panel shows another version) | panel-sha (another SHA-256)
         | leak-unauth (a signed-out caller gets the ZIP) | unknown-offer (an unknown proof gets an update:true offer) | downgrade-offer (a store that already has a newer version is offered the release)
         | wrong-origin-ok (a wrong origin is accepted) | wrong-tenant-ok (another tenant's ref is accepted) | bad-offer-signature (the offer carries a signature that is not the owner's)
-        | no-sig-key (the panel shows no signing key) | stale-nonce-ok (a stale nonce is accepted) | package-open (the package route serves any proof)
+        | no-sig-key (the panel shows no signing key) | stale-nonce-ok (a stale nonce is accepted) | cross-tenant-ok (another customer's nonce works in this session) | package-open (the package route serves any proof)
 """
 import argparse, base64, hashlib, http.server, json, os, re, sys, threading, urllib.parse
 
 
 def main():
     ap = argparse.ArgumentParser()
-    for n in ("zip", "manifest", "sig", "user", "password", "ref", "origin", "other_ref", "fault"):
+    for n in ("zip", "manifest", "sig", "user", "password", "ref", "origin", "other_ref", "other_user", "other_password", "fault"):
         ap.add_argument("--" + n.replace("_", "-"), dest=n, default="")
     a = ap.parse_args()
     fault = a.fault or "none"
@@ -24,8 +24,11 @@ def main():
     if fault == "tamper":
         served[len(served) // 2] ^= 0xFF
     served = bytes(served)
-    NONCE = "n0nce" + hashlib.sha256(os.urandom(8)).hexdigest()[:10]
-    SESSION = "sess" + hashlib.sha256(os.urandom(8)).hexdigest()[:16]
+    # two customers, each with its own session and its own download nonce (a nonce is bound to the session that rendered the page)
+    USERS = {a.user: (a.password, "sess" + hashlib.sha256(os.urandom(8)).hexdigest()[:16], "n0nce" + hashlib.sha256(os.urandom(8)).hexdigest()[:10])}
+    if a.other_user:
+        USERS[a.other_user] = (a.other_password, "sess" + hashlib.sha256(os.urandom(8)).hexdigest()[:16], "n0nce" + hashlib.sha256(os.urandom(8)).hexdigest()[:10])
+    BY_SESSION = {v[1]: (k, v[2]) for k, v in USERS.items()}
     ver, sha = man["version"], man["sha256"]
     shown_ver = "9.9.8" if fault == "panel-version" else ver
     shown_sha = "0" * 64 if fault == "panel-sha" else sha
@@ -45,8 +48,12 @@ def main():
             self.end_headers()
             self.wfile.write(body)
 
+        def _session(self):
+            m = re.search(r"wordpress_logged_in_x=(sess[0-9a-f]+)", self.headers.get("Cookie") or "")
+            return m.group(1) if m and m.group(1) in BY_SESSION else None
+
         def _logged_in(self):
-            return ("wordpress_logged_in_x=" + SESSION) in (self.headers.get("Cookie") or "")
+            return self._session() is not None
 
         def _zip(self, cut=False):
             h = {"Content-Disposition": 'attachment; filename="%s"' % man["filename"], "X-AICC-SHA256": sha, "X-Content-Type-Options": "nosniff", "Cache-Control": "private, no-store, max-age=0"}
@@ -75,14 +82,16 @@ def main():
                     return self._send(302, b"", extra={"Location": "/my-account/"})
                 key = "" if fault == "no-sig-key" else '<div><dt>Signed with key</dt><dd><bdi class="aicc-ltr"><code class="aicc-plugin-sigkey">%s</code></bdi> <span class="aicc-subtle">(%s)</span></dd></div>' % (sig["key_id"], sig["issued_at"])
                 page = ('<section class="aicc-plugin-download"><dl class="aicc-facts"><div><dt>Current version</dt><dd><bdi class="aicc-ltr">%s</bdi></dd></div><div><dt>SHA-256</dt><dd><bdi class="aicc-ltr"><code class="aicc-plugin-sha256">%s</code></bdi></dd></div>%s</dl>'
-                        '<p><a class="aicc-btn" href="/my-account/aicc-licenses/?aicc_lm_dl=%s&#038;_wpnonce=%s" download>Download</a></p></section>') % (shown_ver, shown_sha, key, ver, NONCE)
+                        '<p><a class="aicc-btn" href="/my-account/aicc-licenses/?aicc_lm_dl=%s&#038;_wpnonce=%s" download>Download</a></p></section>') % (shown_ver, shown_sha, key, ver, BY_SESSION[self._session()][1])
                 return self._send(200, page.encode())
             if u.path == "/my-account/aicc-licenses/" and "aicc_lm_dl" in q:
                 if not self._logged_in():
                     if fault == "leak-unauth":
                         return self._zip()
                     return self._send(302, b"", extra={"Location": "/my-account/"})
-                nonce_ok = q.get("_wpnonce", [""])[0] == NONCE or fault == "stale-nonce-ok"
+                mine = BY_SESSION[self._session()][1]
+                given = q.get("_wpnonce", [""])[0]
+                nonce_ok = given == mine or fault == "stale-nonce-ok" or (fault == "cross-tenant-ok" and given in [v[2] for v in USERS.values()])
                 if not nonce_ok:
                     return self._send(403, b"This download is not available for this account, or the link has expired. Open Plans & Stores and try again.", "text/plain")
                 if q["aicc_lm_dl"][0] not in (ver, "current"):
@@ -96,8 +105,9 @@ def main():
             u = urllib.parse.urlparse(self.path)
             if u.path == "/my-account/":
                 f = urllib.parse.parse_qs(body.decode())
-                if f.get("username", [""])[0] == a.user and f.get("password", [""])[0] == a.password and f.get("woocommerce-login-nonce", [""])[0] == "lognonce1":
-                    return self._send(302, b"", extra={"Location": "/my-account/", "Set-Cookie": "wordpress_logged_in_x=%s; Path=/; HttpOnly" % SESSION})
+                who = f.get("username", [""])[0]
+                if who in USERS and f.get("password", [""])[0] == USERS[who][0] and f.get("woocommerce-login-nonce", [""])[0] == "lognonce1":
+                    return self._send(302, b"", extra={"Location": "/my-account/", "Set-Cookie": "wordpress_logged_in_x=%s; Path=/; HttpOnly" % USERS[who][1]})
                 return self._send(200, b"<ul class='woocommerce-error'><li>Error</li></ul>")
             if u.path in ("/wp-json/aicc-license/v1/plugin/update-check", "/wp-json/aicc-license/v1/plugin/package"):
                 try:
