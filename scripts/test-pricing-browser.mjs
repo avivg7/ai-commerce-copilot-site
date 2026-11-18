@@ -170,7 +170,7 @@ if (run("C")) {
   }
   // the cutoff passes while the page is open: a timer flips every control without a reload; the status answer never reopens it
   for (const [cell, signup] of [["announce", "open"], ["announce", "waitlist"], ["link", "http500"], ["announce", "off"]]) for (const l of QUICK ? ["en"] : LOCALES) {
-    const { ctx, page, m } = await view(cell, `${pre(l)}/pricing/`, 1440, { locale: l, signup, now: CUT - 4500 });
+    const { ctx, page } = await view(cell, `${pre(l)}/pricing/`, 1440, { locale: l, signup, now: CUT - 4500 });
     const before = await cards(page), gsBefore = await page.evaluate(() => [...document.querySelectorAll("[data-ss-getstarted]")].map((a) => a.getAttribute("href")));
     const headBefore = await page.evaluate(() => document.querySelector(".aicc-pricing__title").innerText.trim());
     await page.waitForTimeout(5200);
@@ -405,7 +405,7 @@ if (run("I")) {
   { // layout shift: the status answer arriving changes the controls; the page must not move
     const CLS = () => { window.__cls = 0; new PerformanceObserver((list) => { for (const e of list.getEntries()) if (!e.hadRecentInput) window.__cls += e.value; }).observe({ type: "layout-shift", buffered: true }); };
     for (const [cell, signup, delay, label] of [["announce", "open", 600, "static status -> link (open)"], ["announce", "waitlist", 600, "static status -> link + note (waitlist)"], ["announce", "closed_cutoff", 600, "status -> closed status"], ["link", "off", 600, "static link -> status (link build, answer off)"], ["announce", "off", 600, "status -> status (off)"]]) for (const [w, h] of [[1440, 2600], [390, 3400]]) for (const l of QUICK ? ["en"] : LOCALES) {
-      const { ctx, page, m } = await view(cell, `${pre(l)}/pricing/`, w, { locale: l, signup, delay, h, init: CLS });
+      const { ctx, page } = await view(cell, `${pre(l)}/pricing/`, w, { locale: l, signup, delay, h, init: CLS });
       const before = await page.evaluate((TIER) => ({ h: [...document.querySelectorAll(TIER)].map((t) => t.getBoundingClientRect().height), panel: document.querySelector(".aicc-launch").getBoundingClientRect().top + scrollY, ctl: [...document.querySelectorAll(TIER + " .aicc-pcta")].map((t) => t.getBoundingClientRect().height) }), TIER);
       await page.waitForTimeout(delay + 700);
       const after = await page.evaluate((TIER) => ({ h: [...document.querySelectorAll(TIER)].map((t) => t.getBoundingClientRect().height), panel: document.querySelector(".aicc-launch").getBoundingClientRect().top + scrollY, ctl: [...document.querySelectorAll(TIER + " .aicc-pcta")].map((t) => t.getBoundingClientRect().height), cls: window.__cls }), TIER);

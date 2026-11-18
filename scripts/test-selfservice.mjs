@@ -39,7 +39,8 @@ for (const l of ["en", "he", "es", "ru"]) {
   const textStates = ["soon", "closed", "paused"].map((k) => c[k]);
   check(textStates.every((x) => !/^(start|join)/i.test(x)) && !labels.slice(0, 1).some((x) => /\d/.test(x)), `${l}: the plain-text states are statements, not invitations, and carry no date`);
 }
-check(D.en.ea.ss.cta.soon === "Free trial registration opens soon" && D.en.ea.ss.cta.start === "Start free trial" && D.en.ea.ss.cta.waitlist === "Join the waitlist" && D.en.ea.ss.cta.closed === "Free trial registration closed" && D.en.ea.ss.cta.paused === "Free trial registration paused", "en: the labels are 'Free trial registration opens soon', 'Start free trial', 'Join the waitlist', 'Free trial registration closed', 'Free trial registration paused'");
+check(D.en.ea.ss.cta.soon === "Free trial opens soon" && D.en.ea.ss.cta.start === "Get started free" && D.en.ea.ss.cta.waitlist === "Join the waitlist" && D.en.ea.ss.cta.closed === "Registration closed" && D.en.ea.ss.cta.paused === "Registration paused", "en (P40 pack): the labels are 'Free trial opens soon', 'Get started free', 'Join the waitlist', 'Registration closed', 'Registration paused'");
+check(D.en.ea.ss.state.soonNote.length > 20 && D.en.ea.ss.state.closedNote.includes("Paid plans are not open for purchase yet") && D.en.ea.ss.state.waitlistNote.includes("does not reserve") && D.en.ea.ss.cta.purchase === "Choose {plan}" && D.en.ea.ss.cta.choosePlan === "Choose a plan", "en (P40 pack): every status carries its explanation line (soon, closed, paused, waitlist); the purchase labels exist for the Control Plane (the Site never renders them)");
 
 console.log("== registration cutoff by the browser clock (P39 round 2): from 2026-12-24T00:00:00Z every control is the closed text");
 {

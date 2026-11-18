@@ -81,6 +81,9 @@
     "test:pricing-consistency-mutations": "node scripts/test-pricing-consistency-mutations.mjs",
     "test:ss-guards": "node scripts/test-ss-guards.mjs",
     "test:pricing-consistency": "node scripts/test-pricing-consistency.mjs",
+    "test:pricing-browser": "node scripts/test-pricing-browser.mjs",
+    "test:pricing-sources": "node scripts/test-pricing-sources.mjs",
+    "test:strike-gate": "node scripts/test-strike-gate.mjs",
     "test:visual-regression": "node scripts/test-visual-regression.mjs",
     "export:hash": "node scripts/export-hash.mjs"
   },
