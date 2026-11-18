@@ -106,8 +106,8 @@ for (const l of LOCALES) {
   check(missed.length === 0, `${l}: all ${BAD_SS[l].length} old-protection probes are rejected inside the ss block${missed.length ? " -> NOT caught: " + missed.join(" | ") : ""}`);
 }
 console.log("== the allowed claims pass (exactly these, in the ss block)");
-const OK_SS = ["No automatic conversion to a paid plan", "No payment method required for the trial", "Free trial: 1 store", "Registration closes", "Trial access ends", "Free trial registration opens soon", "Start free trial", "Join the waitlist", "Paid plan: up to {n} stores",
-  "Sin paso automático a un plan de pago", "Prueba gratuita: 1 tienda", "אין מעבר אוטומטי לתוכנית בתשלום", "ניסיון חינם: חנות אחת", "הצטרפו לרשימת ההמתנה", "Без автоматического перехода на платный план", "Бесплатный пробный период: 1 магазин"];
+const OK_SS = ["No automatic conversion to a paid plan", "No payment method required for the trial", "Trial includes 1 store", "Registration closes", "Trial access ends", "Free trial registration opens soon", "Start free trial", "Join the waitlist", "Paid plan: up to {n} stores",
+  "No pasa automáticamente a un plan de pago", "La prueba incluye 1 tienda", "אין מעבר אוטומטי לתוכנית בתשלום", "הניסיון כולל חנות אחת", "הצטרפו לרשימת ההמתנה", "Без автоматического перехода на платный план", "В пробный период входит 1 магазин"];
 {
   const wrong = OK_SS.filter((t) => SS_EXTRA_RULES.some(([re]) => re.test(eaExtraRulesProbe(t))));
   check(wrong.length === 0, `the allowed claims are not flagged by SS_EXTRA_RULES${wrong.length ? " -> flagged: " + wrong.join(" | ") : ""}`);
@@ -125,12 +125,12 @@ console.log("== end to end: copy:check on a COPY of the repo with a mutated pack
     const base = run();
     check(base.status === 0, `the untouched copy passes copy:check (exit ${base.status})`);
     for (const [name, from, to] of [
-      ["a discount in the card line", 'trial: "Free trial: 1 store"', 'trial: "Free trial: 1 store, save 20%"'],
+      ["a discount in the card line", 'trial: "Trial includes 1 store"', 'trial: "Trial includes 1 store, save 20%"'],
       ["'conversion' outside the allowed phrase", 'noAuto: "No automatic conversion to a paid plan"', 'noAuto: "No automatic conversion rate"'],
       ["the allowed phrase is cut short", 'noAuto: "No automatic conversion to a paid plan", checksLabel', 'noAuto: "No automatic conversion", checksLabel'],
       ["a credit card claim", 'noPayment: "No payment method required for the trial"', 'noPayment: "No credit card required for the trial"'],
       ["approval wording", 'cta: { soon: "Free trial registration opens soon"', 'cta: { soon: "Free trial for approved stores"'],
-      ["a trial length in days", 'trial: "Free trial: 1 store"', 'trial: "14-day free trial: 1 store"'],
+      ["a trial length in days", 'trial: "Trial includes 1 store"', 'trial: "14-day trial includes 1 store"'],
       ["an urgency device", 'closed: "Free trial registration closed"', 'closed: "Free trial registration closed, only 3 spots left"'],
     ]) {
       if (!orig.includes(from)) { check(false, `end to end "${name}": fixture string not found`); continue; }

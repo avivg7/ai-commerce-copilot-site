@@ -162,7 +162,7 @@ export const eaEn = {
     cta: { soon: "Free trial registration opens soon", start: "Start free trial", waitlist: "Join the waitlist", closed: "Free trial registration closed", paused: "Free trial registration paused" },
     // P39: the two dates are ALWAYS two separate labelled lines. Registration closes at an instant ({regShort} 00:00 UTC; the server accepts a registration while its clock is before it), trial access ends at another (22:00 UTC on the last day, for every trial).
     plan: {
-      trial: "Free trial: 1 store", paidOne: "Paid plan: 1 store", paidMany: "Paid plan: up to {n} stores",
+      trial: "Trial includes 1 store", paidOne: "Paid plan: 1 store", paidMany: "Paid plan: up to {n} stores",
       noPayment: "No payment method required for the trial", noAuto: "No automatic conversion to a paid plan", checksLabel: "Free trial and plan allowance",
       datesLabel: "Free trial dates", regLabel: "Registration closes", regValue: "{regShort} at\u00a000:00 UTC", endLabel: "Trial access ends", endValue: "{until} at\u00a022:00 UTC",
     },
