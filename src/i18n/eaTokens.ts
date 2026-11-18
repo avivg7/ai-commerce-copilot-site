@@ -51,7 +51,7 @@ export const SS_REG_DATES: Record<Locale, SsRegDates> = {
 export type EaStepIndex = 0 | 1 | 2;
 export const EA_DATE_TOKENS = ["lastDay", "lastDayShort", "endDate", "firstLastDay", "until", "regDate", "regShort", "regLast"] as const;
 /** Tokens that other code resolves later (not dates): they pass through untouched. */
-const PASS_THROUGH = new Set(["contactEmail", "mailProvider", "priceSolo", "priceStudio", "priceAgency", "n", "plan"]);
+const PASS_THROUGH = new Set(["contactEmail", "mailProvider", "priceSolo", "priceStudio", "priceAgency", "n", "plan", "path"]);
 
 /** A date with its spaces made no-break (used by the Hero badge only, so the badge never breaks in the middle of a date; the long dates stay breakable on the plan cards, where an unbreakable Spanish date overflowed a 1024 px column). */
 export const nbDate = (d: string) => d.replace(/ /g, "\u00a0");

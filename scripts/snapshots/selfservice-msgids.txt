@@ -10,16 +10,17 @@ ss.bar.text	Launch Offer: free trial for one store, no payment method required	�
 ss.bar.link	Trial terms	תנאי הניסיון	Condiciones de la prueba	Условия пробного периода
 ss.cta.start	Get started free	התחילו בחינם	Empezar gratis	Начать бесплатно
 ss.cta.purchase	Choose {plan}	בחירת {plan}	Elegir {plan}	Выбрать {plan}
-ss.cta.soon	Free trial opens soon	ניסיון החינם ייפתח בקרוב	La prueba gratuita abrirá pronto	Бесплатный период скоро откроется
 ss.cta.closed	Registration closed	ההרשמה נסגרה	Registro cerrado	Регистрация закрыта
-ss.cta.paused	Registration paused	ההרשמה מושהית	Registro en pausa	Регистрация приостановлена
 ss.cta.choosePlan	Choose a plan	בחירת תוכנית	Elegir un plan	Выбрать план
 ss.cta.waitlist	Join the waitlist	הצטרפו לרשימת ההמתנה	Unirse a la lista de espera	Записаться в список ожидания
-ss.state.soonNote	Registration is not open yet. This page shows a start button as soon as it opens.	ההרשמה עדיין לא נפתחה. כפתור התחלה יופיע כאן ברגע שתיפתח.	El registro aún no está abierto. Aquí aparecerá un botón para empezar en cuanto se abra.	Регистрация пока не открыта. Кнопка запуска появится здесь, как только она откроется.
+ss.cta.how	See how it works	ראו איך זה עובד	Ver cómo funciona	Как это работает
 ss.state.closedNote	No new trials can be started. Paid plans are not open for purchase yet.	אי אפשר להתחיל ניסיונות חדשים. רכישות בתשלום עדיין אינן פתוחות.	Ya no se pueden iniciar pruebas nuevas. Las compras de pago aún no están abiertas.	Новые пробные периоды больше начать нельзя. Платные планы пока нельзя купить.
 ss.state.closedPaidNote	Free trial registration has closed.	ההרשמה לניסיון החינם נסגרה.	El registro de la prueba gratuita está cerrado.	Регистрация на бесплатный пробный период закрыта.
-ss.state.pausedNote	Registration is paused for now. Please come back later.	ההרשמה מושהית לעת עתה. אפשר לחזור מאוחר יותר.	El registro está en pausa por ahora. Vuelva más tarde.	Регистрация пока приостановлена. Загляните позже.
-ss.state.waitlistNote	We will write if a place may become available. The waitlist does not reserve one.	נכתוב אליכם אם יתפנה מקום. הרשימה אינה שומרת מקום.	Le escribiremos si puede quedar una plaza libre. La lista de espera no reserva plaza.	Мы напишем, если может освободиться место. Список ожидания не резервирует место.
+ss.state.line.soon	Free trial registration isn't open yet.	ההרשמה לניסיון החינם עדיין לא נפתחה.	El registro de la prueba gratuita aún no está abierto.	Регистрация на бесплатный пробный период ещё не открыта.
+ss.state.line.paused	Free trial registration is paused for now.	ההרשמה לניסיון החינם מושהית לעת עתה.	El registro de la prueba gratuita está en pausa por ahora.	Регистрация на бесплатный пробный период пока приостановлена.
+ss.state.line.open	Free trial registration is open.	ההרשמה לניסיון החינם פתוחה.	El registro de la prueba gratuita está abierto.	Регистрация на бесплатный пробный период открыта.
+ss.state.line.waitlist	Free trial registration is on a waitlist for now. We will write if a place may become available. The waitlist does not reserve one.	ההרשמה לניסיון החינם פועלת כרגע דרך רשימת המתנה. נכתוב אליכם אם יתפנה מקום. הרשימה אינה שומרת מקום.	El registro de la prueba gratuita funciona por ahora con lista de espera. Le escribiremos si puede quedar una plaza libre. La lista de espera no reserva plaza.	Регистрация на бесплатный пробный период пока идёт через список ожидания. Мы напишем, если может освободиться место. Список ожидания не резервирует место.
+ss.state.demo	Try Live Demo	נסו דמו חי	Pruebe la demo en vivo	Попробовать живое демо
 ss.pricing.title	Try it free on one store.	נסו חינם בחנות אחת.	Pruébelo gratis en una tienda.	Попробуйте бесплатно в одном магазине.
 ss.pricing.lead	The launch trial is free and needs no payment method. Choose the plan you expect to buy later: it is only your preference.	ניסיון ההשקה הוא בחינם ואינו דורש אמצעי תשלום. בחרו את התוכנית שאתם מצפים לרכוש בהמשך: זו העדפה בלבד.	La prueba de lanzamiento es gratuita y no requiere método de pago. Elija el plan que espera comprar más adelante: es solo una preferencia.	Пробный период запуска бесплатный, способ оплаты не нужен. Выберите план, который вы рассчитываете купить позже: это только ваше предпочтение.
 ss.pricing.titleClosed	Plans priced by store capacity.	תוכניות לפי מספר החנויות.	Planes según el número de tiendas.	Планы по числу магазинов.
@@ -29,8 +30,12 @@ ss.pricing.fit.studio	For growing merchants managing multiple storefronts	לבע
 ss.pricing.fit.agency	For teams managing a portfolio of client stores	לצוותים שמנהלים מערך של חנויות לקוחות	Para equipos que gestionan una cartera de tiendas de clientes	Для команд, которые ведут портфель клиентских магазинов
 ss.pricing.badge	Recommended	מומלצת	Recomendado	Рекомендуем
 ss.pricing.priceLabel	Planned regular price	מחיר רגיל מתוכנן	Precio regular previsto	Планируемая обычная цена
-ss.pricing.priceLabelStrike	Regular price	מחיר רגיל	Precio regular	Обычная цена
 ss.pricing.per	per year	לשנה	al año	в год
+ss.pricing.perShort	/ year	/ שנה	/ año	/ год
+ss.pricing.afterOffer	Starts after the launch offer	מתחיל אחרי הצעת ההשקה	Empieza después de la oferta de lanzamiento	Начинается после предложения в честь запуска
+ss.pricing.strikeLabel	Planned regular annual price after the launch offer, not a current or past price.	מחיר שנתי רגיל מתוכנן לאחר הצעת ההשקה, לא מחיר נוכחי או קודם.	Precio anual regular previsto después de la oferta de lanzamiento, no un precio actual ni pasado.	Планируемая обычная годовая цена после предложения в честь запуска, не текущая и не прежняя цена.
+ss.pricing.strikeNote	Nothing has been charged at this price yet. No card needed; nothing is charged automatically.	עדיין לא חויב אף אחד במחיר הזה. אין צורך בכרטיס אשראי; שום דבר לא מחויב אוטומטית.	Todavía no se ha cobrado nada a este precio. No hace falta tarjeta; no se cobra nada automáticamente.	По этой цене пока ничего не списывалось. Карта не нужна; автоматически ничего не списывается.
+ss.pricing.strikeSr	Planned price after the launch offer, not currently charged:	מחיר מתוכנן לאחר הצעת ההשקה, לא מחויב כרגע:	Precio previsto después de la oferta de lanzamiento, no se cobra actualmente:	Планируемая цена после предложения в честь запуска, сейчас не взимается:
 ss.pricing.free	FREE	חינם	GRATIS	БЕСПЛАТНО
 ss.pricing.trial	Launch trial: 1 store	ניסיון השקה: חנות אחת	Prueba de lanzamiento: 1 tienda	Пробный период запуска: 1 магазин
 ss.pricing.incl	Every feature, on every plan	כל התכונות, בכל תוכנית	Todas las funciones, en todos los planes	Все функции в каждом плане
