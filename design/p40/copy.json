@@ -1,0 +1,271 @@
+{
+  "_note": "P40 pricing copy: ONLY the msgids that are NEW or CHANGED by the redesign. Every other key the redesign uses is read unchanged from scripts/snapshots/selfservice-msgids.txt (P39 pack): ss.plan.paidOne, ss.plan.paidMany, ss.plan.datesLabel, ss.plan.regLabel, ss.plan.regValue, ss.plan.endLabel, ss.plan.endValue, ss.link, ss.terms.label, ss.terms.state, ss.cta.waitlist. he/es/ru are MACHINE DRAFTS (not reviewed by native speakers), in the register of the P39 pack (he plural imperative, es usted, ru vy). Tokens: {n} {regShort} {regDate} {regLast} {until} {lastDay} are resolved with src/i18n/eaTokens.ts. status: new = new msgid, changed = same msgid as P39 with a new value.",
+  "ss.pricing.lead": {
+    "status": "new",
+    "use": "Home plans section lead (optional; the Pricing page keeps its own hero)",
+    "en": "Every plan has every feature. You only choose how many stores to connect.",
+    "he": "בכל תוכנית יש את כל התכונות. אתם בוחרים רק כמה חנויות לחבר.",
+    "es": "Todos los planes tienen todas las funciones. Solo elige cuántas tiendas conectar.",
+    "ru": "В каждом плане есть все функции. Вы выбираете только число подключаемых магазинов."
+  },
+  "ss.pricing.fit.solo": {
+    "status": "new",
+    "use": "card positioning line",
+    "en": "For independent stores ready to make smarter recommendations",
+    "he": "לחנויות עצמאיות שמוכנות להמליץ חכם יותר",
+    "es": "Para tiendas independientes listas para recomendar mejor",
+    "ru": "Для независимых магазинов, готовых давать более точные рекомендации"
+  },
+  "ss.pricing.fit.studio": {
+    "status": "new",
+    "use": "card positioning line",
+    "en": "For growing merchants managing multiple storefronts",
+    "he": "לסוחרים בצמיחה שמנהלים כמה חנויות",
+    "es": "Para comerciantes en crecimiento que gestionan varias tiendas",
+    "ru": "Для растущих продавцов, которые ведут несколько магазинов"
+  },
+  "ss.pricing.fit.agency": {
+    "status": "new",
+    "use": "card positioning line",
+    "en": "For teams managing a portfolio of client stores",
+    "he": "לצוותים שמנהלים מערך של חנויות לקוחות",
+    "es": "Para equipos que gestionan una cartera de tiendas de clientes",
+    "ru": "Для команд, которые ведут портфель клиентских магазинов"
+  },
+  "ss.pricing.badge": {
+    "status": "new",
+    "use": "Studio badge (replaces common.plan.recommended 'Built for multiple stores')",
+    "en": "Recommended",
+    "he": "מומלצת",
+    "es": "Recomendado",
+    "ru": "Рекомендуем"
+  },
+  "ss.pricing.priceLabel": {
+    "status": "new",
+    "use": "label above the regular price (standard build); same words as ea.plan.planned",
+    "en": "Planned regular price",
+    "he": "מחיר רגיל מתוכנן",
+    "es": "Precio regular previsto",
+    "ru": "Планируемая обычная цена"
+  },
+  "ss.pricing.priceLabelStrike": {
+    "status": "new",
+    "use": "label above the struck-through price (feature-gated variant only, never public)",
+    "en": "Regular price",
+    "he": "מחיר רגיל",
+    "es": "Precio regular",
+    "ru": "Обычная цена"
+  },
+  "ss.pricing.per": {
+    "status": "new",
+    "use": "after the amount; ru adds the (USD) suffix through currencySuffix()",
+    "en": "per year",
+    "he": "לשנה",
+    "es": "al año",
+    "ru": "в год"
+  },
+  "ss.pricing.free": {
+    "status": "new",
+    "use": "the dominant word; same words as ea.plan.freeWord",
+    "en": "FREE",
+    "he": "חינם",
+    "es": "GRATIS",
+    "ru": "БЕСПЛАТНО"
+  },
+  "ss.pricing.trial": {
+    "status": "new",
+    "use": "the line under FREE (replaces ss.plan.trial 'Trial includes 1 store')",
+    "en": "Launch trial: 1 store",
+    "he": "ניסיון השקה: חנות אחת",
+    "es": "Prueba de lanzamiento: 1 tienda",
+    "ru": "Пробный период запуска: 1 магазин"
+  },
+  "ss.pricing.incl": {
+    "status": "new",
+    "use": "card footer; same words as common.plan.sameFeatures",
+    "en": "Every feature, on every plan",
+    "he": "כל התכונות, בכל תוכנית",
+    "es": "Todas las funciones, en todos los planes",
+    "ru": "Все функции в каждом плане"
+  },
+  "ss.cta.start": {
+    "status": "changed",
+    "use": "open: link label (was 'Start free trial')",
+    "en": "Get started free",
+    "he": "התחילו בחינם",
+    "es": "Empezar gratis",
+    "ru": "Начать бесплатно"
+  },
+  "ss.cta.purchase": {
+    "status": "new",
+    "use": "after the registration cutoff with paid purchase OPEN (Control Plane only): link label; same words as common.plan.choose",
+    "en": "Choose {plan}",
+    "he": "בחירת {plan}",
+    "es": "Elegir {plan}",
+    "ru": "Выбрать {plan}"
+  },
+  "ss.cta.soon": {
+    "status": "changed",
+    "use": "status pill, state off / unknown (was 'Free trial registration opens soon')",
+    "en": "Free trial opens soon",
+    "he": "ניסיון החינם ייפתח בקרוב",
+    "es": "La prueba gratuita abrirá pronto",
+    "ru": "Бесплатный период скоро откроется"
+  },
+  "ss.cta.closed": {
+    "status": "changed",
+    "use": "status pill, state closed_cutoff",
+    "en": "Registration closed",
+    "he": "ההרשמה נסגרה",
+    "es": "Registro cerrado",
+    "ru": "Регистрация закрыта"
+  },
+  "ss.cta.paused": {
+    "status": "changed",
+    "use": "status pill, state paused",
+    "en": "Registration paused",
+    "he": "ההרשמה מושהית",
+    "es": "Registro en pausa",
+    "ru": "Регистрация приостановлена"
+  },
+  "ss.state.soonNote": {
+    "status": "new",
+    "use": "second line of the off state (what happens)",
+    "en": "Registration is not open yet. This page shows a start button as soon as it opens.",
+    "he": "ההרשמה עדיין לא נפתחה. כפתור התחלה יופיע כאן ברגע שתיפתח.",
+    "es": "El registro aún no está abierto. Aquí aparecerá un botón para empezar en cuanto se abra.",
+    "ru": "Регистрация пока не открыта. Кнопка запуска появится здесь, как только она откроется."
+  },
+  "ss.state.closedNote": {
+    "status": "new",
+    "use": "second line of the closed state when paid purchase is NOT open",
+    "en": "No new trials can be started. Paid plans are not open for purchase yet.",
+    "he": "אי אפשר להתחיל ניסיונות חדשים. רכישות בתשלום עדיין אינן פתוחות.",
+    "es": "Ya no se pueden iniciar pruebas nuevas. Las compras de pago aún no están abiertas.",
+    "ru": "Новые пробные периоды больше начать нельзя. Платные планы пока нельзя купить."
+  },
+  "ss.state.closedPaidNote": {
+    "status": "new",
+    "use": "line above the purchase link when registration is closed and paid purchase is OPEN",
+    "en": "Free trial registration has closed.",
+    "he": "ההרשמה לניסיון החינם נסגרה.",
+    "es": "El registro de la prueba gratuita está cerrado.",
+    "ru": "Регистрация на бесплатный пробный период закрыта."
+  },
+  "ss.state.pausedNote": {
+    "status": "new",
+    "use": "second line of the paused state",
+    "en": "Registration is paused for now. Please come back later.",
+    "he": "ההרשמה מושהית לעת עתה. אפשר לחזור מאוחר יותר.",
+    "es": "El registro está en pausa por ahora. Vuelva más tarde.",
+    "ru": "Регистрация пока приостановлена. Загляните позже."
+  },
+  "ss.state.waitlistNote": {
+    "status": "new",
+    "use": "line under the waitlist link (verified: /start/ waitlist copy 'we will write if a place may become available... not a reservation'). Avoids scarcity wording on purpose (truth guard)",
+    "en": "We will write if a place may become available. The waitlist does not reserve one.",
+    "he": "נכתוב אליכם אם יתפנה מקום. הרשימה אינה שומרת מקום.",
+    "es": "Le escribiremos si puede quedar una plaza libre. La lista de espera no reserva plaza.",
+    "ru": "Мы напишем, если может освободиться место. Список ожидания не резервирует место."
+  },
+  "ss.launch.tag": {
+    "status": "new",
+    "use": "pill in the launch panel; same words as ea.plan.pill",
+    "en": "Launch offer",
+    "he": "הצעת השקה",
+    "es": "Oferta de lanzamiento",
+    "ru": "Предложение в честь запуска"
+  },
+  "ss.launch.sub": {
+    "status": "new",
+    "use": "launch panel sub line",
+    "en": "Whichever plan you pick, the trial is the same. The plan is only your preference.",
+    "he": "בכל תוכנית שתבחרו הניסיון זהה. התוכנית היא העדפה בלבד.",
+    "es": "Sea cual sea el plan que elija, la prueba es la misma. El plan es solo una preferencia.",
+    "ru": "Какой бы план вы ни выбрали, пробный период одинаков. План означает только ваше предпочтение."
+  },
+  "ss.launch.regNote": {
+    "status": "new",
+    "use": "timeline step 1 note (removes the 'does Dec 24 still count' ambiguity)",
+    "en": "The last day to start a trial is {regLast} (UTC).",
+    "he": "היום האחרון להתחיל ניסיון הוא {regLast} (UTC).",
+    "es": "El último día para empezar una prueba es el {regLast} (UTC).",
+    "ru": "Последний день, когда можно начать пробный период, это {regLast} (UTC)."
+  },
+  "ss.launch.endNote": {
+    "status": "new",
+    "use": "timeline step 2 note",
+    "en": "For every trial, whichever day you started.",
+    "he": "לכל ניסיון, בלי קשר ליום שבו התחלתם.",
+    "es": "Para cada prueba, sea cual sea el día en que la empezó.",
+    "ru": "Для любого пробного периода, в какой бы день вы его ни начали."
+  },
+  "ss.launch.fact.store": {
+    "status": "new",
+    "use": "panel fact 1",
+    "en": "The trial covers 1 store, whichever plan you choose.",
+    "he": "הניסיון כולל חנות אחת, בכל תוכנית שתבחרו.",
+    "es": "La prueba cubre 1 tienda, sea cual sea el plan que elija.",
+    "ru": "Пробный период охватывает 1 магазин, какой бы план вы ни выбрали."
+  },
+  "ss.launch.fact.payment": {
+    "status": "new",
+    "use": "panel fact 2",
+    "en": "No payment method is required, so nothing is charged.",
+    "he": "לא נדרש אמצעי תשלום, ולכן לא נגבה דבר.",
+    "es": "No hace falta método de pago, así que no se cobra nada.",
+    "ru": "Способ оплаты не нужен, поэтому ничего не списывается."
+  },
+  "ss.launch.fact.noAuto": {
+    "status": "new",
+    "use": "panel fact 3",
+    "en": "No automatic conversion to a paid plan. Continuing is your decision.",
+    "he": "אין מעבר אוטומטי לתוכנית בתשלום. ההמשך הוא החלטה שלכם.",
+    "es": "No pasa automáticamente a un plan de pago. Seguir es decisión suya.",
+    "ru": "Автоматического перехода на платный план нет. Продолжить или нет, решаете вы."
+  },
+  "ss.launch.foot.paid": {
+    "status": "new",
+    "use": "panel footnote while paid purchase is NOT open",
+    "en": "Paid plans are not open for purchase yet. Their regular prices apply once they open.",
+    "he": "רכישות בתשלום עדיין אינן פתוחות. המחירים הרגילים יחולו כשייפתחו.",
+    "es": "Las compras de pago aún no están abiertas. Los precios regulares se aplicarán cuando se abran.",
+    "ru": "Платные планы пока нельзя купить. Обычные цены начнут действовать, когда покупка станет доступна."
+  },
+  "ss.launch.foot.paidOpen": {
+    "status": "new",
+    "use": "panel footnote when paid purchase IS open (Control Plane, after the cutoff)",
+    "en": "Paid plans are open for purchase.",
+    "he": "תוכניות בתשלום פתוחות לרכישה.",
+    "es": "Los planes de pago están abiertos a la compra.",
+    "ru": "Платные планы можно купить."
+  },
+  "ss.band.lead": {
+    "status": "changed",
+    "use": "closing band lead: state-neutral (no dates, no trial conditions, no 'free': the control carries the offer); was 'Free trial for one store. No payment method is required for the trial.'",
+    "en": "See AICC's recommendations on your own WooCommerce store.",
+    "he": "ראו את ההמלצות של AICC בחנות ה-WooCommerce שלכם.",
+    "es": "Vea las recomendaciones de AICC en su propia tienda WooCommerce.",
+    "ru": "Посмотрите рекомендации AICC в своём магазине на WooCommerce."
+  },
+  "ss.cta.choosePlan": {
+    "status": "new",
+    "use": "closing band control after the registration cutoff with paid purchase OPEN (Control Plane only): a link to the plan cards",
+    "en": "Choose a plan",
+    "he": "בחירת תוכנית",
+    "es": "Elegir un plan",
+    "ru": "Выбрать план"
+  },
+  "_retired": [
+    "ss.plan.trial",
+    "ss.plan.noPayment",
+    "ss.plan.noAuto",
+    "ss.plan.checksLabel",
+    "ss.terms.regValue",
+    "ss.terms.endValue",
+    "ss.terms.store",
+    "ss.terms.payment",
+    "ss.terms.noAuto",
+    "ss.terms.paid"
+  ]
+}

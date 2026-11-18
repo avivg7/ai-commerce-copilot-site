@@ -1018,3 +1018,217 @@ html.aicc-scroll-lock { overflow: hidden; scrollbar-gutter: stable; }
 /* Phone: two dashboard tiles per row (was one per row: a 1,500px panel). */
 /* two columns while they fit, one when the text is enlarged (the rem minimum grows with it): Production 22 (F4) */
 @media (max-width: 40rem) { .aicc-dash__tiles--three { grid-template-columns: repeat(auto-fit, minmax(min(100%, 7.5rem), 1fr)); } }
+
+/* ═══ P40 PRICING BEGIN ═══════════════════════════════════════════════════════════════════════════════════════════════════════
+   The premium pricing section, shared by the marketing Site (React) and the Control Plane theme (PHP). ONE class contract:
+   docs/design/p40-pricing.md ("class contract"). Namespaces: .aicc-pricing (section) .aicc-tiers/.aicc-tier* (plan cards, .aicc-cap = store capacity glyphs)
+   .aicc-pcta/.aicc-pstatus* (the state-aware control) .aicc-launch/.aicc-timeline/.aicc-launch__facts (the ONE shared launch panel) .aicc-pband (closing band).
+   Rules: tokens only (no raw hex except rgb() tints of token colours), logical properties only, no fixed heights, no JavaScript, borders always declare their style
+   (the Control Plane has no Tailwind preflight), zero-specificity resets (:where) so a single class always wins. Motion = state transitions only (tokens collapse under reduced motion).
+   ═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════ */
+.aicc-pricing *, .aicc-pricing *::before, .aicc-pricing *::after { box-sizing: border-box; }
+.aicc-pricing :where(h2, h3, p, ul, ol) { margin: 0; padding: 0; }
+.aicc-pricing :where(ul, ol) { list-style: none; }
+.aicc-pricing .aicc-sr-only { position: absolute; inline-size: 1px; block-size: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.aicc-pricing { --aicc-tier-px: min(1.5rem, 6vw); color: var(--aicc-text); overflow-wrap: break-word; }
+.aicc-pricing :where(div, p, span, li, a, h3) { min-inline-size: 0; }
+
+/* Section header (optional: a page may keep its own SectionHeading) */
+.aicc-pricing__head { max-inline-size: 46rem; margin-block-end: var(--aicc-space-6); }
+.aicc-pricing__title { font-size: var(--aicc-text-3xl); font-weight: 700; line-height: 1.12; letter-spacing: var(--aicc-tracking-display); text-wrap: balance; color: var(--aicc-text); }
+.aicc-pricing__lead { margin-block-start: var(--aicc-space-4); max-inline-size: 40rem; font-size: var(--aicc-text-lg); line-height: 1.55; color: var(--aicc-text-muted); text-wrap: pretty; }
+
+/* ── Store capacity glyphs: the unit of price is the STORE. Ten slots = the largest plan; filled = paid capacity of the plan (blue); the green single slot = the launch trial's one store.
+      Decorative (aria-hidden); the words next to them carry the meaning. Borders only, so they survive forced colours. ── */
+.aicc-cap { --aicc-cap-ink: var(--aicc-primary-strong); display: grid; grid-template-columns: repeat(10, minmax(0, 1fr)); gap: 0.25rem; inline-size: 100%; max-inline-size: 15rem; margin-block-start: 0.5rem; }
+.aicc-cap--trial { --aicc-cap-ink: var(--aicc-success); grid-template-columns: 1.375rem; inline-size: 1.375rem; margin: 0; flex: none; }
+.aicc-cap__slot { display: block; aspect-ratio: 1 / 0.92; border: 1.5px dashed var(--aicc-border-strong); border-radius: 0.3125rem; }
+.aicc-cap__slot--on { border: 1.5px solid var(--aicc-cap-ink); border-block-start-width: 0.3125rem; border-radius: 0.3125rem 0.3125rem 0.25rem 0.25rem; background: rgb(37 99 235 / 0.1); }
+.aicc-cap__slot--on { position: relative; }
+.aicc-cap__slot--on::after { content: ""; position: absolute; inset-inline: 0; margin-inline: auto; inset-block-end: 0; inline-size: 28%; block-size: 38%; border-radius: 0.1rem 0.1rem 0 0; background: var(--aicc-cap-ink); }
+.aicc-cap--trial .aicc-cap__slot--on { background: rgb(4 120 87 / 0.12); }
+
+/* ── The plan grid. Phone: one column. 40rem+: each plan is a row (identity left, launch right). 62rem+: three columns; rows are shared (subgrid) so name, price, FREE and the control line up. ── */
+.aicc-tiers { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--aicc-space-4); align-items: stretch; }
+.aicc-tier {
+  position: relative; display: flex; flex-direction: column; min-inline-size: 0; overflow: hidden;
+  background: var(--aicc-surface); border: 1px solid var(--aicc-border); border-radius: var(--aicc-radius-xl); box-shadow: var(--aicc-shadow-sm);
+  color: var(--aicc-text); text-align: start;
+  transition: border-color var(--aicc-dur) var(--aicc-ease), box-shadow var(--aicc-dur) var(--aicc-ease);
+}
+@media (hover: hover) { .aicc-tier:hover { border-color: var(--aicc-border-strong); box-shadow: var(--aicc-shadow-md); } }
+
+/* plan zone: who it is for, the PAID capacity and the planned regular price (tinted: this is the plan you may buy later) */
+.aicc-tier__plan { display: flex; flex-direction: column; min-inline-size: 0; padding: 1.5rem var(--aicc-tier-px) 1.375rem; background: rgb(37 99 235 / 0.045); }
+.aicc-tier__head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.25rem 0.75rem; min-block-size: 2rem; }
+.aicc-tier__name { font-size: 1.375rem; font-weight: 650; line-height: 1.2; letter-spacing: -0.01em; color: var(--aicc-text); overflow-wrap: anywhere; }
+.aicc-tier__badge { display: inline-flex; align-items: center; padding: 0.1875rem 0.75rem; border-radius: var(--aicc-radius-pill); background-image: var(--aicc-gradient-action-aa); color: #fff; font-size: 0.8125rem; font-weight: 650; line-height: 1.25rem; white-space: normal; max-inline-size: 100%; overflow-wrap: anywhere; text-align: center; }
+.aicc-tier__fit { margin-block-start: 0.375rem; font-size: var(--aicc-text-sm); line-height: 1.45; color: var(--aicc-text-muted); text-wrap: pretty; }
+.aicc-tier__cap { margin-block-start: 1.125rem; }
+.aicc-tier__cap-text { font-size: var(--aicc-text-sm); font-weight: 650; line-height: 1.35; color: var(--aicc-text); }
+.aicc-tier__price { display: flex; flex-direction: column; gap: 0.125rem; margin-block-start: 1.125rem; }
+.aicc-tier__price-label { font-size: 0.8125rem; line-height: 1.3; color: var(--aicc-text-muted); }
+.aicc-tier__price-line { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 0.5rem; }
+.aicc-tier__amount { font-size: min(2.25rem, 11vw); font-weight: 700; line-height: 1.1; letter-spacing: -0.025em; font-variant-numeric: tabular-nums; color: var(--aicc-text); }
+.aicc-tier__per { font-size: var(--aicc-text-sm); font-weight: 500; color: var(--aicc-text-muted); }
+/* feature-gated variant (never public): the regular price struck through. Default build never renders it. */
+.aicc-tier__price--strike .aicc-tier__amount { color: var(--aicc-text-muted); text-decoration: line-through; text-decoration-thickness: 2px; }
+
+/* launch zone: FREE (the dominant word), the trial allowance, then the ONE control */
+.aicc-tier__launch { display: flex; flex-direction: column; flex: 1 1 auto; min-inline-size: 0; padding: 1.375rem var(--aicc-tier-px) 1.5rem; }
+.aicc-tier__free { container-type: inline-size; }
+.aicc-tier__free-word {
+  --aicc-free-em: 2.7; /* the word's width in em, per language (below): the size follows the card so БЕСПЛАТНО never clips */
+  display: block; font-size: clamp(1.5rem, 11vw, 3.75rem); font-weight: 800; line-height: 1; letter-spacing: -0.035em; color: var(--aicc-text); overflow-wrap: anywhere;
+}
+@supports (width: 1cqi) { .aicc-tier__free-word { font-size: clamp(min(1.5rem, 9vw), calc(100cqi / var(--aicc-free-em)), 3.75rem); } }
+.aicc-tier__free-word:lang(he) { --aicc-free-em: 2.6; letter-spacing: 0; }
+.aicc-tier__free-word:lang(es) { --aicc-free-em: 4.1; }
+.aicc-tier__free-word:lang(ru) { --aicc-free-em: 7; letter-spacing: -0.02em; }
+.aicc-tier__trial { overflow-wrap: anywhere; display: flex; align-items: center; gap: 0.5rem; margin-block-start: 0.625rem; font-size: 1rem; font-weight: 650; line-height: 1.3; color: var(--aicc-success); }
+.aicc-tier__launch > .aicc-pcta { margin-block-start: auto; padding-block-start: 1.25rem; }
+.aicc-tier__incl { display: flex; align-items: center; gap: 0.5rem; padding: 0.875rem var(--aicc-tier-px); border-block-start: 1px solid var(--aicc-border); font-size: 0.875rem; line-height: 1.35; color: var(--aicc-text-muted); }
+.aicc-tier__incl-icon { display: inline-flex; flex: none; color: var(--aicc-success); }
+
+/* Studio = Recommended: gradient border (the primary gradient, AA), a blue wash on the plan zone, a deeper shadow, the badge. Solo and Agency stay quiet but complete. */
+.aicc-tier--featured {
+  border: 2px solid transparent; margin-inline: -1px;
+  background: linear-gradient(var(--aicc-surface), var(--aicc-surface)) padding-box, var(--aicc-gradient-action-aa) border-box;
+  box-shadow: var(--aicc-shadow-lg);
+}
+.aicc-tier--featured .aicc-tier__plan { background: linear-gradient(180deg, rgb(37 99 235 / 0.11), rgb(5 134 95 / 0.045)); }
+@media (hover: hover) { .aicc-tier--featured:hover { border-color: transparent; box-shadow: 0 28px 56px -24px rgb(30 58 138 / 0.4); } }
+
+/* registration closed (after the cutoff, or paused): FREE steps back so the card never advertises something that cannot be started; the price and, with paid purchase open, the purchase link lead */
+.aicc-tier--closed .aicc-tier__free-word { font-size: clamp(1.5rem, calc(100cqi / (var(--aicc-free-em) * 1.9)), 2.25rem); color: var(--aicc-text-muted); }
+.aicc-tier--closed .aicc-tier__trial { color: var(--aicc-text-muted); }
+.aicc-tier--closed .aicc-cap--trial { --aicc-cap-ink: var(--aicc-slate-500); }
+.aicc-tier--closed .aicc-cap--trial .aicc-cap__slot--on { background: rgb(100 116 139 / 0.12); }
+/* the ordinary card (after the trial END, data-ea-after): the price leads, the control is the only thing in the lower zone */
+.aicc-tier--standard .aicc-tier__amount { font-size: min(2.75rem, 13vw); }
+.aicc-tier--standard .aicc-tier__launch { padding-block-start: 1.25rem; }
+
+/* Tablet: a plan is a row. The control column keeps its width, the identity column takes the rest. */
+@media (min-width: 40rem) and (max-width: 61.99rem) {
+  .aicc-tier { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); grid-template-areas: "plan launch" "incl incl"; }
+  .aicc-tier__plan { grid-area: plan; }
+  .aicc-tier__launch { grid-area: launch; justify-content: center; }
+  .aicc-tier__incl { grid-area: incl; }
+}
+/* Desktop: three columns. Studio is raised by 0.625rem above and below its neighbours without moving its content (padding added to the zones, offset by the negative margin). */
+@media (min-width: 62rem) {
+  .aicc-tiers { grid-template-columns: repeat(3, minmax(0, 1fr)); column-gap: var(--aicc-space-5); row-gap: 0; }
+  .aicc-pricing { --aicc-tier-px: min(1.375rem, 5vw); }
+  .aicc-tier--featured { margin-block: -0.625rem; }
+  .aicc-tier--featured .aicc-tier__plan { padding-block-start: 2.125rem; }
+  .aicc-tier--featured .aicc-tier__incl { padding-block-end: 1.5rem; }
+}
+@supports (grid-template-rows: subgrid) {
+  @media (min-width: 62rem) {
+    .aicc-tiers > .aicc-tier { grid-row: span 7; display: grid; grid-template-rows: subgrid; }
+    .aicc-tiers > .aicc-tier > .aicc-tier__plan { grid-row: 1 / span 4; display: grid; grid-template-rows: subgrid; }
+    .aicc-tiers > .aicc-tier > .aicc-tier__launch { grid-row: 5 / span 2; display: grid; grid-template-rows: subgrid; }
+    .aicc-tiers > .aicc-tier > .aicc-tier__incl { grid-row: 7; }
+    .aicc-tiers > .aicc-tier--standard { grid-row: span 7; }
+    .aicc-tier--standard > .aicc-tier__launch { grid-row: 5 / span 2; }
+    .aicc-tier__launch > .aicc-pcta { grid-row: 2; margin-block-start: 0; }
+  }
+}
+@supports not (grid-template-rows: subgrid) {
+  @media (min-width: 62rem) { .aicc-tier__fit { min-block-size: 4.35em; } }
+}
+
+/* ── The state-aware control (Site: src/lib/ssStatus.ts; Control Plane: AICC_LM_Signup::public_mode()) ───────────────────────────
+   link states = a real <a class="aicc-btn ..."> (Studio primary, others outline). status states = a NON-interactive region: dashed tinted pill + icon + words, second line says what happens. ── */
+.aicc-pcta { display: grid; gap: 0.625rem; align-content: end; }
+.aicc-pcta__note { font-size: 0.875rem; line-height: 1.4; color: var(--aicc-text-muted); text-align: center; text-wrap: pretty; }
+.aicc-pcta .aicc-btn { min-block-size: 3.5rem; padding-inline: min(2rem, 4vw); }
+.aicc-pstatus { display: grid; gap: 0.5rem; cursor: default; }
+.aicc-pstatus__pill {
+  display: flex; align-items: center; justify-content: center; gap: 0.5rem; min-block-size: 3.5rem; padding: 0.75rem min(1.25rem, 4vw);
+  border: 1.5px dashed var(--aicc-border-strong); border-radius: 1.75rem; background: var(--aicc-surface-sunken);
+  font-size: var(--aicc-text-sm); font-weight: 650; line-height: 1.3; color: var(--aicc-slate-700); text-align: center; text-wrap: balance; user-select: text;
+}
+.aicc-pstatus__pill > svg { flex: none; }
+.aicc-pstatus__note { font-size: 0.875rem; line-height: 1.4; color: var(--aicc-text-muted); text-align: center; text-wrap: pretty; }
+.aicc-tier--featured .aicc-pstatus__pill { background: var(--aicc-info-bg); border-color: rgb(29 78 216 / 0.5); color: var(--aicc-primary-strong); }
+.aicc-btn[data-ss-state] { text-wrap: balance; }
+
+/* ── The shared launch panel: the dates and the trial conditions, said ONCE per page ── */
+.aicc-launch {
+  display: grid; grid-template-columns: minmax(0, 1fr); gap: 1.5rem 3rem; margin-block-start: var(--aicc-space-6); padding: clamp(1rem, 5vw, 2rem);
+  background: var(--aicc-surface); border: 1px solid var(--aicc-border); border-radius: var(--aicc-radius-xl); box-shadow: var(--aicc-shadow-sm); color: var(--aicc-text); scroll-margin-block-start: 6rem;
+}
+.aicc-launch__intro { display: grid; gap: 0.625rem; align-content: start; justify-items: start; }
+.aicc-launch__tag { display: inline-flex; align-items: center; padding: 0.1875rem 0.75rem; border-radius: var(--aicc-radius-pill); background: var(--aicc-success-bg); color: var(--aicc-success); font-size: 0.8125rem; font-weight: 650; line-height: 1.25rem; }
+.aicc-launch__title { font-size: var(--aicc-text-xl); font-weight: 700; line-height: 1.2; letter-spacing: -0.01em; color: var(--aicc-text); text-wrap: balance; }
+.aicc-launch__sub { max-inline-size: 30rem; font-size: var(--aicc-text-sm); line-height: 1.5; color: var(--aicc-text-muted); text-wrap: pretty; }
+/* timeline: two milestones. Registration closes (a ring: the gate) -> trial access ends (solid: the end). Vertical on a phone, horizontal from 40rem. */
+.aicc-timeline { --aicc-tl-gap: 1.5rem; display: grid; gap: 0; align-content: start; }
+.aicc-timeline__step { position: relative; display: grid; gap: 0.1875rem; align-content: start; min-inline-size: 0; padding-inline-start: 2.25rem; }
+.aicc-timeline__step:first-child { padding-block-end: var(--aicc-tl-gap); }
+.aicc-timeline__node { position: absolute; inset-block-start: 0.125rem; inset-inline-start: 0; inline-size: 1.25rem; block-size: 1.25rem; border-radius: 50%; border: 3px solid var(--aicc-primary-strong); background: var(--aicc-surface); }
+.aicc-timeline__step + .aicc-timeline__step .aicc-timeline__node { background: var(--aicc-success); border-color: var(--aicc-success); }
+.aicc-timeline__step:first-child::after { content: ""; position: absolute; inset-inline-start: 0.5625rem; inset-block: 1.375rem 0; inline-size: 0; border-inline-start: 2px solid var(--aicc-primary); opacity: 0.55; }
+.aicc-timeline__label { font-size: var(--aicc-text-sm); font-weight: 600; line-height: 1.35; color: var(--aicc-text-muted); }
+.aicc-timeline__date { font-size: 1.25rem; font-weight: 700; line-height: 1.25; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; color: var(--aicc-text); text-wrap: balance; }
+.aicc-timeline__note { font-size: 0.875rem; line-height: 1.45; color: var(--aicc-text-muted); text-wrap: pretty; }
+.aicc-launch__facts { display: grid; gap: 1rem; padding-block-start: 1.5rem; border-block-start: 1px solid var(--aicc-border); }
+.aicc-launch__fact { display: flex; align-items: flex-start; gap: 0.75rem; font-size: var(--aicc-text-sm); line-height: 1.45; color: var(--aicc-text); }
+.aicc-launch__fact-icon { display: inline-flex; flex: none; align-items: center; justify-content: center; inline-size: 2rem; block-size: 2rem; border-radius: 50%; background: var(--aicc-success-bg); color: var(--aicc-success); }
+.aicc-launch__fact-icon .aicc-cap--trial { grid-template-columns: 1rem; inline-size: 1rem; }
+.aicc-launch__fact > span:last-child { padding-block-start: 0.28rem; }
+.aicc-launch__foot { font-size: 0.875rem; line-height: 1.5; color: var(--aicc-text-muted); text-wrap: pretty; }
+@media (min-width: 40rem) {
+  .aicc-timeline { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .aicc-timeline__step { padding-inline-start: 0; padding-block-start: 2.125rem; }
+  .aicc-timeline__step:first-child { padding-block-end: 0; padding-inline-end: var(--aicc-tl-gap); }
+  .aicc-timeline__node { inset-block-start: 0; }
+  .aicc-timeline__step:first-child::after { inset-block: 0.5625rem auto; inset-inline-start: 1.25rem; inline-size: auto; inset-inline-end: 0; block-size: 0; border-inline-start: 0; border-block-start: 2px solid var(--aicc-primary); }
+  .aicc-launch__facts { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1.5rem; }
+}
+@media (min-width: 62rem) {
+  .aicc-launch { grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.5fr); align-items: start; }
+  .aicc-launch__facts, .aicc-launch__foot { grid-column: 1 / -1; }
+  .aicc-timeline { padding-block-start: 0.25rem; }
+}
+
+/* ── Closing band: the lead and the state control (no dates). Sits inside the page's dark band (.aicc-section--inverse or the theme's CTA band). ── */
+.aicc-pband :where(*) { min-inline-size: 0; }
+.aicc-pband, .aicc-launch :where(p, h3, span, li) { overflow-wrap: anywhere; }
+.aicc-pband { display: grid; gap: var(--aicc-space-5); justify-items: start; max-inline-size: 40rem; }
+.aicc-pband__lead { font-size: var(--aicc-text-lg); line-height: 1.5; color: var(--aicc-text-inverse); text-wrap: pretty; }
+.aicc-pband__actions { display: flex; flex-wrap: wrap; align-items: flex-start; gap: var(--aicc-space-4); inline-size: 100%; }
+.aicc-pband .aicc-pcta { inline-size: min(100%, 22rem); }
+.aicc-pcta--inverse .aicc-pstatus__pill { background: rgb(255 255 255 / 0.08); border-color: rgb(255 255 255 / 0.5); color: var(--aicc-text-inverse); }
+.aicc-pcta--inverse .aicc-pstatus__note, .aicc-pcta--inverse .aicc-pcta__note { color: var(--aicc-text-inverse-muted); text-align: start; }
+.aicc-pcta--inverse .aicc-btn:focus-visible { outline-color: var(--aicc-focus-on-dark); }
+
+/* ── Modes: enhanced contrast, forced colours, print. Reduced motion is handled by the duration tokens (every transition above uses them). ── */
+:root[data-aicc-contrast="high"] .aicc-tier, :root[data-aicc-contrast="high"] .aicc-launch { border-color: var(--aicc-border-strong); }
+:root[data-aicc-contrast="high"] .aicc-pstatus__pill { background: var(--aicc-surface); border-style: solid; border-color: var(--aicc-text); color: var(--aicc-text); }
+:root[data-aicc-contrast="high"] .aicc-tier__trial, :root[data-aicc-contrast="high"] .aicc-launch__tag { color: var(--aicc-text); }
+:root[data-aicc-contrast="high"] .aicc-pcta--inverse .aicc-pstatus__pill { background: transparent; border-color: #fff; color: #fff; }
+@media (forced-colors: active) {
+  .aicc-tier, .aicc-launch { border: 1px solid CanvasText; }
+  .aicc-tier--featured { border: 3px solid Highlight; background: none; }
+  .aicc-tier__badge, .aicc-launch__tag { border: 1px solid ButtonText; background: none; color: ButtonText; }
+  .aicc-launch__fact-icon { border: 1px solid CanvasText; }
+  .aicc-pstatus__pill { border: 2px dashed GrayText; color: CanvasText; }
+  .aicc-cap__slot { border-color: GrayText; }
+  .aicc-cap__slot--on { border-color: Highlight; }
+  .aicc-timeline__node { border-color: Highlight; }
+  .aicc-timeline__step + .aicc-timeline__step .aicc-timeline__node { background: Highlight; }
+  .aicc-timeline__step:first-child::after { border-color: CanvasText; opacity: 1; }
+}
+@media print {
+  .aicc-tiers { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.5rem; }
+  .aicc-tier, .aicc-launch { break-inside: avoid; box-shadow: none; border: 1px solid #000; background: #fff; }
+  .aicc-tier--featured { margin-block: 0; border: 2px solid #000; }
+  .aicc-tier__plan, .aicc-tier--featured .aicc-tier__plan { background: none; }
+  .aicc-tier__badge { background: none; border: 1px solid #000; color: #000; }
+  .aicc-tier__free-word, .aicc-tier__trial, .aicc-launch__tag { color: #000; }
+  .aicc-pstatus__pill { border-color: #000; background: none; color: #000; }
+  .aicc-pcta .aicc-btn { border: 1px solid #000; background: none; color: #000; box-shadow: none; }
+}
+/* ═══ P40 PRICING END ═══════════════════════════════════════════════════════════════════════════════════════════════════════ */

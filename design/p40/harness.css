@@ -1,0 +1,19 @@
+/* Prototype page chrome ONLY: what the Site's globals.css/aicc.css (Tailwind preflight, body, container, section tones) gives the real page. Never shipped. */
+*, ::before, ::after { box-sizing: border-box; border: 0 solid; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--aicc-bg); color: var(--aicc-text); font-family: var(--aicc-font-sans); font-size: var(--aicc-text-base); line-height: var(--aicc-leading-body); overflow-wrap: break-word; min-height: 100dvh; }
+h1, h2, h3, h4 { margin: 0; font-size: inherit; font-weight: inherit; overflow-wrap: break-word; hyphens: manual; color: var(--aicc-text); line-height: var(--aicc-leading-snug); letter-spacing: var(--aicc-tracking-display); text-wrap: balance; }
+p, ul, ol, dl { margin: 0; }
+a { color: inherit; text-decoration: inherit; }
+button { font: inherit; color: inherit; }
+img, svg { display: block; max-inline-size: 100%; }
+bdi { unicode-bidi: isolate; }
+.h-container { box-sizing: border-box; inline-size: 100%; max-inline-size: var(--aicc-container); margin-inline: auto; padding-inline: 1.5rem; }
+@media (min-width: 64rem) { .h-container { padding-inline: 2rem; } }
+.h-section { padding-block: clamp(3rem, 2rem + 3.5vw, 5rem); }
+.h-section--sunken { background: var(--aicc-surface-sunken); }
+.h-section--inverse { background: var(--aicc-surface-inverse); color: var(--aicc-text-inverse); }
+.h-section--inverse h2 { color: var(--aicc-text-inverse); }
+.h-section--inverse p { color: var(--aicc-text-inverse-muted); }
+.h-h2 { font-size: var(--aicc-text-3xl); font-weight: 700; line-height: var(--aicc-leading-tight); margin-block-end: 1.5rem; }
+:root:lang(he), :root:lang(ru) { --aicc-leading-body: 1.7; --aicc-tracking-display: 0; }
