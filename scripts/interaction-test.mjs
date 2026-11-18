@@ -343,13 +343,22 @@ for (const [w, h] of [[390, 844], [320, 256]]) {
   check("home has no draft pills and no pending lines; hero says the new headline", await p.evaluate(() => !document.querySelector("[data-legal-draft]") && !document.querySelector("[data-pending]") && /^Sell More From Every Visit$/.test(document.querySelector("h1").textContent.replace(/\s+/g, " ").trim())));
   await p.goto(urlFor("en", "pricing"));
   check("pricing: no draft pill on marketing content; one muted pending line pattern absent here", await p.evaluate(() => !document.querySelector("[data-legal-draft]")));
-  const tops = await p.$$eval(".aicc-plan__amount", (e) => e.map((x) => Math.round(x.getBoundingClientRect().top)));
+  // P40: a self-service build (<html data-ss-mode="on">) renders the premium section (kit classes aicc-tier*); every other build keeps the ordinary cards (aicc-plan*)
+  const ssBuild = await p.evaluate(() => document.documentElement.getAttribute("data-ss-mode") === "on");
+  const LIVE_TIER = "article.aicc-tier:not(.aicc-tier--standard)";
+  const tops = await p.$$eval(ssBuild ? `${LIVE_TIER} .aicc-tier__amount` : ".aicc-plan__amount", (e) => e.map((x) => Math.round(x.getBoundingClientRect().top)));
   check(`pricing: the three prices align (badge row reserved): ${tops.join(",")}`, tops.length === 3 && Math.max(...tops) - Math.min(...tops) <= 1);
+  if (ssBuild) {
+    // self-service: each live card carries ONE control (a status region in the static state, a plain link after an open answer), never a purchase link; no plan statement of the ordinary kind is visible while live
+    const ctl = await p.$$eval(LIVE_TIER, (cards) => cards.map((c) => ({ status: c.querySelectorAll("p.aicc-pstatus[role='status']").length, links: c.querySelectorAll("a.aicc-btn").length, ordinary: c.querySelectorAll("[data-commerce='closed']").length })));
+    check("pricing (self-service): the three live cards each carry exactly ONE control (a status region or a link), no 'Purchases open soon' statement while live, and no purchase link", ctl.length === 3 && ctl.every((c) => c.status + c.links === 1 && c.ordinary === 0) && (await p.$$eval("article.aicc-tier a[href*='plan=']", (e) => e.filter((a) => !/\/start\//.test(a.getAttribute("href"))).length)) === 0);
+  } else {
   const btn = await p.$$eval(".aicc-plan .aicc-btn", (e) => e.map((x) => x.classList.contains("aicc-btn--primary")));
   // Open build: only Studio's button uses the action gradient. Closed build (the default: "Purchases open soon"): the three plan statements are quiet, none uses it, and none is a link.
   const closedBuild = await p.evaluate(() => document.querySelectorAll(".aicc-plan [data-commerce='closed']").length === 3);
   check(closedBuild ? "pricing (checkout closed): the three plan buttons are 'Purchases open soon' statements, not links, and none uses the action gradient" : "pricing: only Studio's button uses the action gradient",
     closedBuild ? btn.join() === "false,false,false" && (await p.$$eval(".aicc-plan a[href*='plan=']", (e) => e.length)) === 0 : btn.join() === "false,true,false");
+  }
   await p.goto(urlFor("en", "privacy"));
   check("privacy: ONE draft notice per page (not one per section) and the muted pending lines are visible on the legal page", await p.evaluate(() => document.querySelectorAll("[data-legal-draft]").length === 1 && document.querySelectorAll("[data-pending]").length > 0 && !/\[.*pending.*\]/.test(document.querySelector("main").textContent)));
   await ctx.close();
@@ -1279,7 +1288,7 @@ for (const w of [1280, 390, 320]) {
     }
     // Open build: the plan buttons choose a plan (?plan=...). Closed build (the default, "Purchases open soon"): NO plan link exists anywhere, and the plan cards carry the closed statement instead.
     await p.goto(urlFor(l, "pricing"));
-    const closedCards = await p.evaluate(() => document.querySelectorAll("article.aicc-plan [data-commerce='closed']").length);
+    const closedCards = await p.evaluate(() => document.querySelectorAll("article.aicc-plan [data-commerce='closed'], article.aicc-tier--standard [data-commerce='closed']").length);
     check(`account links (${l}): all ${n} links go to ${pref(l)}/my-account/ (plan buttons with ?plan=solo|studio|agency: ${plans.length}; ${closedCards ? "checkout CLOSED: " + closedCards + " plan statements" : "checkout open"})`,
       n >= 20 && bad.length === 0 && (closedCards ? plans.length === 0 && closedCards === 3 : plans.length >= 3), bad.slice(0, 5).join("; "));
   }

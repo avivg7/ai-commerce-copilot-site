@@ -20,10 +20,16 @@ const A = (locale: Locale, path: string) => { const { lang, dir } = txProps(loca
  * Site-only part: the invisible reserve that keeps a link as tall as the status region it replaces, and the plan finder's result.
  */
 export const SS_CSS = [
-  // the link states keep the height of the status region's note (the note is rendered invisibly from the same text): the status answer arriving shifts nothing
+  // the link states keep the height of the status region (a link and a status pill share ONE box height: the pill takes the lg button's natural 3.625rem, the kit's 3.5rem minimum leaves it 2px short) and of its note
+  // (rendered invisibly from the same text): the status answer arriving shifts nothing
+  ".aicc-pricing .aicc-pcta .aicc-pstatus__pill,.aicc-pricing .aicc-pcta .aicc-btn{min-block-size:3.625rem}",
   ".aicc-ss-reserve{display:block;margin-block-start:-0.125rem;font-size:0.875rem;line-height:1.4;text-align:center;text-wrap:pretty;visibility:hidden;pointer-events:none;user-select:none}",
   ".aicc-ss-reserve::before{content:attr(data-reserve)}",
   ".aicc-pcta--inverse .aicc-ss-reserve{text-align:start}",
+  // the closing band's grid column may shrink below its widest action (an action label that cannot wrap, such as the Russian "Попробовать живое демо", pushed the band 45 px past a 320 px screen at 200% text; the page's own `.aicc-final` grid had an implicit auto column) and its buttons may wrap
+  ".aicc-final{grid-template-columns:minmax(0,1fr)}",
+  ".aicc-pband{grid-template-columns:minmax(0,1fr)}",
+  ".aicc-pband .aicc-btn{white-space:normal;text-align:center}",
   // the finder's result: the plan, its paid capacity, then the control (the same region as a card)
   ".aicc-ssfinder__result{display:grid;gap:0.75rem;justify-items:start;inline-size:100%}",
   ".aicc-ssfinder__cap{margin:0;font-size:var(--aicc-text-sm);font-weight:650;line-height:1.35;color:var(--aicc-text)}",

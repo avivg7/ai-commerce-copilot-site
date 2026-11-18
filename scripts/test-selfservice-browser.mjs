@@ -1,4 +1,4 @@
-// npm run test:selfservice-browser: the P37/P39 self-service controls in real Chromium, against local exports and a local mock of GET /wp-json/aicc/v1/signup/status (nothing leaves 127.0.0.1).
+// npm run test:selfservice-browser: the P37/P39/P40 self-service controls in real Chromium, against local exports and a local mock of GET /wp-json/aicc/v1/signup/status (nothing leaves 127.0.0.1).
 //   node scripts/test-selfservice-browser.mjs --ss-off <dir> --ss-announce <dir> --ss-open <dir> --ss-link <dir> --shots <dir> [--port-base <n>]
 //     (exports built with NEXT_PUBLIC_AICC_SELFSERVICE=on and the launch-offer switch unset | announce | open; --ss-link: the ANNOUNCE build made with NEXT_PUBLIC_AICC_SS_INITIAL=link;
 //      --port-base: the four local servers listen on n .. n+3)
@@ -57,18 +57,18 @@ async function view(cell, route, w, { h = 900, locale = "en", signup = "open", d
   await page.waitForTimeout(400);
   return { ctx, page, m, nav, errors };
 }
-/** The controls of a page's plan cards: sign-up links (a.aicc-btn), plain-text states, demo links, and every button-looking element. */
-const cards = (page) => page.evaluate(() => [...document.querySelectorAll("article.aicc-plan")].map((a) => {
+/** The controls of a page's LIVE plan cards (P40 `article.aicc-tier`, not the ordinary cards of the ended view): sign-up links (a.aicc-btn), status regions (p.aicc-pstatus), demo links (must be none), dates (must be none), every button-looking element. */
+const TIER = "article.aicc-tier:not(.aicc-tier--standard)";
+const cards = (page) => page.evaluate((TIER) => [...document.querySelectorAll(TIER)].map((a) => {
   const vis = (e) => e.getClientRects().length > 0;
-  const link = [...a.querySelectorAll("a.aicc-btn")].filter(vis).map((e) => ({ href: e.getAttribute("href"), text: e.innerText.replace(/\s+/g, " ").trim(), h: e.getBoundingClientRect().height }));
-  const st = [...a.querySelectorAll("[data-ss-state]")].filter(vis).map((e) => ({ tag: e.tagName, text: e.innerText.replace(/\s+/g, " ").trim(), state: e.getAttribute("data-ss-state"), role: e.getAttribute("role"), insideAction: !!e.closest("a,button"), cls: e.className, tabindex: e.getAttribute("tabindex"), cursor: getComputedStyle(e).cursor }));
-  const demo = [...a.querySelectorAll("[data-ss-demo] a")].filter(vis).map((e) => ({ href: e.getAttribute("href"), text: e.innerText.replace(/\s+/g, " ").trim(), h: e.getBoundingClientRect().height }));
+  const link = [...a.querySelectorAll("a.aicc-btn")].filter(vis).map((e) => ({ href: e.getAttribute("href"), text: e.innerText.replace(/\s+/g, " ").trim(), h: e.getBoundingClientRect().height, state: e.getAttribute("data-ss-state"), cls: e.className }));
+  const st = [...a.querySelectorAll("p.aicc-pstatus")].filter(vis).map((e) => ({ tag: e.tagName, text: e.querySelector(".aicc-pstatus__label").innerText.replace(/\s+/g, " ").trim(), note: (e.querySelector(".aicc-pstatus__note") || { innerText: "" }).innerText.replace(/\s+/g, " ").trim(), state: e.getAttribute("data-ss-state"), role: e.getAttribute("role"), insideAction: !!e.closest("a,button"), cls: e.className, tabindex: e.getAttribute("tabindex"), cursor: getComputedStyle(e).cursor, h: e.getBoundingClientRect().height }));
+  const demo = [...a.querySelectorAll("[data-ss-demo], a[href$='#demo']")].filter(vis).length;
   const btns = [...a.querySelectorAll(".aicc-btn, button")].filter(vis).length;
-  const dates = [...a.querySelectorAll("[data-ss-date]")].filter(vis).map((e) => e.innerText.replace(/\s+/g, " ").trim());
-  return { link, st, demo, btns, dates };
-}));
+  const dates = [...a.querySelectorAll("[data-ss-date], [data-ss-dates]")].filter(vis).length;
+  return { link, st, demo, btns, dates, plan: a.getAttribute("data-plan") };
+}), TIER);
 const SOON = (l) => D[l].ea.ss.cta.soon;
-const demoHref = (l) => `${pre(l)}/#demo`;
 
 // ───────── layout, RTL and screenshots ─────────
 console.log("== layout: Home and Pricing, four languages, 1440 and 390 px (he right-to-left); screenshots in " + SHOTS);
@@ -80,20 +80,20 @@ for (const cell of ["announce", "off", "open"]) for (const l of LOCALES) for (co
     const g = await page.evaluate(() => ({ sw: document.documentElement.scrollWidth, iw: innerWidth, dir: document.documentElement.dir }));
     check(g.sw <= g.iw && g.dir === (l === "he" ? "rtl" : "ltr"), `ss-${cell} ${l} ${name} @${w}: no horizontal scroll (${g.sw}<=${g.iw}), dir=${g.dir}`);
     const cs = await cards(page);
-    check(cs.length === 3 && cs.every((c) => c.link.length === 0 && c.btns === 0 && c.st.length === 1 && c.st[0].tag === "P" && c.st[0].role === "status" && c.st[0].text === SOON(l) && !c.st[0].insideAction && c.demo.length === 1 && c.demo[0].h >= 24 && c.dates.length === 2), `ss-${cell} ${l} ${name} @${w}: three cards, each the plain status "${SOON(l)}" (no button, no link), ONE secondary demo link (>= 24 px tall), two date lines`);
+    check(cs.length === 3 && cs.every((c) => c.link.length === 0 && c.btns === 0 && c.st.length === 1 && c.st[0].tag === "P" && c.st[0].role === "status" && c.st[0].text === SOON(l) && !c.st[0].insideAction && c.demo === 0 && c.dates === 0), `ss-${cell} ${l} ${name} @${w}: three cards, each the plain status "${SOON(l)}" (no button, no link), no per-card demo link, no date line (the dates are said once, in the launch panel)`);
     // every card fits: nothing inside a card is wider than the card; the dates and the status never overflow
-    const fit = await page.evaluate(() => [...document.querySelectorAll("article.aicc-plan")].map((a) => { const r = a.getBoundingClientRect(); return [...a.querySelectorAll("*")].filter((e) => e.getClientRects().length).every((e) => { const q = e.getBoundingClientRect(); return q.left >= r.left - 1 && q.right <= r.right + 1; }); }));
+    const fit = await page.evaluate((TIER) => [...document.querySelectorAll(TIER)].map((a) => { const r = a.getBoundingClientRect(); return [...a.querySelectorAll("*")].filter((e) => e.getClientRects().length).every((e) => { const q = e.getBoundingClientRect(); return q.left >= r.left - 1 && q.right <= r.right + 1; }); }), TIER);
     check(fit.length === 3 && fit.every(Boolean), `ss-${cell} ${l} ${name} @${w}: every element of every card stays inside the card`);
     if (l === "he") {
-      // right-to-left: the date labels and the status start at the right edge; the status icon sits right of its text; the card is rtl
-      const rtl = await page.evaluate(() => { const a = document.querySelector("article.aicc-plan"), r = a.getBoundingClientRect(), dtn = a.querySelector("dt"), rg = document.createRange(), dt = (rg.selectNodeContents(dtn), rg.getBoundingClientRect()), p = a.querySelector("[data-ss-state]"), ic = p.querySelector("svg").getBoundingClientRect(), tx = p.querySelector("span").getBoundingClientRect(), dd = a.querySelector("dd"); return { cardDir: getComputedStyle(a).direction, dtRight: r.right - dt.right, dtLeft: dt.left - r.left, iconRight: ic.left >= tx.right - 1, ddAlign: getComputedStyle(dd).textAlign }; });
-      check(rtl.cardDir === "rtl" && rtl.dtRight < rtl.dtLeft && rtl.iconRight && ["start", "right"].includes(rtl.ddAlign), `ss-${cell} he ${name} @${w}: RTL card: date labels start at the right edge, the status icon is right of its text [${JSON.stringify(rtl)}]`);
+      // right-to-left: the plan name starts at the right edge, the status icon sits right of its text, the card and the panel timeline are rtl (the first step, "registration closes", is on the right)
+      const rtl = await page.evaluate((TIER) => { const a = document.querySelector(TIER), r = a.getBoundingClientRect(), nm = a.querySelector(".aicc-tier__name").getBoundingClientRect(), p = a.querySelector(".aicc-pstatus__pill"), ic = p.querySelector("svg").getBoundingClientRect(), tx = p.querySelector(".aicc-pstatus__label").getBoundingClientRect(), tl = [...document.querySelectorAll(".aicc-timeline__step")].map((e) => e.getBoundingClientRect()); return { cardDir: getComputedStyle(a).direction, nameRight: r.right - nm.right, nameLeft: nm.left - r.left, iconRight: ic.left >= tx.right - 1, tlFirstRight: tl.length === 2 && tl[0].left > tl[1].left || tl.length === 2 && tl[0].top < tl[1].top }; }, TIER);
+      check(rtl.cardDir === "rtl" && rtl.nameRight < rtl.nameLeft && rtl.iconRight && rtl.tlFirstRight, `ss-${cell} he ${name} @${w}: RTL card: the plan name starts at the right edge, the status icon is right of its text, the timeline's first step is on the right [${JSON.stringify(rtl)}]`);
     }
     if (name === "home") {
       const hero = await page.evaluate(() => [...document.querySelectorAll(".aicc-hero-actions a")].filter((e) => e.closest(".aicc-hero--home")).map((e) => ({ href: e.getAttribute("href"), text: e.innerText.trim(), top: e.getBoundingClientRect().top, vis: e.getClientRects().length > 0 })));
       check(hero.length === 2 && hero.every((x) => x.vis && x.top < (w === 390 ? 844 : 900)) && hero[0].href === "#demo" && hero[0].text === D[l].home.hero.ctaDemo && hero[1].href === `${pre(l)}/pricing/`.replace(/^$/, "/"), `ss-${cell} ${l} home @${w}: Try Live Demo (#demo) and See Pricing are the two Hero actions, visible above the fold`);
     }
-    // the screenshots: the Hero view (Home, viewport) and the plan cards section (element), so the cards, the trial lines, the dates and the terms block are visible
+    // the screenshots: the Hero view (Home, viewport) and the plan cards section (element), so the cards, the trial lines, the launch panel with the two dates are visible
     if (name === "home") await page.screenshot({ path: path.join(SHOTS, `ss-${cell}-${l}-home-hero-${w}.png`) });
     await page.locator(name === "home" ? '[aria-labelledby="pricing-title"]' : '[aria-labelledby="plans-title"]').screenshot({ path: path.join(SHOTS, `ss-${cell}-${l}-${name}-plans-${w}.png`) });
     await ctx.close();
@@ -104,6 +104,9 @@ for (const cell of ["announce", "off", "open"]) for (const l of LOCALES) for (co
   const css = fs.readFileSync("src/components/ss/Ss.tsx", "utf8").match(/export const SS_CSS = \[([\s\S]*?)\]\.join/)[1];
   const phys = css.match(/(?<![a-z-])(left|right)\s*:|margin-(left|right)|padding-(left|right)|border-(left|right)|text-align\s*:\s*(left|right)|float\s*:/g);
   check(!phys, `the self-service CSS uses logical properties only (no left / right / float)${phys ? " -> " + phys.join(", ") : ""}`);
+  const kit = fs.readFileSync("brand/aicc-brand.css", "utf8"), kp = kit.slice(kit.indexOf("P40 PRICING BEGIN"), kit.indexOf("P40 PRICING END")).replace(/\/\*[\s\S]*?\*\//g, "");
+  const kphys = kp.match(/(?<![a-z-])(left|right)\s*:|margin-(left|right)|padding-(left|right)|border-(left|right)|text-align\s*:\s*(left|right)|float\s*:/g);
+  check(kp.length > 5000 && !kphys, `the kit's P40 pricing CSS uses logical properties only (no left / right / float)${kphys ? " -> " + kphys.join(", ") : ""}`);
 }
 
 // ───────── the state matrix in the browser ─────────
@@ -124,10 +127,10 @@ for (const initial of ["coming_soon", "link"]) {
     check(errors.length === 0, `${tag}: no hydration or script error on the page (${errors.slice(0, 1).join("; ") || "none"})`);
     const calls = m.calls("/signup/status", "GET");
     check(calls.length === 1 && calls[0].headers.cookie === "", `${tag}: exactly ONE status request, no cookie sent (credentials omitted)`);
-    if (kind === "link") check(cs.every((c, i) => c.link.length === 1 && c.st.length === 0 && c.link[0].text.startsWith(label) && c.link[0].href === startOf("en", PLANS[i].id) && c.link[0].h >= 44), `${tag}: every card has ONE real link to /start/?plan=<id> labelled "${label}" (>= 44 px tall)${["open", "waitlist"].includes(answer) ? "" : " (the static link of a build made after activation)"}`);
-    else check(cs.every((c) => c.link.length === 0 && c.btns === 0 && c.st.length === 1 && c.st[0].tag === "P" && c.st[0].role === "status" && c.st[0].text === label && !c.st[0].insideAction && !/aicc-btn/.test(c.st[0].cls) && c.st[0].tabindex === null), `${tag}: every card shows the PLAIN TEXT "${label}": no link, no button, not inside an action, not focusable`);
-    // the demo is ALWAYS a separate secondary text link; the Hero, "Sign in" and the demo links never change
-    check(cs.every((c) => c.demo.length === 1 && c.demo[0].href === demoHref("en") && c.demo[0].text.startsWith(D.en.home.hero.ctaDemo)), `${tag}: each card keeps its secondary "${D.en.home.hero.ctaDemo}" text link to ${demoHref("en")}`);
+    if (kind === "link") check(cs.every((c, i) => c.link.length === 1 && c.st.length === 0 && c.link[0].text.startsWith(label) && c.link[0].href === startOf("en", PLANS[i].id) && c.link[0].h >= 44 && c.link[0].state === (answer === "open" || answer === "waitlist" ? answer : "static") && c.link[0].cls.includes(PLANS[i].featured ? "aicc-btn--primary" : "aicc-btn--outline")), `${tag}: every card has ONE real link to /start/?plan=<id> labelled "${label}" (>= 44 px tall, Studio primary, the others outline)${["open", "waitlist"].includes(answer) ? "" : " (the static link of a build made after activation)"}`);
+    else check(cs.every((c) => c.link.length === 0 && c.btns === 0 && c.st.length === 1 && c.st[0].tag === "P" && c.st[0].role === "status" && c.st[0].text === label && c.st[0].note.length > 10 && !c.st[0].insideAction && !/aicc-btn/.test(c.st[0].cls) && c.st[0].tabindex === null && c.st[0].cursor !== "pointer"), `${tag}: every card shows the non-interactive STATUS "${label}" with its explanation: no link, no button, not inside an action, not focusable`);
+    // no card carries a demo link or a date; the Hero, "Sign in" and the demo links never change
+    check(cs.every((c) => c.demo === 0 && c.dates === 0), `${tag}: no card carries a demo link or a date line (the dates are said once, in the launch panel)`);
     const stay = await page.evaluate((startRe) => ({ hero: [...document.querySelectorAll("a")].filter((a) => a.getAttribute("href") === "#demo" || a.getAttribute("href") === "/pricing/").length, signIn: [...document.querySelectorAll("header a")].filter((a) => a.getAttribute("href") === "https://www.copilt.org/my-account/").length, demoAsSignup: [...document.querySelectorAll("a")].filter((a) => /#demo/.test(a.getAttribute("href") || "") && new RegExp(startRe, "i").test(a.innerText)).length }), `^(${[L.start, L.waitlist].join("|")})`);
     check(stay.hero >= 2 && stay.signIn >= 2 && stay.demoAsSignup === 0, `${tag}: the Hero links (#demo, /pricing/) and "Sign in" are unchanged, and no link to #demo is labelled as a sign-up`);
     // "Get started": the account page until the answer is open / waitlist (or the static link of a link build)
@@ -145,12 +148,12 @@ for (const l of LOCALES) for (const [answer, kind, key] of [["open", "link", "st
   const lab = D[l].ea.ss.cta[key];
   const { ctx, page } = await view("announce", `${pre(l)}/pricing/`, 1440, { signup: answer, locale: l });
   const cs = await cards(page);
-  check(kind === "link" ? cs.every((c, i) => c.link.length === 1 && c.link[0].text.startsWith(lab) && c.link[0].href === startOf(l, PLANS[i].id)) : cs.every((c) => c.link.length === 0 && c.st.length === 1 && c.st[0].text === lab), `${l} ${answer}: cards show "${lab}" as ${kind === "link" ? "a link to " + startOf(l) : "plain text"}`);
+  check(kind === "link" ? cs.every((c, i) => c.link.length === 1 && c.link[0].text.startsWith(lab) && c.link[0].href === startOf(l, PLANS[i].id)) : cs.every((c) => c.link.length === 0 && c.st.length === 1 && c.st[0].text === lab), `${l} ${answer}: cards show "${lab}" as ${kind === "link" ? "a link to " + startOf(l) : "a status region"}`);
   if (["closed_cutoff", "waitlist", "open"].includes(answer)) await page.locator('[aria-labelledby="plans-title"]').screenshot({ path: path.join(SHOTS, `ss-announce-${l}-pricing-plans-${answer}-1440.png`) });
   await ctx.close();
   const home = await view("announce", `${pre(l)}/`, 1440, { signup: answer, locale: l });
-  const band = await home.page.evaluate(() => { const s = document.querySelector('[aria-labelledby="final-title"]'); return { a: [...s.querySelectorAll("a")].map((x) => ({ href: x.getAttribute("href"), text: x.innerText.trim() })), st: [...s.querySelectorAll("[data-ss-state]")].map((x) => x.innerText.trim()), dates: s.querySelectorAll("[data-ss-date]").length }; });
-  check(band.dates === 2 && (kind === "link" ? band.a.some((x) => x.href === startOf(l) && x.text.startsWith(lab)) : (!band.a.some((x) => /\/start\//.test(x.href)) && band.st.length === 1 && band.st[0] === lab)) && band.a.some((x) => x.href === "#demo"), `${l} ${answer}: the Home closing band follows the same table (${kind === "link" ? "sign-up link" : `plain text "${lab}"`}), keeps its two dates and Try Live Demo`);
+  const band = await home.page.evaluate(() => { const s = document.querySelector('[aria-labelledby="final-title"]'); return { a: [...s.querySelectorAll("a")].map((x) => ({ href: x.getAttribute("href"), text: x.innerText.trim() })), st: [...s.querySelectorAll("p.aicc-pstatus .aicc-pstatus__label")].map((x) => x.innerText.trim()), dates: s.querySelectorAll("[data-ss-date]").length }; });
+  check(band.dates === 0 && (kind === "link" ? band.a.some((x) => x.href === startOf(l) && x.text.startsWith(lab)) : (!band.a.some((x) => /\/start\//.test(x.href)) && band.st.length === 1 && band.st[0] === lab)) && band.a.some((x) => x.href === "#demo"), `${l} ${answer}: the Home closing band follows the same table (${kind === "link" ? "sign-up link" : `status region "${lab}"`}), carries no date and keeps Try Live Demo`);
   await home.ctx.close();
 }
 console.log("== a slow answer: the static state works at once, the state arrives later");
@@ -170,10 +173,10 @@ for (const l of LOCALES) for (const answer of ["open", "waitlist"]) {
   const { ctx, page, nav } = await view("announce", `${pre(l)}/pricing/`, 1440, { locale: l, signup: answer });
   for (const [i, pl] of PLANS.entries()) {
     await page.goto(mocks.announce.url + `${pre(l)}/pricing/`, { waitUntil: "load" });
-    await page.waitForSelector("article.aicc-plan a.aicc-btn");
+    await page.waitForSelector("article.aicc-tier:not(.aicc-tier--standard) a.aicc-btn");
     nav.length = 0;
-    const label = await page.locator("article.aicc-plan a.aicc-btn").nth(i).innerText();
-    await page.locator("article.aicc-plan a.aicc-btn").nth(i).click();
+    const label = await page.locator("article.aicc-tier:not(.aicc-tier--standard) a.aicc-btn").nth(i).innerText();
+    await page.locator("article.aicc-tier:not(.aicc-tier--standard) a.aicc-btn").nth(i).click();
     await page.waitForTimeout(250);
     check(nav.length >= 1 && nav[0] === startOf(l, pl.id) && label.startsWith(D[l].ea.ss.cta[answer === "open" ? "start" : "waitlist"]), `${l} ${answer}: the ${pl.id} card ("${label.split("\n")[0]}") requests ${startOf(l, pl.id)} (${nav[0]})`);
   }
@@ -185,7 +188,7 @@ for (const l of LOCALES) {
     await page.goto(mocks.link.url + `${pre(l)}/pricing/`, { waitUntil: "load" });
     await page.waitForTimeout(250);
     nav.length = 0;
-    await page.locator("article.aicc-plan a.aicc-btn").nth(i).click();
+    await page.locator("article.aicc-tier:not(.aicc-tier--standard) a.aicc-btn").nth(i).click();
     await page.waitForTimeout(250);
     check(nav.length >= 1 && nav[0] === startOf(l, pl.id), `${l} link build: the ${pl.id} button requests ${startOf(l, pl.id)} (${nav[0]})`);
   }
@@ -210,14 +213,11 @@ for (const answer of ["open", "waitlist"]) {
   check(page.url().endsWith("#demo") && (await page.evaluate(() => { const e = document.getElementById("demo"); const r = e.getBoundingClientRect(); return r.top < innerHeight && r.bottom > 0; })), "Hero Try Live Demo scrolls to #demo with self-service on");
   await ctx.close();
 }
-console.log("== a card's secondary demo link opens the interactive demo on Home");
-for (const l of ["en", "he"]) {
+console.log("== P40: NO card carries a Try Live Demo link (the per-card links are retired); the Hero's Try Live Demo is the demo action");
+for (const l of LOCALES) {
   const { ctx, page } = await view("announce", `${pre(l)}/pricing/`, 1440, { locale: l, signup: "off" });
-  await page.locator("article.aicc-plan [data-ss-demo] a").first().click();
-  await page.waitForLoadState("load");
-  await page.waitForTimeout(500);
-  const r = await page.evaluate(() => { const e = document.getElementById("demo"); const q = e.getBoundingClientRect(); return { path: location.pathname, hash: location.hash, vis: q.top < innerHeight && q.bottom > 0 }; });
-  check(r.path === (pre(l) ? `${pre(l)}/` : "/") && r.hash === "#demo" && r.vis, `${l}: the card's demo link opens Home at #demo (${r.path}${r.hash}, visible: ${r.vis})`);
+  const r = await page.evaluate((TIER) => ({ demoInCards: [...document.querySelectorAll(TIER + " a, " + TIER + " [data-ss-demo]")].filter((e) => e.matches("[data-ss-demo], a[href$='#demo']") || /Try Live Demo/i.test(e.innerText)).length, band: [...document.querySelectorAll('[aria-labelledby="pricing-final"] a[href$="#demo"]')].length }), TIER);
+  check(r.demoInCards === 0, `${l}: no per-card demo link on Pricing (${r.demoInCards}); the closing band may keep ONE demo action (${r.band})`);
   await ctx.close();
 }
 console.log("== the interactive demo still works with self-service on (the #demo section renders and its tabs / controls respond)");
@@ -265,8 +265,8 @@ for (const l of LOCALES) {
   const { ctx, page } = await view("announce", `${pre(l)}/pricing/`, 1440, { locale: l, signup: "open", now: REG_CLOSE + 1000 });
   const cs = await cards(page);
   await page.locator("#plan-stores").fill("2"); await page.waitForTimeout(250);
-  const f = await page.evaluate(() => { const fm = document.querySelector("#plan-stores").closest("form"); return { a: fm.querySelectorAll("a.aicc-btn").length, st: [...fm.querySelectorAll("[data-ss-state]")].map((e) => e.innerText.trim()) }; });
-  const band = await page.evaluate(() => { const sec = document.querySelector('[aria-labelledby="pricing-final"]'); return { a: [...sec.querySelectorAll("a")].filter((x) => /\/start\//.test(x.getAttribute("href") || "")).length, st: [...sec.querySelectorAll("[data-ss-state]")].map((e) => e.innerText.trim()) }; });
+  const f = await page.evaluate(() => { const fm = document.querySelector("#plan-stores").closest("form"); return { a: fm.querySelectorAll("a.aicc-btn").length, st: [...fm.querySelectorAll("p.aicc-pstatus .aicc-pstatus__label")].map((e) => e.innerText.trim()) }; });
+  const band = await page.evaluate(() => { const sec = document.querySelector('[aria-labelledby="pricing-final"]'); return { a: [...sec.querySelectorAll("a")].filter((x) => /\/start\//.test(x.getAttribute("href") || "")).length, st: [...sec.querySelectorAll("p.aicc-pstatus .aicc-pstatus__label")].map((e) => e.innerText.trim()) }; });
   check(cs.every((c) => c.link.length === 0 && c.st.length === 1 && c.st[0].text === D[l].ea.ss.cta.closed) && f.a === 0 && f.st.length === 1 && f.st[0] === D[l].ea.ss.cta.closed && band.a === 0 && band.st.length === 1 && band.st[0] === D[l].ea.ss.cta.closed, `${l}: a late status answer "open" after the cutoff never makes a link: cards, finder and band all say "${D[l].ea.ss.cta.closed}"`);
   await ctx.close();
 }
@@ -320,7 +320,7 @@ console.log("== no horizontal scroll at 320 / 360 / 390 px (also with Larger tex
 for (const [w, large] of [[320, false], [320, true], [360, false], [390, false]]) for (const l of LOCALES) for (const route of ["", "pricing/", "product/"]) {
   const { ctx, page } = await view("announce", `${pre(l)}/${route}`, w, { h: 800, locale: l, signup: "off" });
   if (large) { await page.evaluate(() => document.documentElement.setAttribute("data-aicc-text", "large")); await page.waitForTimeout(200); }
-  const r = await page.evaluate(() => ({ over: document.documentElement.scrollWidth - innerWidth, cards: [...document.querySelectorAll("article.aicc-plan")].filter((a) => a.getBoundingClientRect().right > innerWidth + 1 || a.getBoundingClientRect().left < -1 || a.scrollWidth > a.clientWidth + 1).length }));
+  const r = await page.evaluate(() => ({ over: document.documentElement.scrollWidth - innerWidth, cards: [...document.querySelectorAll("article.aicc-tier")].filter((a) => a.getBoundingClientRect().right > innerWidth + 1 || a.getBoundingClientRect().left < -1 || a.scrollWidth > a.clientWidth + 1).length }));
   check(r.over <= 0 && r.cards === 0, `${l} /${route} @${w}${large ? " + Larger text" : ""}: no horizontal scroll (+${r.over}px) and every plan card fits (${r.cards} overflowing)`);
   await ctx.close();
 }
@@ -329,19 +329,20 @@ for (const [w, large] of [[320, false], [320, true], [360, false], [390, false]]
 console.log("== after the end instant (a stale page of a launch-offer + self-service build): the ordinary ended view, no sign-up promise");
 for (const l of ["en", "he"]) {
   const { ctx, page } = await view("announce", `${pre(l)}/pricing/`, 1440, { locale: l, now: END + 1000 });
-  const r = await page.evaluate(() => ({ cardLinks: [...document.querySelectorAll("article.aicc-plan a.aicc-btn")].filter((e) => e.getClientRects().length > 0).length, chips: [...document.querySelectorAll("article.aicc-plan .aicc-btn--soon")].filter((e) => e.getClientRects().length > 0).length, bar: [...document.querySelectorAll(".aicc-eabar")].filter((e) => e.getClientRects().length > 0).length, trial: [...document.querySelectorAll("[data-ss-checks],[data-ss-terms],[data-ss-band],[data-ss-dates],[data-ss-state],[data-ss-demo]")].filter((e) => e.getClientRects().length > 0).length }));
-  check(r.cardLinks === 0 && r.chips === 3 && r.bar === 0 && r.trial === 0, `${l}: after 2026-12-31T22:00:00Z a stale self-service + announce page shows the ordinary ended view (no sign-up control, no trial text, no dates, no bar; the three "purchases open soon" statements) [${JSON.stringify(r)}]`);
+  const r = await page.evaluate(() => { const vis = (e) => e.getClientRects().length > 0; return { cardLinks: [...document.querySelectorAll("article.aicc-tier a")].filter(vis).length, chips: [...document.querySelectorAll("article.aicc-tier--standard [data-commerce='closed']")].filter(vis).length, std: [...document.querySelectorAll("article.aicc-tier--standard")].filter(vis).length, live: [...document.querySelectorAll("article.aicc-tier:not(.aicc-tier--standard)")].filter(vis).length, bar: [...document.querySelectorAll(".aicc-eabar")].filter(vis).length, trial: [...document.querySelectorAll("[data-ss-checks],[data-ss-terms],[data-ss-band],[data-ss-dates],[data-ss-state],[data-ss-demo],[data-ss-free],.aicc-launch,.aicc-pband")].filter(vis).length, titleClosed: document.querySelector(".aicc-pricing__title").innerText.trim() }; });
+  check(r.cardLinks === 0 && r.chips === 3 && r.std === 3 && r.live === 0 && r.bar === 0 && r.trial === 0 && r.titleClosed === D[l].ea.ss.pricing.titleClosed, `${l}: after 2026-12-31T22:00:00Z a stale self-service + announce page shows the ordinary ended view (three ordinary cards with "purchases open soon", the closed header "${D[l].ea.ss.pricing.titleClosed}", no sign-up control, no trial text, no panel, no dates, no bar) [${JSON.stringify(r)}]`);
   await ctx.close();
 }
 
 // ───────── the plan finder ─────────
-console.log("== plan finder (Which plan?): the suggestion carries the trial facts and the same control as the cards");
+console.log("== plan finder (Which plan?): the suggestion is the plan, its paid capacity and the same control as the cards: no dates, no trial conditions");
 for (const l of LOCALES) {
   const { ctx, page } = await view("announce", `${pre(l)}/pricing/`, 1440, { locale: l, signup: "off" });
   await page.locator("#plan-stores").fill("2");
   await page.waitForTimeout(250);
-  const r = await page.evaluate(() => { const f = document.querySelector("#plan-stores").closest("form"); return { a: [...f.querySelectorAll("a.aicc-btn")].length, soon: f.querySelectorAll(".aicc-btn--soon").length, st: [...f.querySelectorAll("[data-ss-state]")].map((e) => e.innerText.trim()), dates: f.querySelectorAll("[data-ss-date]").length, text: f.innerText.replace(/\s+/g, " ") }; });
-  check(r.a === 0 && r.soon === 0 && r.st.length === 1 && r.st[0] === SOON(l) && r.dates === 2 && r.text.includes(D[l].ea.ss.plan.trial) && r.text.includes(D[l].ea.ss.plan.noAuto), `${l}: 2 stores -> ${D[l].pricing.plans.studio.name}: the finder shows the trial facts, the two dates and the plain status (no button, no inert chip)`);
+  const r = await page.evaluate(() => { const f = document.querySelector("#plan-stores").closest("form"); return { a: [...f.querySelectorAll("a.aicc-btn")].length, soon: f.querySelectorAll(".aicc-btn--soon").length, st: [...f.querySelectorAll("p.aicc-pstatus .aicc-pstatus__label")].map((e) => e.innerText.trim()), dates: f.querySelectorAll("[data-ss-date], [data-ss-dates]").length, cap: (f.querySelector("[data-ss-finder-cap]") || { innerText: "" }).innerText.trim(), text: f.innerText.replace(/\s+/g, " ") }; });
+  const ss = D[l].ea.ss, conds = [ss.launch.fact.store, ss.launch.fact.payment, ss.launch.fact.noAuto, ss.plan.regLabel, ss.plan.endLabel].map((x) => x.replace(/\u00a0/g, " "));
+  check(r.a === 0 && r.soon === 0 && r.st.length === 1 && r.st[0] === SOON(l) && r.dates === 0 && r.cap === ss.plan.paidMany.replace("{n}", "3") && conds.every((c) => !r.text.includes(c)) && !/UTC|Dec 2|2026/.test(r.text), `${l}: 2 stores -> ${D[l].pricing.plans.studio.name}: the finder shows the plan, its paid capacity ("${ss.plan.paidMany.replace("{n}", "3")}") and the status region only (no date, no trial condition, no button, no inert chip)`);
   await ctx.close();
 }
 for (const l of ["en", "he"]) {
@@ -360,41 +361,40 @@ async function tabs(page, max = 120, stop = 0, pick = () => false) {
   await page.evaluate(() => document.activeElement && document.activeElement.blur());
   for (let i = 0; i < max; i++) {
     await page.keyboard.press("Tab");
-    seq.push(await page.evaluate(() => { const e = document.activeElement; if (!e || e === document.body) return null; const cs = getComputedStyle(e); return { href: e.getAttribute("href"), cls: e.className, text: (e.innerText || "").trim().slice(0, 40), inCard: !!e.closest("article.aicc-plan"), demo: !!e.closest("[data-ss-demo]"), ring: (cs.outlineStyle !== "none" && parseFloat(cs.outlineWidth) > 0) || cs.boxShadow !== "none" }; }));
+    seq.push(await page.evaluate(() => { const e = document.activeElement; if (!e || e === document.body) return null; const cs = getComputedStyle(e); return { href: e.getAttribute("href"), cls: e.className, text: (e.innerText || "").trim().slice(0, 40), inCard: !!e.closest("article.aicc-tier"), demo: false, ring: (cs.outlineStyle !== "none" && parseFloat(cs.outlineWidth) > 0) || cs.boxShadow !== "none" }; }));
     if (stop && seq.filter((x) => x && pick(x)).length >= stop) break;
   }
   return seq.filter(Boolean);
 }
 for (const l of ["en", "he"]) {
-  // static state: the tab stops inside the cards are the three demo links (the status text is not focusable), solo, studio, agency
+  // static state: NO tab stop inside the cards (the status regions are not focusable and the per-card demo links are gone)
   const a = await view("announce", `${pre(l)}/pricing/`, 1440, { locale: l, signup: "off" });
-  const seq = await tabs(a.page, 200, 3, (s) => s.inCard);
-  const inCard = seq.filter((s) => s.inCard);
-  check(inCard.length === 3 && inCard.every((s) => s.demo && s.href === demoHref(l) && s.ring), `${l} static: Tab reaches exactly the three card demo links (the status text is not a tab stop), each with a visible focus ring`);
+  const seq = await tabs(a.page, 160);
+  check(seq.filter((s) => s.inCard).length === 0, `${l} static: Tab never lands inside a plan card (the status region is not a tab stop; no per-card demo link) [${seq.filter((s) => s.inCard).length}]`);
   await a.ctx.close();
-  // open: sign-up button, then demo link, per card, in the order solo, studio, agency
+  // open: ONE sign-up link per card, in the DOM order solo, studio, agency, each with a visible focus ring
   const o = await view("announce", `${pre(l)}/pricing/`, 1440, { locale: l, signup: "open" });
-  const seq2 = await tabs(o.page, 200, 6, (s) => s.inCard);
+  const seq2 = await tabs(o.page, 200, 3, (s) => s.inCard);
   const c2 = seq2.filter((s) => s.inCard);
-  check(c2.length === 6 && [0, 2, 4].every((i, k) => /aicc-btn/.test(c2[i].cls) && c2[i].href === startOf(l, PLANS[k].id)) && [1, 3, 5].every((i) => c2[i].demo) && c2.every((s) => s.ring), `${l} open: Tab order per card = sign-up button (solo, studio, agency) then its demo link, every stop with a visible focus ring`);
+  check(c2.length === 3 && [0, 1, 2].every((k) => /aicc-btn/.test(c2[k].cls) && c2[k].href === startOf(l, PLANS[k].id)) && c2.every((s) => s.ring), `${l} open: Tab order = the sign-up link of Solo, Studio, Agency (one stop per card), every stop with a visible focus ring`);
   await o.ctx.close();
 }
 {
   const { ctx, page } = await view("announce", "/pricing/", 1440, { signup: "closed_cutoff" });
   const seq = await tabs(page, 90);
-  check(seq.filter((s) => s.inCard && /aicc-btn/.test(s.cls)).length === 0, "closed_cutoff: no card sign-up control is a tab stop (the state is plain text)");
+  check(seq.filter((s) => s.inCard).length === 0, "closed_cutoff: no card control is a tab stop (the state is a status region)");
   await ctx.close();
 }
 {
   const { ctx, page } = await view("announce", "/pricing/", 1440, { signup: "off", reduced: true });
-  const r = await page.evaluate(() => { const els = [...document.querySelectorAll("[data-ss-state],[data-ss-dates],[data-ss-demo],[data-ss-terms]")]; return { n: els.length, anim: els.filter((e) => getComputedStyle(e).animationName !== "none").length, trans: els.filter((e) => parseFloat(getComputedStyle(e).transitionDuration) > 0).length, motion: matchMedia("(prefers-reduced-motion: reduce)").matches }; });
-  check(r.motion && r.n >= 10 && r.anim === 0 && r.trans === 0, `reduced motion: the status, dates, demo links and terms have no animation or transition (${r.n} elements)`);
+  const r = await page.evaluate(() => { const els = [...document.querySelectorAll(".aicc-tier, .aicc-tier *, .aicc-launch, .aicc-launch *, .aicc-pband, .aicc-pband *")]; const dur = (e) => Math.max(...getComputedStyle(e).transitionDuration.split(",").map((x) => parseFloat(x) || 0)); return { n: els.length, anim: els.filter((e) => getComputedStyle(e).animationName !== "none").length, trans: els.filter((e) => dur(e) > 0.001).length, motion: matchMedia("(prefers-reduced-motion: reduce)").matches }; });
+  check(r.motion && r.n >= 100 && r.anim === 0 && r.trans === 0, `reduced motion: the cards, the launch panel and the band have no animation and no transition longer than 1 ms (${r.n} elements)`);
   await ctx.close();
 }
 {
   const { ctx, page } = await view("announce", "/pricing/", 1440, { signup: "paused" });
-  const r = await page.evaluate(() => { const p = document.querySelector("article.aicc-plan [data-ss-state]"); const cs = getComputedStyle(p); return { role: p.getAttribute("role"), bg: cs.backgroundColor, border: cs.borderTopWidth, radius: cs.borderTopLeftRadius, cursor: cs.cursor, disabled: p.getAttribute("aria-disabled") }; });
-  check(r.role === "status" && r.bg === "rgba(0, 0, 0, 0)" && r.border === "0px" && r.radius === "0px" && r.cursor !== "pointer" && r.disabled === null, `the plain status text has no fill, no border, no radius and no pointer: it cannot be mistaken for an inert button [${JSON.stringify(r)}]`);
+  const r = await page.evaluate(() => { const p = document.querySelector("article.aicc-tier p.aicc-pstatus"), pill = p.querySelector(".aicc-pstatus__pill"), cs = getComputedStyle(pill), icon = pill.querySelector("svg"); return { role: p.getAttribute("role"), tag: p.tagName, borderStyle: cs.borderTopStyle, radius: parseFloat(cs.borderTopLeftRadius), cursor: getComputedStyle(p).cursor, disabled: p.getAttribute("aria-disabled"), isBtn: !!p.closest("a,button"), icon: !!icon && icon.getAttribute("aria-hidden") === "true", note: !!p.querySelector(".aicc-pstatus__note"), minH: pill.getBoundingClientRect().height }; });
+  check(r.role === "status" && r.tag === "P" && r.borderStyle === "dashed" && r.radius >= 20 && r.cursor !== "pointer" && r.disabled === null && !r.isBtn && r.icon && r.note && r.minH >= 44, `the status region is a dashed, tinted, non-interactive pill with an icon and an explanation line (different from an enabled button by shape, fill, icon and text, not colour only) [${JSON.stringify(r)}]`);
   await ctx.close();
 }
 

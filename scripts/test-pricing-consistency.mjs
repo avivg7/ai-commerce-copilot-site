@@ -1,9 +1,10 @@
-// npm run test:pricing-consistency (P39): parses EVERY built page of a self-service export in four languages (rendered text of the LIVE view, in Chromium) and asserts the exact numbers, dates and clocks:
-//   * prices 99 / 199 / 499 USD, paid capacity 1 / up to 3 / up to 10, "Trial includes 1 store", the payment rule and "no automatic conversion" on every plan card (Home and Pricing);
-//   * the TWO dates as two labelled lines on every surface that mentions either (card, closing band, plan-finder result, terms block): registration closes December 24, 2026 at 00:00 UTC, trial access ends December 31, 2026 at 22:00 UTC,
-//     written here as INDEPENDENT literals per language (not read from the dictionaries); no date or clock anywhere outside those labelled lines; no other deadline;
+// npm run test:pricing-consistency (P39, rewritten for the P40 premium section): parses EVERY built page of a self-service export in four languages (rendered text of the LIVE view, in Chromium with JavaScript OFF) and asserts the exact numbers, dates and clocks:
+//   * prices 99 / 199 / 499 USD, paid capacity 1 / up to 3 / up to 10, "Launch trial: 1 store", FREE, the planned-price label, the positioning line and the status region on every plan card (Home and Pricing);
+//   * the TWO dates as two labelled timeline steps in ONE launch panel per page (Home and Pricing), each said exactly ONCE on the page, written here as INDEPENDENT literals per language (not read from the dictionaries): registration closes
+//     December 24, 2026 at 00:00 UTC (the last day to start is December 23), trial access ends December 31, 2026 at 22:00 UTC; NO date or clock in a card, the header, the band, the finder or any other page; no other deadline;
+//   * the panel's three facts (one store incl. staging, no payment method, no automatic conversion) are the exact strings, in the panel only;
 //   * no stale phrase of the old policy (approved stores only, requests close 24 hours before, "Request Free Access", Israel / local time zone, "was $", "save N", %, "no credit card", ...) on any marketing page; legal pages keep their geography and are
-//     asserted UNCHANGED against the base (S0) export; no /request-access/ link; JSON-LD carries no Offer / price; the sitemap lists no sign-up page;
+//     asserted UNCHANGED against the base (S0) export; no /request-access/ link; JSON-LD carries no Offer / price; the sitemap lists no sign-up page; no struck price in the default build;
 //   * the meta description of Pricing and the structured data say the same numbers as the page.
 //   node scripts/test-pricing-consistency.mjs --dir <self-service export> [--base <S0 export built from the same commit family>] [--link <initial=link export>] [--port <n>]
 import fs from "node:fs";
@@ -25,10 +26,10 @@ const { PLANS } = await loadTs("src/data/plans.ts");
 
 // INDEPENDENT literals (the facts of the product, per language). Spaces are plain after normalisation; Hebrew bidi isolates are stripped.
 const T = {
-  en: { reg: "Dec 24, 2026 at 00:00 UTC", end: "Dec 31, 2026 at 22:00 UTC", regLabel: "Registration closes", endLabel: "Trial access ends", regLong: "December 24, 2026 at 00:00 UTC. The last day to start a trial is December 23, 2026 (UTC).", endLong: "December 31, 2026 at 22:00 UTC, for every trial, whichever day you started.", trial: "Trial includes 1 store", paid: ["Paid plan: 1 store", "Paid plan: up to 3 stores", "Paid plan: up to 10 stores"], noPay: "No payment method required for the trial", noAuto: "No automatic conversion to a paid plan", soon: "Free trial registration opens soon", price: (p) => `$${p}` },
-  he: { reg: "24 בדצמבר 2026 בשעה 00:00 UTC", end: "31 בדצמבר 2026 בשעה 22:00 UTC", regLabel: "ההרשמה נסגרת", endLabel: "הגישה לניסיון מסתיימת", regLong: "24 בדצמבר 2026 בשעה 00:00 UTC. היום האחרון להתחיל ניסיון הוא 23 בדצמבר 2026 (UTC).", endLong: "31 בדצמבר 2026 בשעה 22:00 UTC, לכל ניסיון, בלי קשר ליום שבו התחלתם.", trial: "הניסיון כולל חנות אחת", paid: ["תוכנית בתשלום: חנות אחת", "תוכנית בתשלום: עד 3 חנויות", "תוכנית בתשלום: עד 10 חנויות"], noPay: "לניסיון אין צורך באמצעי תשלום", noAuto: "אין מעבר אוטומטי לתוכנית בתשלום", soon: "ההרשמה לניסיון החינם תיפתח בקרוב", price: (p) => `$${p}` },
-  es: { reg: "24 dic 2026 a las 00:00 UTC", end: "31 dic 2026 a las 22:00 UTC", regLabel: "El registro se cierra", endLabel: "El acceso de prueba termina", regLong: "24 de diciembre de 2026 a las 00:00 UTC. El último día para empezar una prueba es el 23 de diciembre de 2026 (UTC).", endLong: "31 de diciembre de 2026 a las 22:00 UTC, para cada prueba, sea cual sea el día en que la empezó.", trial: "La prueba incluye 1 tienda", paid: ["Plan de pago: 1 tienda", "Plan de pago: hasta 3 tiendas", "Plan de pago: hasta 10 tiendas"], noPay: "No hace falta método de pago para la prueba", noAuto: "No pasa automáticamente a un plan de pago", soon: "El registro de la prueba gratuita se abrirá pronto", price: (p) => `US$${p}` },
-  ru: { reg: "24 дек. 2026 г. в 00:00 UTC", end: "31 дек. 2026 г. в 22:00 UTC", regLabel: "Регистрация закрывается", endLabel: "Пробный доступ заканчивается", regLong: "24 декабря 2026 г. в 00:00 UTC. Последний день, когда можно начать пробный период, это 23 декабря 2026 г. (UTC).", endLong: "31 декабря 2026 г. в 22:00 UTC, для любого пробного периода, в какой бы день вы его ни начали.", trial: "В пробный период входит 1 магазин", paid: ["Платный план: 1 магазин", "Платный план: до 3 магазинов", "Платный план: до 10 магазинов"], noPay: "Для пробного периода способ оплаты не нужен", noAuto: "Без автоматического перехода на платный план", soon: "Регистрация на бесплатный пробный период скоро откроется", price: (p) => `$${p}` },
+  en: { reg: "Dec 24, 2026 at 00:00 UTC", end: "Dec 31, 2026 at 22:00 UTC", regLabel: "Registration closes", endLabel: "Trial access ends", regNote: "The last day to start a trial is December 23, 2026 (UTC).", endNote: "For every trial, whichever day you started.", free: "FREE", trial: "Launch trial: 1 store", paid: ["Paid plan: 1 store", "Paid plan: up to 3 stores", "Paid plan: up to 10 stores"], priceLabel: "Planned regular price", per: "per year", store: "The trial covers 1 store, whichever plan you choose. A staging site counts as a store.", pay: "No payment method is required, so nothing is charged.", noAuto: "No automatic conversion to a paid plan. Continuing is your decision.", foot: "Paid plans are not open for purchase yet. Their regular prices apply once they open.", soon: "Free trial opens soon", soonNote: "Registration is not open yet. This page shows a start button as soon as it opens.", price: (p) => `$${p}` },
+  he: { reg: "24 בדצמבר 2026 בשעה 00:00 UTC", end: "31 בדצמבר 2026 בשעה 22:00 UTC", regLabel: "ההרשמה נסגרת", endLabel: "הגישה לניסיון מסתיימת", regNote: "היום האחרון להתחיל ניסיון הוא 23 בדצמבר 2026 (UTC).", endNote: "לכל ניסיון, בלי קשר ליום שבו התחלתם.", free: "חינם", trial: "ניסיון השקה: חנות אחת", paid: ["תוכנית בתשלום: חנות אחת", "תוכנית בתשלום: עד 3 חנויות", "תוכנית בתשלום: עד 10 חנויות"], priceLabel: "מחיר רגיל מתוכנן", per: "לשנה", store: "הניסיון כולל חנות אחת, בכל תוכנית שתבחרו. אתר בדיקות נחשב לחנות.", pay: "לא נדרש אמצעי תשלום, ולכן לא נגבה דבר.", noAuto: "אין מעבר אוטומטי לתוכנית בתשלום. ההמשך הוא החלטה שלכם.", foot: "רכישות בתשלום עדיין אינן פתוחות. המחירים הרגילים יחולו כשייפתחו.", soon: "ניסיון החינם ייפתח בקרוב", soonNote: "ההרשמה עדיין לא נפתחה. כפתור התחלה יופיע כאן ברגע שתיפתח.", price: (p) => `$${p}` },
+  es: { reg: "24 dic 2026 a las 00:00 UTC", end: "31 dic 2026 a las 22:00 UTC", regLabel: "El registro se cierra", endLabel: "El acceso de prueba termina", regNote: "El último día para empezar una prueba es el 23 de diciembre de 2026 (UTC).", endNote: "Para cada prueba, sea cual sea el día en que la empezó.", free: "GRATIS", trial: "Prueba de lanzamiento: 1 tienda", paid: ["Plan de pago: 1 tienda", "Plan de pago: hasta 3 tiendas", "Plan de pago: hasta 10 tiendas"], priceLabel: "Precio regular previsto", per: "al año", store: "La prueba cubre 1 tienda, sea cual sea el plan que elija. Un sitio de pruebas cuenta como una tienda.", pay: "No hace falta método de pago, así que no se cobra nada.", noAuto: "No pasa automáticamente a un plan de pago. Seguir es decisión suya.", foot: "Las compras de pago aún no están abiertas. Los precios regulares se aplicarán cuando se abran.", soon: "La prueba gratuita abrirá pronto", soonNote: "El registro aún no está abierto. Aquí aparecerá un botón para empezar en cuanto se abra.", price: (p) => `US$${p}` },
+  ru: { reg: "24 дек. 2026 г. в 00:00 UTC", end: "31 дек. 2026 г. в 22:00 UTC", regLabel: "Регистрация закрывается", endLabel: "Пробный доступ заканчивается", regNote: "Последний день, когда можно начать пробный период, это 23 декабря 2026 г. (UTC).", endNote: "Для любого пробного периода, в какой бы день вы его ни начали.", free: "БЕСПЛАТНО", trial: "Пробный период запуска: 1 магазин", paid: ["Платный план: 1 магазин", "Платный план: до 3 магазинов", "Платный план: до 10 магазинов"], priceLabel: "Планируемая обычная цена", per: "в год (USD)", store: "Пробный период охватывает 1 магазин, какой бы план вы ни выбрали. Тестовая копия считается магазином.", pay: "Способ оплаты не нужен, поэтому ничего не списывается.", noAuto: "Автоматического перехода на платный план нет. Продолжить или нет, решаете вы.", foot: "Платные планы пока нельзя купить. Обычные цены начнут действовать, когда покупка станет доступна.", soon: "Бесплатный период скоро откроется", soonNote: "Регистрация пока не открыта. Кнопка запуска появится здесь, как только она откроется.", price: (p) => `$${p}` },
 };
 const norm = (s) => String(s).replace(/[⁦⁩]/g, "").replace(/[   ]/g, " ").replace(/\s+/g, " ").trim();
 // every spelling of a calendar date of 2026/2027 in the four languages, for the census of dates in the rendered text
@@ -59,36 +60,39 @@ async function read(m, route, w = 1440) {
   const r = await page.evaluate(() => {
     const vis = (e) => e.getClientRects().length > 0;
     const txt = (e) => e.innerText.replace(/\s+/g, " ").trim();
-    const dls = [...document.querySelectorAll("dl[data-ss-dates]")].filter(vis).map((dl) => ({ rows: [...dl.querySelectorAll("[data-ss-date]")].map((r) => [r.getAttribute("data-ss-date"), txt(r.querySelector("dt")), txt(r.querySelector("dd"))]), where: dl.closest("article.aicc-plan") ? "card" : dl.closest("[data-ss-band]") ? "band" : dl.closest("[data-ss-terms]") ? "terms" : dl.closest("form") ? "finder" : "other" }));
+    const dls = [...document.querySelectorAll("ol[data-ss-dates]")].filter(vis).map((ol) => ({ rows: [...ol.querySelectorAll("[data-ss-date]")].map((r) => [r.getAttribute("data-ss-date"), txt(r.querySelector(".aicc-timeline__label")), txt(r.querySelector(".aicc-timeline__date")), txt(r.querySelector(".aicc-timeline__note"))]), where: ol.closest("[data-ss-terms]") ? "panel" : "other", facts: [...(ol.closest("[data-ss-terms]") || document.createElement("div")).querySelectorAll(".aicc-launch__fact")].map(txt), foot: txt((ol.closest("[data-ss-terms]") || document.createElement("div")).querySelector(".aicc-launch__foot") || document.createElement("p")) }));
     const out = [];
     const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
     let n; while ((n = walker.nextNode())) {
-      const p = n.parentElement; if (!p || !vis(p) || /^(SCRIPT|STYLE|NOSCRIPT)$/.test(p.tagName) || p.closest("dl[data-ss-dates]")) continue;
+      const p = n.parentElement; if (!p || !vis(p) || /^(SCRIPT|STYLE|NOSCRIPT)$/.test(p.tagName) || p.closest("ol[data-ss-dates]")) continue;
       out.push(n.nodeValue);
     }
-    const cards = [...document.querySelectorAll("article.aicc-plan")].filter(vis).map((a) => ({ text: txt(a), price: (a.querySelector(".aicc-plan__regular-line")?.innerText || "").replace(/\s+/g, " ").trim(), status: [...a.querySelectorAll("[data-ss-state]")].map(txt), dates: [...a.querySelectorAll("[data-ss-date]")].map((r) => [txt(r.querySelector("dt")), txt(r.querySelector("dd"))]) }));
-    return { dls, rest: out.join(" ").replace(/\s+/g, " "), full: document.body.innerText.replace(/\s+/g, " "), cards, hrefs: [...document.querySelectorAll("a")].map((a) => a.getAttribute("href")), meta: document.querySelector('meta[name="description"]')?.content || "", ld: [...document.querySelectorAll('script[type="application/ld+json"]')].map((s) => s.textContent), main: (() => { const m = document.querySelector("main")?.cloneNode(true); if (!m) return ""; m.querySelectorAll(".aicc-eabar").forEach((e) => e.remove()); return m.innerHTML; })(), title: document.title };
+    const cards = [...document.querySelectorAll("article.aicc-tier:not(.aicc-tier--standard)")].filter(vis).map((a) => ({ text: txt(a), plan: a.getAttribute("data-plan"), badge: txt(a.querySelector(".aicc-tier__badge") || document.createElement("p")), price: txt(a.querySelector(".aicc-tier__price")), label: txt(a.querySelector(".aicc-tier__price-label") || document.createElement("p")), cap: txt(a.querySelector(".aicc-tier__cap-text")), free: txt(a.querySelector(".aicc-tier__free-word")), trial: txt(a.querySelector(".aicc-tier__trial")), status: [...a.querySelectorAll("p.aicc-pstatus")].map((e) => [txt(e.querySelector(".aicc-pstatus__label")), txt(e.querySelector(".aicc-pstatus__note"))]), links: [...a.querySelectorAll("a")].map((x) => x.getAttribute("href")), dates: [...a.querySelectorAll("[data-ss-date]")].length, struck: a.querySelectorAll("s, del, [data-ss-price]").length }));
+    return { dls, rest: out.join(" ").replace(/\s+/g, " "), full: document.body.innerText.replace(/\s+/g, " "), cards, struck: document.querySelectorAll("main s, main del, main [data-ss-price]").length, panels: document.querySelectorAll("section.aicc-launch").length, hrefs: [...document.querySelectorAll("a")].map((a) => a.getAttribute("href")), meta: document.querySelector('meta[name="description"]')?.content || "", ld: [...document.querySelectorAll('script[type="application/ld+json"]')].map((s) => s.textContent), main: (() => { const m = document.querySelector("main")?.cloneNode(true); if (!m) return ""; m.querySelectorAll(".aicc-eabar").forEach((e) => e.remove()); return m.innerHTML; })(), title: document.title };
   });
   await ctx.close();
   return r;
 }
 
-console.log("== plan cards (Home and Pricing, four languages): price, paid capacity, trial, payment rule, no automatic conversion, the two labelled dates, the plain status");
+console.log("== plan cards (Home and Pricing, four languages): price, paid capacity, FREE, the trial line, the planned-price label, the status region; no date, no condition, no struck price");
 for (const l of LOCALES) {
   const t = T[l];
   for (const route of ["", "pricing/"]) {
     const r = await read(mock, `${pre(l)}/${route}`);
-    check(r.cards.length === 3, `${l} /${route}: three plan cards`);
+    check(r.cards.length === 3 && JSON.stringify(r.cards.map((c) => c.plan)) === JSON.stringify(["solo", "studio", "agency"]), `${l} /${route}: three plan cards in the order Solo, Studio, Agency`);
     r.cards.forEach((c, i) => {
       const pl = PLANS[i];
-      check(norm(c.price).includes(t.price(pl.price)) && c.text.includes(t.paid[i]) && c.text.includes(t.trial) && c.text.includes(t.noPay) && c.text.includes(t.noAuto) && c.status.length === 1 && norm(c.status[0]) === t.soon, `${l} /${route} ${pl.id}: ${t.price(pl.price)} a year, "${t.paid[i]}", "${t.trial}", "${t.noPay}", "${t.noAuto}", status "${t.soon}"`);
-      check(c.dates.length === 2 && norm(c.dates[0][0]) === t.regLabel && norm(c.dates[0][1]) === t.reg && norm(c.dates[1][0]) === t.endLabel && norm(c.dates[1][1]) === t.end, `${l} /${route} ${pl.id}: two labelled lines "${t.regLabel}: ${t.reg}" and "${t.endLabel}: ${t.end}"`);
+      check(norm(c.price) === norm(`${t.priceLabel} ${t.price(pl.price)} ${t.per}`) && norm(c.cap) === t.paid[i] && norm(c.free) === t.free && norm(c.trial) === t.trial, `${l} /${route} ${pl.id}: "${t.priceLabel} ${t.price(pl.price)} ${t.per}", "${t.paid[i]}", "${t.free}", "${t.trial}"`);
+      check(c.status.length === 1 && norm(c.status[0][0]) === t.soon && norm(c.status[0][1]) === t.soonNote && c.links.length === 0, `${l} /${route} ${pl.id}: the static control is the status region "${t.soon}" with its explanation, no link`);
+      check(c.dates === 0 && !/\b\d{1,2}:\d{2}\b/.test(c.text) && !new RegExp(DATE_RE.source, "iu").test(c.text) && ![t.store, t.pay, t.noAuto, t.reg, t.end].some((x) => norm(c.text).includes(norm(x))), `${l} /${route} ${pl.id}: the card carries no date, no clock and none of the three trial facts (they are said once, in the panel)`);
+      check(c.struck === 0 && !/was \$|save/i.test(c.text), `${l} /${route} ${pl.id}: the regular price is not struck through and no "was" / "save" wording`);
+      check(pl.featured ? norm(c.badge) !== "" : c.badge === "", `${l} /${route} ${pl.id}: ${pl.featured ? "carries the Recommended badge" : "carries no badge"}`);
     });
     const prices = [...new Set([...r.full.matchAll(/(?:US)?\$\s?(\d{2,4})/g)].map((m) => Number(m[1])).filter((n) => ![99, 199, 499].includes(n)))];
     check(prices.length === 0 || route === "", `${l} /${route}: no price other than $99 / $199 / $499 on the page${prices.length ? " (" + prices + ")" : ""}`);
   }
 }
-console.log("== every surface that mentions a date shows BOTH labelled lines; no date or clock outside them; no other deadline (Home, Product, Pricing, Questions)");
+console.log("== the ONE launch panel per page (Home and Pricing): both labelled dates exactly once, the three facts, the footnote; no panel and no date anywhere else (Product, Questions)");
 let censusPages = 0;
 for (const l of LOCALES) {
   const t = T[l];
@@ -97,13 +101,17 @@ for (const l of LOCALES) {
     censusPages++;
     const loose = [...r.rest.matchAll(DATE_RE)].map((m) => m[0]).filter(Boolean);
     const clocks = [...r.rest.matchAll(/\b\d{1,2}:\d{2}\b/g)].map((m) => m[0]);
-    check(loose.length === 0 && clocks.length === 0, `${l} /${route}: no date of 2026 / 2027 and no clock time outside the labelled date lines${loose.length + clocks.length ? " -> " + [...loose, ...clocks].slice(0, 3).join(" | ") : ""}`);
-    const badRows = r.dls.filter((d) => d.rows.length !== 2 || norm(d.rows[0][1]) !== t.regLabel || norm(d.rows[1][1]) !== t.endLabel || !(norm(d.rows[0][2]) === t.reg || norm(d.rows[0][2]) === t.regLong) || !(norm(d.rows[1][2]) === t.end || norm(d.rows[1][2]) === t.endLong));
-    check(badRows.length === 0, `${l} /${route}: all ${r.dls.length} date blocks (${[...new Set(r.dls.map((d) => d.where))].join(", ") || "none"}) are exactly the two labelled lines with the exact UTC instants`);
-    const wantBlocks = route === "" ? { card: 3, terms: 1, band: 1 } : route === "pricing/" ? { card: 3, terms: 1, band: 1 } : route === "product/" ? { band: 2 } : {};
-    for (const [k, n] of Object.entries(wantBlocks)) check(r.dls.filter((d) => d.where === k).length >= n, `${l} /${route}: at least ${n} ${k} date block(s) (${r.dls.filter((d) => d.where === k).length})`);
-    if (route === "pricing/") check(r.dls.filter((d) => d.where === "terms").every((d) => norm(d.rows[0][2]) === t.regLong && norm(d.rows[1][2]) === t.endLong), `${l} /pricing/: the terms block carries the long forms ("...The last day to start a trial is ...", "..., for every trial, whichever day you started.")`);
-    // a page with a date block says nothing else about a deadline; a page without one mentions none (the census above covers it)
+    check(loose.length === 0 && clocks.length === 0, `${l} /${route}: no date of 2026 / 2027 and no clock time outside the launch panel's timeline${loose.length + clocks.length ? " -> " + [...loose, ...clocks].slice(0, 3).join(" | ") : ""}`);
+    const wantPanel = route === "" || route === "pricing/" ? 1 : 0;
+    check(r.dls.length === wantPanel && r.panels === wantPanel && r.dls.every((d) => d.where === "panel"), `${l} /${route}: ${wantPanel ? "exactly ONE launch panel" : "no launch panel"} (${r.panels} panel, ${r.dls.length} timeline)`);
+    for (const d of r.dls) {
+      check(d.rows.length === 2 && d.rows[0][0] === "registration" && norm(d.rows[0][1]) === t.regLabel && norm(d.rows[0][2]) === t.reg && norm(d.rows[0][3]) === t.regNote && d.rows[1][0] === "end" && norm(d.rows[1][1]) === t.endLabel && norm(d.rows[1][2]) === t.end && norm(d.rows[1][3]) === t.endNote, `${l} /${route}: the timeline is "${t.regLabel}: ${t.reg}" (${t.regNote}) then "${t.endLabel}: ${t.end}" (${t.endNote}), exactly`);
+      check(JSON.stringify(d.facts.map(norm)) === JSON.stringify([t.store, t.pay, t.noAuto].map(norm)) && norm(d.foot).includes(t.foot), `${l} /${route}: the panel's three facts (one store incl. staging, no payment method, no automatic conversion) and its footnote are the exact strings`);
+    }
+    // each date text exactly once on the page (the cards, the header, the band and the finder carry none)
+    const once = (x) => (norm(r.full).split(norm(x)).length - 1);
+    check(wantPanel ? once(t.reg) === 1 && once(t.end) === 1 && once(t.regNote) === 1 : once(t.reg) === 0 && once(t.end) === 0 && once(t.regNote) === 0, `${l} /${route}: "${t.reg}", "${t.end}" and the last-day note appear ${wantPanel ? "exactly once" : "nowhere"} on the page (${once(t.reg)}/${once(t.end)}/${once(t.regNote)})`);
+    check(r.struck === 0, `${l} /${route}: no struck-through element in the main content (the gated variant is off)`);
     check(!r.hrefs.some((h) => /request-access/.test(h || "")), `${l} /${route}: no link to /request-access/`);
   }
 }
@@ -135,13 +143,13 @@ if (BASE) {
   }
   console.log("== the S0 pricing page is what is live today (sanity: the base fixture carries the P36 offer, not the new copy)");
   const b = await read(mockBase, "/pricing/");
-  check(/Approved stores only/.test(b.full) && !/Trial includes 1 store/.test(b.full), "the base export is the S0 (P36 launch offer) page: 'Approved stores only', no free-trial line");
+  check(/Approved stores only/.test(b.full) && !/Launch trial: 1 store|Trial includes 1 store/.test(b.full), "the base export is the S0 (P36 launch offer) page: 'Approved stores only', no free-trial line");
 }
 if (mockLink) {
   console.log("== the link-initial build (rebuilt at activation): same numbers, same dates, links instead of the status text");
   for (const l of LOCALES) {
     const r = await read(mockLink, `${pre(l)}/pricing/`);
-    check(r.cards.length === 3 && r.cards.every((c) => c.status.length === 0 && c.dates.length === 2 && norm(c.dates[0][1]) === T[l].reg && norm(c.dates[1][1]) === T[l].end), `${l} link build /pricing/: three cards with the two exact date lines and no static status text`);
+    check(r.cards.length === 3 && r.cards.every((c, i) => c.status.length === 0 && c.dates === 0 && c.links.length === 1 && /\/start\/\?plan=(solo|studio|agency)$/.test(c.links[0])) && r.dls.length === 1 && norm(r.dls[0].rows[0][2]) === T[l].reg && norm(r.dls[0].rows[1][2]) === T[l].end, `${l} link build /pricing/: three cards with one sign-up link each, no static status, no date in a card, the panel's two exact date lines`);
   }
 }
 await browser.close();

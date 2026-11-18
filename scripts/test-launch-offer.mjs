@@ -331,13 +331,27 @@ const accountOf = (l) => `${CP_ORIGIN}${l === "en" ? "" : `/${l}`}/my-account/`;
 const anchorsOf = (h) => [...nb(h).matchAll(/<a\b([^>]*)href="([^"]*)"([^>]*)>([\s\S]*?)<\/a>/g)].map((m) => ({ href: m[2], cls: (m[1] + m[3]).match(/class="([^"]*)"/)?.[1] || "", text: norm(m[4].replace(/<[^>]+>/g, " ")), at: m.index }));
 const sectionOf = (h, labelledBy) => { const i = h.indexOf(`aria-labelledby="${labelledBy}"`); if (i < 0) return ""; const a = h.lastIndexOf("<section", i); return h.slice(a, h.indexOf("</section>", i)); };
 const articlesOf = (h) => nb(h).split("<article").slice(1).map((a) => a.slice(0, a.indexOf("</article>"))).filter((a) => /class="aicc-plan\b/.test(a));
+/** P40: the plan cards of the premium section (kit classes `aicc-tier`): the live cards, and the ordinary cards of the ended view (`aicc-tier--standard`, a launch-offer build only). */
+const tiersOf = (h, standard = false) => nb(h).split("<article").slice(1).map((a) => "<article" + a.slice(0, a.indexOf("</article>"))).filter((a) => /class="aicc-tier\b/.test(a) && /aicc-tier--standard/.test(a.slice(0, a.indexOf(">"))) === standard);
+const countOf = (text, needle) => text.split(needle).length - 1;
+/** The HTML without its ended-view blocks (every element carrying data-ea-after, with its nested content): what a visitor sees while the launch offer is live. Balanced by tag name. */
+function liveHtml(h) {
+  let out = h, i;
+  while ((i = out.search(/<(\w+)\b[^>]*\sdata-ea-after\b/)) >= 0) {
+    const tag = /^<(\w+)/.exec(out.slice(i))[1], re = new RegExp(`<(/?)${tag}\\b[^>]*>`, "g"); re.lastIndex = i; let depth = 0, end = -1, m;
+    while ((m = re.exec(out))) { if (m[1] === "/") { depth--; if (depth === 0) { end = re.lastIndex; break; } } else if (!/\/>$/.test(m[0])) depth++; }
+    if (end < 0) break;
+    out = out.slice(0, i) + out.slice(end);
+  }
+  return out;
+}
 const STORE_NUMS = /(?:(\d+)\s+(?:stores?|tiendas?|магазин\p{L}*|חנויות|חנות)|חנות אחת)/giu;
 function ssChecks(mode, root, initial = "coming_soon") {
   const tag = `ss-${mode}${initial === "link" ? "-link" : ""}`, soon = initial !== "link";
   console.log(`== SELF-SERVICE + ${mode.toUpperCase()} (initial ${initial}): CTA state, Hero, dates, allowance, links, no inert chip (four languages)`);
   const requestHits = [];
   for (const l of LOCALES) {
-    const e = ea(l), ss = e.ss, P = pre(l), dict = D[l];
+    const e = ea(l), ss = e.ss, P = pre(l), dict = D[l]; // P40: the cards, the panel and the bands follow docs/design/p40-pricing.md
     const home = htmlOf(root, `${P}index.html`), pricing = htmlOf(root, `${P}pricing/index.html`), product = htmlOf(root, `${P}product/index.html`);
     const th = visibleText(home), tp = visibleText(pricing);
     const marker = (h, attr, v) => new RegExp(`<html[^>]*${attr}="${v}"`).test(h);
@@ -353,62 +367,93 @@ function ssChecks(mode, root, initial = "coming_soon") {
       check(an.length === 2 && !/<p\b|aicc-btn--soon|data-ea-soon/.test(hero), `${l} ${tag}: the Hero has exactly its two actions (no sign-up button, no request button, no inert chip)`);
       check(/\bid="demo"/.test(h), `${l} ${tag}: the #demo target exists on Home`);
     }
-    // ---- cards (Home and Pricing): P39 the sign-up control follows the build's initial state; the demo is a separate secondary link; the two dates are two labelled lines
+    // ---- cards (Home and Pricing), P40 premium section (docs/design/p40-pricing.md 3.1 / 3.2 / 3.3): header block, three tiers (Studio recommended), the capacity glyphs, FREE + the trial line, the ONE state control; no demo link, no date, no trial condition in a card
     for (const [name, page] of [["Home", home], ["Pricing", pricing]]) {
-      const cards = articlesOf(page);
-      check(cards.length === 3, `${l} ${tag} ${name}: three plan cards`);
+      const cards = tiersOf(page), ended = tiersOf(page, true);
+      check(cards.length === 3 && (mode === "off" ? ended.length === 0 : ended.length === 3), `${l} ${tag} ${name}: three plan cards${mode === "off" ? "" : " and the three ordinary cards of the ended view (data-ea-after)"}`);
+      const pb = nb(page), body = pb.slice(pb.indexOf("<main"), pb.indexOf("</main>"));
+      // the header block: ONE h2 (the section heading) that says the trial; the closed variant only in the ended view (data-ea-after) of a launch-offer build
+      {
+        const h2 = (body.match(/<h2 class="aicc-pricing__title" id="(?:pricing-title|plans-title)">([\s\S]*?)<\/h2>/) || [, ""])[1], lead = (body.match(/<p class="aicc-pricing__lead">([\s\S]*?)<\/p>/) || [, ""])[1];
+        const liveT = norm(h2.replace(/<span data-ea-after[\s\S]*?<\/span>/, "").replace(/<[^>]+>/g, " ")), liveL = norm(lead.replace(/<span data-ea-after[\s\S]*?<\/span>/, "").replace(/<[^>]+>/g, " "));
+        check(liveT === norm(ss.pricing.title) && liveL === norm(ss.pricing.lead), `${l} ${tag} ${name}: the header block says "${ss.pricing.title}" and its lede (the launch trial first)`);
+        check(mode === "off" ? !/data-ea-after/.test(h2 + lead) : h2.includes(`data-ea-after`) && norm(h2.match(/<span data-ea-after[^>]*>([\s\S]*?)<\/span>/)?.[1] || "") === norm(ss.pricing.titleClosed) && norm(lead.match(/<span data-ea-after[^>]*>([\s\S]*?)<\/span>/)?.[1] || "") === norm(ss.pricing.leadClosed), `${l} ${tag} ${name}: the closed header ("${ss.pricing.titleClosed}") exists only as the ended view of a launch-offer build`);
+        check(!/\d{1,2}[ .]?(Dec|dic|дек)|בדצמבר|UTC/.test(norm(h2 + " " + lead)), `${l} ${tag} ${name}: the header block names no date and no clock`);
+      }
       cards.forEach((a, i) => {
-        const plan = PLANS[i], planName = dict.pricing.plans[plan.id].name;
-        const live = mode === "off" ? a : a.replace(/<(div|ul)\b[^>]*data-ea-after[\s\S]*?<\/\1>/g, " ");
-        const buttons = anchorsOf(live).filter((x) => /(^|\s)aicc-btn(\s|$)/.test(x.cls));
-        const demos = anchorsOf(live).filter((x) => /data-ss-demo/.test(live.slice(Math.max(0, x.at - 60), x.at)));
-        const states = [...live.matchAll(/<p class="aicc-sstate"[^>]*data-ss-state="(\w+)"[^>]*role="status"[^>]*>([\s\S]*?)<\/p>/g)];
-        if (soon) {
-          check(buttons.length === 0 && !/<button\b/.test(live) && !/\/start\//.test(live.replace(/<script[\s\S]*?<\/script>/g, "")), `${l} ${tag} ${name} ${plan.id}: the static card has NO sign-up button or link (no /start/ link, no button) while registration is not known to be open`);
-          check(states.length === 1 && states[0][1] === "static" && norm(states[0][2].replace(/<[^>]+>/g, " ")) === norm(ss.cta.soon), `${l} ${tag} ${name} ${plan.id}: the static status is the plain text "${ss.cta.soon}" (<p role="status">, not a link, not a button)`);
-          check(!/<(a|button)\b[^>]*>(?:(?!<\/(a|button)>)[\s\S])*aicc-sstate/.test(live), `${l} ${tag} ${name} ${plan.id}: the status text is not inside a link or a button`);
-        } else {
-          check(buttons.length === 1 && buttons[0].href === startOf(l, plan.id) && buttons[0].text.startsWith(norm(ss.cta.start)) && buttons[0].text.includes(planName), `${l} ${tag} ${name} ${plan.id}: the link build's ONE sign-up control is "${ss.cta.start}" -> ${startOf(l, plan.id)} (${planName} for screen readers)`);
-          check(states.length === 0, `${l} ${tag} ${name} ${plan.id}: the link build carries no static status text`);
-        }
-        check(demos.length === 1 && /(^|\s)aicc-link(\s|$)/.test(demos[0].cls) && !/aicc-btn/.test(demos[0].cls) && demos[0].href === `${P ? "/" + P.replace(/\/$/, "") : ""}/#demo`.replace("//", "/") && demos[0].text.startsWith(norm(dict.home.hero.ctaDemo)), `${l} ${tag} ${name} ${plan.id}: ONE secondary "${dict.home.hero.ctaDemo}" text link to the demo (never a button, never the sign-up control) -> ${demos[0]?.href}`);
-        check(!/request-access/.test(a) && !buttons.some((x) => /#demo/.test(x.href)), `${l} ${tag} ${name} ${plan.id}: no card control targets #demo or /request-access/`);
-        const text = norm(a.replace(/<[^>]+>/g, " | "));
+        const plan = PLANS[i], planName = dict.pricing.plans[plan.id].name, at = a.slice(0, a.indexOf(">") + 1);
+        check(new RegExp(`data-plan="${plan.id}"`).test(at) && (plan.featured ? /aicc-tier--featured/.test(at) && /data-featured/.test(at) : !/aicc-tier--featured|data-featured/.test(at)) && new RegExp(`aria-labelledby="plan-${plan.id}"`).test(at), `${l} ${tag} ${name} ${plan.id}: ${plan.featured ? "the featured (Recommended) card" : "an ordinary card"}, labelled by its h3 (DOM order Solo, Studio, Agency)`);
+        const h3 = (a.match(/<h3 class="aicc-tier__name" id="plan-(\w+)"><bdi>([\s\S]*?)<\/bdi><\/h3>/) || []);
+        check(h3[1] === plan.id && norm(h3[2]) === norm(planName), `${l} ${tag} ${name} ${plan.id}: the h3 is "${planName}"`);
+        const badge = /<p class="aicc-tier__badge">([\s\S]*?)<\/p>/.exec(a);
+        check(plan.featured ? !!badge && norm(badge[1]) === norm(ss.pricing.badge) : !badge, `${l} ${tag} ${name} ${plan.id}: ${plan.featured ? `the badge is "${ss.pricing.badge}" (Recommended, never "most popular")` : "no badge"}`);
+        check(norm((a.match(/<p class="aicc-tier__fit">([\s\S]*?)<\/p>/) || [, ""])[1]) === norm(ss.pricing.fit[plan.id]), `${l} ${tag} ${name} ${plan.id}: the positioning line is "${ss.pricing.fit[plan.id]}"`);
+        // the PAID capacity: words from plans.ts and ten glyph slots, the first N filled (N = plans.ts stores)
         const paid = plan.stores === 1 ? ss.plan.paidOne : ss.plan.paidMany.replace("{n}", String(plan.stores));
-        check(text.includes(norm(ss.plan.trial)) && text.includes(norm(paid)) && text.includes(norm(ss.plan.noPayment)) && text.includes(norm(ss.plan.noAuto)), `${l} ${tag} ${name} ${plan.id}: the card states the trial ("${ss.plan.trial}"), the paid allowance ("${paid}"), the payment rule and "${ss.plan.noAuto}"`);
-        // P39: THE TWO DATES, two labelled lines, registration first
-        const dl = (live.match(/<dl class="aicc-ssdates"[\s\S]*?<\/dl>/) || [""])[0];
-        const rows = [...nb(dl).matchAll(/<div data-ss-date="(\w+)"><dt>([\s\S]*?)<\/dt><dd>([\s\S]*?)<\/dd><\/div>/g)].map((m) => [m[1], norm(m[2].replace(/<[^>]+>/g, " ")), norm(m[3].replace(/<[^>]+>/g, " "))]);
-        check(rows.length === 2 && rows[0][0] === "registration" && rows[0][1] === norm(ss.plan.regLabel) && rows[0][2] === norm(ss.plan.regValue) && rows[1][0] === "end" && rows[1][1] === norm(ss.plan.endLabel) && rows[1][2] === norm(ss.plan.endValue), `${l} ${tag} ${name} ${plan.id}: two labelled date lines: "${norm(ss.plan.regLabel)}: ${norm(ss.plan.regValue)}" and "${norm(ss.plan.endLabel)}: ${norm(ss.plan.endValue)}"`);
-        check(!text.includes(norm(D[l].ea.plan.freeUntil)) && !/FREE until/i.test(text), `${l} ${tag} ${name} ${plan.id}: no loose "FREE until <date>" line (the dates are the two labelled lines)`);
+        const capBlock = (a.match(/<div class="aicc-tier__cap" data-aicc-ss="paid">([\s\S]*?)<\/div>/) || [, ""])[1];
+        const slots = [...capBlock.matchAll(/<span class="aicc-cap__slot( aicc-cap__slot--on)?"><\/span>/g)];
+        check(norm((capBlock.match(/<p class="aicc-tier__cap-text">([\s\S]*?)<\/p>/) || [, ""])[1]) === norm(paid) && slots.length === 10 && slots.filter((m) => m[1]).length === plan.stores && slots.slice(0, plan.stores).every((m) => m[1]) && /aria-hidden="true"/.test(capBlock), `${l} ${tag} ${name} ${plan.id}: paid capacity "${paid}" with ten decorative glyph slots, the first ${plan.stores} filled`);
+        // the planned regular price: label, amount (plans.ts), "per year"; NEVER struck through in this build; above FREE
+        const price = (a.match(/<p class="aicc-tier__price"[^>]*data-aicc-ss="regular"[^>]*>([\s\S]*?)<\/p>/) || [, ""])[1], priceTag = (a.match(/<p class="aicc-tier__price"[^>]*>/) || [""])[0];
+        const per = ss.pricing.per + (l === "ru" ? " (USD)" : "");
+        check(norm(price.replace(/<[^>]+>/g, " ")) === norm(`${ss.pricing.priceLabel} ${formatPrice(plan.price, l)} ${per}`) && /<bdi class="aicc-tier__amount">/.test(price) && !/<s\b|<del\b|line-through|--strike|data-ss-price/.test(a), `${l} ${tag} ${name} ${plan.id}: "${ss.pricing.priceLabel}: ${formatPrice(plan.price, l)} ${per}" (not struck through)`);
+        const lz = (a.match(/<div class="aicc-tier__launch">([\s\S]*?)<\/div><p class="aicc-tier__incl"/) || [, ""])[1];
+        check(norm((lz.match(/<span class="aicc-tier__free-word">([\s\S]*?)<\/span>/) || [, ""])[1]) === norm(ss.pricing.free) && norm((lz.match(/<span class="aicc-tier__trial">([\s\S]*?)<\/p>/) || [, ""])[1].replace(/<[^>]+>/g, " ")) === norm(ss.pricing.trial) && /data-ss-free/.test(lz), `${l} ${tag} ${name} ${plan.id}: "${ss.pricing.free}" with the trial line "${ss.pricing.trial}"`);
+        // the ONE control
+        const pcta = (lz.match(/<div class="aicc-pcta"[^>]*data-ss-cta="(\w+)"[\s\S]*$/) || []);
+        if (soon) {
+          const st = (a.match(/<p class="aicc-pstatus" role="status" data-ss-state="(\w+)"[^>]*>([\s\S]*?)<\/p>/) || []);
+          check(pcta[1] === "status" && st[1] === "static" && norm(st[2].match(/<span class="aicc-pstatus__label">([\s\S]*?)<\/span>/)?.[1] || "") === norm(ss.cta.soon) && norm(st[2].match(/<span class="aicc-pstatus__note">([\s\S]*?)<\/span>/)?.[1] || "") === norm(ss.state.soonNote), `${l} ${tag} ${name} ${plan.id}: the static control is the status region "${ss.cta.soon}" + its note (<p role="status">, data-ss-cta="status")`);
+          check(!/<(a|button)\b/.test(lz) && !/\/start\//.test(lz) && !/#demo/.test(lz), `${l} ${tag} ${name} ${plan.id}: the static card has NO link and NO button in its launch zone (no /start/, no #demo) while registration is not known to be open`);
+          check(!/<(a|button)\b[^>]*>(?:(?!<\/(a|button)>)[\s\S])*aicc-pstatus/.test(a) && !/tabindex/i.test(lz), `${l} ${tag} ${name} ${plan.id}: the status region is not inside a link or a button and is not a tab stop`);
+        } else {
+          const lk = (a.match(/<a class="aicc-btn aicc-btn--lg aicc-btn--block (aicc-btn--(?:primary|outline))" data-ss-state="(\w+)" href="([^"]*)">([\s\S]*?)<\/a>/) || []);
+          check(pcta[1] === "link" && lk[2] === "static" && lk[3] === startOf(l, plan.id) && norm((lk[4].match(/^<span>([\s\S]*?)<\/span>/) || [, ""])[1]) === norm(ss.cta.start) && lk[4].includes(norm(planName)) && lk[1] === (plan.featured ? "aicc-btn--primary" : "aicc-btn--outline"), `${l} ${tag} ${name} ${plan.id}: the link build's ONE control is the ${plan.featured ? "primary" : "outline"} link "${ss.cta.start}" -> ${startOf(l, plan.id)} (${planName} for screen readers)`);
+          check(!/<p class="aicc-pstatus"/.test(a), `${l} ${tag} ${name} ${plan.id}: the link build carries no static status region`);
+        }
+        check(!/data-ss-demo|#demo|request-access|aicc-plan__demo/.test(a) && !/Try Live Demo/i.test(a.replace(/<[^>]+>/g, " ")) && !a.includes(norm(dict.home.hero.ctaDemo)), `${l} ${tag} ${name} ${plan.id}: NO per-card "${dict.home.hero.ctaDemo}" link, no #demo, no request link in the card`);
+        // dates ONCE per page: a card carries no date, no clock, no trial condition
+        const text = norm(a.replace(/<[^>]+>/g, " | "));
+        const conds = [ss.launch.fact.store, ss.launch.fact.payment, ss.launch.fact.noAuto, ss.plan.regLabel, ss.plan.endLabel, ss.plan.regValue, ss.plan.endValue, ss.launch.regNote, ss.launch.endNote].map(norm);
+        check(!/(UTC|00:00|22:00)/.test(text) && !/(Dec|dic|дек)\.? ?\d|\d+ ?(בדצמבר|dic|дек)/i.test(text) && conds.every((c) => !text.includes(c)), `${l} ${tag} ${name} ${plan.id}: the card carries no date, no clock and none of the trial conditions (they are said once, in the launch panel)`);
+        check(!text.includes(norm(D[l].ea.plan.freeUntil)) && !/FREE until/i.test(text), `${l} ${tag} ${name} ${plan.id}: no loose "FREE until <date>" line`);
         const nums = [...text.matchAll(STORE_NUMS)].map((m) => (m[1] ? Number(m[1]) : 1)); // Hebrew writes one store as "חנות אחת"
         check(nums.length >= 2 && nums.every((n) => [1, 3, 10].includes(n)) && nums.includes(plan.stores) && nums.includes(1), `${l} ${tag} ${name} ${plan.id}: the only store counts on the card are 1 and ${plan.stores}, from the 1 / 3 / 10 table [${nums}]`);
-        const n = a.indexOf('class="aicc-plan__name"'), d = a.indexOf('data-ss-dates'), k = a.indexOf("aicc-plan__checks"), c = Math.max(a.indexOf("aicc-sstate"), a.search(/<a\b[^>]*class="aicc-btn/)), dm = a.indexOf("data-ss-demo");
-        if (mode === "off") check(n >= 0 && n < d && d < k && k < c && c < dm, `${l} ${tag} ${name} ${plan.id}: order: plan name, the two dates, the checks, the control, the demo link`);
-        else { const r = a.indexOf("aicc-plan__regular-line"), f = a.indexOf("aicc-plan__free-word"); check(n >= 0 && n < r && r < f && f < d && d < k && k < c && c < dm, `${l} ${tag} ${name} ${plan.id}: order: name, regular price, FREE + trial line, the two dates, the checks, the sign-up control, the demo link`); }
-        check(!/<p class="aicc-btn/.test(live), `${l} ${tag} ${name} ${plan.id}: no inert button-looking element on the live card`);
+        const iN = a.indexOf('class="aicc-tier__name"'), iF = a.indexOf("aicc-tier__fit"), iC = a.indexOf("aicc-tier__cap-text"), iP = a.indexOf("aicc-tier__price-label"), iW = a.indexOf("aicc-tier__free-word"), iT = a.indexOf("aicc-tier__trial"), iK = a.indexOf('class="aicc-pcta"'), iI = a.indexOf("aicc-tier__incl");
+        check(iN >= 0 && iN < iF && iF < iC && iC < iP && iP < iW && iW < iT && iT < iK && iK < iI, `${l} ${tag} ${name} ${plan.id}: order: name, positioning line, paid capacity, planned price, FREE, trial line, the control, the footer line`);
+        check(norm((a.match(/<p class="aicc-tier__incl">([\s\S]*?)<\/p>/) || [, ""])[1].replace(/<[^>]+>/g, " ")) === norm(ss.pricing.incl), `${l} ${tag} ${name} ${plan.id}: the footer line is "${ss.pricing.incl}"`);
+        check(!/<p class="aicc-btn/.test(a), `${l} ${tag} ${name} ${plan.id}: no inert button-looking element on the live card`);
+      });
+      // the ended view (launch-offer builds): the ordinary card, no FREE, no trial line, no date, the existing "Purchases open soon" status
+      ended.forEach((a, i) => {
+        const plan = PLANS[i], text = norm(a.replace(/<[^>]+>/g, " | ")), price = (a.match(/<p class="aicc-tier__price"[^>]*>([\s\S]*?)<\/p>/) || [, ""])[1];
+        check(/data-commerce="closed"/.test(a) && norm(text).includes(norm(dict.common.soon.label)) && !/aicc-tier__free|aicc-cap--trial|data-ss-free/.test(a) && !a.includes("<a ") && norm(price.replace(/<[^>]+>/g, " ")) === norm(`${formatPrice(plan.price, l)} ${ss.pricing.per}${l === "ru" ? " (USD)" : ""}`), `${l} ${tag} ${name} ${plan.id}: the ordinary card of the ended view: the price leads, "${dict.common.soon.label}", no FREE, no trial line, no link`);
       });
       // the inert "Purchases open soon" chip: only in the hidden ended view of a launch-offer build, never visible; in self-service-only builds nowhere
       const bad = []; const h = nb(page);
       for (const m of h.matchAll(/<p class="aicc-btn[^"]*"/g)) { const mk = [...h.slice(Math.max(0, m.index - 900), m.index).matchAll(/data-ea-(live|after)/g)].map((x) => x[1]).pop(); if (mode === "off" || mk !== "after") bad.push(`${name}@${m.index}`); }
-      check(bad.length === 0 && !/data-ea-soon|aicc-eastatus/.test(h), `${l} ${tag} ${name}: no status-only inert button is visible (the "${dict.common.soon.label}" chip exists only in the hidden ended view of a launch-offer build)${bad.length ? " -> " + bad.join(", ") : ""}`);
-      if (mode !== "off") {
-        const css = (home.match(/<style>([\s\S]*?)<\/style>/g) || []).join("\n");
-        const free = remOf(css, ".aicc-plan .aicc-plan__free-word"), reg = remOf(css, ".aicc-plan .aicc-plan__regular-line");
-        check(name !== "Home" || (free > reg && reg >= 2 && free / reg >= 1.4), `${l} ${tag}: FREE (${free}rem) stays dominant over the regular price (${reg}rem)`);
-      }
+      check(bad.length === 0 && !/data-ea-soon|aicc-eastatus/.test(h), `${l} ${tag} ${name}: no status-only inert button is visible${bad.length ? " -> " + bad.join(", ") : ""}`);
+      // the retired P39 card markup is gone
+      check(!/aicc-plan__|aicc-sstate|aicc-ssdates|data-ss-demo|aicc-eaterms|aicc-plan__checks/.test(body), `${l} ${tag} ${name}: none of the retired P39 card markup (aicc-plan__*, aicc-sstate, aicc-ssdates, data-ss-demo, aicc-eaterms) is in the page body`);
     }
-    // ---- terms (Pricing: #free-trial; Home: the same block without the id): the two dates, then the facts
+    // ---- the ONE launch panel per page (id="free-trial" on Home AND Pricing: one anchor per page): the two labelled dates exactly once, the three facts, the footnote
     {
-      const termsOf = (page) => (nb(page).match(/<div class="aicc-eaterms"[^>]*data-ss-terms[\s\S]*?<\/ul><\/div>/) || [""])[0];
-      for (const [name, page, anchor] of [["Pricing", pricing, true], ["Home", home, false]]) {
-        const t = termsOf(page), tt = norm(t.replace(/<[^>]+>/g, " "));
-        check(t !== "" && /\bid="free-trial"/.test(t) === anchor && [ss.terms.label, ss.plan.regLabel, ss.terms.regValue, ss.plan.endLabel, ss.terms.endValue, ss.terms.store, ss.terms.payment, ss.terms.noAuto, ss.terms.paid, ss.terms.state].every((x) => tt.includes(norm(x))), `${l} ${tag} ${name}: the free-trial terms block${anchor ? " (#free-trial)" : ""} states the two dates (long form), one store, no payment method for the trial, no automatic conversion, the 1 / 3 / 10 paid allowance and the state note`);
+      for (const [name, page] of [["Pricing", pricing], ["Home", home]]) {
+        const pb = nb(page), panel = (pb.match(/<section class="aicc-launch" id="free-trial"[\s\S]*?<\/section>/) || [""])[0], pt = norm(panel.replace(/<[^>]+>/g, " | ")), lv = liveHtml(pb), body = visibleText(lv.slice(lv.indexOf("<main"), lv.indexOf("</main>")));
+        check(panel !== "" && countOf(pb, 'id="free-trial"') === 1 && /data-aicc-ss="launch"/.test(panel) && /data-ss-terms/.test(panel), `${l} ${tag} ${name}: exactly ONE launch panel (id="free-trial", one anchor per page)`);
+        check([ss.launch.tag, ss.link, ss.launch.sub].every((x) => pt.includes(norm(x))) && /<h3 class="aicc-launch__title" id="launch-title">/.test(panel), `${l} ${tag} ${name}: the panel says "${ss.launch.tag}" and "${ss.link}" (h3) and its intro`);
+        const steps = [...panel.matchAll(/<li class="aicc-timeline__step" data-ss-date="(\w+)"><span class="aicc-timeline__node" aria-hidden="true"><\/span><span class="aicc-timeline__label">([\s\S]*?)<\/span><span class="aicc-timeline__date">([\s\S]*?)<\/span><span class="aicc-timeline__note">([\s\S]*?)<\/span><\/li>/g)].map((m) => [m[1], norm(m[2]), norm(m[3]), norm(m[4])]);
+        check(/<ol class="aicc-timeline"/.test(panel) && steps.length === 2 && JSON.stringify(steps) === JSON.stringify([["registration", norm(ss.plan.regLabel), norm(ss.plan.regValue), norm(ss.launch.regNote)], ["end", norm(ss.plan.endLabel), norm(ss.plan.endValue), norm(ss.launch.endNote)]]), `${l} ${tag} ${name}: the timeline has two ordered steps: "${norm(ss.plan.regLabel)}: ${norm(ss.plan.regValue)}" then "${norm(ss.plan.endLabel)}: ${norm(ss.plan.endValue)}" with their notes`);
+        const facts = [...panel.matchAll(/<li class="aicc-launch__fact"><span class="aicc-launch__fact-icon" aria-hidden="true">[\s\S]*?<\/span><span>([\s\S]*?)<\/span><\/li>/g)].map((m) => norm(m[1]));
+        check(JSON.stringify(facts) === JSON.stringify([ss.launch.fact.store, ss.launch.fact.payment, ss.launch.fact.noAuto].map(norm)), `${l} ${tag} ${name}: the three facts: one store, no payment method, no automatic conversion`);
+        check(pt.includes(norm(ss.launch.foot.paid)) && pt.includes(norm(ss.terms.state)) && !pt.includes(norm(ss.launch.foot.paidOpen)), `${l} ${tag} ${name}: the footnote says paid purchases are not open yet, and the state note`);
+        // dates ONCE per page: each labelled line exactly once in the visible text of the page body (cards, header, finder and bands carry none)
+        check(countOf(body, norm(ss.plan.regValue)) === 1 && countOf(body, norm(ss.plan.endValue)) === 1 && countOf(body, norm(ss.launch.regNote)) === 1, `${l} ${tag} ${name}: the registration close, the trial end and the last-day note each appear exactly ONCE in the page body`);
+        check(!/(?:^|[^\d:])(?:00|22):00/.test(body.replace(norm(ss.plan.regValue), " ").replace(norm(ss.plan.endValue), " ")), `${l} ${tag} ${name}: no other clock time on the page (the two labelled lines are the only ones)`);
       }
-      check(!/\bid="free-trial"/.test(home), `${l} ${tag}: Home has no id="free-trial" (one anchor per page, on Pricing)`);
     }
-    check(tp.includes("22:00 UTC") && tp.includes("00:00 UTC") && norm(ss.terms.endValue).includes("22:00 UTC") && norm(ss.terms.regValue).includes("00:00 UTC"), `${l} ${tag}: the registration close (00:00 UTC) and the trial end (22:00 UTC) are both stated in UTC`);
-    check(norm(ss.terms.paid).match(/\d+/g).map(Number).every((n) => [1, 3, 10].includes(n)) && !tp.match(/\b(11|12|15|20|25|30|50|100)\s+(stores|tiendas|магазин)/i), `${l} ${tag}: no page text claims a paid capacity above the Backend table (1 / 3 / 10)`);
+    check(tp.includes("22:00 UTC") && tp.includes("00:00 UTC") && norm(ss.plan.endValue).includes("22:00 UTC") && norm(ss.plan.regValue).includes("00:00 UTC"), `${l} ${tag}: the registration close (00:00 UTC) and the trial end (22:00 UTC) are both stated in UTC`);
+    check(!tp.match(/\b(11|12|15|20|25|30|50|100)\s+(stores|tiendas|магазин)/i), `${l} ${tag}: no page text claims a paid capacity above the Backend table (1 / 3 / 10)`);
     if (mode !== "off") {
       check(th.includes(norm(ss.bar.text)) && !th.includes(norm(e.bar.live)), `${l} ${tag}: the bar says the free trial ("${ss.bar.text}") and not the launch-offer request wording`);
       const barLink = anchorsOf(home).find((a) => a.text === norm(ss.bar.link));
@@ -435,15 +480,16 @@ function ssChecks(mode, root, initial = "coming_soon") {
       check(si.length >= 2 && si.every((a) => a.href === accountOf(l)), `${l} ${tag}: "Sign in" (desktop and menu) stays on the account page ${accountOf(l)}`);
       check(!anchorsOf(hdr).some((a) => /request-access|#demo/.test(a.href)), `${l} ${tag}: the header has no request link and no demo link`);
     }
-    // ---- closing bands (Home, Pricing, Product x2): lead sentence, the two dates, the sign-up control; the demo / pricing links stay as secondary actions
+    // ---- closing bands (Home, Pricing, Product x2): P40 = the lead sentence and the state control, NO dates and no trial conditions; the demo / pricing links stay as secondary actions
     for (const [name, page, id] of [["Home", home, "final-title"], ["Pricing", pricing, "pricing-final"], ["Product", product, "safety-cta"], ["Product", product, "product-final"]]) {
       const sec = sectionOf(page, id), an = anchorsOf(sec);
       const live = mode === "off" ? sec : sec.slice(0, sec.indexOf("data-ea-after") > 0 ? sec.indexOf("data-ea-after") : sec.length);
-      const txt = norm(live.replace(/<[^>]+>/g, " "));
+      const txt = norm(live.replace(/<[^>]+>/g, " ")), band = (live.match(/<div class="aicc-pband"[\s\S]*$/) || [""])[0];
       const cta = anchorsOf(live).filter((a) => a.text.startsWith(norm(ss.cta.start)));
-      if (soon) check(cta.length === 0 && (live.match(/data-ss-state="static"/g) || []).length === 1 && txt.includes(norm(ss.cta.soon)) && !/\/start\//.test(live.replace(/<script[\s\S]*?<\/script>/g, "")), `${l} ${tag}: the ${name} closing band (${id}) shows the plain status "${ss.cta.soon}" and no sign-up link`);
-      else check(cta.length === 1 && cta[0].href === startOf(l), `${l} ${tag}: the ${name} closing band (${id}) leads with "${ss.cta.start}" -> ${startOf(l)}`);
-      check(txt.includes(norm(ss.band.lead)) && txt.includes(norm(ss.plan.regLabel)) && txt.includes(norm(ss.plan.regValue)) && txt.includes(norm(ss.plan.endLabel)) && txt.includes(norm(ss.plan.endValue)), `${l} ${tag}: the ${name} band (${id}) has its lead sentence and the two labelled dates`);
+      check(/data-aicc-ss="band" data-ss-band/.test(band) && txt.includes(norm(ss.band.lead)) && /<div class="aicc-pband__actions">/.test(band), `${l} ${tag}: the ${name} closing band (${id}) is the P40 band: its lead sentence and the control`);
+      if (soon) check(cta.length === 0 && (live.match(/data-ss-state="static"/g) || []).length === 1 && /<div class="aicc-pcta aicc-pcta--inverse" data-ss-cta="status"/.test(band) && txt.includes(norm(ss.cta.soon)) && txt.includes(norm(ss.state.soonNote)) && !/\/start\//.test(live.replace(/<script[\s\S]*?<\/script>/g, "")), `${l} ${tag}: the ${name} closing band (${id}) shows the inverse status region "${ss.cta.soon}" and no sign-up link`);
+      else check(cta.length === 1 && cta[0].href === startOf(l) && /<div class="aicc-pcta aicc-pcta--inverse" data-ss-cta="link"/.test(band), `${l} ${tag}: the ${name} closing band (${id}) leads with "${ss.cta.start}" -> ${startOf(l)} (plan-less)`);
+      check(![ss.plan.regLabel, ss.plan.regValue, ss.plan.endLabel, ss.plan.endValue, ss.launch.regNote, ss.launch.fact.store, ss.launch.fact.payment, ss.launch.fact.noAuto].some((x) => txt.includes(norm(x))) && !/(UTC|00:00|22:00)/.test(txt), `${l} ${tag}: the ${name} band (${id}) carries NO date and none of the trial conditions`);
       check(!an.some((a) => /request-access/.test(a.href)) && !anchorsOf(live).some((a) => /aicc-btn--primary/.test(a.cls) && /#demo/.test(a.href) && id !== "final-title" && id !== "pricing-final"), `${l} ${tag}: the ${name} band (${id}) has no request link`);
     }
     // ---- P39 round 2: the Product bands and the Product "Get started" disappear after the trial end instant like Home / Pricing (launch-offer builds), and the Product bands keep the contact line of S0
@@ -499,7 +545,7 @@ function ssChecks(mode, root, initial = "coming_soon") {
     const chunkDir = path.join(root, "_next/static/chunks"), refs = new Set();
     for (const c of walk(chunkDir, (p) => p.endsWith(".js"))) { const t = fs.readFileSync(c, "utf8"); if (t.includes("signup/status")) for (const m of t.matchAll(/\/wp-json\/[^"'`\s\\)]*/g)) refs.add(m[0]); }
     check([...refs].length === 1 && [...refs][0] === "/wp-json/aicc/v1/signup/status", `${tag}: the only API surface the self-service button names is GET /wp-json/aicc/v1/signup/status (${[...refs].join(", ")})`);
-    check(htmlFiles(root).every((f) => { const h = fs.readFileSync(f, "utf8"); return (soon ? [...h.matchAll(/data-ss-state="(\w+)"/g)].every((m) => m[1] === "static") : !/data-ss-state=/.test(h)); }), `${tag}: no page ships a RUN-TIME state (open / waitlist / closed / paused / off) in its static HTML; the static state is ${soon ? "the plain text of the default build" : "the link of the link build"}`);
+    check(htmlFiles(root).every((f) => [...fs.readFileSync(f, "utf8").matchAll(/data-ss-state="(\w+)"/g)].every((m) => m[1] === "static")), `${tag}: no page ships a RUN-TIME state (open / waitlist / closed_cutoff / paused / off / purchase) in its static HTML; the static state is ${soon ? "the status region of the default build" : "the link of the link build"}`);
     check(htmlFiles(root).every((f) => !/<a\b[^>]*href="[^"]*\/start\/[^"]*"/.test(fs.readFileSync(f, "utf8").replace(/<script[\s\S]*?<\/script>/g, "")) || !soon), `${tag}: ${soon ? "no <a> to the Control Plane /start/ page exists in any static page (the page may be a 404 while sign-up is off)" : "link build: /start/ links allowed"}`);
   }
 }
@@ -549,7 +595,7 @@ console.log("\n== UTC and geographic neutrality: every mode, every language");
       // P39: the registration cutoff ("<date> at 00:00 UTC", the two registration strings of a self-service build) is the ONE allowed 00:00; every other clock stays 22:00 UTC
       const loc = ["he", "es", "ru"].find((x) => rel.startsWith(x + "/")) || "en";
       let t = visibleText(raw);
-      if (name.startsWith("ss-")) { const se = ea(loc).ss; for (const v of [se.terms.regValue, se.plan.regValue]) t = t.split(norm(v)).join(" "); }
+      if (name.startsWith("ss-")) { const se = ea(loc).ss; for (const v of [se.plan.regValue]) t = t.split(norm(v)).join(" "); }
       const meta = [...raw.matchAll(/<meta[^>]+content="([^"]*)"/g)].map((m) => decode(m[1])).join(" ") + " " + [...raw.matchAll(/<script type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/g)].map((m) => m[1]).join(" ") + " " + ((raw.match(/<title>([^<]*)<\/title>/) || [])[1] || "");
       if (GEO.test(t) || GEO.test(meta)) bad.push(rel);
       if (/\b00:00\b/.test(t)) mid.push(rel);
