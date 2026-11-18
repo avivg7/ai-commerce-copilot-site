@@ -346,6 +346,8 @@ step_scripts() {
   install_file "$INFRA/provision/owner-facts.sh" "$LIB_DIR/provision/owner-facts.sh" 0755 root:root
   install_file "$INFRA/provision/lib/owner_facts.py" "$LIB_DIR/provision/lib/owner_facts.py" 0644 root:root
   ensure_symlink "$LIB_DIR/provision/owner-facts.sh" "$SBIN/aicc-owner-facts"
+  # the owner-run Brevo API key tool (P38): places / rotates / revokes /etc/aicc-mail/brevo-api.key (root:aicc-cp 0640) from the key on STDIN; the owner starts it from the Mac with infra/provision/set-brevo-key.sh. It touches no other file and installs no key itself
+  install_file "$INFRA/provision/host/aicc-set-brevo-key" "$SBIN/aicc-set-brevo-key" 0755 root:root
   # release tooling (host side)
   [ -f "$INFRA/release/activate-release.sh" ] || die "infra/release missing from the bundle"
   for f in activate-release.sh rollback-release.sh smoke-cp.sh smoke-site.sh warm-cp.sh; do install_file "$INFRA/release/$f" "$LIB_DIR/release/$f" 0755 root:root; done
