@@ -1104,6 +1104,13 @@ html.aicc-scroll-lock { overflow: hidden; scrollbar-gutter: stable; }
 .aicc-tier--closed .aicc-tier__trial { color: var(--aicc-text-muted); }
 .aicc-tier--closed .aicc-cap--trial { --aicc-cap-ink: var(--aicc-slate-500); }
 .aicc-tier--closed .aicc-cap--trial .aicc-cap__slot--on { background: rgb(100 116 139 / 0.12); }
+/* the same state without a class: when the control itself says closed or paused (the Site's client control changes it after hydration) the card follows through :has() */
+@supports selector(:has(*)) {
+  .aicc-tier:has([data-ss-state="closed_cutoff"], [data-ss-state="paused"]) .aicc-tier__free-word { font-size: clamp(1.5rem, calc(100cqi / (var(--aicc-free-em) * 1.9)), 2.25rem); color: var(--aicc-text-muted); }
+  .aicc-tier:has([data-ss-state="closed_cutoff"], [data-ss-state="paused"]) .aicc-tier__trial { color: var(--aicc-text-muted); }
+  .aicc-tier:has([data-ss-state="closed_cutoff"], [data-ss-state="paused"]) .aicc-cap--trial { --aicc-cap-ink: var(--aicc-slate-500); }
+  .aicc-tier:has([data-ss-state="closed_cutoff"], [data-ss-state="paused"]) .aicc-cap--trial .aicc-cap__slot--on { background: rgb(100 116 139 / 0.12); }
+}
 /* the ordinary card (after the trial END, data-ea-after): the price leads, the control is the only thing in the lower zone */
 .aicc-tier--standard .aicc-tier__amount { font-size: min(2.75rem, 13vw); }
 .aicc-tier--standard .aicc-tier__launch { padding-block-start: 1.25rem; }
