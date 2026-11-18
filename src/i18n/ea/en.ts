@@ -156,28 +156,87 @@ export const eaEn = {
   // nowhere else; no card wording (the only payment sentence is "no payment method is required for the trial"); no renewal, subscription, discount, urgency, count or day-length wording; UTC only, no geography;
   // the only store counts are the ones the Backend enforces: trial 1 store, paid Solo 1, Studio up to 3, Agency up to 10. he/es/ru are machine drafts (not reviewed by native speakers).
   ss: {
-    bar: { label: "Free trial announcement", text: "Launch Offer: free trial for one store, no payment method required", link: "Trial terms" },
-    // the control of a plan card / band / finder per state of GET /wp-json/aicc/v1/signup/status (src/lib/ssStatus.ts has the state table): soon = the build's initial state and the answer "off" (plain text, no link),
-    // start = open (a link), waitlist = a link to the sign-up page (which shows the waitlist), closed / paused = plain text
-    cta: { soon: "Free trial registration opens soon", start: "Start free trial", waitlist: "Join the waitlist", closed: "Free trial registration closed", paused: "Free trial registration paused" },
-    // P39: the two dates are ALWAYS two separate labelled lines. Registration closes at an instant ({regShort} 00:00 UTC; the server accepts a registration while its clock is before it), trial access ends at another (22:00 UTC on the last day, for every trial).
-    plan: {
-      trial: "Trial includes 1 store", paidOne: "Paid plan: 1 store", paidMany: "Paid plan: up to {n} stores",
-      noPayment: "No payment method required for the trial", noAuto: "No automatic conversion to a paid plan", checksLabel: "Free trial and plan allowance",
-      datesLabel: "Free trial dates", regLabel: "Registration closes", regValue: "{regShort} at\u00a000:00 UTC", endLabel: "Trial access ends", endValue: "{until} at\u00a022:00 UTC",
+    bar: {
+      label: "Free trial announcement",
+      text: "Launch Offer: free trial for one store, no payment method required",
+      link: "Trial terms",
     },
-    hero: { badge: "FREE trial for 1 store", supportLabel: "Free trial at a glance", support: { noPayment: "No payment method for the trial", oneStore: "The trial includes 1 store", noAuto: "No automatic conversion to a paid plan" } },
-    band: { lead: "Free trial for one store. No payment method is required for the trial." },
+    cta: {
+      start: "Get started free",
+      purchase: "Choose {plan}",
+      soon: "Free trial opens soon",
+      closed: "Registration closed",
+      paused: "Registration paused",
+      choosePlan: "Choose a plan",
+      waitlist: "Join the waitlist",
+    },
+    state: {
+      soonNote: "Registration is not open yet. This page shows a start button as soon as it opens.",
+      closedNote: "No new trials can be started. Paid plans are not open for purchase yet.",
+      closedPaidNote: "Free trial registration has closed.",
+      pausedNote: "Registration is paused for now. Please come back later.",
+      waitlistNote: "We will write if a place may become available. The waitlist does not reserve one.",
+    },
+    pricing: {
+      title: "Try it free on one store.",
+      lead: "The launch trial is free and needs no payment method. Choose the plan you expect to buy later: it is only your preference.",
+      titleClosed: "Plans priced by store capacity.",
+      leadClosed: "Free trial registration has closed. Every plan has every feature; you choose how many stores to connect.",
+      fit: {
+        solo: "For independent stores ready to make smarter recommendations",
+        studio: "For growing merchants managing multiple storefronts",
+        agency: "For teams managing a portfolio of client stores",
+      },
+      badge: "Recommended",
+      priceLabel: "Planned regular price",
+      priceLabelStrike: "Regular price",
+      per: "per year",
+      free: "FREE",
+      trial: "Launch trial: 1\u00a0store",
+      incl: "Every feature, on every plan",
+    },
+    plan: {
+      paidOne: "Paid plan: 1 store",
+      paidMany: "Paid plan: up to {n} stores",
+      datesLabel: "Free trial dates",
+      regLabel: "Registration closes",
+      regValue: "{regShort} at\u00a000:00 UTC",
+      endLabel: "Trial access ends",
+      endValue: "{until} at\u00a022:00 UTC",
+    },
+    launch: {
+      tag: "Launch offer",
+      sub: "Whichever plan you pick, the trial is the same. The plan is only your preference.",
+      regNote: "The last day to start a trial is {regLast} (UTC).",
+      endNote: "For every trial, whichever day you started.",
+      fact: {
+        store: "The trial covers 1 store, whichever plan you choose. A staging site counts as a store.",
+        payment: "No payment method is required, so nothing is charged.",
+        noAuto: "No automatic conversion to a paid plan. Continuing is your decision.",
+      },
+      foot: {
+        paid: "Paid plans are not open for purchase yet. Their regular prices apply once they open.",
+        paidOpen: "Paid plans are open for purchase.",
+      },
+    },
+    hero: {
+      badge: "FREE trial for 1 store",
+      supportLabel: "Free trial at a glance",
+      support: {
+        noPayment: "No payment method for the trial",
+        oneStore: "The trial includes 1 store",
+        noAuto: "No automatic conversion to a paid plan",
+      },
+    },
+    band: {
+      lead: "See AICC's recommendations on your own WooCommerce store.",
+    },
     link: "How the free trial works",
-    meta: { pricingDescription: "Every plan has the full AICC product. Free trial for 1 store, with no payment method required for the trial. Paid plans: Solo {priceSolo}, Studio {priceStudio}, Agency {priceAgency} per year, for 1, up to 3 and up to 10 stores. Paid purchases are not open yet." },
+    meta: {
+      pricingDescription: "Every plan has the full AICC product. Free trial for 1 store, with no payment method required for the trial. Paid plans: Solo {priceSolo}, Studio {priceStudio}, Agency {priceAgency} per year, for 1, up to 3 and up to 10 stores. Paid purchases are not open yet.",
+    },
     terms: {
       label: "Free trial terms",
-      regValue: "{regDate} at\u00a000:00 UTC. The last day to start a trial is {regLast} (UTC).",
-      endValue: "{lastDay} at\u00a022:00 UTC, for every trial, whichever day you started.",
-      store: "The free trial covers 1 store, whichever plan you choose. The plan you pick is only your preference.",
-      payment: "No payment method is required for the trial, so nothing is charged.",
-      noAuto: "The trial does not convert to a paid plan automatically. Continuing after the trial needs your explicit decision.",
-      paid: "Paid plans are not open for purchase yet. Their regular prices apply once they open: Solo covers 1 store, Studio up to 3, Agency up to 10.",
       state: "Registration can close or move to a waitlist, and the sign-up page always shows the current state.",
     },
   },
