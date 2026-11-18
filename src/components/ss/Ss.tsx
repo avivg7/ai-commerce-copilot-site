@@ -30,6 +30,8 @@ export const SS_CSS = [
   ".aicc-final{grid-template-columns:minmax(0,1fr)}",
   ".aicc-pband{grid-template-columns:minmax(0,1fr)}",
   ".aicc-pband .aicc-btn{white-space:normal;text-align:center}",
+  // registration closed or paused: FREE steps back, and its size must keep the narrow-screen floor min(1.5rem, 9vw) at larger text too (the kit's closed floor is a plain 1.5rem, which let the Russian word wrap mid-word in a card at 200% text)
+  ".aicc-pricing .aicc-tier:has([data-ss-state=\"closed_cutoff\"],[data-ss-state=\"paused\"]) .aicc-tier__free-word{font-size:clamp(min(1.5rem,9vw),calc(100cqi / (var(--aicc-free-em) * 1.9)),2.25rem)}",
   // the finder's result: the plan, its paid capacity, then the control (the same region as a card)
   ".aicc-ssfinder__result{display:grid;gap:0.75rem;justify-items:start;inline-size:100%}",
   ".aicc-ssfinder__cap{margin:0;font-size:var(--aicc-text-sm);font-weight:650;line-height:1.35;color:var(--aicc-text)}",

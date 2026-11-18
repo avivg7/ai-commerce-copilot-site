@@ -206,7 +206,7 @@ export const eaHe: DeepPartial<EaDict> = {
       },
     },
     band: {
-      lead: "ראו את ההמלצות של AICC בחנות ה-WooCommerce שלכם.",
+      lead: "ראו את ההמלצות של AICC בחנות ה־WooCommerce שלכם.",
     },
     link: "איך עובד ניסיון החינם",
     meta: {

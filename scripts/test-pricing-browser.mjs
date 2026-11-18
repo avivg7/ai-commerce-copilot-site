@@ -290,7 +290,7 @@ if (run("G")) {
     await ctx.close();
   }
   for (const [cell, route, signup, extra] of [["link", "pricing/", "http500", {}], ["off", "pricing/", "open", {}], ["announce", "pricing/", "open", { now: END + 1000 }], ["announce", "pricing/", "open", { scale: 2 }], ["announce", "", "waitlist", { scale: 1.25 }]]) for (const l of QUICK ? ["en"] : LOCALES) {
-    const { ctx, page } = await view(cell, `${pre(l)}/${route}`, 390, { locale: l, signup, h: 844, ...extra });
+    const { ctx, page } = await view(cell, `${pre(l)}/${route}`, 390, { locale: l, signup, h: 844, media: { reducedMotion: "reduce" }, ...extra }); // (reduced motion: axe must not sample a colour in the middle of a button transition)
     const v = await axe(page);
     check(v.length === 0, `axe ${cell} ${l} /${route} @390 (${signup}${extra.now ? ", ended view" : ""}${extra.scale ? `, ${extra.scale * 100}% text` : ""}): zero violations${v.length ? " -> " + v.join(", ") : ""}`);
     await ctx.close();

@@ -309,7 +309,9 @@ if (out) {
     const mode = h.match(/<html[^>]*\sdata-ea-mode="(\w+)"/)?.[1] || "off";
     check(mode === expect, `${p}: built in mode ${mode} (expected ${expect})`);
     const hasScript = h.includes(`Date.now()>=${E}`);
-    const trace = /data-ea-(live|after|hide-live|soon|cutoff|support|limited|pill)|aicc-eabar|aicc-easupport|aicc-eabadge|Early Access|launch offer|Request Free Access|request-access/i.test(h);
+    // P40: a self-service build (<html data-ss-mode="on">) may carry the launch panel's own label ("Launch offer", ss.launch.tag, English pack value) even with the launch-offer switch off: only that exact pack string is exempt, any other mention still counts
+    const ssTag = /<html[^>]*\sdata-ss-mode="on"/.test(h) ? (await loadTs("src/i18n/index.ts")).getEaDictionary("en", 0).ss.launch.tag : null;
+    const trace = /data-ea-(live|after|hide-live|soon|cutoff|support|limited|pill)|aicc-eabar|aicc-easupport|aicc-eabadge|Early Access|launch offer|Request Free Access|request-access/i.test(ssTag ? h.split(ssTag).join("") : h);
     if (expect === "off") { check(!hasScript && !trace && !h.includes(String(C)) && !h.includes(String(S1)) && !h.includes(String(S2)), `${p}: a normal build carries no trace of the campaign (no script, no attribute, no text, no end instant)`); }
     else {
       check(hasScript, `${p}: the head script is present with the end number of step ${step} (${E})`);
@@ -336,7 +338,7 @@ if (out) {
         const tp = text(`${pre}pricing/index.html`), th = text(`${pre}index.html`);
         check(th.includes(nbn(mine.ss.bar.text)) && tp.includes(nbn(mine.ss.bar.text)), `${l}: the bar says the free trial ('ss.bar.text' of step ${step})`);
         // P40: the launch panel (title, intro, the two labelled dates, the three facts, the footnote), the header, the card lines (FREE, the trial line, the planned price label, the badge, the footer line) and the control of the static state
-        const missing = ["link", "launch.tag", "launch.sub", "launch.regNote", "launch.endNote", "launch.fact.store", "launch.fact.payment", "launch.fact.noAuto", "launch.foot.paid", "terms.state", "plan.regLabel", "plan.regValue", "plan.endLabel", "plan.endValue", "pricing.title", "pricing.lead", "pricing.free", "pricing.trial", "pricing.badge", "pricing.priceLabel", "pricing.incl", "pricing.fit.solo", "pricing.fit.studio", "pricing.fit.agency", /data-ss-state="static"/.test(html(`${pre}pricing/index.html`)) ? "cta.soon" : "cta.start", /data-ss-state="static"/.test(html(`${pre}pricing/index.html`)) ? "state.soonNote" : "pricing.badge"].filter((k) => !tp.includes(nbn(k.split(".").reduce((a, x) => a[x], mine.ss))));
+        const missing = ["link", "launch.tag", "launch.sub", "launch.regNote", "launch.endNote", "launch.fact.store", "launch.fact.payment", "launch.fact.noAuto", "launch.foot.paid", "terms.state", "plan.regLabel", "plan.regValue", "plan.endLabel", "plan.endValue", "pricing.title", "pricing.lead", "pricing.free", "pricing.trial", "pricing.badge", "pricing.priceLabel", "pricing.incl", "pricing.fit.solo", "pricing.fit.studio", "pricing.fit.agency", /data-ss-cta="status"/.test(html(`${pre}pricing/index.html`)) ? "cta.soon" : "cta.start", /data-ss-cta="status"/.test(html(`${pre}pricing/index.html`)) ? "state.soonNote" : "pricing.badge"].filter((k) => !tp.includes(nbn(k.split(".").reduce((a, x) => a[x], mine.ss))));
         check(missing.length === 0, `${l}: Pricing says the launch panel, the header, the card lines and the control${missing.length ? " -> missing " + missing.join(", ") : ""}`);
         for (const other of [0, 1, 2].filter((o) => o !== step)) { let n = 0; for (const k of ["last", "until"]) { const lit = REQUIRED_DATES[l][other][k]; n += (tp.match(new RegExp(`(?<![0-9])${lit.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`, "g")) || []).length; } check(n === 0, `${l}: Pricing carries no date of step ${other}`); }
       }
