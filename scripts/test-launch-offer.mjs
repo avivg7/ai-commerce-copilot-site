@@ -476,6 +476,13 @@ function ssChecks(mode, root, initial = "coming_soon") {
       const hits2 = banned.filter((w) => [live(home), live(pricing), live(product)].some((t) => t.includes(w)));
       check(hits2.length === 0, `${l} ${tag}: no launch-offer request / approval / "no credit card" wording is shown while self-service is on${hits2.length ? " -> " + hits2[0] : ""}`);
     }
+    // ---- P41: the ONE compact status line of the pricing section (Home and Pricing): the not-open fact once, with the working Live Demo link (the open state of a link build says it is open and links to the journey page)
+    for (const [name, page] of [["Pricing", pricing], ["Home", home]]) {
+      const pl = nb(page), m = pl.match(/<p class="aicc-pstate" role="status" id="ss-state-line" data-ss-state="static" data-ss-line="(\w+)"[^>]*>([\s\S]*?)<\/p>/), want = soon ? "soon" : "open";
+      const lnk = m ? [...m[2].matchAll(/<a class="aicc-pstate__link" href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/g)].map((x) => [x[1], norm(x[2])]) : [];
+      const wantLink = soon ? [`/${l === "en" ? "" : l}#demo`.replace(/^\/\/#/, "/#").replace(/^\/([a-z]{2})#/, "/$1/#"), norm(ss.state.demo)] : [journeyOf(l), norm(ss.cta.how)];
+      check(!!m && m[1] === want && norm(m[2].replace(/<[^>]+>/g, " ")).startsWith(norm(ss.state.line[want])) && countOf(pl, 'class="aicc-pstate"') === 1 && lnk.length === 1 && lnk[0][0] === wantLink[0] && lnk[0][1] === wantLink[1], `${l} ${tag} ${name}: ONE status line (role=status, data-ss-line="${want}") saying "${ss.state.line[want]}" with ONE link ${wantLink[0]} "${wantLink[1]}"${m ? "" : " (missing)"}`);
+    }
     // ---- header (desktop and menu): "Get started" -> the account page until sign-up is known to work (a build with initial link: the sign-up page); Sign in stays on the account page; no request button
     {
       const hdr = nb(home).slice(nb(home).indexOf('<header class="aicc-site-header"'), nb(home).indexOf("</header>"));
