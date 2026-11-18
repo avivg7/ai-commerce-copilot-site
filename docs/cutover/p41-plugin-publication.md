@@ -261,8 +261,8 @@ Run for real, locally, with throwaway keys (evidence: `AICC-launch-evidence/exec
 
 | What | Result |
 |---|---|
-| `bash infra/stack-tests/test_verify_published.sh` (signing wrapper S, release record A, mock Control Plane B with one fault per negative control, host check H, `first-signed-release.sh` stage 3 F, guards G, yank Y) | 125 passed, 0 failed |
-| `AICC_VERIFY_FIXTURE=1 bash infra/stack-tests/test_verify_published_fixture.sh` (real WordPress + WooCommerce + `aicc-license-manager` of the p40 CP worktree, real host installer, real routes; F1-F7) | 21 passed, 0 failed (45 of 45 checks pass for the active customer, including the updater and package routes) |
+| `bash infra/stack-tests/test_verify_published.sh` (signing wrapper S, release record A, mock Control Plane B with one fault per negative control, host check H, `first-signed-release.sh` stage 3 F, guards G, yank Y) | 127 passed, 0 failed |
+| `AICC_VERIFY_FIXTURE=1 bash infra/stack-tests/test_verify_published_fixture.sh` (real WordPress + WooCommerce + `aicc-license-manager` of the p40 CP worktree, real host installer, real routes; F1-F7) | 21 passed, 0 failed (48 of 48 verifier checks pass for the active customer, including the updater and package routes and the cross-tenant download) |
 | `bash infra/stack-tests/test_plugin_publish.sh` (after the `--zip` verify was added to `publish-plugin-release.sh`) | 140 passed, 0 failed (unchanged) |
 | `infra/release/publish-plugin-release.sh --env production ...` dry runs (publish + set current, stage only, `--point-at`, wrong `--confirm-production`) against the throwaway-signed 1.1.1 with throwaway key files | plans printed, refusal exit 3 as documented (`logs/publish-dry-run-throwaway.txt`) |
 | The REAL 1.1.1 candidate rebuilt from `abdcda2` | byte-identical (SHA-256 `9757ab35...`); a throwaway key cannot sign it (the ZIP bakes the owner's keys), a record check against a throwaway key list fails at R6d |
