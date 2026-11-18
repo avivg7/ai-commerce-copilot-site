@@ -130,6 +130,33 @@ export function SsBand({ locale, t, children, contact = false }: { locale: Local
   );
 }
 
+/**
+ * The Product page closing band: the live self-service band (with the support contact line) and, in a launch-offer build, the ordinary band for the ended view (`after`, rendered by the page; shown only after the trial end instant).
+ * Kept here so the launch-offer wiring stays inside the known files (scripts/ea-check.mjs).
+ */
+export function SsProductBand({ locale, t, children, after }: { locale: Locale; t: Dictionary; children?: ReactNode; after: ReactNode }) {
+  if (!SS_ON) return null;
+  return (
+    <>
+      <SsBand locale={locale} t={t} contact>{children}</SsBand>
+      {EA_ON ? <div className="aicc-stack aicc-stack--lg" data-ea-after>{after}</div> : null}
+    </>
+  );
+}
+
+/** The Product hero "Get started": the state-aware link while the offer is live (data-ea-live) and `ordinary` (the account link) for the ended view of a launch-offer build. */
+export async function SsProductGetStarted({ locale, className, icon, children, ordinary }: { locale: Locale; className: string; icon?: ReactNode; children: ReactNode; ordinary: ReactNode }): Promise<ReactNode> {
+  if (!SS_ON) return null;
+  return (
+    <>
+      <span style={{ display: "contents" }} {...(EA_ON ? { "data-ea-live": "" } : {})}>
+        <SsGetStartedSlot locale={locale} className={className} icon={icon}>{children}</SsGetStartedSlot>
+      </span>
+      {EA_ON ? <span style={{ display: "contents" }} data-ea-after>{ordinary}</span> : null}
+    </>
+  );
+}
+
 /** The card's SECONDARY "Try Live Demo" link (the interactive demo on Home): a plain text link, never the sign-up action. */
 export function SsDemoLink({ locale, label, planName }: { locale: Locale; label: string; planName: string }) {
   return (
