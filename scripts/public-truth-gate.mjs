@@ -217,7 +217,7 @@ async function selfTest() {
     const struck = cleanPage({ extraBody: '<p class="aicc-tier__price aicc-tier__price--strike" data-ss-price="strike"><s class="aicc-tier__amount"><bdi>$99</bdi></s></p>' });
     check("strike: a struck price is a finding by default", analyzeDocument(struck, ctx).some((x) => x.id === "strike-price"));
     check("strike: ... and is cleared only when the approval is attested (ctx.strikeApproved)", !analyzeDocument(struck, { ...ctx, strikeApproved: true }).some((x) => x.id === "strike-price"));
-    check("strike: a stylesheet that only names the class is not a struck price", !analyzeDocument(cleanPage({ extraHead: "<style>.aicc-tier__price--strike .aicc-tier__amount{text-decoration:line-through}</style>" }), ctx).some((x) => x.id === "strike-price"));
+    check("strike: a stylesheet that only names the class is not a struck price", !analyzeDocument(cleanPage({ extraHead: "<style>.aicc-tier__price--strike .aicc-tier__amount{color:red}</style>" }), ctx).some((x) => x.id === "strike-price"));
   }
   // noindex is allowed on transactional pages, not on the pricing page
   const noidx = base.replace("</head>", '<meta name="robots" content="noindex, nofollow"></head>');

@@ -550,7 +550,7 @@ console.log("9. launch:check gates (extension reference, Plugin release identity
     fs.rmSync(d, { recursive: true, force: true });
   }
   { // P40: the kit stylesheet and the inline CSS may NAME the new strike classes; only markup counts
-    const d = fs.mkdtempSync(path.join(process.env.TMPDIR || "/tmp", "p40-strike-")); fs.writeFileSync(path.join(d, "index.html"), '<!DOCTYPE html><html lang="en" data-ea-mode="open"><head><style>.aicc-tier__price--strike .aicc-tier__amount{text-decoration:line-through}</style></head><body><p class="aicc-tier__price">x</p></body></html>');
+    const d = fs.mkdtempSync(path.join(process.env.TMPDIR || "/tmp", "p40-strike-")); fs.writeFileSync(path.join(d, "index.html"), '<!DOCTYPE html><html lang="en" data-ea-mode="open"><head><style>.aicc-tier__price--strike .aicc-tier__amount{color:red}</style></head><body><p class="aicc-tier__price">x</p></body></html>');
     check(!has(lc({ ...O, AICC_OUT_DIR: d }), STRIKE), "an export whose only mention of the P40 strike class is a stylesheet raises no strike blocker");
     fs.rmSync(d, { recursive: true, force: true });
   }

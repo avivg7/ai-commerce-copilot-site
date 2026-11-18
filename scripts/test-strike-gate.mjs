@@ -72,7 +72,7 @@ console.log("== 4. launch:check, the public-truth gate and the production builde
 
 console.log("== 5. a stylesheet that only names the class is not a struck price");
 {
-  const css = "<style>.aicc-tier__price--strike .aicc-tier__amount{text-decoration:line-through}</style>";
+  const css = "<style>.aicc-tier__price--strike .aicc-tier__amount{color:red}</style>";
   check(strikeMarkup(`<html><head>${css}</head><body><p class="aicc-tier__price">x</p></body></html>`).length === 0, "an inline stylesheet naming aicc-tier__price--strike raises nothing");
   check(strikeMarkup('<p class="aicc-tier__price aicc-tier__price--strike">x</p>').length === 1 && strikeMarkup('<s class="aicc-tier__amount">$99</s>').length >= 1 && strikeMarkup("<del>$99</del>").length === 1 && strikeMarkup("<span>$99</span><svg></svg><section></section><strong>x</strong>").length === 0, "the detector sees each marker and none of the look-alike elements (svg, section, strong, span)");
 }

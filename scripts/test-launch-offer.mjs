@@ -396,7 +396,7 @@ function ssChecks(mode, root, initial = "coming_soon") {
         // the planned regular price: label, amount (plans.ts), "per year"; NEVER struck through in this build; above FREE
         const price = (a.match(/<p class="aicc-tier__price"[^>]*data-aicc-ss="regular"[^>]*>([\s\S]*?)<\/p>/) || [, ""])[1], priceTag = (a.match(/<p class="aicc-tier__price"[^>]*>/) || [""])[0];
         const per = ss.pricing.per + (l === "ru" ? " (USD)" : "");
-        check(norm(price.replace(/<[^>]+>/g, " ")) === norm(`${ss.pricing.priceLabel} ${formatPrice(plan.price, l)} ${per}`) && /<bdi class="aicc-tier__amount">/.test(price) && !/<s\b|<del\b|line-through|--strike|data-ss-price/.test(a), `${l} ${tag} ${name} ${plan.id}: "${ss.pricing.priceLabel}: ${formatPrice(plan.price, l)} ${per}" (not struck through)`);
+        check(norm(price.replace(/<[^>]+>/g, " ")) === norm(`${ss.pricing.priceLabel} ${formatPrice(plan.price, l)} ${per}`) && /<bdi class="aicc-tier__amount">/.test(price) && !/<s\b|<del\b|text-decoration|--strike|data-ss-price/.test(a), `${l} ${tag} ${name} ${plan.id}: "${ss.pricing.priceLabel}: ${formatPrice(plan.price, l)} ${per}" (not struck through)`);
         const lz = (a.match(/<div class="aicc-tier__launch">([\s\S]*?)<\/div><p class="aicc-tier__incl"/) || [, ""])[1];
         check(norm((lz.match(/<span class="aicc-tier__free-word">([\s\S]*?)<\/span>/) || [, ""])[1]) === norm(ss.pricing.free) && norm((lz.match(/<span class="aicc-tier__trial">([\s\S]*?)<\/p>/) || [, ""])[1].replace(/<[^>]+>/g, " ")) === norm(ss.pricing.trial) && /data-ss-free/.test(lz), `${l} ${tag} ${name} ${plan.id}: "${ss.pricing.free}" with the trial line "${ss.pricing.trial}"`);
         // the ONE control
