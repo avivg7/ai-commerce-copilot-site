@@ -211,7 +211,7 @@ for (const f of ["src/lib/earlyAccess.ts", "src/components/ea/Ea.tsx", "src/comp
 }
 {
   const strays = [];
-  const walkDir = (d) => { for (const e of fs.readdirSync(d, { withFileTypes: true })) { const p = path.join(d, e.name); if (e.isDirectory()) { if (!["node_modules", ".next", "out", "ea"].includes(e.name)) walkDir(p); } else if (/\.(tsx?|css)$/.test(e.name) && !/earlyAccess\.ts$|components\/ea\/Ea\.tsx$/.test(p) && /EA_|data-ea-|\bt\.ea\b|\bea\.(bar|hero|plan|section|after|header)\b|Early Access/.test(fs.readFileSync(p, "utf8")) && !/PricingCard|HomePage|PricingPage|ProductPage|SiteHeader|layout\.tsx|components\/ss\/Ss\.tsx|lib\/selfService\.ts|\[\[\.\.\.slug\]\]\/page\.tsx|components\/request\/RequestPages\.tsx|lib\/requestRoutes\.ts|aicc\.css|i18n\/en\.ts|i18n\/(he|es|ru)\.ts|i18n\/eaTokens\.ts|i18n\/index\.ts$/.test(p)) strays.push(path.relative(ROOT, p)); } };
+  const walkDir = (d) => { for (const e of fs.readdirSync(d, { withFileTypes: true })) { const p = path.join(d, e.name); if (e.isDirectory()) { if (!["node_modules", ".next", "out", "ea"].includes(e.name)) walkDir(p); } else if (/\.(tsx?|css)$/.test(e.name) && !/earlyAccess\.ts$|components\/ea\/Ea\.tsx$/.test(p) && /EA_|data-ea-|\bt\.ea\b|\bea\.(bar|hero|plan|section|after|header)\b|Early Access/.test(fs.readFileSync(p, "utf8")) && !/PricingCard|HomePage|PricingPage|ProductPage|SiteHeader|layout\.tsx|components\/ss\/Ss(Plans|Cta)?\.tsx|lib\/selfService\.ts|\[\[\.\.\.slug\]\]\/page\.tsx|components\/request\/RequestPages\.tsx|lib\/requestRoutes\.ts|aicc\.css|i18n\/en\.ts|i18n\/(he|es|ru)\.ts|i18n\/eaTokens\.ts|i18n\/index\.ts$/.test(p)) strays.push(path.relative(ROOT, p)); } };
   walkDir(path.join(ROOT, "src"));
   check(strays.length === 0, `Early Access wiring is confined to the known files${strays.length ? ` (stray: ${strays.join(", ")})` : ""}`);
 }
@@ -244,7 +244,7 @@ const flat = (o, pre = "", out = []) => { if (typeof o === "string") out.push([p
     const rawStrings = flat(raw[l]);
     const lit = rawStrings.filter(([, v]) => /20(26|27)/.test(v));
     check(lit.length === 0, `${l}: the pack has no literal year (the dates are tokens, one copy set)${lit.length ? " -> " + lit.map(([p]) => p).join(", ") : ""}`);
-    const unknown = rawStrings.flatMap(([p, v]) => [...v.matchAll(/\{([A-Za-z]+)\}/g)].map((m) => (p === "ss.plan.paidMany" && m[1] === "n" ? "" : m[1])).filter(Boolean)).filter((t) => !toks.EA_DATE_TOKENS.includes(t) && t !== "contactEmail" && t !== "mailProvider" && !/^price(Solo|Studio|Agency)$/.test(t)); // {n} (the store count of plans.ts) is allowed in ss.plan.paidMany only (P37)
+    const unknown = rawStrings.flatMap(([p, v]) => [...v.matchAll(/\{([A-Za-z]+)\}/g)].map((m) => (p === "ss.plan.paidMany" && m[1] === "n" ? "" : p === "ss.cta.purchase" && m[1] === "plan" ? "" : m[1])).filter(Boolean)).filter((t) => !toks.EA_DATE_TOKENS.includes(t) && t !== "contactEmail" && t !== "mailProvider" && !/^price(Solo|Studio|Agency)$/.test(t)); // {n} (the store count of plans.ts) is allowed in ss.plan.paidMany only (P37); {plan} (the plan name) in ss.cta.purchase only (P40)
     check(unknown.length === 0, `${l}: every {token} in the pack is a date token, {contactEmail} or {mailProvider}${unknown.length ? " -> " + [...new Set(unknown)].join(", ") : ""}`);
     check(rawStrings.some(([, v]) => v.includes("{firstLastDay}")) && rawStrings.filter(([, v]) => v.includes("{firstLastDay}")).every(([p]) => p === "extended.note" || p === "extended.noteAnnounce"), `${l}: {firstLastDay} (the initial last day) is used by the extension notes (open and announce) and by nothing else`);
     // the token table equals the independent literals (REQUIRED_DATES) and Intl's own formatting of the Israel calendar day, step by step
@@ -335,8 +335,9 @@ if (out) {
         const pre = l === "en" ? "" : `${l}/`, mine = idx.getEaDictionary(l, step);
         const tp = text(`${pre}pricing/index.html`), th = text(`${pre}index.html`);
         check(th.includes(nbn(mine.ss.bar.text)) && tp.includes(nbn(mine.ss.bar.text)), `${l}: the bar says the free trial ('ss.bar.text' of step ${step})`);
-        const missing = ["terms.label", "terms.regValue", "terms.endValue", "terms.store", "terms.payment", "terms.noAuto", "terms.paid", "terms.state", "plan.trial", "plan.noPayment", "plan.noAuto", "plan.regLabel", "plan.regValue", "plan.endLabel", "plan.endValue", /data-ss-state="static"/.test(html(`${pre}pricing/index.html`)) ? "cta.soon" : "cta.start"].filter((k) => !tp.includes(nbn(k.split(".").reduce((a, x) => a[x], mine.ss))));
-        check(missing.length === 0, `${l}: Pricing says the free-trial terms and the card allowance${missing.length ? " -> missing " + missing.join(", ") : ""}`);
+        // P40: the launch panel (title, intro, the two labelled dates, the three facts, the footnote), the header, the card lines (FREE, the trial line, the planned price label, the badge, the footer line) and the control of the static state
+        const missing = ["link", "launch.tag", "launch.sub", "launch.regNote", "launch.endNote", "launch.fact.store", "launch.fact.payment", "launch.fact.noAuto", "launch.foot.paid", "terms.state", "plan.regLabel", "plan.regValue", "plan.endLabel", "plan.endValue", "pricing.title", "pricing.lead", "pricing.free", "pricing.trial", "pricing.badge", "pricing.priceLabel", "pricing.incl", "pricing.fit.solo", "pricing.fit.studio", "pricing.fit.agency", /data-ss-state="static"/.test(html(`${pre}pricing/index.html`)) ? "cta.soon" : "cta.start", /data-ss-state="static"/.test(html(`${pre}pricing/index.html`)) ? "state.soonNote" : "pricing.badge"].filter((k) => !tp.includes(nbn(k.split(".").reduce((a, x) => a[x], mine.ss))));
+        check(missing.length === 0, `${l}: Pricing says the launch panel, the header, the card lines and the control${missing.length ? " -> missing " + missing.join(", ") : ""}`);
         for (const other of [0, 1, 2].filter((o) => o !== step)) { let n = 0; for (const k of ["last", "until"]) { const lit = REQUIRED_DATES[l][other][k]; n += (tp.match(new RegExp(`(?<![0-9])${lit.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`, "g")) || []).length; } check(n === 0, `${l}: Pricing carries no date of step ${other}`); }
       }
       check(!/aicc-eanote|data-ea-support="plans"/.test(pr.replace(/<(style|script)[\s\S]*?<\/\1>/g, "")) && !/Request Free Access/i.test(text("pricing/index.html")), "self-service: no launch-offer status note and no request button on Pricing");
@@ -541,11 +542,16 @@ console.log("9. launch:check gates (extension reference, Plugin release identity
   check(!has(lc({ ...O, NEXT_PUBLIC_AICC_EA_STRIKE: "on", AICC_EA_STRIKE_COUNSEL_APPROVED: "counsel-memo-2026-12-01" }), STRIKE), "a real counsel reference clears the strike-through blocker");
   check(!has(lc(O), STRIKE) && !has(lc({ ...O, NEXT_PUBLIC_AICC_EA_STRIKE: "true" }), STRIKE), "no strike blocker when the switch is not exactly on (the default, and the wrong word \"true\")");
   // review P34-2: the strike gate also follows the BUILT export (an export with a struck price raises the counsel blocker whatever this shell says)
-  for (const rel of ["pricing/index.html", "index.html", "he/pricing/index.html", "ru/index.html"]) for (const mark of ['<p class="aicc-plan__regular aicc-plan__regular--strike">', "<s><bdi>$99</bdi></s>"]) {
+  for (const rel of ["pricing/index.html", "index.html", "he/pricing/index.html", "ru/index.html"]) for (const mark of ['<p class="aicc-plan__regular aicc-plan__regular--strike">', "<s><bdi>$99</bdi></s>", '<p class="aicc-tier__price aicc-tier__price--strike">', '<p class="aicc-tier__price" data-ss-price="strike">', '<s class="aicc-tier__amount"><bdi>$99</bdi></s>']) { // P40: the P36 card markers and the P40 card markers (scripts/lib/strike-markup.mjs)
     const d = fs.mkdtempSync(path.join(process.env.TMPDIR || "/tmp", "p34-strike-")); fs.writeFileSync(path.join(d, "index.html"), '<!DOCTYPE html><html lang="en" data-ea-mode="open"><head></head><body></body></html>');
     fs.mkdirSync(path.dirname(path.join(d, rel)), { recursive: true }); fs.writeFileSync(path.join(d, rel), (rel === "index.html" ? '<!DOCTYPE html><html lang="en" data-ea-mode="open"><body>' : "<body>") + mark + "</body>");
-    check(has(lc({ ...O, AICC_OUT_DIR: d }), STRIKE), `a built export with a struck price in ${rel} (${mark.includes("<s>") ? "<s>" : "strike class"}) raises the counsel blocker although the shell's switch is unset`);
+    check(has(lc({ ...O, AICC_OUT_DIR: d }), STRIKE), `a built export with a struck price in ${rel} (${mark.replace(/[<>]/g, "").slice(0, 32)}) raises the counsel blocker although the shell's switch is unset`);
     check(!has(lc({ ...O, AICC_OUT_DIR: d, AICC_EA_STRIKE_COUNSEL_APPROVED: "counsel-2026-11-14-ref7" }), STRIKE), `... and a real counsel reference clears it (${rel})`);
+    fs.rmSync(d, { recursive: true, force: true });
+  }
+  { // P40: the kit stylesheet and the inline CSS may NAME the new strike classes; only markup counts
+    const d = fs.mkdtempSync(path.join(process.env.TMPDIR || "/tmp", "p40-strike-")); fs.writeFileSync(path.join(d, "index.html"), '<!DOCTYPE html><html lang="en" data-ea-mode="open"><head><style>.aicc-tier__price--strike .aicc-tier__amount{text-decoration:line-through}</style></head><body><p class="aicc-tier__price">x</p></body></html>');
+    check(!has(lc({ ...O, AICC_OUT_DIR: d }), STRIKE), "an export whose only mention of the P40 strike class is a stylesheet raises no strike blocker");
     fs.rmSync(d, { recursive: true, force: true });
   }
   { // review P34-2: the inline campaign stylesheet that names the strike class (every campaign build carries it) is not a struck price

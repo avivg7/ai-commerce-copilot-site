@@ -194,7 +194,11 @@ function stripComments(src) {
 }
 const hits = [];
 let scanned = 0;
+// P40: docs/design/ holds design RECORDS that quote the customer copy pack verbatim (docs/design/p40-pricing.md section 5, a table of every msgid with its four languages). They are not customer text; the pack itself is guarded where it
+// lives (src/i18n/ea: SS_EXTRA_RULES here, ssDisclosureProblems in ea:check, the mutations of test:ss-guards). The exemption is exactly this directory: every other doc (docs/cutover, docs/launch ...) is still scanned (test:ss-guards proves it).
+const DESIGN_RECORDS = /^docs\/design\//;
 for (const f of [...files(path.join(ROOT, "src")), ...files(path.join(ROOT, "docs")), path.join(ROOT, "README.md")]) {
+  if (DESIGN_RECORDS.test(path.relative(ROOT, f))) continue;
   scanned++;
   const text = stripComments(fs.readFileSync(f, "utf8"));
   const campaign = isCampaignFile(path.relative(ROOT, f));

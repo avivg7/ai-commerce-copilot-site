@@ -6,6 +6,7 @@ import path from "node:path";
 import { loadTs, ROOT } from "./lib/load.mjs";
 import { auditBuild, DEFAULT_ORIGIN, structuredOffersOn } from "./lib/seo-audit.mjs";
 import { makeAttested } from "./lib/ea-attest.mjs";
+import { STRIKE_PAGES, strikeMarkup } from "./lib/strike-markup.mjs";
 import { processorProblems, placeholderMarkup, REAL_GATEWAY_ALLOWLIST } from "./lib/payment-gate.mjs";
 
 const strict = process.argv.includes("--strict") || process.env.AICC_PRODUCTION === "1";
@@ -154,7 +155,7 @@ if (env.NEXT_PUBLIC_LEGAL_DRAFT_NOTICE === "off" && !approved) problems.push("NE
   }
   // Strike-through (P32): off by default (`EA_STRIKE` is false unless the build says "on"); when it is on it stays a blocker until counsel's approval is attested with a real reference.
   // Review P34-2: the BUILT export counts too (Home and Pricing in every language): a struck price there raises the same blocker whatever this shell's switch says.
-  const strikeBuilt = ["", "he/", "es/", "ru/"].flatMap((l) => [`${l}index.html`, `${l}pricing/index.html`]).filter((rel) => { const f = path.join(artDir, rel); if (!fs.existsSync(f)) return false; const h = fs.readFileSync(f, "utf8"); return /class="[^"]*aicc-plan__regular--strike/.test(h) || /<(s|del)>/.test(h); }); // the markup, not the inline stylesheet every campaign build carries
+  const strikeBuilt = STRIKE_PAGES.filter((rel) => { const f = path.join(artDir, rel); if (!fs.existsSync(f)) return false; return strikeMarkup(fs.readFileSync(f, "utf8")).length > 0; }); // the markup (P36 and P40 card markers, scripts/lib/strike-markup.mjs), not the inline stylesheet every campaign build carries
   if (ea.EA_STRIKE || strikeBuilt.length) {
     if (!attested(env.AICC_EA_STRIKE_COUNSEL_APPROVED)) problems.push(`early access: NEXT_PUBLIC_AICC_EA_STRIKE=on shows the plan price struck through next to the free offer${strikeBuilt.length && !ea.EA_STRIKE ? ` (found in the built export: ${strikeBuilt.join(", ")})` : ""}: counsel must approve that presentation first (no plan has ever been sold at that price); attest it with AICC_EA_STRIKE_COUNSEL_APPROVED=<counsel approval reference>`);
     else console.log(`early access strike-through: ON, counsel approval attested (${env.AICC_EA_STRIKE_COUNSEL_APPROVED.trim()}); recorded, not verified`);

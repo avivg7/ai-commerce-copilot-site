@@ -9,6 +9,7 @@
 //   MARKUP rules run on the raw document: noindex / staging markers, stage or loopback or apex or http:// URLs, a missing or wrong canonical, source-map references.
 // A rule is never weakened to make a page pass: fix the page. Each rule has a sample in SELF_TEST (a sentence that must be caught) and CLEAN_SAMPLES (must not be).
 import { truthProblems } from "./launch-truth.mjs";
+import { strikeMarkup } from "./strike-markup.mjs";
 
 export const CANONICAL_ORIGIN = "https://www.copilt.org";
 
@@ -132,6 +133,8 @@ export function markupFindings(html, ctx) {
       else if (ctx.canonicalMustMatchPath !== false && got !== want && !(ctx.canonicalAlternatives || []).includes(got)) out.push({ id: "canonical-path", why: "the canonical is not this page's own URL", snippet: `${got} (expected ${want})` });
     }
   }
+  // P40: a struck-through plan price is a pricing claim that needs counsel's approval (the same markers as the release gate: scripts/lib/strike-markup.mjs); ctx.strikeApproved = the approval reference is attested
+  if (!ctx.strikeApproved) { const hit = strikeMarkup(html); if (hit.length) out.push({ id: "strike-price", why: "a struck-through plan price (the pricing-claims approval is not attested: AICC_EA_STRIKE_COUNSEL_APPROVED)", snippet: hit[0] }); }
   // source maps referenced from a document
   if (/sourceMappingURL=/i.test(html)) out.push({ id: "source-map-reference", why: "a sourceMappingURL reference in a public document", snippet: "sourceMappingURL" });
   return out;
@@ -236,6 +239,9 @@ export const MUTATIONS = [
   ["placeholder in meta", (h) => h.replace('content="Every plan', 'content="TODO: write description. Every plan'), "todo-tbd"],
   ["pending in aria-label", (h) => h.replace("</main>", '<a href="/x" aria-label="Support (pending)">x</a></main>'), "pending-marker"],
   ["support promise", (h) => h.replace("</main>", "<p>We reply within 2 hours, 24/7.</p></main>"), "support-promise-unknown"],
+  ["struck price (P40 card)", (h) => h.replace("</main>", '<p class="aicc-tier__price aicc-tier__price--strike" data-ss-price="strike"><s class="aicc-tier__amount"><bdi>$99</bdi></s></p></main>'), "strike-price"],
+  ["struck price (P36 card)", (h) => h.replace("</main>", '<p class="aicc-plan__regular aicc-plan__regular--strike"><s><bdi>$99</bdi></s></p></main>'), "strike-price"],
+  ["struck price (bare <del>)", (h) => h.replace("</main>", "<p><del>$99</del> $199</p></main>"), "strike-price"],
 ];
 
 /** Clean sentences that look close to a rule but are true and allowed. Each must produce NO finding. */

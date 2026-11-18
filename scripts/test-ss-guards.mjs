@@ -1,4 +1,4 @@
-// npm run test:ss-guards (P39): MUTATION tests of the free-trial copy guards (scripts/lib/early-access-truth.mjs, scripts/copy-check.mjs). The owner now REQUIRES these claims in exactly these strings:
+// npm run test:ss-guards (P39, updated for the P40 pack): MUTATION tests of the free-trial copy guards (scripts/lib/early-access-truth.mjs, scripts/copy-check.mjs). The owner now REQUIRES these claims in exactly these strings:
 //   "no payment method for the trial", "no automatic conversion to a paid plan", the TWO labelled dates (registration closes 00:00 UTC / trial access ends 22:00 UTC), "Free trial: 1 store regardless of plan".
 // The guards were written for the old claim set and were widened ADDITIVELY. This test proves, in four languages, that
 //   (1) every NEW rule bites (a mutation that breaks it is reported by name), and
@@ -40,32 +40,56 @@ const W = {
   ru: { auto: "автоматическ", date: "31 дек. 2026 г.", dateLong: "31 декабря 2026 г.", card: "банковская карта", approve: "только одобренные магазины", urgent: "осталось 5 мест", save: "скидка 20%", was: "раньше $99", unlimited: "безлимитные магазины", sub: "подписка", days: "пробный период 14 дней", join: "присоединяйтесь", conv: "увеличьте продажи", more: "до 25 магазинов", geo: "по израильскому времени" },
 };
 // NEW rules: [name, mutate(ea, l), expected problem text]
+// P40: the pack was rewritten (docs/design/p40-pricing.md section 5): the card checks and the long terms are gone, the three trial facts live in the launch panel (ss.launch.fact.*), the dates in the timeline (ss.plan.regValue / endValue)
+// and one note (ss.launch.regNote). Every P39 mutation below was MAPPED to its P40 string (same claim, same expected report); the ones whose string no longer exists became a check of the new place, or of the retired-key rule.
 const NEW = [
-  ["the automatic-conversion denial disappears from the card (empty)", (ea) => setAt(ea, "ss.plan.noAuto", ""), /ea\.ss\.plan\.noAuto is missing or empty/],
-  ["the card line stops naming a paid plan / automatic", (ea) => setAt(ea, "ss.plan.noAuto", (v) => v.split(/\s/)[0]), /ea\.ss\.plan\.noAuto must state that nothing converts/],
+  ["the automatic-conversion denial disappears from the panel fact (empty)", (ea) => setAt(ea, "ss.launch.fact.noAuto", ""), /ea\.ss\.launch\.fact\.noAuto is missing or empty/],
+  ["the panel fact stops naming a paid plan / automatic", (ea) => setAt(ea, "ss.launch.fact.noAuto", (v) => v.split(/\s/)[0]), /ea\.ss\.launch\.fact\.noAuto must state that nothing converts/],
   ["the hero line loses the denial", (ea) => setAt(ea, "ss.hero.support.noAuto", "OK"), /ea\.ss\.hero\.support\.noAuto must state that nothing converts/],
-  ["the terms lose the denial", (ea) => setAt(ea, "ss.terms.noAuto", (v) => v.replace(/automátic\w*|автоматическ\w*|אוטומטית?|automatically/i, "")), /ea\.ss\.terms\.noAuto must state that nothing converts/],
-  ["the terms lose the explicit decision", (ea) => setAt(ea, "ss.terms.noAuto", (v) => v.split(/[.]/)[0] + "."), /explicit decision/],
+  ["the panel fact loses the denial but keeps the decision", (ea) => setAt(ea, "ss.launch.fact.noAuto", (v) => v.replace(/automátic\w*|автоматическ\w*|אוטומטי\w*|automatic\w*/i, "")), /ea\.ss\.launch\.fact\.noAuto must state that nothing converts/],
+  ["the panel fact loses the customer's decision", (ea) => setAt(ea, "ss.launch.fact.noAuto", (v) => v.split(/[.]/)[0] + "."), /customer's decision/],
   ["an automatic claim is made in another string (the band lead)", (ea, l) => setAt(ea, "ss.band.lead", (v) => `${v} ${W[l].auto}`), /makes an "automatic" claim/],
+  ["an automatic claim is made in the cards' price lead", (ea, l) => setAt(ea, "ss.pricing.lead", (v) => `${v} ${W[l].auto}`), /makes an "automatic" claim/],
   ["the registration line loses 00:00", (ea) => setAt(ea, "ss.plan.regValue", (v) => v.replace("00:00", "12:00")), /ea\.ss\.plan\.regValue must state the registration close/],
   ["the registration line states the 22:00 end", (ea) => setAt(ea, "ss.plan.regValue", (v) => v.replace("00:00", "22:00")), /must state the registration close|states a 00:00/],
   ["the registration date is wrong (Dec 25)", (ea) => setAt(ea, "ss.plan.regValue", (v) => v.replace(/24/, "25")), /must state the registration close/],
   ["the end line states 00:00", (ea) => setAt(ea, "ss.plan.endValue", (v) => v.replace("22:00", "00:00")), /must state the trial end|states a 00:00/],
   ["the end line shows another day", (ea) => setAt(ea, "ss.plan.endValue", (v) => v.replace(/31/, "30")), /must state the trial end/],
-  ["the terms drop the last day to start a trial", (ea) => setAt(ea, "ss.terms.regValue", (v) => v.replace(/23/, "22")), /last day to start a trial/],
-  ["the terms drop the trial end", (ea) => setAt(ea, "ss.terms.endValue", (v) => v.replace("22:00 UTC", "")), /must state the trial end/],
+  ["the panel note drops the last day to start a trial", (ea) => setAt(ea, "ss.launch.regNote", (v) => v.replace(/23/, "22")), /last day to start a trial/],
+  ["the panel note loses UTC", (ea) => setAt(ea, "ss.launch.regNote", (v) => v.replace("UTC", "")), /last day to start a trial/],
+  ["the panel note states a clock time", (ea) => setAt(ea, "ss.launch.regNote", (v) => `${v} 00:00`), /last day to start a trial|clock time/],
+  ["the trial-end note names a date (a second place for the end date)", (ea, l) => setAt(ea, "ss.launch.endNote", (v) => `${v} ${W[l].date}`), /states a date|dates live only/],
   ["the two labels are the same", (ea) => setAt(ea, "ss.plan.endLabel", (ea0) => ea0) && setAt(ea, "ss.plan.regLabel", ea.ss.plan.endLabel), /must differ/],
   ["a LOOSE end date is put in the bar (a date outside the labelled lines)", (ea, l) => setAt(ea, "ss.bar.text", (v) => `${v} ${W[l].date}`), /states a date|dates live only/],
   ["a LOOSE long date is put in the hero badge", (ea, l) => setAt(ea, "ss.hero.badge", (v) => `${v} ${W[l].dateLong}`), /states a date|dates live only/],
+  ["a LOOSE date is put in the pricing lead", (ea, l) => setAt(ea, "ss.pricing.lead", (v) => `${v} ${W[l].date}`), /states a date|dates live only/],
   ["a clock time is put in the band lead", (ea) => setAt(ea, "ss.band.lead", (v) => `${v} 22:00 UTC`), /clock time/],
   ["00:00 is put outside the registration strings (the old midnight rule still bites)", (ea) => setAt(ea, "ss.terms.state", (v) => `${v} 00:00`), /states a 00:00 end|clock time/],
   ["00:00 is put in a launch-offer string", (ea) => setAt(ea, "plan.ends", (v) => `${v} 00:00`), /states a 00:00 end/],
   ["the retired notOpen label returns", (ea) => setAt(ea, "ss.cta.notOpen", "Free trial registration is not open"), /cta\.notOpen exists/],
+  ["a retired P39 key returns (the long terms line)", (ea) => setAt(ea, "ss.terms.regValue", "Dec 24, 2026 at 00:00 UTC"), /ea\.ss\.terms\.regValue exists: it is retired/],
+  ["a retired P39 key returns (the card's trial line)", (ea) => setAt(ea, "ss.plan.trial", "Trial includes 1 store"), /ea\.ss\.plan\.trial exists: it is retired/],
+  ["a retired P39 key returns (the paid allowance sentence)", (ea) => setAt(ea, "ss.terms.paid", "Paid plans: 1, 3 and 10 stores"), /ea\.ss\.terms\.paid exists: it is retired/],
   ["the 'opens soon' state turns into an invitation", (ea, l) => setAt(ea, "ss.cta.soon", { en: "Start free trial soon", he: "התחילו ניסיון חינם בקרוב", es: "Empezar prueba gratuita pronto", ru: "Начать бесплатный пробный период скоро" }[l]), /status statement|all differ/],
-  ["two state labels are equal", (ea) => setAt(ea, "ss.cta.paused", ea.ss.cta.closed), /five self-service state labels must all differ/],
-  ["the trial is not one store (the card line loses '1')", (ea, l) => setAt(ea, "ss.plan.trial", { en: "Free trial", he: "ניסיון חינם", es: "Prueba gratuita", ru: "Бесплатный пробный период" }[l]), /trial covers one store/],
-  ["the terms say more than 10 paid stores", (ea, l) => setAt(ea, "ss.terms.paid", (v) => `${v} ${W[l].more}`), /number\(s\) 25|paid allowance/],
-  ["the payment rule loses 'payment method'", (ea) => setAt(ea, "ss.plan.noPayment", "x"), /payment method/],
+  ["the 'opens soon' state stops naming the trial", (ea, l) => setAt(ea, "ss.cta.soon", { en: "Opens soon", he: "ייפתח בקרוב", es: "Abrirá pronto", ru: "Скоро откроется" }[l]), /ea\.ss\.cta\.soon must name the trial/],
+  ["two control labels are equal", (ea) => setAt(ea, "ss.cta.paused", ea.ss.cta.closed), /seven self-service control labels must all differ/],
+  ["the purchase and the choose-a-plan labels are equal", (ea) => setAt(ea, "ss.cta.choosePlan", ea.ss.cta.purchase), /seven self-service control labels must all differ/],
+  ["the trial is not one store (the card line loses '1')", (ea, l) => setAt(ea, "ss.pricing.trial", { en: "Launch trial", he: "ניסיון השקה", es: "Prueba de lanzamiento", ru: "Пробный период запуска" }[l]), /trial covers one store/],
+  ["the panel store fact loses '1'", (ea, l) => setAt(ea, "ss.launch.fact.store", (v) => v.replace(/\b1\b/, "").replace(/אחת|una\b|одн\S*/i, "")), /trial covers one store/],
+  ["the panel store fact drops the staging rule", (ea) => setAt(ea, "ss.launch.fact.store", (v) => v.split(/[.]/)[0] + "."), /staging rule/],
+  ["the panel says more than 10 paid stores", (ea, l) => setAt(ea, "ss.launch.fact.store", (v) => `${v} ${W[l].more}`), /number\(s\) 25/],
+  ["the card's paid line loses the {n} token", (ea) => { setAt(ea, "ss.plan.paidMany", (v) => v.replace("{n}", "3")); return ea; }, /paidMany must carry the \{n\} token/],
+  ["the card's solo paid line carries another number", (ea) => setAt(ea, "ss.plan.paidOne", (v) => `${v} 2`), /paidOne may carry no number but 1|number\(s\) 2/],
+  ["the payment fact loses 'payment method'", (ea) => setAt(ea, "ss.launch.fact.payment", "x"), /launch\.fact\.payment must say/],
+  ["the pricing lead loses 'payment method'", (ea) => setAt(ea, "ss.pricing.lead", "x"), /ea\.ss\.pricing\.lead must say/],
+  ["the panel title stops naming the trial", (ea, l) => setAt(ea, "ss.link", { en: "Terms", he: "תנאים", es: "Condiciones", ru: "Условия" }[l]), /panel title\) must name the trial/],
+  ["the closed note stops naming the trial", (ea, l) => setAt(ea, "ss.state.closedNote", { en: "Closed.", he: "סגור.", es: "Cerrado.", ru: "Закрыто." }[l]), /state\.closedNote must name the trial/],
+  ["the band lead gains a payment claim (a trial condition in the band)", (ea, l) => setAt(ea, "ss.band.lead", (v) => `${v} ${{ en: "No payment method for the trial.", he: "ללא אמצעי תשלום לניסיון.", es: "Sin método de pago para la prueba.", ru: "Способ оплаты не нужен для пробного периода." }[l]}`), /band\.lead is a plain lead sentence/],
+  ["the band lead gains a number", (ea) => setAt(ea, "ss.band.lead", (v) => `${v} 1`), /band\.lead is a plain lead sentence/],
+  ["the planned and the strike price labels are the same", (ea) => setAt(ea, "ss.pricing.priceLabelStrike", ea.ss.pricing.priceLabel), /priceLabel and priceLabelStrike must differ/],
+  ["the price label carries a number", (ea) => setAt(ea, "ss.pricing.priceLabel", (v) => `${v} 99`), /price labels carry no number/],
+  ["the closed title advertises a free offer", (ea, l) => setAt(ea, "ss.pricing.titleClosed", { en: "Free plans", he: "בחינם", es: "Gratis", ru: "Бесплатно" }[l]), /titleClosed must not advertise a free offer/],
+  ["the badge becomes a popularity claim", (ea, l) => setAt(ea, "ss.pricing.badge", { en: "Most popular", he: "הכי פופולרית", es: "El más popular", ru: "Самый популярный" }[l]), /badge is "Recommended", never a popularity/],
   ["a clock appears in the Hero support line", (ea) => setAt(ea, "ss.hero.support.oneStore", (v) => `${v} 22:00`), /clock time|short line/],
   ["a hero support line becomes a sentence", (ea) => setAt(ea, "ss.hero.support.noAuto", (v) => `${v}.`), /one short line/],
   ["the pricing meta description loses a price token", (ea) => setAt(ea, "ss.meta.pricingDescription", (v) => v.replace("{priceStudio}", "")), /priceStudio/],
@@ -82,7 +106,7 @@ for (const [name, mut, re] of NEW) for (const l of LOCALES) {
 console.log("== NEW rule: the unresolved pack must carry the date tokens");
 for (const l of LOCALES) {
   const raw = clone(raws[l].ss);
-  for (const [path_, tok] of [["plan.regValue", "regShort"], ["plan.endValue", "until"], ["terms.regValue", "regDate"], ["terms.endValue", "lastDay"]]) {
+  for (const [path_, tok] of [["plan.regValue", "regShort"], ["plan.endValue", "until"], ["launch.regNote", "regLast"]]) {
     const r2 = clone(raw); setAt(r2, path_, (v) => v.replace(`{${tok}}`, "Dec 24"));
     const p = ssDisclosureProblems(l, getEaDictionary(l, 0), 0, r2);
     check(p.some((x) => x.includes(`must carry the token {${tok}}`)), `${l}: ${path_} without {${tok}} is reported`);
@@ -92,7 +116,7 @@ console.log("== NEW rule: the registration cutoff literals equal the Control Pla
 check(toks.SS_REG_CLOSE_UTC_MS === 1798070400 * 1000 && new Date(toks.SS_REG_CLOSE_UTC_MS).toISOString() === "2026-12-24T00:00:00.000Z", "SS_REG_CLOSE_UTC_MS is exactly 2026-12-24T00:00:00Z");
 for (const l of LOCALES) {
   const bad = clone(toks.SS_REG_DATES[l]); bad.regLast = bad.regDate; // pretend the table named December 24 as the last day
-  check(bad.regLast === bad.regDate && getEaDictionary(l, 0).ss.terms.regValue.includes(toks.SS_REG_DATES[l].regLast), `${l}: the terms line names the LAST day to start a trial (${toks.SS_REG_DATES[l].regLast}), not the cutoff day`);
+  check(bad.regLast === bad.regDate && getEaDictionary(l, 0).ss.launch.regNote.includes(toks.SS_REG_DATES[l].regLast), `${l}: the panel note names the LAST day to start a trial (${toks.SS_REG_DATES[l].regLast}), not the cutoff day`);
 }
 
 console.log("== OLD protections still bite: the free-trial rule set (SS_EXTRA_RULES) rejects each of these lines");
@@ -107,7 +131,8 @@ for (const l of LOCALES) {
   check(missed.length === 0, `${l}: all ${BAD_SS[l].length} old-protection probes are rejected inside the ss block${missed.length ? " -> NOT caught: " + missed.join(" | ") : ""}`);
 }
 console.log("== the allowed claims pass (exactly these, in the ss block)");
-const OK_SS = ["No automatic conversion to a paid plan", "No payment method required for the trial", "Trial includes 1 store", "Registration closes", "Trial access ends", "Free trial registration opens soon", "Start free trial", "Join the waitlist", "Paid plan: up to {n} stores",
+const OK_SS = ["Get started free", "Free trial opens soon", "Registration closed", "Registration paused", "No new trials can be started. Paid plans are not open for purchase yet.", "Launch trial: 1 store", "Planned regular price", "Recommended", "Choose a plan",
+  "No automatic conversion to a paid plan. Continuing is your decision.", "No payment method is required, so nothing is charged.", "No automatic conversion to a paid plan", "No payment method required for the trial", "Trial includes 1 store", "Registration closes", "Trial access ends", "Free trial registration opens soon", "Start free trial", "Join the waitlist", "Paid plan: up to {n} stores",
   "No pasa automáticamente a un plan de pago", "La prueba incluye 1 tienda", "אין מעבר אוטומטי לתוכנית בתשלום", "הניסיון כולל חנות אחת", "הצטרפו לרשימת ההמתנה", "Без автоматического перехода на платный план", "В пробный период входит 1 магазин"];
 {
   const wrong = OK_SS.filter((t) => SS_EXTRA_RULES.some(([re]) => re.test(eaExtraRulesProbe(t))));
@@ -136,13 +161,13 @@ console.log("== end to end: copy:check on a COPY of the repo with a mutated pack
     const base = run();
     check(base.status === 0, `the untouched copy passes copy:check (exit ${base.status})`);
     for (const [name, from, to] of [
-      ["a discount in the card line", 'trial: "Trial includes 1 store"', 'trial: "Trial includes 1 store, save 20%"'],
-      ["'conversion' outside the allowed phrase", 'noAuto: "No automatic conversion to a paid plan"', 'noAuto: "No automatic conversion rate"'],
-      ["the allowed phrase is cut short", 'noAuto: "No automatic conversion to a paid plan", checksLabel', 'noAuto: "No automatic conversion", checksLabel'],
-      ["a credit card claim", 'noPayment: "No payment method required for the trial"', 'noPayment: "No credit card required for the trial"'],
-      ["approval wording", 'cta: { soon: "Free trial registration opens soon"', 'cta: { soon: "Free trial for approved stores"'],
-      ["a trial length in days", 'trial: "Trial includes 1 store"', 'trial: "14-day trial includes 1 store"'],
-      ["an urgency device", 'closed: "Free trial registration closed"', 'closed: "Free trial registration closed, only 3 spots left"'],
+      ["a discount in the card's trial line", 'trial: "Launch trial: 1\\u00a0store"', 'trial: "Launch trial: 1\\u00a0store, save 20%"'],
+      ["'conversion' outside the allowed phrase", 'noAuto: "No automatic conversion to a paid plan. Continuing is your decision."', 'noAuto: "No automatic conversion rate. Continuing is your decision."'],
+      ["the allowed phrase is cut short", 'noAuto: "No automatic conversion to a paid plan. Continuing is your decision."', 'noAuto: "No automatic conversion. Continuing is your decision."'],
+      ["a credit card claim", 'payment: "No payment method is required, so nothing is charged."', 'payment: "No credit card is required, so nothing is charged."'],
+      ["approval wording", 'soon: "Free trial opens soon"', 'soon: "Free trial for approved stores"'],
+      ["a trial length in days", 'trial: "Launch trial: 1\\u00a0store"', 'trial: "14-day launch trial: 1\\u00a0store"'],
+      ["an urgency device", 'closed: "Registration closed"', 'closed: "Registration closed, only 3 spots left"'],
     ]) {
       if (!orig.includes(from)) { check(false, `end to end "${name}": fixture string not found`); continue; }
       fs.writeFileSync(en, orig.replace(from, to));
@@ -150,6 +175,15 @@ console.log("== end to end: copy:check on a COPY of the repo with a mutated pack
       check(r.status === 1 && /FAIL: \d+ banned phrase/.test(r.stderr + r.stdout), `copy:check FAILS on "${name}" (exit ${r.status})`);
     }
     fs.writeFileSync(en, orig);
+    // P40: docs/design/ (design records that quote the pack) is the ONLY exempt doc directory: the same sentence in another doc is still a finding
+    fs.mkdirSync(path.join(tmp, "docs/design"), { recursive: true });
+    fs.writeFileSync(path.join(tmp, "docs/design/zz-record.md"), "# record\n\nThe label reads: Start a free trial\n");
+    check(run().status === 0, "a design record under docs/design/ may quote the pack (copy:check still exit 0)");
+    fs.rmSync(path.join(tmp, "docs/design/zz-record.md"));
+    fs.mkdirSync(path.join(tmp, "docs/cutover"), { recursive: true });
+    fs.writeFileSync(path.join(tmp, "docs/cutover/zz-note.md"), "# note\n\nThe label reads: Start a free trial\n");
+    check(run().status === 1, "the same sentence in any other doc (docs/cutover) is still banned (copy:check exit 1)");
+    fs.rmSync(path.join(tmp, "docs/cutover/zz-note.md"));
     // the "free trial" wording stays banned OUTSIDE the ss block (the old protection)
     fs.writeFileSync(en, orig.replace('offerName: "Launch offer",', 'offerName: "Launch offer",\n  x: "Start a free trial",'));
     const r2 = run();

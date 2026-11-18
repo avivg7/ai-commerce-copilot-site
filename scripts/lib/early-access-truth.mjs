@@ -81,12 +81,19 @@ export const REQUIRED_REG = {
   ru: { regDate: "24 декабря 2026 г.", regShort: "24 дек. 2026 г.", regLast: "23 декабря 2026 г." },
 };
 export const SS_REG_UNIX = 1798070400;
-/** The ONLY two strings of the whole pack that may state "00:00" (the registration instant), and the form they must take. */
-export const SS_REG_PATHS = ["ss.plan.regValue", "ss.terms.regValue"];
-/** The ONLY strings that may name an end or registration DATE (so every date is a labelled line, never a loose "until <date>"): path -> the tokens it carries. */
-export const SS_DATE_PATHS = { "plan.regValue": ["regShort"], "plan.endValue": ["until"], "terms.regValue": ["regDate", "regLast"], "terms.endValue": ["lastDay"] };
-/** The ONLY strings that may make the "no automatic conversion to a paid plan" claim. */
-export const SS_NOAUTO_PATHS = ["plan.noAuto", "hero.support.noAuto", "terms.noAuto"];
+/**
+ * The ONLY string of the whole pack that may state "00:00" (the registration instant), and the form it must take.
+ * P40: the long variant `ss.terms.regValue` is retired (the launch panel shows the same two labelled lines as the cards, once per page), so this list has one entry.
+ */
+export const SS_REG_PATHS = ["ss.plan.regValue"];
+/**
+ * The ONLY strings that may name an end or registration DATE (so every date is a labelled line, never a loose "until <date>"): path -> the tokens it carries.
+ * P40: the two labelled lines of the launch timeline (plan.regValue, plan.endValue) and the one note that names the last day to start a trial (launch.regNote, {regLast}); the retired long forms
+ * (terms.regValue {regDate} {regLast}, terms.endValue {lastDay}) carried the same facts in a second place, which is exactly what the redesign removed (dates once per page).
+ */
+export const SS_DATE_PATHS = { "plan.regValue": ["regShort"], "plan.endValue": ["until"], "launch.regNote": ["regLast"] };
+/** The ONLY strings that may make the "no automatic conversion to a paid plan" claim (P40: the launch panel fact replaces the card check and the terms line; the hero support line is unchanged). */
+export const SS_NOAUTO_PATHS = ["launch.fact.noAuto", "hero.support.noAuto"];
 export const SS_PAID_STORES = [1, 3, 10]; // the Backend allowance table: AICC_LM_Early_Access::PLAN_SEATS (trial: 1)
 /** Inclusive line range (0-based indexes of `text.split("\n")`) of the top-level `  ss: {` block of a campaign file, as a Set; empty when the file has none. */
 export function ssBlockLines(text) {
@@ -98,10 +105,11 @@ export function ssBlockLines(text) {
 }
 /** The words each language uses for the facts the trial copy must carry: "payment method", "trial", the automatic-conversion denial, "paid plan", "explicit decision". */
 const SS_WORDS = {
-  en: { pay: "payment method", trial: /trial/i, store: /store/i, auto: /automatic/i, paid: /paid plan/i, decision: /explicit decision/i },
-  he: { pay: "אמצעי תשלום", trial: /ניסיון/, store: /חנו/, auto: /אוטומטי/, paid: /בתשלום/, decision: /החלטה מפורשת/ },
-  es: { pay: "método de pago", trial: /prueba/i, store: /tienda/i, auto: /automátic/i, paid: /plan de pago/i, decision: /decisión expresa/i },
-  ru: { pay: "способ оплаты", trial: /пробн/i, store: /магазин/i, auto: /автоматическ/i, paid: /платн/i, decision: /явное решение/i },
+  // P40: the "decision" wording is "Continuing is your decision" (the P39 long form said "explicit decision"): the claim that matters is that the customer, not the system, decides; the word is checked per language
+  en: { pay: "payment method", trial: /trial/i, store: /store/i, auto: /automatic/i, paid: /paid plan/i, decision: /your decision/i, staging: /staging/i },
+  he: { pay: "אמצעי תשלום", trial: /ניסיו[ןנ]/, store: /חנו/, auto: /אוטומטי/, paid: /בתשלום/, decision: /החלטה שלכם/, staging: /אתר בדיקות/ },
+  es: { pay: "método de pago", trial: /prueba/i, store: /tienda/i, auto: /automátic/i, paid: /plan de pago/i, decision: /decisión suya/i, staging: /sitio de pruebas/i },
+  ru: { pay: "способ оплаты", trial: /пробн|бесплатн\S* период/i, store: /магазин/i, auto: /автоматическ/i, paid: /платн/i, decision: /решаете вы/i, staging: /тестовая копия/i },
 };
 const escRe = (x) => String(x).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
@@ -117,20 +125,24 @@ export function ssDisclosureProblems(locale, ea, step = 0, raw = null) {
   const nb = (x) => String(x).replace(/[\u00a0\u2066\u2069]/g, (c) => (c === "\u00a0" ? " " : "")); // no-break spaces read as spaces; the bidi isolates of the Hebrew times are invisible
   const at = (p) => p.split(".").reduce((a, k) => a?.[k], ss);
   if (!ss) return [`${locale}: ea.ss (the self-service block) is missing`];
-  const KEYS = ["bar.label", "bar.text", "bar.link", "cta.soon", "cta.start", "cta.waitlist", "cta.closed", "cta.paused", "plan.trial", "plan.paidOne", "plan.paidMany", "plan.noPayment", "plan.noAuto", "plan.checksLabel", "plan.datesLabel", "plan.regLabel", "plan.regValue", "plan.endLabel", "plan.endValue",
-    "hero.badge", "hero.supportLabel", "hero.support.noPayment", "hero.support.oneStore", "hero.support.noAuto", "band.lead", "link", "meta.pricingDescription", "terms.label", "terms.regValue", "terms.endValue", "terms.store", "terms.payment", "terms.noAuto", "terms.paid", "terms.state"];
+  const KEYS = ["bar.label", "bar.text", "bar.link", "cta.start", "cta.purchase", "cta.soon", "cta.closed", "cta.paused", "cta.choosePlan", "cta.waitlist",
+    "state.soonNote", "state.closedNote", "state.closedPaidNote", "state.pausedNote", "state.waitlistNote",
+    "pricing.title", "pricing.lead", "pricing.titleClosed", "pricing.leadClosed", "pricing.fit.solo", "pricing.fit.studio", "pricing.fit.agency", "pricing.badge", "pricing.priceLabel", "pricing.priceLabelStrike", "pricing.per", "pricing.free", "pricing.trial", "pricing.incl",
+    "plan.paidOne", "plan.paidMany", "plan.datesLabel", "plan.regLabel", "plan.regValue", "plan.endLabel", "plan.endValue",
+    "launch.tag", "launch.sub", "launch.regNote", "launch.endNote", "launch.fact.store", "launch.fact.payment", "launch.fact.noAuto", "launch.foot.paid", "launch.foot.paidOpen",
+    "hero.badge", "hero.supportLabel", "hero.support.noPayment", "hero.support.oneStore", "hero.support.noAuto", "band.lead", "link", "meta.pricingDescription", "terms.label", "terms.state"];
   for (const k of KEYS) if (typeof at(k) !== "string" || !at(k).trim()) problems.push(`${locale}: ea.ss.${k} is missing or empty`);
+  // the retired P39 keys must not come back (a second place for the dates or the trial conditions is what the P40 redesign removed)
+  for (const k of ["plan.trial", "plan.noPayment", "plan.noAuto", "plan.checksLabel", "terms.regValue", "terms.endValue", "terms.store", "terms.payment", "terms.noAuto", "terms.paid"]) if (typeof at(k) === "string") problems.push(`${locale}: ea.ss.${k} exists: it is retired (P40: the dates and the trial conditions are said once per page, in the launch panel: ss.plan.regValue/endValue, ss.launch.*)`);
   if ("cta" in ss && "notOpen" in ss.cta) problems.push(`${locale}: ea.ss.cta.notOpen exists: the P39 state "off" reads "opens soon" (ea.ss.cta.soon); the old label is retired`);
   if (problems.length) return problems;
   const R = REQUIRED_REG[locale], D = REQUIRED_DATES[locale][step];
   // the trial covers ONE store, said on the card and in the terms
-  for (const k of ["plan.trial", "terms.store", "hero.support.oneStore", "hero.badge"]) if (!/(^|[^\d])1([^\d]|$)/.test(at(k)) && !/אחת|una\b|одн/i.test(at(k))) problems.push(`${locale}: ea.ss.${k} must state that the trial covers one store`);
-  // paid allowance: {n} comes from plans.ts at render time; the literal numbers in the terms are exactly 1, 3, 10
+  for (const k of ["pricing.trial", "launch.fact.store", "hero.support.oneStore", "hero.badge"]) if (!/(^|[^\d])1([^\d]|$)/.test(at(k)) && !/אחת|una\b|одн/i.test(at(k))) problems.push(`${locale}: ea.ss.${k} must state that the trial covers one store`);
+  // paid allowance: {n} comes from plans.ts at render time. P40: the literal "1 / 3 / 10" sentence of the P39 terms (ss.terms.paid) is retired; the paid capacity is now written ONLY through the token (so the numbers cannot drift from
+  // src/data/plans.ts, the one source) and `scripts/test-pricing-consistency.mjs` asserts that every rendered card shows exactly 1 / 3 / 10; the number rule below still forbids any other count in the pack.
   if (!at("plan.paidMany").includes("{n}")) problems.push(`${locale}: ea.ss.plan.paidMany must carry the {n} token (the store count of plans.ts)`);
-  const paid = nb(at("terms.paid")).match(/\d+/g) || [];
-  // Solo's single store may be a number or the word "one" (Hebrew writes "לחנות אחת"); Studio 3 and Agency 10 are always numbers
-  const pj = JSON.stringify(paid.map(Number));
-  if (pj !== JSON.stringify(SS_PAID_STORES) && pj !== JSON.stringify(SS_PAID_STORES.slice(1))) problems.push(`${locale}: ea.ss.terms.paid must state the paid allowance ${SS_PAID_STORES.join(" / ")} stores (the Backend table) and nothing larger, found [${paid}]`);
+  if (/\d/.test(at("plan.paidOne").replace(/\b1\b/, "")) ) problems.push(`${locale}: ea.ss.plan.paidOne may carry no number but 1`);
   // no number anywhere else except the allowed ones: store allowance 1/3/10, the two clocks (22:00 end, 00:00 registration) and the resolved dates; no capacity above the Backend table
   for (const [p, v] of walk(ss, "", [])) {
     let x = nb(v);
@@ -140,17 +152,23 @@ export function ssDisclosureProblems(locale, ea, step = 0, raw = null) {
     if (bad.length) problems.push(`${locale}: ea.ss.${p} carries the number(s) ${bad.join(", ")}: the only numbers allowed are the store allowance ${SS_PAID_STORES.join(" / ")}, the two UTC clocks (22:00 end, 00:00 registration) and the resolved dates`);
   }
   // payment: only the qualified sentence, in the places that mention it
-  for (const k of ["plan.noPayment", "hero.support.noPayment", "terms.payment", "band.lead"]) { const v = nb(at(k)).toLowerCase(); if (!v.includes(nb(W.pay).toLowerCase()) || !W.trial.test(v)) problems.push(`${locale}: ea.ss.${k} must say "${W.pay}" together with the trial (the only payment claim allowed is: no payment method is required for the trial)`); }
+  for (const k of ["hero.support.noPayment", "pricing.lead"]) { const v = nb(at(k)).toLowerCase(); if (!v.includes(nb(W.pay).toLowerCase()) || !W.trial.test(v)) problems.push(`${locale}: ea.ss.${k} must say "${W.pay}" together with the trial (the only payment claim allowed is: no payment method is required for the trial)`); }
+  // P40: the panel fact says "no payment method is required, so nothing is charged" under the panel title that names the free trial (ss.link): the fact must carry the payment-method sentence, the title the trial. The band lead no longer carries a payment claim (the band has no trial conditions).
+  if (!nb(at("launch.fact.payment")).toLowerCase().includes(nb(W.pay).toLowerCase())) problems.push(`${locale}: ea.ss.launch.fact.payment must say "${W.pay}"`);
+  if (!W.trial.test(at("link"))) problems.push(`${locale}: ea.ss.link (the launch panel title) must name the trial: the panel facts are read under it`);
+  if (!W.trial.test(at("launch.sub")) && !W.trial.test(at("launch.fact.store"))) problems.push(`${locale}: the launch panel must name the trial in its intro or in the store fact`);
+  { const b = nb(at("band.lead")); if (W.auto.test(b) || /\b(\d+)\b/.test(b) || b.toLowerCase().includes(nb(W.pay).toLowerCase())) problems.push(`${locale}: ea.ss.band.lead is a plain lead sentence: no trial condition, number or payment claim (those are said once, in the launch panel)`); }
   // P39: "no automatic conversion to a paid plan" is REQUIRED in exactly three strings, names the paid plan, and appears NOWHERE else in the block (no other automatic claim)
   for (const k of SS_NOAUTO_PATHS) { const v = nb(at(k)); if (!W.auto.test(v) || !W.paid.test(v)) problems.push(`${locale}: ea.ss.${k} must state that nothing converts to a paid plan automatically (an "automatic" denial that names the paid plan)`); }
-  if (!W.decision.test(nb(at("terms.noAuto")))) problems.push(`${locale}: ea.ss.terms.noAuto must say that continuing after the trial needs an explicit decision`);
-  for (const [p, v] of walk(ss, "", [])) if (W.auto.test(nb(v)) && !SS_NOAUTO_PATHS.includes(p) && !/^terms\.paid$|^meta\./.test(p)) problems.push(`${locale}: ea.ss.${p} makes an "automatic" claim: the only strings that may are ${SS_NOAUTO_PATHS.join(", ")}`);
+  if (!W.decision.test(nb(at("launch.fact.noAuto")))) problems.push(`${locale}: ea.ss.launch.fact.noAuto must say that continuing after the trial is the customer's decision (${W.decision})`);
+  // the staging rule of the Backend (a staging site counts as a store) stays in the store fact, since the cards no longer carry the old "one live store" line
+  if (!W.staging.test(nb(at("launch.fact.store")))) problems.push(`${locale}: ea.ss.launch.fact.store must keep the staging rule (a staging site counts as a store)`);
+  for (const [p, v] of walk(ss, "", [])) if (W.auto.test(nb(v)) && !SS_NOAUTO_PATHS.includes(p) && !/^meta\./.test(p)) problems.push(`${locale}: ea.ss.${p} makes an "automatic" claim: the only strings that may are ${SS_NOAUTO_PATHS.join(", ")}`);
   // P39: THE TWO DATES. Registration closes at 00:00 UTC on {regShort} / {regDate}; trial access ends at 22:00 UTC on {until} / {lastDay}: two labelled lines, nowhere a loose date
   const has = (k, tok) => nb(at(k)).includes(nb(tok));
   if (!has("plan.regValue", R.regShort) || !has("plan.regValue", "00:00 UTC") || has("plan.regValue", "22:00")) problems.push(`${locale}: ea.ss.plan.regValue must state the registration close as "${R.regShort}" and "00:00 UTC" (and not the 22:00 end)`);
   if (!has("plan.endValue", D.until) || !has("plan.endValue", "22:00 UTC") || has("plan.endValue", "00:00")) problems.push(`${locale}: ea.ss.plan.endValue must state the trial end as "${D.until}" and "22:00 UTC" (and not the 00:00 registration instant)`);
-  if (!has("terms.regValue", R.regDate) || !has("terms.regValue", R.regLast) || !has("terms.regValue", "00:00 UTC")) problems.push(`${locale}: ea.ss.terms.regValue must state the registration close ("${R.regDate}", "00:00 UTC") and the last day to start a trial ("${R.regLast}")`);
-  if (!has("terms.endValue", D.last) || !has("terms.endValue", "22:00 UTC") || has("terms.endValue", "00:00")) problems.push(`${locale}: ea.ss.terms.endValue must state the trial end ("${D.last}", "22:00 UTC")`);
+  if (!has("launch.regNote", R.regLast) || !/UTC/.test(at("launch.regNote")) || /\b(00|22):00\b/.test(at("launch.regNote"))) problems.push(`${locale}: ea.ss.launch.regNote must name the last day to start a trial ("${R.regLast}") and say UTC (no clock time: the clocks live in plan.regValue / plan.endValue)`);
   if (at("plan.regLabel") === at("plan.endLabel")) problems.push(`${locale}: ea.ss.plan.regLabel and endLabel must differ (two separate labelled lines)`);
   for (const [p, v] of walk(ss, "", [])) {
     const x = nb(v), isDatePath = Object.prototype.hasOwnProperty.call(SS_DATE_PATHS, p);
@@ -162,12 +180,22 @@ export function ssDisclosureProblems(locale, ea, step = 0, raw = null) {
   if (raw) for (const [p, toks] of Object.entries(SS_DATE_PATHS)) for (const t of toks) if (!String(p.split(".").reduce((a, k) => a?.[k], raw)).includes(`{${t}}`)) problems.push(`${locale}: ea.ss.${p} must carry the token {${t}} (the dates come from src/i18n/eaTokens.ts)`);
   // the end is stated in UTC with the last day (the same instant as the Control Plane trial expiry); the registration instant is the Control Plane constant
   // four distinct labels, the trial wording on every state label, the waitlist label names the waitlist; the "opens soon" state carries no date, no "request" and is a statement, not an invitation
-  const labels = ["cta.soon", "cta.start", "cta.waitlist", "cta.closed", "cta.paused"].map(at);
-  if (new Set(labels).size !== labels.length) problems.push(`${locale}: the five self-service state labels must all differ`);
-  for (const k of ["cta.soon", "cta.start", "cta.closed", "cta.paused"]) if (!W.trial.test(at(k))) problems.push(`${locale}: ea.ss.${k} must name the trial`);
+  const labels = ["cta.soon", "cta.start", "cta.waitlist", "cta.closed", "cta.paused", "cta.purchase", "cta.choosePlan"].map(at);
+  if (new Set(labels).size !== labels.length) problems.push(`${locale}: the seven self-service control labels must all differ`);
+  // P40: the labels "Get started free", "Registration closed" and "Registration paused" no longer repeat the word trial (the control sits directly under FREE and "Launch trial: 1 store" in the card, and under the panel title in the page);
+  // the trial is named by the sentences around the control instead: the soon label itself, the card's trial line, the closed note ("No new trials can be started") and the closed-paid note.
+  for (const k of ["cta.soon", "pricing.trial", "state.closedNote", "state.closedPaidNote", "pricing.leadClosed", "hero.badge"]) if (!W.trial.test(at(k))) problems.push(`${locale}: ea.ss.${k} must name the trial`);
+  if (!W.trial.test(at("pricing.title")) && !W.trial.test(at("pricing.lead"))) problems.push(`${locale}: the pricing header (ss.pricing.title / lead) must name the trial`);
   if (/^(start|join|empez|unir|начать|встать|התחילו|הצטרפו)/i.test(nb(at("cta.soon")))) problems.push(`${locale}: ea.ss.cta.soon is a status statement, not an invitation (it must not start with a verb of action)`);
+  // P40: the regular price label says it is the PLANNED regular price (a fact, not a reduction) and the strike variant's label only "regular price"; neither carries a number, a discount word or a percentage (the EA rules ban those words block-wide; this pins the pair)
+  if (at("pricing.priceLabel") === at("pricing.priceLabelStrike")) problems.push(`${locale}: ea.ss.pricing.priceLabel and priceLabelStrike must differ (the plain label says it is the planned regular price)`);
+  if (/\d|%/.test(at("pricing.priceLabel")) || /\d|%/.test(at("pricing.priceLabelStrike"))) problems.push(`${locale}: the price labels carry no number or percentage (the amount comes from plans.ts)`);
+  // the closed header must not keep promising a trial that cannot be started: it names no free offer in its title (the lead says registration has closed)
+  if (/free|בחינם|gratis|бесплатн/i.test(at("pricing.titleClosed"))) problems.push(`${locale}: ea.ss.pricing.titleClosed must not advertise a free offer (registration has closed)`);
   // the pricing meta description: the trial in one sentence, payment qualified, the three prices as tokens, paid purchases not open
   { const m = nb(at("meta.pricingDescription")); for (const t of ["{priceSolo}", "{priceStudio}", "{priceAgency}"]) if (!m.includes(t)) problems.push(`${locale}: ea.ss.meta.pricingDescription must carry ${t}`); if (!m.toLowerCase().includes(nb(W.pay).toLowerCase()) || !W.trial.test(m)) problems.push(`${locale}: ea.ss.meta.pricingDescription must say "${W.pay}" together with the trial`); }
+  // the Recommended badge is a purpose label, never "most popular"/"best" (no popularity or ranking claim; the EA rules ban the superlatives block-wide)
+  if (/popular|best|#1|top|mejor|popular|лучш|популярн|הכי|פופולר/i.test(at("pricing.badge"))) problems.push(`${locale}: ea.ss.pricing.badge is "Recommended", never a popularity or ranking claim`);
   // short support lines (one line each)
   for (const k of ["hero.support.noPayment", "hero.support.oneStore", "hero.support.noAuto"]) if (nb(at(k)).length > 64 || /[.!;:]/.test(at(k))) problems.push(`${locale}: ea.ss.${k} must be one short line (at most 64 characters, no sentence punctuation)`);
   return problems;

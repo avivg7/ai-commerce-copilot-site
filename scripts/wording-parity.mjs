@@ -67,7 +67,7 @@ for (const l of ["en", "he", "es", "ru"]) { // P36 owner rule: the compared cust
   const site = getEaDictionary(l, 0);
   const bad = /israel|jerusalem|ישראל|израил|\b00:00\b/i;
   // P39 exception (owner-decided, Control Plane REGISTRATION_CUTOFF_UNIX 2026-12-24T00:00:00Z): "00:00" is the registration cutoff and only in the two registration strings
-  const REGP = new Set(["ss.plan.regValue", "ss.terms.regValue"]);
+  const REGP = new Set(["ss.plan.regValue"]); // P40: the long terms variant is retired
   const badFor = (k) => (REGP.has(k) ? /israel|jerusalem|ישראל|израил/i : bad);
   for (const [k, v] of cp) if (badFor(k).test(l === "en" ? v : (CAT[l].get(v) || ""))) fails.push(`${l} CP ${k}: names a country or a local time zone or a 00:00 end`);
   const walk = (o, p) => typeof o === "string" ? (badFor(p).test(o) ? fails.push(`${l} Site ea.${p}: names a country or a local time zone or a 00:00 end`) : 0) : o && typeof o === "object" ? Object.entries(o).forEach(([k, v]) => walk(v, p ? p + "." + k : k)) : 0;

@@ -22,6 +22,7 @@ import https from "node:https";
 import { analyzeDocument, robotsFindings, sitemapFindings, CANONICAL_ORIGIN, MUTATIONS, CLEAN_SAMPLES, cleanPage, wordingFindings } from "./lib/public-truth.mjs";
 
 import { loadTs } from "./lib/load.mjs";
+import { makeAttested } from "./lib/ea-attest.mjs";
 
 // P37: the approved self-service strings (the `ss` block of the launch-offer packs, four languages, every extension step), longest first: a self-service build may say exactly these (see analyzeDocument).
 const SS_PHRASES = await (async () => {
@@ -32,6 +33,9 @@ const SS_PHRASES = await (async () => {
   for (const l of ["en", "he", "es", "ru"]) for (const n of [3, 10]) out.add(getEaDictionary(l, 0).ss.plan.paidMany.replace("{n}", String(n)));
   return [...out].filter((x) => x.trim().length > 3).sort((a, b) => b.length - a.length);
 })();
+
+// P40: a struck-through plan price is a finding unless the pricing-claims approval is attested (the same rule and reference as `launch:check` and the release gate)
+const STRIKE_APPROVED = await (async () => { const { eaRefIsPlaceholder } = await loadTs("src/lib/earlyAccess.ts"); return makeAttested(process.env, eaRefIsPlaceholder)(process.env.AICC_EA_STRIKE_COUNSEL_APPROVED); })();
 
 const argv = process.argv.slice(2);
 const arg = (n, d = null) => { const i = argv.indexOf(`--${n}`); return i >= 0 && argv[i + 1] !== undefined ? argv[i + 1] : d; };
@@ -53,7 +57,7 @@ function scanHtml(html, pathname, { alias, status = 200, finalPath = null }) {
   const ctx = {
     origin: CANONICAL_ORIGIN, pathname: effective, status, noindexAllowed: noindexAllowed(effective), isError: status >= 400 || isErrorPath(pathname),
     canonicalAlternatives: /\/my-account\//.test(effective) ? [CANONICAL_ORIGIN + effective.replace(/(\/my-account\/).*/, "$1")] : [],
-    ssPhrases: SS_PHRASES,
+    ssPhrases: SS_PHRASES, strikeApproved: STRIKE_APPROVED,
   };
   return analyzeDocument(body, ctx);
 }
@@ -197,16 +201,23 @@ async function selfTest() {
   {
     const ssPage = (extra, marked = true) => { const h = cleanPage({ extraBody: extra }); return marked ? h.replace('<html lang="en"', '<html lang="en" data-ss-mode="on"') : h; };
     const c = { ...ctx, ssPhrases: SS_PHRASES };
-    check("self-service: 'Start free trial' passes on a marked page", analyzeDocument(ssPage('<a href="https://www.copilt.org/start/">Start free trial</a><p>The free trial covers 1 store, whichever plan you choose. The plan you pick is only your preference.</p>'), c).length === 0, JSON.stringify(analyzeDocument(ssPage('<a href="https://www.copilt.org/start/">Start free trial</a>'), c)));
-    check("self-service: the same words on an UNMARKED page are caught", analyzeDocument(ssPage('<a href="https://www.copilt.org/start/">Start free trial</a>', false), c).some((x) => x.id === "free-trial"));
+    check("self-service P40: the pack's free-trial title and lede pass on a marked page", analyzeDocument(ssPage('<a href="https://www.copilt.org/start/">Get started free</a><h2>Try it free on one store.</h2><p>The launch trial is free and needs no payment method. Choose the plan you expect to buy later: it is only your preference.</p><p>The trial covers 1 store, whichever plan you choose. A staging site counts as a store.</p>'), c).length === 0, JSON.stringify(analyzeDocument(ssPage('<h2>Try it free on one store.</h2>'), c)));
+    check("self-service: the same words on an UNMARKED page are caught", analyzeDocument(ssPage('<h2>Try it free on one store.</h2>', false), c).some((x) => x.id === "free-trial"));
     check("self-service: a trial length on a marked page is caught", analyzeDocument(ssPage("<p>Start your 14-day free trial today.</p>"), c).some((x) => x.id === "free-trial"));
     check("self-service: 'try it free' on a marked page is caught", analyzeDocument(ssPage("<p>Try it free.</p>"), c).some((x) => x.id === "free-trial"));
     check("self-service: 'free for 30 days' on a marked page is caught", analyzeDocument(ssPage("<p>Use AICC free for 30 days.</p>"), c).some((x) => x.id === "free-trial"));
     // P39: the owner-required claims (two dates, no automatic conversion, "opens soon") pass ONLY as the pack's exact strings
-    check("self-service P39: the pack's registration / end / no-conversion / opens-soon strings pass on a marked page", analyzeDocument(ssPage("<p>Free trial registration opens soon</p><p>No automatic conversion to a paid plan</p><p>Registration closes</p><p>Dec 24, 2026 at 00:00 UTC</p><p>Trial includes 1 store</p>"), c).length === 0, JSON.stringify(analyzeDocument(ssPage("<p>Free trial registration opens soon</p><p>No automatic conversion to a paid plan</p>"), c)));
-    check("self-service P39: the same sentences on an UNMARKED page are caught", analyzeDocument(ssPage("<p>Free trial registration opens soon</p>", false), c).some((x) => x.id === "free-trial"));
+    check("self-service P39: the pack's registration / end / no-conversion / opens-soon strings pass on a marked page", analyzeDocument(ssPage("<p>Free trial opens soon</p><p>No automatic conversion to a paid plan. Continuing is your decision.</p><p>Registration closes</p><p>Dec 24, 2026 at 00:00 UTC</p><p>Launch trial: 1 store</p>"), c).length === 0, JSON.stringify(analyzeDocument(ssPage("<p>Free trial opens soon</p><p>No automatic conversion to a paid plan. Continuing is your decision.</p>"), c)));
+    check("self-service P39: the same sentences on an UNMARKED page are caught", analyzeDocument(ssPage("<p>Free trial opens soon</p>", false), c).some((x) => x.id === "free-trial"));
     check("self-service P39: a loose trial deadline claim on a marked page is caught", analyzeDocument(ssPage("<p>Free trial ends soon, register by Dec 24.</p>"), c).some((x) => x.id === "free-trial"));
     check("self-service: without ssPhrases a marked page gets no allowance", analyzeDocument(ssPage('<a href="https://www.copilt.org/start/">Start free trial</a>'), ctx).some((x) => x.id === "free-trial"));
+  }
+  // P40: the struck-price finding is cleared only by the attested approval (ctx.strikeApproved), never by anything on the page
+  {
+    const struck = cleanPage({ extraBody: '<p class="aicc-tier__price aicc-tier__price--strike" data-ss-price="strike"><s class="aicc-tier__amount"><bdi>$99</bdi></s></p>' });
+    check("strike: a struck price is a finding by default", analyzeDocument(struck, ctx).some((x) => x.id === "strike-price"));
+    check("strike: ... and is cleared only when the approval is attested (ctx.strikeApproved)", !analyzeDocument(struck, { ...ctx, strikeApproved: true }).some((x) => x.id === "strike-price"));
+    check("strike: a stylesheet that only names the class is not a struck price", !analyzeDocument(cleanPage({ extraHead: "<style>.aicc-tier__price--strike .aicc-tier__amount{text-decoration:line-through}</style>" }), ctx).some((x) => x.id === "strike-price"));
   }
   // noindex is allowed on transactional pages, not on the pricing page
   const noidx = base.replace("</head>", '<meta name="robots" content="noindex, nofollow"></head>');
