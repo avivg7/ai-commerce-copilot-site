@@ -1,10 +1,10 @@
 "use client";
 import { useEffect, useSyncExternalStore } from "react";
 import { ArrowRight, Lock } from "lucide-react";
-import { ssDecision, ssRegClosedServerSnapshot, ssRegClosedSnapshot, ssRegClosedSubscribe, ssServerSnapshot, ssSnapshot, ssStart, ssSubscribe, type SsInitial, type SsLabelKey } from "@/lib/ssStatus";
+import { ssControl, ssRegClosedServerSnapshot, ssRegClosedSnapshot, ssRegClosedSubscribe, ssServerSnapshot, ssSnapshot, ssStart, ssSubscribe, type SsInitial } from "@/lib/ssStatus";
 
 /** The labels of the control: the real sign-up link (start / waitlist), the information link (how), and the closed status. */
-export type SsCtaLabels = Record<Exclude<SsLabelKey, "soon" | "paused">, string> & { how: string };
+export type SsCtaLabels = { start: string; waitlist: string; closed: string; how: string };
 
 /**
  * P37/P39/P40/P41: the one self-service control of a plan card, band or finder result (markup: docs/design/p41-journey.md). Server HTML and first client render are the build's STATIC state (src/lib/ssStatus.ts: `initial`; the same markup
@@ -41,10 +41,10 @@ export function SsCta({ href, infoHref, labels, closedNote, initial, featured = 
   useEffect(() => { void ssStart(); }, []);
   // from 2026-12-24T00:00:00Z the browser clock alone forces the closed region (a stale or cached page, a late status answer of open / waitlist, a page left open across the instant): the Control Plane accepts no registration from then on
   const closedByClock = useSyncExternalStore(ssRegClosedSubscribe, ssRegClosedSnapshot, ssRegClosedServerSnapshot);
-  const d = ssDecision(view, initial, closedByClock);
+  const kind = ssControl(view, initial, closedByClock);
   const state = closedByClock ? "closed_cutoff" : view;
   const wrap = inverse ? "aicc-pcta aicc-pcta--inverse" : "aicc-pcta";
-  if (d.kind === "text" && d.label === "closed") {
+  if (kind === "closed") {
     return (
       <div className={wrap} data-ss-cta="status" lang={lang} dir={dir}>
         <p className="aicc-pstatus" {...(announce ? { role: "status" } : {})} data-ss-state={state}>
@@ -54,9 +54,9 @@ export function SsCta({ href, infoHref, labels, closedNote, initial, featured = 
       </div>
     );
   }
-  const info = d.kind === "text"; // soon / paused: registration is not open (yet)
+  const info = kind === "info"; // soon / paused: registration is not open (yet)
   const variant = inverse || featured ? "aicc-btn--primary" : "aicc-btn--outline";
-  const label = info ? labels.how : labels[d.label as "start" | "waitlist"];
+  const label = info ? labels.how : labels[kind as "start" | "waitlist"];
   return (
     <div className={wrap} data-ss-cta={info ? "info" : "link"} lang={lang} dir={dir}>
       <a className={`aicc-btn aicc-btn--lg aicc-btn--block ${variant}`} data-ss-state={state} href={info ? infoHref : href}>

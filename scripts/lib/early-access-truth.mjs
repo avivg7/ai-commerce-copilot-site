@@ -97,10 +97,13 @@ export const SS_NOAUTO_PATHS = ["launch.fact.noAuto", "hero.support.noAuto"];
 export const SS_PAID_STORES = [1, 3, 10]; // the Backend allowance table: AICC_LM_Early_Access::PLAN_SEATS (trial: 1)
 /** Inclusive line range (0-based indexes of `text.split("\n")`) of the top-level `  ss: {` block of a campaign file, as a Set; empty when the file has none. */
 export function ssBlockLines(text) {
+  // P41: the self-service presentation is two top-level blocks of a campaign pack: `ss:` (the pricing controls, the strings the Control Plane mirrors) and `journey:` (the /get-started/ page, Site only); both may say "free trial"
   const lines = String(text).split("\n"), out = new Set();
-  const a = lines.findIndex((l) => /^  ss: \{\s*$/.test(l));
-  if (a < 0) return out;
-  for (let i = a; i < lines.length; i++) { out.add(i); if (i > a && /^  \},?\s*$/.test(lines[i])) break; }
+  for (const head of [/^  ss: \{\s*$/, /^  journey: \{\s*$/]) {
+    const a = lines.findIndex((l) => head.test(l));
+    if (a < 0) continue;
+    for (let i = a; i < lines.length; i++) { out.add(i); if (i > a && /^  \},?\s*$/.test(lines[i])) break; }
+  }
   return out;
 }
 /** The words each language uses for the facts the trial copy must carry: "payment method", "trial", the automatic-conversion denial, "paid plan", "explicit decision". */
@@ -125,16 +128,17 @@ export function ssDisclosureProblems(locale, ea, step = 0, raw = null) {
   const nb = (x) => String(x).replace(/[\u00a0\u2066\u2069]/g, (c) => (c === "\u00a0" ? " " : "")); // no-break spaces read as spaces; the bidi isolates of the Hebrew times are invisible
   const at = (p) => p.split(".").reduce((a, k) => a?.[k], ss);
   if (!ss) return [`${locale}: ea.ss (the self-service block) is missing`];
-  const KEYS = ["bar.label", "bar.text", "bar.link", "cta.start", "cta.purchase", "cta.soon", "cta.closed", "cta.paused", "cta.choosePlan", "cta.waitlist",
-    "state.soonNote", "state.closedNote", "state.closedPaidNote", "state.pausedNote", "state.waitlistNote",
-    "pricing.title", "pricing.lead", "pricing.titleClosed", "pricing.leadClosed", "pricing.fit.solo", "pricing.fit.studio", "pricing.fit.agency", "pricing.badge", "pricing.priceLabel", "pricing.priceLabelStrike", "pricing.per", "pricing.free", "pricing.trial", "pricing.incl",
+  const KEYS = ["bar.label", "bar.text", "bar.link", "cta.start", "cta.purchase", "cta.closed", "cta.choosePlan", "cta.waitlist", "cta.how",
+    "state.closedNote", "state.closedPaidNote", "state.line.soon", "state.line.paused", "state.line.open", "state.line.waitlist", "state.demo",
+    "pricing.title", "pricing.lead", "pricing.titleClosed", "pricing.leadClosed", "pricing.fit.solo", "pricing.fit.studio", "pricing.fit.agency", "pricing.badge", "pricing.priceLabel", "pricing.per", "pricing.perShort", "pricing.afterOffer", "pricing.strikeLabel", "pricing.strikeNote", "pricing.strikeSr", "pricing.free", "pricing.trial", "pricing.incl",
     "plan.paidOne", "plan.paidMany", "plan.datesLabel", "plan.regLabel", "plan.regValue", "plan.endLabel", "plan.endValue",
     "launch.tag", "launch.sub", "launch.regNote", "launch.endNote", "launch.fact.store", "launch.fact.payment", "launch.fact.noAuto", "launch.foot.paid", "launch.foot.paidOpen",
     "hero.badge", "hero.supportLabel", "hero.support.noPayment", "hero.support.oneStore", "hero.support.noAuto", "band.lead", "link", "meta.pricingDescription", "terms.label", "terms.state"];
   for (const k of KEYS) if (typeof at(k) !== "string" || !at(k).trim()) problems.push(`${locale}: ea.ss.${k} is missing or empty`);
   // the retired P39 keys must not come back (a second place for the dates or the trial conditions is what the P40 redesign removed)
-  for (const k of ["plan.trial", "plan.noPayment", "plan.noAuto", "plan.checksLabel", "terms.regValue", "terms.endValue", "terms.store", "terms.payment", "terms.noAuto", "terms.paid"]) if (typeof at(k) === "string") problems.push(`${locale}: ea.ss.${k} exists: it is retired (P40: the dates and the trial conditions are said once per page, in the launch panel: ss.plan.regValue/endValue, ss.launch.*)`);
-  if ("cta" in ss && "notOpen" in ss.cta) problems.push(`${locale}: ea.ss.cta.notOpen exists: the P39 state "off" reads "opens soon" (ea.ss.cta.soon); the old label is retired`);
+  for (const k of ["plan.trial", "plan.noPayment", "plan.noAuto", "plan.checksLabel", "terms.regValue", "terms.endValue", "terms.store", "terms.payment", "terms.noAuto", "terms.paid",
+    "cta.soon", "cta.paused", "state.soonNote", "state.pausedNote", "state.waitlistNote", "pricing.priceLabelStrike"]) if (typeof at(k) === "string") problems.push(`${locale}: ea.ss.${k} exists: it is retired (P40: the dates and the trial conditions are said once per page, in the launch panel: ss.plan.regValue/endValue, ss.launch.*; P41: the unopened / paused / waitlist facts are said once, in the status line ss.state.line.*, and the control is the link ss.cta.how)`);
+  if ("cta" in ss && "notOpen" in ss.cta) problems.push(`${locale}: ea.ss.cta.notOpen exists: the P39 state "off" is now the status line ss.state.line.soon plus the link ss.cta.how; the old label is retired`);
   if (problems.length) return problems;
   const R = REQUIRED_REG[locale], D = REQUIRED_DATES[locale][step];
   // the trial covers ONE store, said on the card and in the terms
@@ -163,7 +167,7 @@ export function ssDisclosureProblems(locale, ea, step = 0, raw = null) {
   if (!W.decision.test(nb(at("launch.fact.noAuto")))) problems.push(`${locale}: ea.ss.launch.fact.noAuto must say that continuing after the trial is the customer's decision (${W.decision})`);
   // the staging rule of the Backend (a staging site counts as a store) stays in the store fact, since the cards no longer carry the old "one live store" line
   if (!W.staging.test(nb(at("launch.fact.store")))) problems.push(`${locale}: ea.ss.launch.fact.store must keep the staging rule (a staging site counts as a store)`);
-  for (const [p, v] of walk(ss, "", [])) if (W.auto.test(nb(v)) && !SS_NOAUTO_PATHS.includes(p) && !/^meta\./.test(p)) problems.push(`${locale}: ea.ss.${p} makes an "automatic" claim: the only strings that may are ${SS_NOAUTO_PATHS.join(", ")}`);
+  for (const [p, v] of walk(ss, "", [])) if (W.auto.test(nb(v)) && !SS_NOAUTO_PATHS.includes(p) && !SS_AUTO_OK_PATHS.includes(p) && !/^meta\./.test(p)) problems.push(`${locale}: ea.ss.${p} makes an "automatic" claim: the only strings that may are ${SS_NOAUTO_PATHS.join(", ")}`);
   // P39: THE TWO DATES. Registration closes at 00:00 UTC on {regShort} / {regDate}; trial access ends at 22:00 UTC on {until} / {lastDay}: two labelled lines, nowhere a loose date
   const has = (k, tok) => nb(at(k)).includes(nb(tok));
   if (!has("plan.regValue", R.regShort) || !has("plan.regValue", "00:00 UTC") || has("plan.regValue", "22:00")) problems.push(`${locale}: ea.ss.plan.regValue must state the registration close as "${R.regShort}" and "00:00 UTC" (and not the 22:00 end)`);
@@ -180,16 +184,20 @@ export function ssDisclosureProblems(locale, ea, step = 0, raw = null) {
   if (raw) for (const [p, toks] of Object.entries(SS_DATE_PATHS)) for (const t of toks) if (!String(p.split(".").reduce((a, k) => a?.[k], raw)).includes(`{${t}}`)) problems.push(`${locale}: ea.ss.${p} must carry the token {${t}} (the dates come from src/i18n/eaTokens.ts)`);
   // the end is stated in UTC with the last day (the same instant as the Control Plane trial expiry); the registration instant is the Control Plane constant
   // four distinct labels, the trial wording on every state label, the waitlist label names the waitlist; the "opens soon" state carries no date, no "request" and is a statement, not an invitation
-  const labels = ["cta.soon", "cta.start", "cta.waitlist", "cta.closed", "cta.paused", "cta.purchase", "cta.choosePlan"].map(at);
-  if (new Set(labels).size !== labels.length) problems.push(`${locale}: the seven self-service control labels must all differ`);
+  const labels = ["cta.how", "cta.start", "cta.waitlist", "cta.closed", "cta.purchase", "cta.choosePlan"].map(at);
+  if (new Set(labels).size !== labels.length) problems.push(`${locale}: the six self-service control labels must all differ`);
   // P40: the labels "Get started free", "Registration closed" and "Registration paused" no longer repeat the word trial (the control sits directly under FREE and "Launch trial: 1 store" in the card, and under the panel title in the page);
   // the trial is named by the sentences around the control instead: the soon label itself, the card's trial line, the closed note ("No new trials can be started") and the closed-paid note.
-  for (const k of ["cta.soon", "pricing.trial", "state.closedNote", "state.closedPaidNote", "pricing.leadClosed", "hero.badge"]) if (!W.trial.test(at(k))) problems.push(`${locale}: ea.ss.${k} must name the trial`);
+  for (const k of ["state.line.soon", "state.line.paused", "state.line.open", "state.line.waitlist", "pricing.trial", "state.closedNote", "state.closedPaidNote", "pricing.leadClosed", "hero.badge"]) if (!W.trial.test(at(k))) problems.push(`${locale}: ea.ss.${k} must name the trial`);
   if (!W.trial.test(at("pricing.title")) && !W.trial.test(at("pricing.lead"))) problems.push(`${locale}: the pricing header (ss.pricing.title / lead) must name the trial`);
-  if (/^(start|join|empez|unir|начать|встать|התחילו|הצטרפו)/i.test(nb(at("cta.soon")))) problems.push(`${locale}: ea.ss.cta.soon is a status statement, not an invitation (it must not start with a verb of action)`);
+  if (/^(start|join|get started|empez|unir|начать|встать|התחילו|הצטרפו)/i.test(nb(at("cta.how")))) problems.push(`${locale}: ea.ss.cta.how is an information link, not a sign-up invitation (it must not start with a verb of sign-up)`);
+  if (!/isn't|is not|not open|לא נפתחה|aún no|no está abierto|ещё не|не открыта/i.test(nb(at("state.line.soon")))) problems.push(`${locale}: ea.ss.state.line.soon states that registration is NOT open yet (it must say so in words; it promises no date and does not invite)`);
   // P40: the regular price label says it is the PLANNED regular price (a fact, not a reduction) and the strike variant's label only "regular price"; neither carries a number, a discount word or a percentage (the EA rules ban those words block-wide; this pins the pair)
-  if (at("pricing.priceLabel") === at("pricing.priceLabelStrike")) problems.push(`${locale}: ea.ss.pricing.priceLabel and priceLabelStrike must differ (the plain label says it is the planned regular price)`);
-  if (/\d|%/.test(at("pricing.priceLabel")) || /\d|%/.test(at("pricing.priceLabelStrike"))) problems.push(`${locale}: the price labels carry no number or percentage (the amount comes from plans.ts)`);
+  if (at("pricing.priceLabel") === at("pricing.strikeLabel")) problems.push(`${locale}: ea.ss.pricing.priceLabel and strikeLabel must differ (the plain label says it is the planned regular price)`);
+  for (const k of ["pricing.priceLabel", "pricing.strikeLabel", "pricing.strikeNote", "pricing.strikeSr", "pricing.afterOffer", "pricing.perShort"]) if (/\d|%/.test(at(k))) problems.push(`${locale}: ea.ss.${k} carries no number or percentage (the amount comes from plans.ts)`);
+  // P41 (compliance memo s.4 / s.7): the strike label says PLANNED, REGULAR, ANNUAL and AFTER the launch offer and that it is not a current or past price; the disclosure says nothing has been charged and that nothing is charged automatically; the screen-reader text says planned and not charged
+  { const W2 = SS_STRIKE_WORDS[locale]; for (const [k, re] of [["pricing.strikeLabel", W2.label], ["pricing.strikeNote", W2.note], ["pricing.strikeSr", W2.sr], ["pricing.afterOffer", W2.after]]) if (!re.test(nb(at(k)))) problems.push(`${locale}: ea.ss.${k} must carry its memo wording (${re})`); }
+  for (const [p, v] of [...walk(ss, "", []), ...walkRoot(ea?.journey, "journey")]) { const w = priceWordProblems(locale, nb(v)); if (w) problems.push(`${locale}: ea.${p.startsWith("journey") ? p : "ss." + p} ${w}`); }
   // the closed header must not keep promising a trial that cannot be started: it names no free offer in its title (the lead says registration has closed)
   if (/free|בחינם|gratis|бесплатн/i.test(at("pricing.titleClosed"))) problems.push(`${locale}: ea.ss.pricing.titleClosed must not advertise a free offer (registration has closed)`);
   // the pricing meta description: the trial in one sentence, payment qualified, the three prices as tokens, paid purchases not open
@@ -402,3 +410,29 @@ export const EA_MANUAL_PHRASE = { en: "Manual renewal only", he: "חידוש י�
 
 /** The three FAQ lines that must name a banned idea in order to deny or quote it (the guarantee does not apply to Early Access; nothing renews or is charged automatically; the Plugin's own "Renew plan" wording); they are exempt from the extra bans (never from the base rules) and are reviewed by hand. */
 export const EA_EXEMPT_LINE = /^\s*(guarantee|auto|plugin):\s*\{/;
+
+/** Strings that may make an "automatic" statement besides SS_NOAUTO_PATHS: the strike disclosure ("nothing is charged automatically", memo s.4 variant A). */
+export const SS_AUTO_OK_PATHS = ["pricing.strikeNote"];
+/** The memo's wording of the planned-price copy (compliance memo s.4), per language: what each string must carry. */
+export const SS_STRIKE_WORDS = {
+  en: { label: /planned regular annual price after the launch offer, not a current or past price/i, note: /nothing has been charged at this price yet.*no payment method needed.*nothing is charged automatically/i, sr: /planned price after the launch offer, not currently charged/i, after: /starts after the launch offer/i },
+  he: { label: /מתוכנן לאחר הצעת ההשקה, לא מחיר נוכחי או קודם/, note: /עדיין לא חויב אף אחד.*אין צורך באמצעי תשלום.*לא מחויב אוטומטית/, sr: /מתוכנן לאחר הצעת ההשקה, לא מחויב כרגע/, after: /מתחיל אחרי הצעת ההשקה/ },
+  es: { label: /previsto después de la oferta de lanzamiento, no un precio actual ni pasado/i, note: /todavía no se ha cobrado nada.*no hace falta método de pago.*no se cobra nada automáticamente/i, sr: /previsto después de la oferta de lanzamiento, no se cobra actualmente/i, after: /empieza después de la oferta de lanzamiento/i },
+  ru: { label: /планируемая обычная годовая цена после предложения в честь запуска, не текущая и не прежняя цена/i, note: /пока ничего не списывалось.*способ оплаты не нужен.*автоматически ничего не списывается/i, sr: /планируемая цена после предложения в честь запуска, сейчас не взимается/i, after: /начинается после предложения в честь запуска/i },
+};
+/**
+ * The forbidden price words of the compliance memo (s.4 "Avoid"), in all four languages: was / previously / original / save / worth / normally / "regular price" ALONE (a "regular price" must be the PLANNED regular price) and the Hebrew "מחיר מקורי" /
+ * "מחיר רגיל" alone. Returns a problem text or "". The rule is applied to every string of the planned-price copy and of the journey page, so a later edit cannot reintroduce a "was" reading.
+ */
+export function priceWordProblems(locale, text) {
+  const t = String(text), bad = [];
+  const rules = {
+    en: [[/\b(was|previously|originally|formerly|worth|normally|usually|savings?|saves?|saving|discount(ed)?|reduced)\b/i, "price-advantage word"], [/\boriginal price\b/i, "original price"], [/(?<!planned )\bregular (annual )?prices?\b/i, "regular price without \"planned\""]],
+    he: [[/מחיר מקורי|מחיר קודם|היה |במקום |חיסכון|שווה |בדרך כלל/, "price-advantage word"], [/(?<!מתוכנן )מחיר רגיל(?! מתוכנן)/, "מחיר רגיל without מתוכנן"]],
+    es: [[/\b(antes|anteriormente|originalmente|ahorr[aeo]\w*|vale|normalmente|habitualmente|descuento|rebaj\w+)\b/i, "price-advantage word"], [/precio original/i, "original price"], [/(?<!previsto )\bprecio (anual )?regular\b(?! previsto)/i, "regular price without previsto"]],
+    ru: [[/(?<![а-яё])(было|раньше|ранее|эконом[а-яё]*|стоит|обычно|скидк[а-яё]*)(?![а-яё])/i, "price-advantage word"], [/(?<![а-яё])(первоначальн|исходн)[а-яё]+ цен[а-яё]+/i, "original price"], [/(?<![а-яё])(?<!планируемая )обычная (годовая )?цена(?![а-яё])/i, "regular price without планируемая"]],
+  }[locale] || [];
+  for (const [re, why] of rules) { const m = t.match(re); if (m) bad.push(`${why} "${m[0]}"`); }
+  return bad.length ? `uses forbidden price wording: ${bad.join("; ")}` : "";
+}
+function* walkRoot(o, prefix) { if (typeof o === "string") { yield [prefix, o]; return; } if (o && typeof o === "object") for (const k of Object.keys(o)) yield* walkRoot(o[k], prefix ? `${prefix}.${k}` : k); }

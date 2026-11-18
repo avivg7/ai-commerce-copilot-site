@@ -2,7 +2,7 @@
 import { useEffect, useSyncExternalStore, type MouseEvent, type ReactNode } from "react";
 import { ArrowRight, CircleCheck, Clock, Pause } from "lucide-react";
 import type { PlanId } from "@/data/plans";
-import { ssDecision, ssRegClosedServerSnapshot, ssRegClosedSnapshot, ssRegClosedSubscribe, ssServerSnapshot, ssSnapshot, ssStart, ssSubscribe, type SsInitial } from "@/lib/ssStatus";
+import { ssLine, ssRegClosedServerSnapshot, ssRegClosedSnapshot, ssRegClosedSubscribe, ssServerSnapshot, ssSnapshot, ssStart, ssSubscribe, type SsInitial } from "@/lib/ssStatus";
 import { planServerSnapshot, planSnapshot, planSubscribe, setPlan } from "@/lib/ssPlan";
 
 /**
@@ -47,9 +47,8 @@ export function SsJourneyAction({ strings, initial, startHrefs, demoHref, pricin
   useEffect(() => { void ssStart(); }, []);
   const closedByClock = useSyncExternalStore(ssRegClosedSubscribe, ssRegClosedSnapshot, ssRegClosedServerSnapshot);
   const plan = useSyncExternalStore(planSubscribe, planSnapshot, planServerSnapshot);
-  const d = ssDecision(view, initial, closedByClock);
+  const key = ssLine(view, initial, closedByClock);
   const state = closedByClock ? "closed_cutoff" : view;
-  const key: "soon" | "paused" | "open" | "waitlist" | "closed" = d.kind === "link" ? (d.label === "waitlist" ? "waitlist" : "open") : d.label === "closed" ? "closed" : d.label === "paused" ? "paused" : "soon";
   const Icon: typeof Clock = key === "open" ? CircleCheck : key === "paused" ? Pause : Clock;
   const body = key === "open" ? strings.openBody : key === "closed" ? strings.closedBody : key === "waitlist" ? "" : strings.waitBody;
   const link = (href: string, cls: string, children: ReactNode) => <a className={`aicc-btn aicc-btn--lg aicc-btn--block ${cls}`} href={href} data-jr-act>{children}</a>;
@@ -63,7 +62,7 @@ export function SsJourneyAction({ strings, initial, startHrefs, demoHref, pricin
       </p>
       {body ? <p className="aicc-jr__act-text">{body}</p> : null}
       <div className="aicc-jr__actions">
-        {d.kind === "link" ? (
+        {key === "open" || key === "waitlist" ? (
           <>
             {link(signup, "aicc-btn--primary", <><span>{key === "waitlist" ? strings.joinWaitlist : strings.start}</span>{arrow}</>)}
             {link(demoHref, "aicc-btn--ghost", <span>{strings.demo}</span>)}

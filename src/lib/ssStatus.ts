@@ -30,7 +30,8 @@ export type SsLabelKey = "soon" | "start" | "waitlist" | "closed" | "paused";
 export type SsDecision = { kind: "link"; label: SsLabelKey } | { kind: "text"; label: SsLabelKey };
 
 /**
- * THE TABLE (state -> what the visitor sees). `link` = a real <a> to {CP}/start/?plan=<id> (the sign-up page, which shows the matching form or notice); `text` = plain text, never a button, never a link.
+ * THE TABLE (state -> what the visitor sees). `link` = a real <a> to {CP}/start/?plan=<id> (the sign-up page, which shows the matching form or notice); `text` = registration is not (or no longer) available. P41: a `text` decision is
+ * rendered as the INFORMATION LINK "See how it works" (soon, paused: this site's journey page, see ssControl) or the closed region (closed); the labels below are the state names, the visible words are ss.cta.how / ss.state.line.* / ss.cta.closed.
  *   static (coming_soon build)  text  "Free trial registration opens soon"   (the build default; also the state of every failed or invalid status answer)
  *   static (link build)         link  "Start free trial"                     (only a build made after sign-up was activated)
  *   open           link  "Start free trial"
@@ -59,6 +60,27 @@ export const SS_STATE_TABLE: Readonly<Record<SsMode, SsDecision>> = Object.freez
 export const SS_REG_CLOSE_MS = 1798070400000;
 export function ssRegClosed(now: number = Date.now()): boolean { return now >= SS_REG_CLOSE_MS; }
 const CLOSED_BY_CLOCK: SsDecision = Object.freeze({ kind: "text", label: "closed" });
+
+/**
+ * P41: what a control IS in a view (the three families of docs/design/p41-journey.md). One function for the card / band / finder control (SsCta), the status line (SsState) and the journey page (SsJourney), so they can never disagree:
+ *   start     open (or the static state of a link build)  a real link {CP}/start/?plan=<id>  "Get started free"
+ *   waitlist  waitlist                                      a real link {CP}/start/?plan=<id>  "Join the waitlist"
+ *   info      off / paused / the default static state       a real link to this site's journey page "See how it works" (registration is not open: never /start/, never the Live Demo itself, never a fake sign-up)
+ *   closed    closed_cutoff, or the clock at or past 2026-12-24T00:00:00Z   a non-interactive closed region
+ */
+export type SsControl = "start" | "waitlist" | "info" | "closed";
+export function ssControl(view: SsView, initial: SsInitial = SS_INITIAL_DEFAULT, regClosed = false): SsControl {
+  const d = ssDecision(view, initial, regClosed);
+  if (d.kind === "link") return d.label === "waitlist" ? "waitlist" : "start";
+  return d.label === "closed" ? "closed" : "info";
+}
+/** The state the status line and the journey page speak about: `soon` (not open yet / unknown), `paused`, `open`, `waitlist`, `closed`. */
+export type SsLine = "soon" | "paused" | "open" | "waitlist" | "closed";
+export function ssLine(view: SsView, initial: SsInitial = SS_INITIAL_DEFAULT, regClosed = false): SsLine {
+  const d = ssDecision(view, initial, regClosed);
+  if (d.kind === "link") return d.label === "waitlist" ? "waitlist" : "open";
+  return d.label === "closed" ? "closed" : d.label === "paused" ? "paused" : "soon";
+}
 
 /** The decision for a view. `static` (and any unknown view) takes the build's initial state; the default build is the truthful plain text. `regClosed` (the clock is at or past the registration cutoff) overrides everything with the closed text. */
 export function ssDecision(view: SsView, initial: SsInitial = SS_INITIAL_DEFAULT, regClosed = false): SsDecision {

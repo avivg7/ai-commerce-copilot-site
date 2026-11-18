@@ -191,7 +191,7 @@ export const eaEn = {
       perShort: "/ year",
       afterOffer: "Starts after the launch offer",
       strikeLabel: "Planned regular annual price after the launch offer, not a current or past price.",
-      strikeNote: "Nothing has been charged at this price yet. No card needed; nothing is charged automatically.",
+      strikeNote: "Nothing has been charged at this price yet. No payment method needed; nothing is charged automatically.",
       strikeSr: "Planned price after the launch offer, not currently charged:",
       free: "FREE",
       trial: "Launch trial: 1\u00a0store",
@@ -217,7 +217,7 @@ export const eaEn = {
         noAuto: "No automatic conversion to a paid plan. Continuing is your decision.",
       },
       foot: {
-        paid: "Paid plans are not open for purchase yet. Their regular prices apply once they open.",
+        paid: "Paid plans are not open for purchase yet. Their planned regular prices apply once they open.",
         paidOpen: "Paid plans are open for purchase.",
       },
     },

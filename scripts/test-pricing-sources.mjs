@@ -54,6 +54,10 @@ for (const f of COMPONENTS) {
   const hits = RULES.filter(([re]) => re.test(src)).map(([, why]) => why);
   check(hits.length === 0, `${f}: no hard-coded date, clock, price or store count${hits.length ? " -> " + hits.join(", ") : ""}`);
 }
+{ // P41: the journey page (a whole file of the self-service presentation): no date, clock, price or store count written in it (the dates are the pack's tokens, the prices live on the cards only)
+  const f = "src/components/pages/GetStartedPage.tsx", src = strip(fs.readFileSync(path.join(ROOT, f), "utf8")), hits = RULES.filter(([re]) => re.test(src)).map(([, why]) => why);
+  check(hits.length === 0, `${f}: no hard-coded date, clock, price or store count${hits.length ? " -> " + hits.join(", ") : ""}`);
+}
 { // the page files: the self-service part names no price / store count either (everything it renders comes from SsPlans / the pack)
   for (const f of ["src/components/pages/HomePage.tsx", "src/components/pages/PricingPage.tsx", "src/components/pages/ProductPage.tsx", "src/components/layout/SiteHeader.tsx"]) {
     const src = strip(fs.readFileSync(path.join(ROOT, f), "utf8"));
@@ -64,13 +68,13 @@ for (const f of COMPONENTS) {
 }
 
 console.log("== 3. one status table; no purchase link on the Site");
-const LABELS = ["soon", "start", "waitlist", "closed", "paused"];
-check(SS_MODES.every((m) => SS_STATE_TABLE[m] && LABELS.includes(SS_STATE_TABLE[m].label)) && Object.values(SS_INITIAL_TABLE).every((d) => LABELS.includes(d.label)), "every sign-up status (open, waitlist, closed_cutoff, paused, off) and both build-time initial states map to one of the five control labels");
+const LABELS = ["soon", "start", "waitlist", "closed", "paused"]; // the five STATE names of src/lib/ssStatus.ts (P41: soon and paused are rendered as the information link, see ssControl)
+check(SS_MODES.every((m) => SS_STATE_TABLE[m] && LABELS.includes(SS_STATE_TABLE[m].label)) && Object.values(SS_INITIAL_TABLE).every((d) => LABELS.includes(d.label)), "every sign-up status (open, waitlist, closed_cutoff, paused, off) and both build-time initial states map to one of the five state names");
 const { getEaDictionary } = await loadTs("src/i18n/index.ts");
 for (const l of ["en", "he", "es", "ru"]) {
   const ss = getEaDictionary(l, 0).ss;
-  const notes = { soon: ss.state.soonNote, closed: ss.state.closedNote, paused: ss.state.pausedNote, waitlist: ss.state.waitlistNote };
-  check(LABELS.every((k) => typeof ss.cta[k] === "string" && ss.cta[k].trim()) && Object.values(notes).every((n) => typeof n === "string" && n.trim().length > 20), `${l}: every control label and every state note exists in the pack`);
+  const lines = ["soon", "paused", "open", "waitlist"].map((k) => ss.state.line[k]);
+  check(["how", "start", "waitlist", "closed"].every((k) => typeof ss.cta[k] === "string" && ss.cta[k].trim()) && [ss.state.closedNote, ...lines].every((n) => typeof n === "string" && n.trim().length > 20), `${l}: every control label (how, start, waitlist, closed), the closed note and the four status lines exist in the pack`);
 }
 {
   const cta = strip(fs.readFileSync(path.join(ROOT, "src/components/ss/SsCta.tsx"), "utf8")), plans = strip(fs.readFileSync(path.join(ROOT, "src/components/ss/SsPlans.tsx"), "utf8")), ss = strip(fs.readFileSync(path.join(ROOT, "src/components/ss/Ss.tsx"), "utf8"));
@@ -80,9 +84,11 @@ for (const l of ["en", "he", "es", "ru"]) {
   check(uses === 1 && /COMMERCE_OPEN/.test(fn) && fn.includes("planUrl(") && !/planUrl\(/.test(plans.replace(fn, "")) && !/planUrl\(/.test(cta + ss), "planUrl appears exactly once, inside StandardControl, behind COMMERCE_OPEN (the Site never links to a purchase)");
   check(/paidCapacity\(/.test(plans) && /paidCapacity\(/.test(ss) && !/paidMany\.replace/.test(plans + ss), "the paid-capacity string comes from ONE helper (src/lib/ssCapacity.ts) in the cards and the finder");
   const states = [...cta.matchAll(/data-ss-state=\{(\w+)\}/g)].length;
-  check(states >= 2 && /role: "status"/.test(cta) && /data-ss-cta="status"/.test(cta) && /data-ss-cta="link"/.test(cta), "SsCta renders the two control families (link, status) with data-ss-state and role=\"status\" on the status region");
-  check(/#demo|ctaDemo|data-ss-demo|SsDemoLink/.test(cta + plans + ss) === false, "no control of the section can lead to #demo (the per-card demo link and SsDemoLink are retired)");
-  check(/ssDecision\(view, initial, closedByClock\)/.test(cta) && /ssRegClosedSubscribe/.test(cta), "the control keeps the one decision function (ssDecision) and the browser-clock cutoff subscription");
+  check(states >= 2 && /role: "status"/.test(cta) && /data-ss-cta="status"/.test(cta) && /data-ss-cta=\{info \? "info" : "link"\}/.test(cta), "SsCta renders the three control families (link, info, status) with data-ss-state and role=\"status\" on the closed region only");
+  const stateSlot = (ss.match(/export async function SsStateSlot[\s\S]*?\n}\n/) || [""])[0];
+  check(/#demo|ctaDemo|data-ss-demo|SsDemoLink/.test(cta + plans) === false && !/#demo/.test(ss.replace(stateSlot, "")) && (stateSlot.match(/#demo/g) || []).length === 1, "no CONTROL of the section (card, band, finder) can lead to #demo: the only Live Demo link is the one in the status line (SsStateSlot); the per-card demo link and SsDemoLink stay retired");
+  check(/ssControl\(view, initial, closedByClock\)/.test(cta) && /ssRegClosedSubscribe/.test(cta) && /ssLine\(view, initial, closedByClock\)/.test(strip(fs.readFileSync(path.join(ROOT, "src/components/ss/SsState.tsx"), "utf8"))), "the control and the status line keep the one decision source (ssControl / ssLine over ssDecision) and the browser-clock cutoff subscription");
+  check(!/\/start\//.test(cta) && /infoHref/.test(cta) && /journeyUrl\(/.test(ss), "the information link is the journey page (infoHref = journeyUrl), never a /start/ literal in the control");
 }
 
 console.log(`\n${total - failed}/${total} checks passed`);

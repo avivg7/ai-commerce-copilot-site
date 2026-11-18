@@ -33,14 +33,38 @@ check(SS.ssDecision("static").kind === "text" && SS.ssDecision("nonsense").kind 
 check(SS.ssStartsSignup("open") && SS.ssStartsSignup("waitlist") && !SS.ssStartsSignup("static") && !SS.ssStartsSignup("off") && !SS.ssStartsSignup("paused") && !SS.ssStartsSignup("closed_cutoff") && SS.ssStartsSignup("static", "link") && !SS.ssStartsSignup("paused", "link"), "'Get started' targets the sign-up page only for open / waitlist (or a link build's static state), never for off / paused / closed / the default static state");
 check(SS.SS_STATUS_PATH === "/wp-json/aicc/v1/signup/status", "the status path is /wp-json/aicc/v1/signup/status (same origin, like the request form)");
 for (const l of ["en", "he", "es", "ru"]) {
-  const c = D[l].ea.ss.cta;
-  const labels = ["soon", "start", "waitlist", "closed", "paused"].map((k) => c[k]);
-  check(labels.every((x) => typeof x === "string" && x.trim()) && new Set(labels).size === 5 && !("notOpen" in c), `${l}: all five labels exist and differ (and the retired notOpen label is gone): ${labels.join(" | ")}`);
-  const textStates = ["soon", "closed", "paused"].map((k) => c[k]);
-  check(textStates.every((x) => !/^(start|join)/i.test(x)) && !labels.slice(0, 1).some((x) => /\d/.test(x)), `${l}: the plain-text states are statements, not invitations, and carry no date`);
+  const c = D[l].ea.ss.cta, st = D[l].ea.ss.state;
+  const labels = ["how", "start", "waitlist", "closed"].map((k) => c[k]);
+  check(labels.every((x) => typeof x === "string" && x.trim()) && new Set(labels).size === 4 && !("notOpen" in c) && !("soon" in c) && !("paused" in c), `${l}: the four control labels (how, start, waitlist, closed) exist and differ; the retired notOpen / soon / paused labels are gone: ${labels.join(" | ")}`);
+  check(!/^(start|join|get started|empez|unir|начать|встать|התחילו|הצטרפו)/i.test(c.how) && !/\d/.test(c.how) && !/^(start|join)/i.test(c.closed), `${l}: the information link is not a sign-up invitation and the closed text is a statement; neither carries a date`);
+  const lines = ["soon", "paused", "open", "waitlist"].map((k) => st.line[k]);
+  check(lines.every((x) => typeof x === "string" && x.trim()) && new Set(lines).size === 4 && typeof st.demo === "string" && st.demo.trim() && !("soonNote" in st) && !("pausedNote" in st) && !("waitlistNote" in st), `${l}: the status line exists in four states (soon, paused, open, waitlist), plus the demo link text; the per-card notes are retired`);
 }
-check(D.en.ea.ss.cta.soon === "Free trial opens soon" && D.en.ea.ss.cta.start === "Get started free" && D.en.ea.ss.cta.waitlist === "Join the waitlist" && D.en.ea.ss.cta.closed === "Registration closed" && D.en.ea.ss.cta.paused === "Registration paused", "en (P40 pack): the labels are 'Free trial opens soon', 'Get started free', 'Join the waitlist', 'Registration closed', 'Registration paused'");
-check(D.en.ea.ss.state.soonNote.length > 20 && D.en.ea.ss.state.closedNote.includes("Paid plans are not open for purchase yet") && D.en.ea.ss.state.waitlistNote.includes("does not reserve") && D.en.ea.ss.cta.purchase === "Choose {plan}" && D.en.ea.ss.cta.choosePlan === "Choose a plan", "en (P40 pack): every status carries its explanation line (soon, closed, paused, waitlist); the purchase labels exist for the Control Plane (the Site never renders them)");
+check(D.en.ea.ss.cta.how === "See how it works" && D.en.ea.ss.cta.start === "Get started free" && D.en.ea.ss.cta.waitlist === "Join the waitlist" && D.en.ea.ss.cta.closed === "Registration closed", "en (P41 pack): the labels are 'See how it works', 'Get started free', 'Join the waitlist', 'Registration closed'");
+check(D.en.ea.ss.state.line.soon === "Free trial registration isn't open yet." && D.en.ea.ss.state.demo === "Try Live Demo" && D.en.ea.ss.state.closedNote.includes("Paid plans are not open for purchase yet") && D.en.ea.ss.state.line.waitlist.includes("does not reserve") && D.en.ea.ss.cta.purchase === "Choose {plan}" && D.en.ea.ss.cta.choosePlan === "Choose a plan", "en (P41 pack): the not-open fact is ONE sentence (the status line), the waitlist line says it reserves nothing, the closed note stays; the purchase labels exist for the Control Plane (the Site never renders them)");
+
+console.log("== P41: what a control IS in each view (ssControl / ssLine): start, waitlist, info (See how it works), closed");
+for (const initial of ["coming_soon", "link"]) {
+  const exp = { static: initial === "link" ? ["start", "open"] : ["info", "soon"], open: ["start", "open"], waitlist: ["waitlist", "waitlist"], closed_cutoff: ["closed", "closed"], paused: ["info", "paused"], off: ["info", "soon"] };
+  for (const view of ["static", ...SS.SS_MODES]) {
+    eq([SS.ssControl(view, initial), SS.ssLine(view, initial)], exp[view], `ssControl / ssLine (${view}, ${initial})`);
+    eq([SS.ssControl(view, initial, true), SS.ssLine(view, initial, true)], ["closed", "closed"], `after the cutoff every control is closed (${view}, ${initial})`);
+  }
+}
+check(["off", "paused", "static", "nonsense", "__proto__"].every((v) => SS.ssControl(v, "coming_soon") === "info"), "off / paused / the default static state / an unknown view are the INFORMATION link: never the sign-up link while registration is not open");
+check(["open", "waitlist"].every((v) => SS.ssControl(v, "coming_soon") !== "info" && SS.ssControl(v, "coming_soon") !== "closed"), "open / waitlist flip the control to the real sign-up link by themselves (no rebuild)");
+
+console.log("== P41: the journey page helpers (src/lib/ssJourney.ts): the path, the plan parameter (validated), links keep language and plan");
+{
+  const J = await loadTs("src/lib/ssJourney.ts");
+  eq(["en", "he", "es", "ru"].map((l) => J.journeyPath(l)), ["/get-started/", "/he/get-started/", "/es/get-started/", "/ru/get-started/"], "the journey path per language (English at the root, the others under /<lang>/)");
+  for (const [q, want] of [["?plan=solo", "solo"], ["?plan=studio", "studio"], ["?plan=agency", "agency"], ["plan=studio", "studio"], ["?x=1&plan=agency&y=2", "agency"], ["?plan=Studio", null], ["?plan=enterprise", null], ["?plan=", null], ["", null], ["?plan=studio%00", null], ["?plan=solo&plan=agency", "solo"], ["?PLAN=solo", null], ["?plan[]=solo", null], ["?utm_source=x", null]]) check(J.planFromSearch(q) === want, `planFromSearch(${JSON.stringify(q)}) = ${want}`);
+  check(J.planFromSearch("?plan=" + "a".repeat(5000)) === null && J.planFromSearch(undefined) === null && J.planFromSearch(null) === null, "an oversized or missing query is ignored");
+  eq([J.withPlanParam("/get-started/", "studio"), J.withPlanParam("/get-started/"), J.withPlanParam("/he/get-started/", null)], ["/get-started/?plan=studio", "/get-started/", "/he/get-started/"], "withPlanParam appends only a valid plan, plan-less otherwise");
+  const SSL = await loadTs("src/lib/selfService.ts");
+  eq([SSL.journeyUrl("en"), SSL.journeyUrl("he", "agency"), SSL.journeyUrl("es", "solo"), SSL.journeyUrl("ru", "studio")], ["/get-started/", "/he/get-started/?plan=agency", "/es/get-started/?plan=solo", "/ru/get-started/?plan=studio"], "journeyUrl keeps the language prefix and the plan (the card, band and header link)");
+  check(!/^https?:/.test(SSL.journeyUrl("en", "solo")) && !/\/start\//.test(SSL.journeyUrl("en", "solo")), "the information link is a same-site path and never the sign-up page");
+}
 
 console.log("== registration cutoff by the browser clock (P39 round 2): from 2026-12-24T00:00:00Z every control is the closed text");
 {

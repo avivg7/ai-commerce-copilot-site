@@ -167,7 +167,7 @@ export const eaEs: DeepPartial<EaDict> = {
       perShort: "/ año",
       afterOffer: "Empieza después de la oferta de lanzamiento",
       strikeLabel: "Precio anual regular previsto después de la oferta de lanzamiento, no un precio actual ni pasado.",
-      strikeNote: "Todavía no se ha cobrado nada a este precio. No hace falta tarjeta; no se cobra nada automáticamente.",
+      strikeNote: "Todavía no se ha cobrado nada a este precio. No hace falta método de pago; no se cobra nada automáticamente.",
       strikeSr: "Precio previsto después de la oferta de lanzamiento, no se cobra actualmente:",
       free: "GRATIS",
       trial: "Prueba de lanzamiento: 1\u00a0tienda",
@@ -193,7 +193,7 @@ export const eaEs: DeepPartial<EaDict> = {
         noAuto: "No pasa automáticamente a un plan de pago. Seguir es decisión suya.",
       },
       foot: {
-        paid: "Las compras de pago aún no están abiertas. Los precios regulares se aplicarán cuando se abran.",
+        paid: "Las compras de pago aún no están abiertas. Los precios regulares previstos se aplicarán cuando se abran.",
         paidOpen: "Los planes de pago están abiertos a la compra.",
       },
     },

@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useSyncExternalStore } from "react";
 import { CircleCheck, Clock, Pause } from "lucide-react";
-import { ssDecision, ssRegClosedServerSnapshot, ssRegClosedSnapshot, ssRegClosedSubscribe, ssServerSnapshot, ssSnapshot, ssStart, ssSubscribe, type SsInitial } from "@/lib/ssStatus";
+import { ssLine, ssRegClosedServerSnapshot, ssRegClosedSnapshot, ssRegClosedSubscribe, ssServerSnapshot, ssSnapshot, ssStart, ssSubscribe, type SsInitial } from "@/lib/ssStatus";
 
 export type SsStateStrings = { soon: string; paused: string; open: string; waitlist: string; demo: string };
 
@@ -14,9 +14,8 @@ export function SsState({ strings, demoHref, initial, lang, dir }: { strings: Ss
   const view = useSyncExternalStore(ssSubscribe, ssSnapshot, ssServerSnapshot);
   useEffect(() => { void ssStart(); }, []);
   const closedByClock = useSyncExternalStore(ssRegClosedSubscribe, ssRegClosedSnapshot, ssRegClosedServerSnapshot);
-  const d = ssDecision(view, initial, closedByClock);
-  if (d.kind === "text" && d.label === "closed") return null;
-  const key = d.kind === "link" ? (d.label === "waitlist" ? "waitlist" : "open") : d.label === "paused" ? "paused" : "soon";
+  const key = ssLine(view, initial, closedByClock);
+  if (key === "closed") return null;
   const Icon = key === "open" ? CircleCheck : key === "paused" ? Pause : Clock;
   const state = closedByClock ? "closed_cutoff" : view;
   return (
