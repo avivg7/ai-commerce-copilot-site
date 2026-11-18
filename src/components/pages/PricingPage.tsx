@@ -59,14 +59,21 @@ export function PricingPage({ locale, t }: { locale: Locale; t: Dictionary }) {
         </Container>
       </Section>
 
-      {/* 3. Plans */}
+      {/* 3. Plans. P40: a self-service build has its own section (header block, three plan cards, the ONE launch panel: src/components/ss/SsPlans.tsx); the ordinary section below is the P39 one (OFF builds are byte-identical) */}
+      {SS_ON ? (
       <Section tone="sunken" labelledBy="plans-title" fb={fb("pricing.plansSection")}>
         <Container>
-          {SS_ON ? (
-            /* P40: the premium pricing block of a self-service build: header, three plan cards, the ONE launch panel (src/components/ss/SsPlans.tsx); the page's own plans heading is part of its header block */
-            <SsPricing locale={locale} t={t} titleId="plans-title" />
-          ) : (
-            <>
+          <SsPricing locale={locale} t={t} titleId="plans-title" />
+          <p className="aicc-countline" style={{ marginBlockStart: "1.5rem" }}>{p.plansSection.note} {t.common.plan.renewal}</p>
+          <p className="aicc-countline" style={{ marginBlockStart: "0.5rem" }} {...tx("pricing.teaser")}>
+            {p.teaser.text}{" "}
+            <LocaleLink locale={locale} route="product" hash="demo" className="aicc-link">{p.teaser.link}</LocaleLink>
+          </p>
+        </Container>
+      </Section>
+      ) : (
+      <Section tone="sunken" labelledBy="plans-title" fb={fb("pricing.plansSection")}>
+        <Container>
           <SectionHeading id="plans-title" title={p.plansSection.title} />
           <div className="aicc-plans">
             {PLANS.map((pl) => (
@@ -93,8 +100,6 @@ export function PricingPage({ locale, t }: { locale: Locale; t: Dictionary }) {
               // P34 (owner list): the three short support lines come first, right under the cards
               .concat(EA_ON ? [<EaStatusNote key="ea-status" locale={locale} t={t} />, <EaPlanTerms key="ea-terms" locale={locale} t={t} />] : [])}
           </div>
-            </>
-          )}
           <p className="aicc-countline" style={{ marginBlockStart: "1.5rem" }}>{EA_ON && !SS_ON ? <EaPricingNote locale={locale} t={t} ordinary={p.plansSection.note} /> : p.plansSection.note} {t.common.plan.renewal}</p>
           <p className="aicc-countline" style={{ marginBlockStart: "0.5rem" }} {...tx("pricing.teaser")}>
             {p.teaser.text}{" "}
@@ -102,6 +107,7 @@ export function PricingPage({ locale, t }: { locale: Locale; t: Dictionary }) {
           </p>
         </Container>
       </Section>
+      )}
 
       {/* 3b. Early Access (Production 20): renders only in an Early Access build */}
       {SS_ON ? null : <EaSection locale={locale} t={t} />}

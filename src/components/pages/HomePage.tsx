@@ -242,25 +242,28 @@ export function HomePage({ locale, t }: { locale: Locale; t: Dictionary }) {
         </Container>
       </Section>
 
-      {/* 6. Pricing, value first */}
+      {/* 6. Pricing, value first. P40: a self-service build has its own section (the premium pricing block: header, three plan cards, the ONE launch panel; src/components/ss/SsPlans.tsx); the ordinary section below is the P39 one, untouched (OFF builds are byte-identical) */}
+      {SS_ON ? (
       <Section tone="sunken" labelledBy="pricing-title" fb={fb("home.pricing")}>
         <Container>
-          {SS_ON ? (
-            <>
-              {/* P40: the premium pricing block of a self-service build (header, three plan cards, the ONE launch panel): src/components/ss/SsPlans.tsx; the plans heading of the ordinary view is part of its header block */}
-              <SsPricing locale={locale} t={t} titleId="pricing-title" />
-              {EA_ON ? (
-                /* the ordinary after-trial view keeps the two confidence lines (without the guarantee line), exactly as the launch-offer build does */
-                <div data-ea-after="">
-                  <ul className="aicc-pricing-confidence" {...fb("home.pricing")}>
-                    <li>{R(h.pricing.confidence.price)}</li>
-                    <li>{h.pricing.confidence.renewal}</li>
-                  </ul>
-                </div>
-              ) : confidence}
-            </>
-          ) : (
-            <>
+          <SsPricing locale={locale} t={t} titleId="pricing-title" />
+          {EA_ON ? (
+            /* the ordinary after-trial view keeps the two confidence lines (without the guarantee line), exactly as the launch-offer build does */
+            <div data-ea-after="">
+              <ul className="aicc-pricing-confidence" {...fb("home.pricing")}>
+                <li>{R(h.pricing.confidence.price)}</li>
+                <li>{h.pricing.confidence.renewal}</li>
+              </ul>
+            </div>
+          ) : confidence}
+          <p style={{ marginBlockStart: "1rem" }}>
+            <LocaleLink locale={locale} route="pricing" className="aicc-link">{h.pricing.link}</LocaleLink>
+          </p>
+        </Container>
+      </Section>
+      ) : (
+      <Section tone="sunken" labelledBy="pricing-title" fb={fb("home.pricing")}>
+        <Container>
           <SectionHeading id="pricing-title" title={h.pricing.title} lead={h.pricing.lead} />
           <div className="aicc-plans">
             {PLANS.map((p) => (
@@ -301,13 +304,12 @@ export function HomePage({ locale, t }: { locale: Locale; t: Dictionary }) {
               </div>
             </>
           ) : confidence}
-            </>
-          )}
           <p style={{ marginBlockStart: "1rem" }}>
             <LocaleLink locale={locale} route="pricing" className="aicc-link">{h.pricing.link}</LocaleLink>
           </p>
         </Container>
       </Section>
+      )}
 
       {/* 7. FAQ */}
       <Section tone="surface" labelledBy="questions-title" fb={fb("home.questions")}>
