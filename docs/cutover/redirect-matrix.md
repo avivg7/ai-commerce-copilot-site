@@ -51,7 +51,7 @@ Like the host rule, every path rule is a pair: GET/HEAD answer `301`, any other 
 | `index_html` | `/<dir>/index.html` (any depth, any language) | `/<dir>/` | the static export would otherwise serve a duplicate of the directory URL | cutover |
 | `alias_account` | `[/he\|/es\|/ru]/account`, `/login`, `/register` (slash optional) | `[prefix]/my-account/` | `?plan=solo\|studio\|agency` kept | cutover (these paths are 404 on the old site and nowhere linked) |
 | `alias_store` | `[prefix]/store`, `/shop` (slash optional) | `[prefix]/pricing/` | WooCommerce's shop page is not a storefront here (the theme already 302s it; the edge makes it a 301 first) | cutover |
-| `alias_install` | `[prefix]/install`, `/download` | `[prefix]/get-started/` | **DISABLED: `/get-started/` does not exist in the site** (section 6). Emitted as comments only | blocked |
+| `alias_install` | `[prefix]/install`, `/download` | `[prefix]/get-started/` | **DISABLED** (enabling it is an edge change, not part of P41; the target now exists in a self-service export, section 6). Emitted as comments only | blocked |
 | `slash_pages` | `[prefix]/product`, `/pricing`, `/questions`, `/data-and-trust`, `/privacy`, `/terms`, `/refund-policy`, `/accessibility`, `/data-processing-addendum`, `/my-account`, `/cart`, `/checkout` | same with `/` | trailing slash in the same hop as any host redirect | cutover |
 | `slash_locale` | `/he`, `/es`, `/ru` | `/he/` ... | bare language root | cutover |
 | `slash_wp_deep` | `[prefix]/my-account/<endpoint>[/...]`, `/checkout/<endpoint>[/...]` without final slash | same with `/` | e.g. `/my-account/aicc-licenses`, `/checkout/order-received/12`; WordPress would add the slash itself, but from the apex that is a second hop | cutover |
@@ -98,8 +98,8 @@ Owner decision still open (`domain-migration.md` A11.3): retire the static mirro
 
 | Path | Old site (verified 2026-10-19) | New site | Edge result | Who must decide |
 |---|---|---|---|---|
-| `/get-started/` | 404 | **not built**; promised by `domain-migration.md` A2, the plugin readme draft, the Connect flow copy | 404 | owner: build it in the site before the plugin readme / WordPress.org submission, then enable `alias_install` |
-| `/install/`, `/download/` | 404 | none | 404 (alias disabled: its target would be a 404) | follows `/get-started/` |
+| `/get-started/` (+ `/he/`, `/es/`, `/ru/`) | 404 | **built in P41** as a page of the self-service Site export (the onboarding journey: nine steps, honest about registration, the Live Demo). Static, data-free; it exists only in a self-service build (the production candidate) | served by the static origin (200) with NO edge change: the edge sends only the WordPress allow-list to WordPress, every other path is the export | owner: publish the P41 Site release; `alias_install` stays DISABLED (enabling it is a separate, gated edge change) |
+| `/install/`, `/download/` | 404 | none | 404 (alias disabled) | owner: decide whether to enable `alias_install` after the journey page is published |
 | `/docs/` | 404 | none (docs say: only after ~15 articles) | 404 | owner |
 | `/faq/`, `/features/`, `/contact/`, `/support/`, `/demo/` (as a page), `/documentation` | 404 | none (`/questions/` is the FAQ; `/demo/` is only the asset folder) | 404 | none needed: never indexed, never linked (old home page anchors `#documentation`, `#contact` are dead fragments) |
 | `/privacy/`, `/terms/`, `/refund-policy/`, `/accessibility/`, `/pricing/`, `/product/`, `/questions/`, `/he/`, `/es/`, `/ru/` | 404 | exist | served | nothing to redirect: they never existed on the old site |
