@@ -164,6 +164,8 @@ PY
     if [ -n "$KEYS" ] && [ -n "$PLUGDIR" ] && [ -f "$PLUGDIR/bin/sign-release.php" ] && command -v "$PHPBIN" >/dev/null 2>&1; then
       [[ "$KEYS" =~ ^[A-Za-z0-9+/]{43}=(,[A-Za-z0-9+/]{43}=)?$ ]] || refuse "the public key list is malformed (one or two base64 keys of 32 bytes, comma separated)"
       vout="$("$PHPBIN" "$PLUGDIR/bin/sign-release.php" verify --manifest "$MAN" --sig "$SIGFILE" --pubkeys "$KEYS" 2>&1)" || refuse "the signature does NOT verify against the owner's public key list: ${vout:-no reason}"
+      # P41: the --pubkeys form of the verify tool never looks at the ZIP (it uses the ZIP only when --pubkeys is absent), so the ZIP is cross-checked by a second run: the tool re-hashes it against the manifest and verifies with the keys it bakes
+      vzip="$("$PHPBIN" "$PLUGDIR/bin/sign-release.php" verify --manifest "$MAN" --sig "$SIGFILE" --zip "$ZIP" 2>&1)" || refuse "the signature does NOT verify against this ZIP and the public keys it bakes: ${vzip:-no reason}"
       python3 -I - "$ZIP" "$KEYS" <<'PY' || exit 3
 import base64, re, sys, zipfile
 def fail(m): sys.stderr.write("REFUSED: " + m + "\n"); sys.exit(1)

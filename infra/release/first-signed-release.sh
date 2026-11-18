@@ -6,7 +6,8 @@
 #   first-signed-release.sh <stage> [--yes-i-have-the-owners-go]
 #   stages:  0 preconditions   1 build   2 offline-sign (prints the owner's commands; the PRIVATE key is never used here)   3 verify   4 publish-dry-run
 #            5 apply (LIVE: uploads the signed release into the production store, NOT current)   6 set-current (LIVE: the one line that decides what customers and stores receive)
-#            7 verify-live (read-only: launch gate 5h / 5h-1, update-check shape, account download)
+#            7 verify-live (read-only: the launch gate's Plugin lines + THE REAL POST-PUBLICATION CHECK infra/release/verify-published-plugin.sh: customer download, SHA-256, signature, uniform refusals)
+#   P41: the owner's offline step is infra/release/sign-plugin-release.sh (stage 2 prints its exact command); the owner document is docs/cutover/p41-plugin-publication.md.
 #
 # Inputs (environment; none is a secret; the private signing keys never touch this machine's disk except on the owner's encrypted vault at stage 2):
 #   PLUG       Plugin worktree on a CLEAN commit that contains the owner's two PUBLIC keys in release/endpoints.conf (UPDATE_PUBLIC_KEYS=<primary>,<standby>) and the chosen version (e.g. 1.1.0)
@@ -71,21 +72,24 @@ PY
 The owner signs OFFLINE (stage 2 prints the exact commands). Do not continue until the .manifest.sig is back in $OUT." ;;
 2) need PLUG VERSION PRIMARY_FP
    cat <<EOF
-OWNER'S COMMANDS (offline, on the owner's Mac, with the primary vault attached; the lead never sees the private key):
+OWNER'S COMMANDS (offline, on the owner's Mac, with the primary vault attached; the lead never sees the private key). Details and expected output: docs/cutover/p41-plugin-publication.md section 2.
   hdiutil attach <the PRIMARY vault image: the verified USB copy /Volumes/<STICK-1>/aicc-keys-primary.dmg, or until it exists the Mac copy (its location is in the owner's private key notes)>
   cd <a Plugin checkout at the same commit: git -C "$PLUG" rev-parse HEAD = $(git -C "$PLUG" rev-parse HEAD 2>/dev/null)>
-  AICC_RELEASE_SIGNING_KEY_FILE=/Volumes/AICCKEYS-PRIMARY/aicc-release-primary.key php bin/sign-release.php sign --manifest <path to ${MAN##*/}> --zip <path to ${ZIP##*/}>   # (or keep both files in one folder)
+  AICC_RELEASE_SIGNING_KEY_FILE=/Volumes/AICCKEYS-PRIMARY/aicc-release-primary.key bash $SITE/infra/release/sign-plugin-release.sh --plugin-dir . --zip <path to ${ZIP##*/}> --manifest <path to ${MAN##*/}> \\
+      --version $VERSION --sha256 $(cut -d' ' -f1 "$SHAF" 2>/dev/null || echo '<the ZIP sha256 printed at stage 1>') --commit $(git -C "$PLUG" rev-parse --short=12 HEAD 2>/dev/null) --primary-fp $PRIMARY_FP
   hdiutil detach /Volumes/AICCKEYS-PRIMARY
-  -> it prints the key fingerprint: it must equal $PRIMARY_FP
+  -> it prints SIGNED $VERSION key $PRIMARY_FP (the primary) and three verifications; it refuses anything that is not exactly this release.
 Then copy ONLY ${SIG##*/} back to $OUT (the signature is not secret).
 EOF
    stop "Wait for the owner: ${SIG##*/} must be in $OUT, and the fingerprint the owner read out must equal $PRIMARY_FP." ;;
 3) need PLUG VERSION PRIMARY_PUB STANDBY_PUB PRIMARY_FP
    [ -f "$SIG" ] && [ ! -L "$SIG" ] || die "no signature file $SIG"
-   ( cd "$PLUG" && php bin/sign-release.php verify --manifest "$MAN" --sig "$SIG" --zip "$ZIP" --pubkeys "$PRIMARY_PUB,$STANDBY_PUB" ) | tee "$OUT/verify.txt"
+   # `verify --pubkeys` never looks at the ZIP and `verify --zip` never looks at the list (sign-release.php uses the ZIP only when --pubkeys is absent): BOTH forms run, so the ZIP is really cross-checked
+   ( cd "$PLUG" && php bin/sign-release.php verify --manifest "$MAN" --sig "$SIG" --pubkeys "$PRIMARY_PUB,$STANDBY_PUB" ) | tee "$OUT/verify.txt" || die "the signature does not verify against the owner's public key list"
    grep -q "$PRIMARY_FP" "$OUT/verify.txt" || die "verified, but not by the primary key $PRIMARY_FP (signed with the standby? that is only for an emergency)"
+   ( cd "$PLUG" && php bin/sign-release.php verify --manifest "$MAN" --sig "$SIG" --zip "$ZIP" ) | tee -a "$OUT/verify.txt" || die "the signature does not verify against the ZIP (its size/SHA-256 differ from the manifest, or the keys baked into it do not verify the signature)"
    # the key_id printed above is a hint taken from the .sig file: prove the PRIMARY public key itself verifies it
-   ( cd "$PLUG" && php bin/sign-release.php verify --manifest "$MAN" --sig "$SIG" --zip "$ZIP" --pubkeys "$PRIMARY_PUB" >/dev/null ) || die "the signature does NOT verify with the primary public key alone (signed with the standby, or the key_id was edited)"
+   ( cd "$PLUG" && php bin/sign-release.php verify --manifest "$MAN" --sig "$SIG" --pubkeys "$PRIMARY_PUB" >/dev/null ) || die "the signature does NOT verify with the primary public key alone (signed with the standby, or the key_id was edited)"
    # tamper control: a flipped bit in a COPY of the manifest must NOT verify
    t="$(mktemp -d)"; python3 -I - "$MAN" "$t/m.json" <<'PY'
 import json, sys
@@ -112,6 +116,13 @@ PY
    PSSH="ssh -i $PKEY -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$KNOWN aicc@$HOSTIP"
    echo "-- read-only: the launch gate's Plugin lines (5h download available, 5h-1 signed) --"
    $PSSH 'sudo env AICC_PRODUCTION=1 aicc-wp eval-file /var/lib/aicc-cp/seed/check-launch-blockers.php' | grep -i -E 'plugin (download|release)|update-signing|signature|release store' || echo "(no Plugin line printed: read the whole gate output)"
-   echo "Then, by a person: sign in as a test customer with an active plan, open Plans & Stores, download the ZIP, compare its SHA-256 with the page; run the updater check from a connected test store (it must report the signature, key_id = $PRIMARY_FP)." ;;
+   echo "-- the real post-publication check (docs/cutover/p41-plugin-publication.md section 6): the owner's OWN test account; read-only except the sign-in and that account's own download --"
+   if [ -n "${AICC_VERIFY_CREDENTIALS_FILE:-}" ]; then
+     need PLUG VERSION PRIMARY_PUB STANDBY_PUB
+     bash "$SITE/infra/release/verify-published-plugin.sh" --mode production --base-url https://www.copilt.org --version "$VERSION" --sha256 "$(cut -d' ' -f1 "$SHAF")" --manifest "$MAN" --sig "$SIG" --plugin-dir "$PLUG" \
+       --pubkeys "$PRIMARY_PUB,$STANDBY_PUB" --expect-key-id "$PRIMARY_FP" --local-zip "$ZIP" ${PREVIOUS_VERSION:+--previous-version "$PREVIOUS_VERSION"} --credentials-file "$AICC_VERIFY_CREDENTIALS_FILE" --out "$OUT/verify-published" | tee "$OUT/verify-published.txt"
+   else
+     echo "AICC_VERIFY_CREDENTIALS_FILE is not set: the customer-path check was NOT run. Create a 0600 file with AICC_VERIFY_USER= and AICC_VERIFY_PASS= for the owner's own test account (never a customer's), then re-run stage 7."
+   fi ;;
 *) sed -n 2,13p "${BASH_SOURCE[0]}"; exit 2 ;;
 esac
