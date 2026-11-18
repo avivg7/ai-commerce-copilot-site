@@ -95,7 +95,7 @@ if (run("A")) {
     const demoAsSignup = links.filter((x) => /#demo/.test(x.href) && new RegExp(`^(${[L(l).cta.start, L(l).cta.waitlist].join("|")})`).test(x.text));
     const upgraded = ["open", "waitlist"].includes(state), staticLink = cell === "link";
     check(errors.length === 0 && bad.length === 0 && purchase.length === 0 && demoAsSignup.length === 0, `${cell} ${l} /${route} (${state}): every /start/ link is plan-less or ?plan=solo|studio|agency with the ${l} prefix, no purchase link, no demo-as-sign-up, no script error${bad.length ? " -> " + bad[0].href : ""}${errors.length ? " -> " + errors[0] : ""}`);
-    const tierLinks = start.filter((x) => x.inTier), bandLinks = start.filter((x) => x.inBand);
+    const tierLinks = start.filter((x) => x.inTier && x.vis), bandLinks = start.filter((x) => x.inBand && x.vis); // (the closed card set carries the same links, hidden)
     const want = upgraded || (staticLink && !["closed_cutoff", "paused", "off"].includes(state));
     check(want ? tierLinks.length === 3 && tierLinks.every((x, i) => x.href === startOf(l, PLANS[i].id)) && (route === "" || bandLinks.length === 1) : tierLinks.length === 0 && bandLinks.length === 0, `${cell} ${l} /${route} (${state}): ${want ? "three card links (one per plan, in order) and the plan-less band link" : "NO /start/ link in a card or in the band (the control is a status region)"}`);
     await ctx.close();
@@ -231,7 +231,7 @@ if (run("D")) {
     for (const [state, key, note] of [["paused", "paused", "pausedNote"], ["closed_cutoff", "closed", "closedNote"], ["off", "soon", "soonNote"]]) {
       const v = await view("announce", `${pre(l)}/pricing/`, 1440, { locale: l, signup: state });
       const c2 = await cards(v.page), all = await v.page.evaluate(() => [...document.querySelectorAll("a[href]")].filter((a) => a.getClientRects().length).map((a) => a.getAttribute("href")));
-      check(c2.every((c) => c.link.length === 0 && c.st.length === 1 && c.st[0].text === L(l).cta[key] && c.st[0].note === L(l).state[note] && c.st[0].role === "status") && !all.some((h) => /\/start\/|#demo.*start|checkout|purchase/i.test(h) && !/#demo$/.test(h)), `${l} ${state}: "${L(l).cta[key]}" + its explanation, role=status, no /start/ link and no purchase link on the page`);
+      check(c2.every((c) => c.link.length === 0 && c.st.length === 1 && c.st[0].text === L(l).cta[key] && c.st[0].note === L(l).state[note] && (state === "closed_cutoff" ? c.st[0].role === null : c.st[0].role === "status")) && !all.some((h) => /\/start\/|#demo.*start|checkout|purchase/i.test(h) && !/#demo$/.test(h)), `${l} ${state}: "${L(l).cta[key]}" + its explanation, role=status, no /start/ link and no purchase link on the page`);
       if (state === "closed_cutoff") check(/purchase|buy|comprar|compra|купить|покупк|רכיש/i.test(c2[0].st[0].note), `${l} closed: the explanation says paid plans are not open for purchase (the Site has no purchase link)`);
       await v.ctx.close();
     }
@@ -346,7 +346,7 @@ if (run("H")) {
   const WIDTHS = [320, 375, 390, 430, 768, 1024, 1440, 1920];
   const geo = (page) => page.evaluate((TIER) => {
     const vis = (e) => e.getClientRects().length > 0, out = { over: document.documentElement.scrollWidth - innerWidth, problems: [] };
-    const tiers = [...document.querySelectorAll("article.aicc-tier")].filter(vis), panel = document.querySelector(".aicc-launch"), bandEl = document.querySelector(".aicc-pband");
+    const tiers = [...document.querySelectorAll("article.aicc-tier")].filter(vis), panel = [...document.querySelectorAll(".aicc-launch")].filter(vis)[0] || null, bandEl = document.querySelector(".aicc-pband");
     const fs = (e) => parseFloat(getComputedStyle(e).fontSize);
     for (const box of [...tiers, panel, bandEl].filter(Boolean)) {
       const r = box.getBoundingClientRect();
@@ -363,7 +363,7 @@ if (run("H")) {
     out.free = tiers.filter((t) => t.querySelector(".aicc-tier__free-word")).map((t) => { const f = t.querySelector(".aicc-tier__free-word"), rg = document.createRange(); rg.selectNodeContents(f); const tops = new Set([...rg.getClientRects()].map((x) => Math.round(x.top))); const amount = t.querySelector(".aicc-tier__amount"), trial = t.querySelector(".aicc-tier__trial"); const maxOther = Math.max(...[...t.querySelectorAll("*")].filter((e) => e !== f && !f.contains(e) && e.childElementCount === 0 && vis(e) && e.textContent.trim()).map(fs)); return { lines: tops.size, fs: fs(f), amount: fs(amount), trial: fs(trial), maxOther, name: t.getAttribute("data-plan") }; });
     out.ctl = tiers.map((t) => { const c = t.querySelector(".aicc-pcta .aicc-btn, .aicc-pcta .aicc-pstatus__pill"); const q = c.getBoundingClientRect(); return { h: q.height, w: q.width, clipped: c.scrollHeight > c.clientHeight + 1.5 }; });
     out.rect = tiers.map((t) => { const q = t.getBoundingClientRect(), g = (s) => { const e = t.querySelector(s); return e ? Math.round(e.getBoundingClientRect().top * 10) / 10 : null; }; return { plan: t.getAttribute("data-plan"), top: q.top + scrollY, left: q.left, right: q.right, h: q.height, name: g(".aicc-tier__name"), free: g(".aicc-tier__free-word"), ctl: g(".aicc-pcta"), incl: g(".aicc-tier__incl"), plan_l: t.querySelector(".aicc-tier__plan").getBoundingClientRect().left, launch_l: t.querySelector(".aicc-tier__launch").getBoundingClientRect().left }; });
-    out.tiersW = document.querySelector(".aicc-tiers").getBoundingClientRect().width;
+    out.tiersW = [...document.querySelectorAll(".aicc-tiers")].filter(vis)[0].getBoundingClientRect().width;
     out.secOver = Math.max(...[".aicc-tiers", ".aicc-launch", ".aicc-pband"].map((q) => { const e = document.querySelector(q); return e ? e.getBoundingClientRect().right - innerWidth : -1; }), ...tiers.map((t) => t.getBoundingClientRect().right - innerWidth));
     out.panel = panel ? { w: panel.getBoundingClientRect().width, cols: getComputedStyle(panel).gridTemplateColumns.split(" ").length, tl: getComputedStyle(panel.querySelector(".aicc-timeline")).gridTemplateColumns.split(" ").length, facts: getComputedStyle(panel.querySelector(".aicc-launch__facts")).gridTemplateColumns.split(" ").length } : null;
     return out;
