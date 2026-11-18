@@ -33,13 +33,15 @@ const pre = (l) => (l === "en" ? "" : `/${l}`);
 let failed = 0, total = 0;
 const check = (cond, msg) => { total++; if (!cond) { failed++; console.error("  FAIL " + msg); } else console.log("  ok   " + msg); };
 const END = Date.UTC(2026, 11, 31, 22, 0, 0);
+const REG_CLOSE = Date.UTC(2026, 11, 24, 0, 0, 0); // the registration cutoff 2026-12-24T00:00:00Z (CP REGISTRATION_CUTOFF_UNIX 1798070400)
+const BEFORE_CUTOFF = Date.UTC(2026, 10, 20, 12); // every state test runs on a clock BEFORE the cutoff unless it says otherwise
 const TAGS = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa", "best-practice"];
 const startOf = (l, plan) => `https://www.copilt.org${l === "en" ? "" : `/${l}`}/start/${plan ? `?plan=${plan}` : ""}`;
 const accountOf = (l) => `https://www.copilt.org${l === "en" ? "" : `/${l}`}/my-account/`;
 
 const mocks = { off: await startMock({ dir: dirs.off, port: PB }), announce: await startMock({ dir: dirs.announce, port: PB ? PB + 1 : 0 }), open: await startMock({ dir: dirs.open, port: PB ? PB + 2 : 0 }), link: await startMock({ dir: dirs.link, port: PB ? PB + 3 : 0 }) };
 const browser = await launch();
-async function view(cell, route, w, { h = 900, locale = "en", signup = "open", delay = 0, cookie = false, block = true, now = END - 86400e3, reduced = true } = {}) {
+async function view(cell, route, w, { h = 900, locale = "en", signup = "open", delay = 0, cookie = false, block = true, now = BEFORE_CUTOFF, reduced = true } = {}) {
   const m = mocks[cell];
   m.reset(); m.set({ signup, signupDelayMs: delay });
   const ctx = await browser.newContext({ viewport: { width: w, height: h }, reducedMotion: reduced ? "reduce" : "no-preference", locale: locale === "he" ? "he-IL" : "en-US" });
@@ -245,6 +247,81 @@ for (const [from, to, route] of [["en", "he", "pricing"], ["he", "es", "pricing"
   const want = `${pre(to)}/${route ? route + "/" : ""}`;
   const cs = route === "product" ? [] : await cards(page);
   check(r.path === want && r.lang.startsWith(to) && (route === "product" || (cs.length === 3 && cs.every((c) => c.st.length === 1 && c.st[0].text === SOON(to)))), `${from} -> ${to} on /${route}: lands on ${want}, html lang ${r.lang}, dir ${r.dir}${route === "product" ? "" : `, cards in ${to} ("${SOON(to)}")`}`);
+  await ctx.close();
+}
+
+// ───────── P39 round 2 (M1): the registration cutoff by the browser clock ─────────
+console.log("== from 2026-12-24T00:00:00Z the browser clock alone forces the closed text: no link, whatever the build or the status answer says");
+for (const [cell, initial] of [["announce", "coming_soon"], ["link", "link"]]) for (const answer of ["off", "http500", "badjson", "open", "waitlist", "closed_cutoff"]) {
+  const { ctx, page } = await view(cell, "/pricing/", 1440, { signup: answer, now: REG_CLOSE + 1000 });
+  const cs = await cards(page);
+  check(cs.every((c) => c.link.length === 0 && c.btns === 0 && c.st.length === 1 && c.st[0].text === L.closed && c.st[0].state === "closed_cutoff" && c.st[0].role === "status" && !c.st[0].insideAction), `${initial} build, answer ${answer}, clock 2026-12-24T00:00:01Z: every card shows the plain text "${L.closed}" (no link, no button)`);
+  const gs = await page.evaluate(() => [...document.querySelectorAll("[data-ss-getstarted]")].map((a) => a.getAttribute("href")));
+  const links = await page.evaluate(() => [...document.querySelectorAll("a")].filter((a) => /\/start\//.test(a.getAttribute("href") || "")).length);
+  check(gs.length >= 2 && gs.every((h) => h === accountOf("en")) && links === 0, `${initial} build, answer ${answer}, after the cutoff: "Get started" leads to the account page and NO link to /start/ exists (${links})`);
+  await ctx.close();
+}
+for (const l of LOCALES) {
+  const { ctx, page } = await view("announce", `${pre(l)}/pricing/`, 1440, { locale: l, signup: "open", now: REG_CLOSE + 1000 });
+  const cs = await cards(page);
+  await page.locator("#plan-stores").fill("2"); await page.waitForTimeout(250);
+  const f = await page.evaluate(() => { const fm = document.querySelector("#plan-stores").closest("form"); return { a: fm.querySelectorAll("a.aicc-btn").length, st: [...fm.querySelectorAll("[data-ss-state]")].map((e) => e.innerText.trim()) }; });
+  const band = await page.evaluate(() => { const sec = document.querySelector('[aria-labelledby="pricing-final"]'); return { a: [...sec.querySelectorAll("a")].filter((x) => /\/start\//.test(x.getAttribute("href") || "")).length, st: [...sec.querySelectorAll("[data-ss-state]")].map((e) => e.innerText.trim()) }; });
+  check(cs.every((c) => c.link.length === 0 && c.st.length === 1 && c.st[0].text === D[l].ea.ss.cta.closed) && f.a === 0 && f.st.length === 1 && f.st[0] === D[l].ea.ss.cta.closed && band.a === 0 && band.st.length === 1 && band.st[0] === D[l].ea.ss.cta.closed, `${l}: a late status answer "open" after the cutoff never makes a link: cards, finder and band all say "${D[l].ea.ss.cta.closed}"`);
+  await ctx.close();
+}
+{
+  // the boundary: the last millisecond before the cutoff is still open
+  const before = await view("announce", "/pricing/", 1440, { signup: "open", now: REG_CLOSE - 1 });
+  const cb = await cards(before.page);
+  check(cb.every((c, i) => c.link.length === 1 && c.link[0].href === startOf("en", PLANS[i].id)), "2026-12-23T23:59:59.999Z with the answer open: the cards are still links (the server accepts now < cutoff)");
+  await before.ctx.close();
+  const pr = await view("announce", "/product/", 1440, { signup: "open", now: REG_CLOSE + 1000 });
+  const g = await pr.page.evaluate(() => [...document.querySelectorAll(".aicc-hero-actions [data-ss-getstarted]")].map((a) => a.getAttribute("href")));
+  check(g.length === 1 && g[0] === accountOf("en"), "after the cutoff the Product \"Get started\" leads to the account page even when the answer is open");
+  await pr.ctx.close();
+}
+
+// ───────── P39 round 2 (H2): the Product page ended view ─────────
+console.log("== after the trial end instant the Product page shows the ordinary bands and Get started (failing status, clock 2026-12-31T22:00:01Z)");
+for (const l of ["en", "he", "es", "ru"]) {
+  const { ctx, page } = await view("announce", `${pre(l)}/product/`, 1440, { locale: l, signup: "http500", now: END + 1000 });
+  const r = await page.evaluate(() => {
+    const vis = (e) => e.getClientRects().length > 0;
+    const band = (id) => { const s = document.querySelector(`[aria-labelledby="${id}"]`); return { ss: [...s.querySelectorAll("[data-ss-band],[data-ss-state],[data-ss-dates]")].filter(vis).length, primary: [...s.querySelectorAll("a.aicc-btn--primary")].filter(vis).map((a) => a.getAttribute("href")), contact: [...s.querySelectorAll("a[href^='mailto:']")].filter(vis).length }; };
+    return { b1: band("safety-cta"), b2: band("product-final"), live: [...document.querySelectorAll("main [data-ss-getstarted],main [data-ss-band],main [data-ss-state],main [data-ss-dates],main [data-ss-terms]")].filter(vis).length, gs: [...document.querySelector(".aicc-hero-actions").querySelectorAll("a.aicc-btn--primary")].filter(vis).map((a) => a.getAttribute("href")) };
+  });
+  check(r.live === 0 && r.b1.ss === 0 && r.b2.ss === 0 && r.b1.primary.length === 1 && r.b2.primary.length === 1 && r.b1.contact >= 1 && r.b2.contact >= 1 && r.gs.length === 1 && r.gs[0] === accountOf(l), `${l} /product/ after the end: no trial band, no date line, no status text and no sign-up "Get started" is visible; the ordinary bands (See pricing + contact) and the ordinary Get started (${accountOf(l)}) are [${JSON.stringify(r)}]`);
+  await ctx.close();
+}
+
+// ───────── P39 round 2 (M3): one status request per full page load, none for client-side navigation within the TTL ─────────
+console.log("== client-side navigation reuses the status answer (one request per full page load)");
+for (const l of ["en", "he"]) {
+  const { ctx, page, m } = await view("announce", `${pre(l)}/`, 1440, { locale: l, signup: "open" });
+  await page.evaluate(() => { window.__fullLoad = 1; });
+  const hops = [`${pre(l)}/pricing/`, `${pre(l)}/product/`, `${pre(l)}/`];
+  const marks = [];
+  for (const h of hops) {
+    await page.locator(`.aicc-site-header a[href="${h}"], .aicc-site-header__links a[href="${h}"]`).first().click();
+    await page.waitForFunction((p) => location.pathname === p, h);
+    await page.waitForTimeout(500);
+    marks.push(await page.evaluate(() => window.__fullLoad === 1));
+  }
+  const n = m.calls("/signup/status", "GET").length;
+  check(marks.every(Boolean) && n === 1, `${l}: Home -> Pricing -> Product -> Home by client-side navigation (no full reload: ${marks}) makes ONE status request in total (${n})`);
+  const cs = await (async () => { await page.goto(m.url + `${pre(l)}/pricing/`, { waitUntil: "load" }); await page.waitForTimeout(400); return cards(page); })();
+  check(cs.every((c) => c.link.length === 1) && m.calls("/signup/status", "GET").length === 2, `${l}: a new full page load makes exactly one more request (${m.calls("/signup/status", "GET").length})`);
+  await ctx.close();
+}
+
+// ───────── P39 round 2 (M2): no horizontal scroll on phones, Russian included ─────────
+console.log("== no horizontal scroll at 320 / 360 / 390 px (also with Larger text) on Home, Pricing and Product, four languages");
+for (const [w, large] of [[320, false], [320, true], [360, false], [390, false]]) for (const l of LOCALES) for (const route of ["", "pricing/", "product/"]) {
+  const { ctx, page } = await view("announce", `${pre(l)}/${route}`, w, { h: 800, locale: l, signup: "off" });
+  if (large) { await page.evaluate(() => document.documentElement.setAttribute("data-aicc-text", "large")); await page.waitForTimeout(200); }
+  const r = await page.evaluate(() => ({ over: document.documentElement.scrollWidth - innerWidth, cards: [...document.querySelectorAll("article.aicc-plan")].filter((a) => a.getBoundingClientRect().right > innerWidth + 1 || a.getBoundingClientRect().left < -1 || a.scrollWidth > a.clientWidth + 1).length }));
+  check(r.over <= 0 && r.cards === 0, `${l} /${route} @${w}${large ? " + Larger text" : ""}: no horizontal scroll (+${r.over}px) and every plan card fits (${r.cards} overflowing)`);
   await ctx.close();
 }
 
