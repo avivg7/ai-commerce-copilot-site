@@ -310,9 +310,11 @@ if (out) {
     check(mode === expect, `${p}: built in mode ${mode} (expected ${expect})`);
     const hasScript = h.includes(`Date.now()>=${E}`);
     // P40: a self-service build (<html data-ss-mode="on">) may carry the launch panel's own label ("Launch offer", ss.launch.tag, English pack value) even with the launch-offer switch off: only that exact pack string is exempt, any other mention still counts
-    const ssTag = /<html[^>]*\sdata-ss-mode="on"/.test(h) ? (await loadTs("src/i18n/index.ts")).getEaDictionary("en", 0).ss.launch.tag : null;
+    const ssEn = /<html[^>]*\sdata-ss-mode="on"/.test(h) ? (await loadTs("src/i18n/index.ts")).getEaDictionary("en", 0).ss : null;
+    // P41: the planned-price pill ("Starts after the launch offer", ss.pricing.afterOffer) names the launch trial of the self-service panel the same way its tag does: exempt as an exact pack string, like the tag
+    const ssTag = ssEn ? ssEn.launch.tag : null, ssPill = ssEn ? ssEn.pricing.afterOffer : null;
     // (and the one Site rule that hides the announcement bar from the cutoff on, which every self-service build carries in its inline CSS)
-    const trace = /data-ea-(live|after|hide-live|soon|cutoff|support|limited|pill)|aicc-eabar|aicc-easupport|aicc-eabadge|Early Access|launch offer|Request Free Access|request-access/i.test(ssTag ? h.split(ssTag).join("").split("html[data-ss-closed] .aicc-eabar{visibility:hidden}").join("") : h);
+    const trace = /data-ea-(live|after|hide-live|soon|cutoff|support|limited|pill)|aicc-eabar|aicc-easupport|aicc-eabadge|Early Access|launch offer|Request Free Access|request-access/i.test(ssTag ? h.split(ssPill).join("").split(ssTag).join("").split("html[data-ss-closed] .aicc-eabar{visibility:hidden}").join("") : h);
     if (expect === "off") { check(!hasScript && !trace && !h.includes(String(C)) && !h.includes(String(S1)) && !h.includes(String(S2)), `${p}: a normal build carries no trace of the campaign (no script, no attribute, no text, no end instant)`); }
     else {
       check(hasScript, `${p}: the head script is present with the end number of step ${step} (${E})`);
