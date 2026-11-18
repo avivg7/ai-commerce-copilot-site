@@ -449,7 +449,8 @@ function ssChecks(mode, root, initial = "coming_soon") {
     // ---- P39 round 2: the Product bands and the Product "Get started" disappear after the trial end instant like Home / Pricing (launch-offer builds), and the Product bands keep the contact line of S0
     for (const id of ["safety-cta", "product-final"]) {
       const sec = sectionOf(product, id), p = nb(sec);
-      check(p.includes("support@copilt.org") && /data-commerce="closed"/.test(p), `${l} ${tag}: the Product band (${id}) keeps "Questions in the meantime? Write to support@copilt.org" (the S0 contact line)`);
+      const livePart = p.indexOf("data-ea-after") > 0 ? p.slice(0, p.indexOf("data-ea-after")) : p; // the live view only (the hidden ended view has its own contact line)
+      check(livePart.includes("support@copilt.org") && /data-commerce="closed"/.test(livePart), `${l} ${tag}: the Product band (${id}) keeps "Questions in the meantime? Write to support@copilt.org" (the S0 contact line)`);
       if (mode !== "off") {
         const live = /<div[^>]*data-ss-band[^>]*data-ea-live/.test(p), after = /<div class="aicc-stack aicc-stack--lg" data-ea-after[\s\S]*?<\/div>/.exec(p)?.[0] || "";
         check(live && after.includes("pricing/"), `${l} ${tag}: the Product band (${id}) is a live block (data-ea-live) and its ordinary replacement (data-ea-after, See pricing) exists for the ended view`);
