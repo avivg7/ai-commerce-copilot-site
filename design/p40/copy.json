@@ -1,12 +1,36 @@
 {
   "_note": "P40 pricing copy: ONLY the msgids that are NEW or CHANGED by the redesign. Every other key the redesign uses is read unchanged from scripts/snapshots/selfservice-msgids.txt (P39 pack): ss.plan.paidOne, ss.plan.paidMany, ss.plan.datesLabel, ss.plan.regLabel, ss.plan.regValue, ss.plan.endLabel, ss.plan.endValue, ss.link, ss.terms.label, ss.terms.state, ss.cta.waitlist. he/es/ru are MACHINE DRAFTS (not reviewed by native speakers), in the register of the P39 pack (he plural imperative, es usted, ru vy). Tokens: {n} {regShort} {regDate} {regLast} {until} {lastDay} are resolved with src/i18n/eaTokens.ts. status: new = new msgid, changed = same msgid as P39 with a new value.",
+  "ss.pricing.title": {
+    "status": "new (round 2)",
+    "use": "section header H2, launch variants (soon, open, waitlist, paused). Must not repeat a page H1 ('One full product. Pick how many stores.') or the band heading ('Start with one store.')",
+    "en": "Try it free on one store.",
+    "he": "נסו חינם בחנות אחת.",
+    "es": "Pruébelo gratis en una tienda.",
+    "ru": "Попробуйте бесплатно в одном магазине."
+  },
   "ss.pricing.lead": {
-    "status": "new",
-    "use": "Home plans section lead (optional; the Pricing page keeps its own hero)",
-    "en": "Every plan has every feature. You only choose how many stores to connect.",
-    "he": "בכל תוכנית יש את כל התכונות. אתם בוחרים רק כמה חנויות לחבר.",
-    "es": "Todos los planes tienen todas las funciones. Solo elige cuántas tiendas conectar.",
-    "ru": "В каждом плане есть все функции. Вы выбираете только число подключаемых магазинов."
+    "status": "changed (round 2; was 'Every plan has every feature. You only choose how many stores to connect.')",
+    "use": "section header lede, launch variants",
+    "en": "The launch trial is free and needs no payment method. Choose the plan you expect to buy later: it is only your preference.",
+    "he": "ניסיון ההשקה הוא בחינם ואינו דורש אמצעי תשלום. בחרו את התוכנית שאתם מצפים לרכוש בהמשך: זו העדפה בלבד.",
+    "es": "La prueba de lanzamiento es gratuita y no requiere método de pago. Elija el plan que espera comprar más adelante: es solo una preferencia.",
+    "ru": "Пробный период запуска бесплатный, способ оплаты не нужен. Выберите план, который вы рассчитываете купить позже: это только ваше предпочтение."
+  },
+  "ss.pricing.titleClosed": {
+    "status": "new (round 2)",
+    "use": "section header H2 once free-trial registration is closed (after the cutoff): the launch promise is no longer made",
+    "en": "Plans priced by store capacity.",
+    "he": "תוכניות לפי מספר החנויות.",
+    "es": "Planes según el número de tiendas.",
+    "ru": "Планы по числу магазинов."
+  },
+  "ss.pricing.leadClosed": {
+    "status": "new (round 2)",
+    "use": "section header lede once free-trial registration is closed (no commerce claim, so it is correct with and without paid purchase)",
+    "en": "Free trial registration has closed. Every plan has every feature; you choose how many stores to connect.",
+    "he": "ההרשמה לניסיון החינם נסגרה. בכל תוכנית יש את כל התכונות; אתם בוחרים כמה חנויות לחבר.",
+    "es": "El registro de la prueba gratuita está cerrado. Todos los planes tienen todas las funciones; usted elige cuántas tiendas conectar.",
+    "ru": "Регистрация на бесплатный пробный период закрыта. В каждом плане есть все функции; вы выбираете, сколько магазинов подключить."
   },
   "ss.pricing.fit.solo": {
     "status": "new",
@@ -201,12 +225,12 @@
     "ru": "Для любого пробного периода, в какой бы день вы его ни начали."
   },
   "ss.launch.fact.store": {
-    "status": "new",
+    "status": "changed (round 2; adds the staging rule)",
     "use": "panel fact 1",
-    "en": "The trial covers 1 store, whichever plan you choose.",
-    "he": "הניסיון כולל חנות אחת, בכל תוכנית שתבחרו.",
-    "es": "La prueba cubre 1 tienda, sea cual sea el plan que elija.",
-    "ru": "Пробный период охватывает 1 магазин, какой бы план вы ни выбрали."
+    "en": "The trial covers 1 store, whichever plan you choose. A staging site counts as a store.",
+    "he": "הניסיון כולל חנות אחת, בכל תוכנית שתבחרו. אתר בדיקות נחשב לחנות.",
+    "es": "La prueba cubre 1 tienda, sea cual sea el plan que elija. Un sitio de pruebas cuenta como una tienda.",
+    "ru": "Пробный период охватывает 1 магазин, какой бы план вы ни выбрали. Тестовая копия считается магазином."
   },
   "ss.launch.fact.payment": {
     "status": "new",

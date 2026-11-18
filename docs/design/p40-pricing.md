@@ -33,7 +33,8 @@ That plan is what a generator produces for any pricing page: three identical rou
 6. **The inactive control is a pill-shaped status region, not a faded button.** Dashed border, tinted fill, leading icon (clock / pause / lock), no arrow, no hover, not focusable, `role="status"`; a second line says what happens. It differs from the active control by shape (dashed versus solid), fill (tint versus gradient/white), icon (state icon versus trailing arrow) and words, never by colour alone.
 7. **Dates and conditions once.** One launch panel: a two-node timeline (a ring = the gate, "Registration closes"; a solid node = the end, "Trial access ends"), the last-day note, and three facts. Vertical on a phone, horizontal from 40rem. This is the only place a date appears on the page (plus the Hero pill and bar the Site already has, which carry no date).
 8. **Registration closed (after the cutoff) steps FREE back** (smaller, muted, grey glyph) so a card never advertises something that cannot be started; the purchase link or the unavailable state leads instead.
-9. **Rejected, on purpose:** a carousel on mobile (hidden content, horizontal scroll); a popularity/"most popular" claim, countdowns, scarcity counters, "save X%", a pulsing badge (owner rules); animating the slots on scroll (decorative-only motion); numbered markers 01/02/03 (the content is not a sequence, except the two milestones, which ARE a sequence and are the only ordered list); all-caps eyebrows above headings; a gradient headline accent word; a monospace face for labels; the same card chrome repeated for the panel (the panel is quieter than the cards: one border, one soft shadow, no tint).
+9. **The section header says the offer first (round 2).** H2 "Try it free on one store." plus a two-line lede (free, no payment method, the plan is only a preference). It replaces the old page-specific section titles inside the section, so it never repeats a page H1; there is no extra marker (the "Launch offer" pill is in the panel only); a closed-registration variant stops promising the trial.
+10. **Rejected, on purpose:** a carousel on mobile (hidden content, horizontal scroll); a popularity/"most popular" claim, countdowns, scarcity counters, "save X%", a pulsing badge (owner rules); animating the slots on scroll (decorative-only motion); numbered markers 01/02/03 (the content is not a sequence, except the two milestones, which ARE a sequence and are the only ordered list); all-caps eyebrows above headings; a gradient headline accent word; a monospace face for labels; the same card chrome repeated for the panel (the panel is quieter than the cards: one border, one soft shadow, no tint).
 
 ### 2.4 Tokens used (all from `brand/aicc-tokens.css`, no new token)
 
@@ -56,7 +57,7 @@ Raw colours in the section: only `rgb()` tints of token colours at 4.5 % to 12 %
 
 | Element | Size | Weight | Notes |
 |---|---|---|---|
-| Section title (optional) | `--aicc-text-3xl` | 700 | page-owned on Home/Pricing |
+| Section title (H2) | `--aicc-text-3xl` | 700 | `ss.pricing.title`; lede `--aicc-text-lg`, muted |
 | Plan name `h3` | 1.375rem | 650 | `<bdi>` isolates the Latin name in RTL |
 | Positioning line | 0.9375rem (`--aicc-text-sm`) | 400 | muted, max 3 lines at 1024 |
 | Paid capacity text | 0.9375rem | 650 | |
@@ -127,9 +128,8 @@ Conventions: `{{key}}` = a copy string by msgid (section 5); `{{plan}}` = Solo |
 
 ```html
 <section class="aicc-pricing" aria-labelledby="pricing-title" data-aicc-pricing>
-  <!-- optional: the pages keep their own SectionHeading; the kit classes exist when a page has none -->
-  <header class="aicc-pricing__head">
-    <h2 class="aicc-pricing__title" id="pricing-title">{{page title}}</h2>
+  <header class="aicc-pricing__head" data-aicc-ss="head">        <!-- reusable block, REQUIRED (round 2): it says the launch offer first -->
+    <h2 class="aicc-pricing__title" id="pricing-title">{{ss.pricing.title}}</h2>
     <p class="aicc-pricing__lead">{{ss.pricing.lead}}</p>
   </header>
 
@@ -138,6 +138,8 @@ Conventions: `{{key}}` = a copy string by msgid (section 5); `{{plan}}` = Solo |
   <section class="aicc-launch" id="free-trial" ...> <!-- 3.4: ONE per page --> </section>
 </section>
 ```
+
+Header rules. The H2 is the section heading on Home and on Pricing; it does NOT repeat a page H1 (CP `/pricing/` H1 "One full product. Pick how many stores.") or the band heading ("Start with one store."), so the page's own titles are replaced by this block inside the section (the page H1 stays). The English lede is two lines at 1440: "The launch trial is free and needs no payment method. Choose the plan you expect to buy later: it is only your preference." Dates never appear here (they live in the launch panel only). There is deliberately NO "Launch offer" marker in the header: the pill lives in the panel (one place only), and the H2 itself (free, one store) is what reads at a glance. State variants: while registration is not closed (soon, open, waitlist, paused) the header is `ss.pricing.title` / `ss.pricing.lead`; once registration is closed (after the cutoff, with or without paid purchase) and in the ordinary after-trial view it is `ss.pricing.titleClosed` ("Plans priced by store capacity.") / `ss.pricing.leadClosed` ("Free trial registration has closed. Every plan has every feature; you choose how many stores to connect."), so the page never keeps promising a free trial that cannot be started. The lede makes no commerce claim, so it is correct with paid purchase open or closed.
 
 `id="free-trial"` stays the target of the announcement-bar link and of every "How the free trial works" link (one id per page).
 
@@ -303,7 +305,7 @@ Namespaces were chosen to avoid every existing class: ``node scripts/check-brand
 | Block / element | Modifiers | Purpose |
 |---|---|---|
 | `.aicc-pricing` | | the section; sets `--aicc-tier-px` (card side padding, `min(1.5rem, 6vw)`, 1.375rem at 62rem+), scoped `box-sizing`, zero-specificity resets, scoped `.aicc-sr-only` |
-| `.aicc-pricing__head`, `__title`, `__lead` | | optional header (pages may keep their own) |
+| `.aicc-pricing__head`, `__title`, `__lead` | | the section header block (required): H2 plus a one or two line lede; `max-inline-size` 46rem / 44rem |
 | `.aicc-tiers` | | the plan grid. Phone 1 column; 40rem to 61.99rem each plan is a row; 62rem+ three columns, 7 shared rows (subgrid) |
 | `.aicc-tier` | `--featured` (Studio), `--closed` (registration closed or paused: FREE steps back; also applied without the class through `:has()` on the control's `data-ss-state` = `closed_cutoff|paused`), `--standard` (ordinary card after the trial end) | one plan (`article`) |
 | `.aicc-tier__plan` | | plan zone (tinted) |
@@ -329,7 +331,7 @@ Namespaces were chosen to avoid every existing class: ``node scripts/check-brand
 | Attribute | Where | Values |
 |---|---|---|
 | `data-aicc-pricing` | `section.aicc-pricing` | presence |
-| `data-aicc-ss` | the CP's existing hook family, now on both surfaces | `plans`, `paid`, `regular`, `free`, `launch`, `band` |
+| `data-aicc-ss` | the CP's existing hook family, now on both surfaces | `head`, `plans`, `paid`, `regular`, `free`, `launch`, `band` |
 | `data-plan` | `article.aicc-tier` | `solo|studio|agency` |
 | `data-featured` | Studio's article | presence |
 | `data-ss-cta` | `.aicc-pcta` | `link|status|purchase` (what kind of control) |
@@ -373,6 +375,7 @@ Without subgrid support (`@supports not (grid-template-rows: subgrid)`) the thre
 * Prices and names: `<bdi>` around the plan name and the amount (`$199` stays readable); Hebrew times keep the P39 left-to-right isolate (U+2066 ... U+2069) and the no-break space inside the existing `ss.plan.regValue/endValue` strings, which the panel renders unchanged.
 * Hebrew FREE ("חינם") is 2.6 em wide, so it can be the largest; Hebrew letter-spacing is 0 (tracking only on Latin and Cyrillic).
 * The status pill label and the note are centred (neutral in RTL).
+* Checked in the browser (he): the timeline mirrors (step 1 "Registration closes" on the right with the ring, the rail running left to the solid node), the vertical phone timeline puts its nodes on the right, and the dates read "24 בדצמבר 2026 בשעה 00:00 UTC" / "31 בדצמבר 2026 בשעה 22:00 UTC" in the right order. The pack strings carry U+2066 ... U+2069 around the time (the P39 isolates): the prototype output contains them (counted per page by `design/p40/modes.mjs`), and the doc tables below strip them only for display.
 
 ### 4.5 Motion
 
@@ -384,7 +387,7 @@ No entrance animation, no scroll animation, no looping animation, nothing decora
 * Forced colours: card and panel borders `CanvasText`, Studio a 3px `Highlight` border, badge/tag get a `ButtonText` border, the pill a 2px dashed `GrayText` border, glyphs and timeline nodes borders only (`Highlight` / `GrayText`), the rail a `CanvasText` border; the kit button rule applies to the links.
 * Print: three columns, no shadows or tints, black borders, links as plain bordered boxes.
 * Text spacing (WCAG 1.4.12: line-height 1.5, letter-spacing 0.12em, word-spacing 0.16em, paragraph spacing 2em): no clipping, no overflow, four languages at 390.
-* Larger text (root 125 % and 200 %) at 320 and 390: no clipping and no horizontal overflow (geometry check, below). At 200 % on a 320 px screen the Russian control label may break inside a long word: this is the documented worst case (an effective 160 px layout), nothing is cut.
+* Larger text (root 125 % and 200 %) at 320 and 390: no clipping and no horizontal overflow (geometry check, below). At 125 % text on a 320 px screen FREE (БЕСПЛАТНО included) still fits on one line and stays the largest word of its card. At 200 % on a 320 px screen (an effective 160 px layout) FREE is sized down to fit its card (about 29 px) and is then no longer clearly larger than the 32 px trial line, and the Russian control label may break inside a long word: nothing is cut or overflowing, but dominance is lost in that single worst case (the alternative, a word that does not fit, would clip or break БЕСПЛАТНО).
 
 ## 5. Copy: every string, with its stable msgid
 
@@ -394,7 +397,10 @@ Rules followed: dates appear ONCE per page (the launch panel; no date in a card,
 
 | msgid | status | en | he | es | ru |
 |---|---|---|---|---|---|
-| `ss.pricing.lead` | new | Every plan has every feature. You only choose how many stores to connect. | בכל תוכנית יש את כל התכונות. אתם בוחרים רק כמה חנויות לחבר. | Todos los planes tienen todas las funciones. Solo elige cuántas tiendas conectar. | В каждом плане есть все функции. Вы выбираете только число подключаемых магазинов. |
+| `ss.pricing.title` | new (round 2) | Try it free on one store. | נסו חינם בחנות אחת. | Pruébelo gratis en una tienda. | Попробуйте бесплатно в одном магазине. |
+| `ss.pricing.lead` | changed (round 2; was 'Every plan has every feature. You only choose how many stores to connect.') | The launch trial is free and needs no payment method. Choose the plan you expect to buy later: it is only your preference. | ניסיון ההשקה הוא בחינם ואינו דורש אמצעי תשלום. בחרו את התוכנית שאתם מצפים לרכוש בהמשך: זו העדפה בלבד. | La prueba de lanzamiento es gratuita y no requiere método de pago. Elija el plan que espera comprar más adelante: es solo una preferencia. | Пробный период запуска бесплатный, способ оплаты не нужен. Выберите план, который вы рассчитываете купить позже: это только ваше предпочтение. |
+| `ss.pricing.titleClosed` | new (round 2) | Plans priced by store capacity. | תוכניות לפי מספר החנויות. | Planes según el número de tiendas. | Планы по числу магазинов. |
+| `ss.pricing.leadClosed` | new (round 2) | Free trial registration has closed. Every plan has every feature; you choose how many stores to connect. | ההרשמה לניסיון החינם נסגרה. בכל תוכנית יש את כל התכונות; אתם בוחרים כמה חנויות לחבר. | El registro de la prueba gratuita está cerrado. Todos los planes tienen todas las funciones; usted elige cuántas tiendas conectar. | Регистрация на бесплатный пробный период закрыта. В каждом плане есть все функции; вы выбираете, сколько магазинов подключить. |
 | `ss.pricing.fit.solo` | new | For independent stores ready to make smarter recommendations | לחנויות עצמאיות שמוכנות להמליץ חכם יותר | Para tiendas independientes listas para recomendar mejor | Для независимых магазинов, готовых давать более точные рекомендации |
 | `ss.pricing.fit.studio` | new | For growing merchants managing multiple storefronts | לסוחרים בצמיחה שמנהלים כמה חנויות | Para comerciantes en crecimiento que gestionan varias tiendas | Для растущих продавцов, которые ведут несколько магазинов |
 | `ss.pricing.fit.agency` | new | For teams managing a portfolio of client stores | לצוותים שמנהלים מערך של חנויות לקוחות | Para equipos que gestionan una cartera de tiendas de clientes | Для команд, которые ведут портфель клиентских магазинов |
@@ -419,7 +425,7 @@ Rules followed: dates appear ONCE per page (the launch panel; no date in a card,
 | `ss.launch.sub` | new | Whichever plan you pick, the trial is the same. The plan is only your preference. | בכל תוכנית שתבחרו הניסיון זהה. התוכנית היא העדפה בלבד. | Sea cual sea el plan que elija, la prueba es la misma. El plan es solo una preferencia. | Какой бы план вы ни выбрали, пробный период одинаков. План означает только ваше предпочтение. |
 | `ss.launch.regNote` | new | The last day to start a trial is {regLast} (UTC). | היום האחרון להתחיל ניסיון הוא {regLast} (UTC). | El último día para empezar una prueba es el {regLast} (UTC). | Последний день, когда можно начать пробный период, это {regLast} (UTC). |
 | `ss.launch.endNote` | new | For every trial, whichever day you started. | לכל ניסיון, בלי קשר ליום שבו התחלתם. | Para cada prueba, sea cual sea el día en que la empezó. | Для любого пробного периода, в какой бы день вы его ни начали. |
-| `ss.launch.fact.store` | new | The trial covers 1 store, whichever plan you choose. | הניסיון כולל חנות אחת, בכל תוכנית שתבחרו. | La prueba cubre 1 tienda, sea cual sea el plan que elija. | Пробный период охватывает 1 магазин, какой бы план вы ни выбрали. |
+| `ss.launch.fact.store` | changed (round 2; adds the staging rule) | The trial covers 1 store, whichever plan you choose. A staging site counts as a store. | הניסיון כולל חנות אחת, בכל תוכנית שתבחרו. אתר בדיקות נחשב לחנות. | La prueba cubre 1 tienda, sea cual sea el plan que elija. Un sitio de pruebas cuenta como una tienda. | Пробный период охватывает 1 магазин, какой бы план вы ни выбрали. Тестовая копия считается магазином. |
 | `ss.launch.fact.payment` | new | No payment method is required, so nothing is charged. | לא נדרש אמצעי תשלום, ולכן לא נגבה דבר. | No hace falta método de pago, así que no se cobra nada. | Способ оплаты не нужен, поэтому ничего не списывается. |
 | `ss.launch.fact.noAuto` | new | No automatic conversion to a paid plan. Continuing is your decision. | אין מעבר אוטומטי לתוכנית בתשלום. ההמשך הוא החלטה שלכם. | No pasa automáticamente a un plan de pago. Seguir es decisión suya. | Автоматического перехода на платный план нет. Продолжить или нет, решаете вы. |
 | `ss.launch.foot.paid` | new | Paid plans are not open for purchase yet. Their regular prices apply once they open. | רכישות בתשלום עדיין אינן פתוחות. המחירים הרגילים יחולו כשייפתחו. | Las compras de pago aún no están abiertas. Los precios regulares se aplicarán cuando se abran. | Платные планы пока нельзя купить. Обычные цены начнут действовать, когда покупка станет доступна. |
@@ -445,7 +451,7 @@ Rules followed: dates appear ONCE per page (the launch panel; no date in a card,
 
 ### 5.3 Reused from the main dictionary (not part of the ss pack)
 
-`common.soon.label` ('Purchases open soon', the ordinary status after the trial end). Page-owned and untouched: the section title and lead of Home/Pricing, the hero (pill, support lines, 'Try Live Demo', 'See Pricing'), the announcement bar (`ss.bar.*`), the finder, the FAQ.
+`common.soon.label` ('Purchases open soon', the ordinary status after the trial end). Page-owned and untouched: the page H1s (Pricing: "One full product. Pick how many stores."), the closing band heading, the hero (pill, support lines, 'Try Live Demo', 'See Pricing'), the announcement bar (`ss.bar.*`), the finder, the FAQ.
 
 ### 5.4 Retired msgids (no longer rendered by the redesigned section)
 
@@ -467,11 +473,12 @@ States rendered: off, open, waitlist, closed, paused, purchase, ended; plus the 
 
 Results of the final run (`design/p40/geometry.mjs --axe`: 392 checks, 0 failing; `modes.mjs`: all pass):
 
-* **No horizontal overflow, no clipping**: for every language x 7 states x widths 320, 375, 390, 430, 768, 1024, 1440, 1920, and additionally root font size 125 % and 200 % at 320 and 390: the page does not overflow; no element inside a card, the panel or the band has `scrollWidth > clientWidth + 1`, sticks out of its container, or has a text line outside it; cards and panel have `scrollHeight <= clientHeight` (cards use `overflow: hidden`, so this is the real clipping test). The Russian БЕСПЛАТНО is covered (it is the widest word).
+* **No horizontal overflow, no clipping**: for every language x 7 states x widths 320, 375, 390, 430, 768, 1024, 1440, 1920, and additionally root font size 125 % and 200 % at 320 and 390: the page does not overflow; no element inside the header, a card, the panel or the band has `scrollWidth > clientWidth + 1`, sticks out of its container, or has a text line outside it; cards and panel have `scrollHeight <= clientHeight` (cards use `overflow: hidden`, so this is the real clipping test). The Russian БЕСПЛАТНО is covered (it is the widest word).
 * **Desktop alignment** (1024, 1440, 1920): name, capacity, price, FREE, control and footer tops are identical across the three cards in every language and state (subgrid; difference 0 to 1 px).
-* **Card height**: 536 px (Studio 556 px with its raise) at 1440 and 534 px at 390 in English (Hebrew 514, Spanish 536, Russian 525 to 536), against about 790 px and about 825 px before. Whole plans section including header, panel and terms: 1652 px to 1190 px at 1440 and 3623 px to 2798 px at 390 (English; `compare/COMPARE-*.png`).
+* **Card height**: 536 px (Studio 556 px with its raise) at 1440 and 534 px at 390 in English (Hebrew 514, Spanish 536, Russian 525 to 536), against about 790 px and about 825 px before. Whole plans section including header, panel and terms: 1652 px to 1136 px at 1440 and 3623 px to 2779 px at 390 (now including the new header) (English; `compare/COMPARE-*.png`).
 * **axe-core** (wcag2a, 2aa, 21aa, 22aa, best-practice; `page-has-heading-one` disabled because the prototype has no page `h1`): 0 violations in four languages x 7 states at 390 and 1440, and 0 violations with `data-aicc-contrast="high"` (open, off, closed). axe reports `color-contrast` as *incomplete* only for the Studio card (its background is a gradient, which axe cannot evaluate). Those pairs were computed instead: ink on white 17.9:1; muted `#475569` on the plan zone 7.1:1 and on the darkest part of Studio's wash 6.5:1; success `#047857` on white 5.48:1 and on `--aicc-success-bg` 5.21:1; status pill `#334155` on `#f1f5f9` 9.5:1 and Studio's `#1d4ed8` on `#eff6ff` 6.2:1; white on the AA gradient 5.17:1 to 5.48:1 (badge and primary control; the kit's own default gradient ends at 4.58:1); band lead 18.7:1 and note 12.6:1 on `#0b1220`; blue glyph border 6.7:1 on white (graphic). The dashed pill border (1.4:1) and the empty-slot outline (1.5:1) are decorative: the control is not interactive, and the state is carried by icon and words.
 * **Keyboard**: in the three link states there are exactly four tab stops in section order (Solo, Studio, Agency, band), each with a 2px focus ring and a 56px target (>= 44); in the soon / closed / paused / ended states there are zero tab stops in the section (the status region is not focusable). Targets: every link is 56px tall (kit `min-block-size: 3.5rem`).
+* **Hebrew**: `modes.mjs` asserts the timeline mirrors (horizontal 1440: step 1 on the right; vertical 390: nodes on the right) and that both date strings keep the U+2066/U+2069 isolates.
 * **Reduced motion**: transition durations 0.00001 s, no running animations. **WCAG 1.4.12 text spacing**: no clipping in four languages at 390. **Forced colours** and **print**: screenshots in `modes/`.
 * **Kit hygiene**: collision check against the CP theme passes; kit a11y/sync/tokens tests pass; the new CSS uses logical properties only (no `left`/`right`/`margin-left`/`padding-right`, no direction-specific gradient).
 
@@ -486,7 +493,7 @@ Not verified here (honest list): real screen readers (VoiceOver / NVDA / TalkBac
 * The card's closed look needs no JavaScript: the kit styles `.aicc-tier:has([data-ss-state="closed_cutoff"], [data-ss-state="paused"])`, so the client control only has to render `data-ss-state` (the server markup may also add `aicc-tier--closed`; both give the same result).
 * Delete from `Ss.tsx` the inline `SS_CSS` rules that exist only for the old cards (`.aicc-plan__*`, `.aicc-sstate`, `.aicc-ssdates*`, `.aicc-plans` column hack) once nothing renders them; the kit replaces them. Do not touch `src/styles/aicc.css` plan rules used by the OFF/launch-offer/ordinary cards.
 * `PricingCard`: keep as is for every non-self-service view; the self-service branch (`ss`) moves out of it. `SsDemoLink` and every per-card demo link go. `SsTerms` becomes the panel; `SsDates` is no longer needed (the finder's result drops its dates; it should show the plan and its paid capacity only).
-* Home: the plans `Section` keeps its `SectionHeading` (page title) and may use `ss.pricing.lead`; The panel carries `id="free-trial"` once per page (it is the target of the bar link and of every "How the free trial works" link, as today). Pricing: panel directly under the cards, then the page's own "All prices are in US dollars (USD)..." note.
+* Home and Pricing: in the self-service view the header block of 3.1 replaces the plans `SectionHeading` (the Pricing H1 and the Home hero stay). The panel carries `id="free-trial"` once per page (it is the target of the bar link and of every "How the free trial works" link, as today). Pricing: panel directly under the cards, then the page's own "All prices are in US dollars (USD)..." note.
 * Apply `data-ea-live` / `data-ea-after` as in 3.3 (launch-only parts live; ordinary control after).
 
 ### 7.2 Control Plane theme (Stage C: PHP)
@@ -515,7 +522,7 @@ The Site's "OFF byte-identity base" and every export fingerprint must be rebuilt
 ## 9. Open items for the coordinator / next stages
 
 1. **he / es / ru copy** needs native review before any claim of review; the new strings are marked machine drafts like P39.
-2. **Positioning lines are marketing copy**, taken from the brief's examples ('For independent stores ready to make smarter recommendations', ...). They replace the P39 lines 'One live store. A staging site counts as a second store.' etc.; the staging-counts-as-a-store fact therefore leaves the cards. It is still stated on the Pricing page ('How store slots work') and in the FAQ; the coordinator may want it back as a one-line note near the capacity text.
+2. **Positioning lines are marketing copy**, taken from the brief's examples ('For independent stores ready to make smarter recommendations', ...). They replace the P39 lines 'One live store. A staging site counts as a second store.' etc. The staging rule is kept (round 2) in the shared panel, fact 1: "The trial covers 1 store, whichever plan you choose. A staging site counts as a store." (it adds no height to any card). It is also covered, as before, by the Pricing page's 'How store slots work' ("Staging and production count as separate stores") and by the FAQ ('What counts as a store?'). The paid capacity text on the cards is unchanged.
 3. **'Recommended'** replaces 'Built for multiple stores' (decision [C]); confirm that `common.plan.recommended` is no longer used by the self-service view (the OFF/ordinary cards still use it).
 4. **Asset version (CP)**: see 7.2: the kit change alters `?ver=` on every CP page; decide how the 24-page byte-identity gate treats it.
 5. **Strike detectors** need the two new markers (3.6) so the counsel gate cannot be bypassed by the new markup.

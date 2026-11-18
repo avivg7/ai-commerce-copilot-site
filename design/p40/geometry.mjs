@@ -21,7 +21,7 @@ const measure = () => {
   const R = (el) => el.getBoundingClientRect();
   const doc = document.documentElement;
   if (doc.scrollWidth > doc.clientWidth + 1) out.push(`page overflows horizontally: scrollWidth ${doc.scrollWidth} > ${doc.clientWidth}`);
-  for (const root of document.querySelectorAll(".aicc-tier, .aicc-launch, .aicc-pband")) {
+  for (const root of document.querySelectorAll(".aicc-pricing__head, .aicc-tier, .aicc-launch, .aicc-pband")) {
     const rr = R(root);
     if (root.scrollWidth > root.clientWidth + 1) out.push(`${root.className.split(" ")[0]} scrollWidth ${root.scrollWidth} > clientWidth ${root.clientWidth}`);
     if (root.scrollHeight > root.clientHeight + 1) out.push(`${root.className.split(" ")[0]} scrollHeight ${root.scrollHeight} > clientHeight ${root.clientHeight}`);
@@ -36,7 +36,7 @@ const measure = () => {
     }
   }
   // text lines inside nodes must not exceed the card: check every text node's range
-  for (const root of document.querySelectorAll(".aicc-tier, .aicc-launch, .aicc-pband")) {
+  for (const root of document.querySelectorAll(".aicc-pricing__head, .aicc-tier, .aicc-launch, .aicc-pband")) {
     const rr = R(root);
     const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
     let n;

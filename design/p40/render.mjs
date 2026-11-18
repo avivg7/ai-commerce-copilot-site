@@ -136,9 +136,10 @@ export function band({ lang, state }) {
 </div>`;
 }
 
-export function pricingSection({ lang, state, commerce, strike = false, title = "One full product. Priced by how many stores." }) {
+export function pricingSection({ lang, state, commerce, strike = false }) {
   const cs = state === "purchase" ? "open" : commerce || "closed";
-  const head = `<header class="aicc-pricing__head"><h2 class="aicc-pricing__title" id="pricing-title">${esc(title)}</h2><p class="aicc-pricing__lead">${T("ss.pricing.lead", lang)}</p></header>`;
+  const closed = ["closed", "purchase", "ended"].includes(state);   // registration closed (after the cutoff): the launch promise is not made in the header
+  const head = `<header class="aicc-pricing__head" data-aicc-ss="head"><h2 class="aicc-pricing__title" id="pricing-title">${T(closed ? "ss.pricing.titleClosed" : "ss.pricing.title", lang)}</h2><p class="aicc-pricing__lead">${T(closed ? "ss.pricing.leadClosed" : "ss.pricing.lead", lang)}</p></header>`;
   const cards = PLANS.map((p) => card({ lang, plan: p.id, state, strike })).join("\n");
   return `<section class="aicc-pricing" aria-labelledby="pricing-title" data-aicc-pricing>
 ${head}
@@ -149,12 +150,6 @@ ${state === "ended" ? "" : launchPanel({ lang, commerce: cs })}
 </section>`;
 }
 
-const TITLES = {
-  en: "One full product. Priced by how many stores.",
-  he: "מוצר מלא אחד. המחיר נקבע לפי מספר החנויות.",
-  es: "Un producto completo. El precio depende de cuántas tiendas.",
-  ru: "Один полный продукт. Цена зависит от числа магазинов.",
-};
 const BAND_TITLES = { en: "Start with one store.", he: "מתחילים עם חנות אחת.", es: "Empiece con una tienda.", ru: "Начните с одного магазина." };
 
 export function page({ lang = "en", state = "off", strike = false, extraCss = "" }) {
@@ -162,7 +157,7 @@ export function page({ lang = "en", state = "off", strike = false, extraCss = ""
   const body = `<main>
 <section class="h-section h-section--sunken">
   <div class="h-container">
-${pricingSection({ lang, state, strike, title: TITLES[lang] })}
+${pricingSection({ lang, state, strike })}
   </div>
 </section>
 <section class="h-section h-section--inverse" aria-labelledby="final-title">

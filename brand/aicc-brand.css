@@ -1036,7 +1036,7 @@ html.aicc-scroll-lock { overflow: hidden; scrollbar-gutter: stable; }
 /* Section header (optional: a page may keep its own SectionHeading) */
 .aicc-pricing__head { max-inline-size: 46rem; margin-block-end: var(--aicc-space-6); }
 .aicc-pricing__title { font-size: var(--aicc-text-3xl); font-weight: 700; line-height: 1.12; letter-spacing: var(--aicc-tracking-display); text-wrap: balance; color: var(--aicc-text); }
-.aicc-pricing__lead { margin-block-start: var(--aicc-space-4); max-inline-size: 40rem; font-size: var(--aicc-text-lg); line-height: 1.55; color: var(--aicc-text-muted); text-wrap: pretty; }
+.aicc-pricing__lead { margin-block-start: var(--aicc-space-4); max-inline-size: 44rem; font-size: var(--aicc-text-lg); line-height: 1.55; color: var(--aicc-text-muted); text-wrap: pretty; }
 
 /* ── Store capacity glyphs: the unit of price is the STORE. Ten slots = the largest plan; filled = paid capacity of the plan (blue); the green single slot = the launch trial's one store.
       Decorative (aria-hidden); the words next to them carry the meaning. Borders only, so they survive forced colours. ── */

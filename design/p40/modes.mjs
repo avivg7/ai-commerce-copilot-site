@@ -73,6 +73,17 @@ const log = (ok, msg) => { if (!ok) fails++; console.log(`${ok ? "ok  " : "FAIL"
   }
   await ctx.close();
 }
+// 4b. Hebrew: the timeline mirrors (step 1 on the right, also stacked vertically on a phone, nodes on the right) and both time strings keep the P39 isolates (U+2066 ... U+2069)
+{
+  for (const w of [1440, 390]) {
+    const ctx = await b.newContext({ viewport: { width: w, height: 900 } });
+    const p = await ctx.newPage();
+    await p.goto(url("he", "open"));
+    const r = await p.evaluate(() => { const st = [...document.querySelectorAll(".aicc-timeline__step")].map((e) => e.getBoundingClientRect()); const nodes = [...document.querySelectorAll(".aicc-timeline__node")].map((e) => e.getBoundingClientRect()); const dates = [...document.querySelectorAll(".aicc-timeline__date")].map((e) => e.textContent); return { horiz: st[0].right > st[1].right && st[0].top === st[1].top, vert: st[0].top < st[1].top, nodeRight: nodes[0].left > innerWidth / 2 && nodes[1].left > innerWidth / 2, iso: dates.every((t) => t.includes("\u2066") && t.includes("\u2069")) }; });
+    log(r.iso && (w > 700 ? r.horiz : r.vert && r.nodeRight), `Hebrew timeline @${w}: ${JSON.stringify(r)}`);
+    await ctx.close();
+  }
+}
 // 5. forced colours + print screenshots
 {
   const ctx = await b.newContext({ viewport: { width: 1200, height: 900 }, forcedColors: "active" });
