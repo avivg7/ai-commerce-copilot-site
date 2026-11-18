@@ -1,6 +1,7 @@
 import type { Locale } from "@/i18n/config";
 import { EA_BUILD_MS, EA_END_UTC_MS, eaIsOver } from "./earlyAccess";
-import { SITE_URL, localizeAccountUrl, type PlanId } from "./site";
+import { SITE_URL, localizeAccountUrl, withBase, type PlanId } from "./site";
+import { journeyPath, withPlanParam } from "./ssJourney";
 import { parseSsInitial, SS_REG_CLOSE_MS } from "./ssStatus";
 
 /**
@@ -56,4 +57,12 @@ export function startUrl(locale: Locale, plan?: PlanId): string {
   const head = hash === -1 ? base : base.slice(0, hash);
   const frag = hash === -1 ? "" : base.slice(hash);
   return `${head}${head.includes("?") ? "&" : "?"}plan=${plan}${frag}`;
+}
+
+/**
+ * P41: the journey page of this site (`/<lang>/get-started/`, src/lib/ssJourney.ts) with the plan as a plain preselection: where "See how it works" and the header "Get started" lead while registration is not open.
+ * A same-origin page of this export (basePath applied), so it exists in every self-service build and never 404s.
+ */
+export function journeyUrl(locale: Locale, plan?: PlanId): string {
+  return withPlanParam(withBase(journeyPath(locale)), plan);
 }

@@ -5,7 +5,7 @@ import { geistExt, geistLatin } from "../fonts";
 import { LOCALES, LOCALE_META, DEFAULT_LOCALE } from "@/i18n/config";
 import { getDictionary } from "@/i18n";
 import { allStaticParams, parseSlug } from "@/lib/routes";
-import { isRequestRoute, parseRequestSlug, requestStaticParams } from "@/lib/requestRoutes";
+import { isRequestRoute, isSsRoute, parseRequestSlug, parseSsSlug, requestStaticParams, ssStaticParams } from "@/lib/requestRoutes";
 import { SkipLink } from "@/components/ui/SkipLink";
 import { SiteHeader } from "@/components/layout/SiteHeader";
 import { BrandInit } from "@/components/brand/BrandInit";
@@ -21,7 +21,7 @@ import { EA_HERO_CSS, EA_P34_CSS, EaBar } from "@/components/ea/Ea";
 
 export const dynamicParams = false;
 export function generateStaticParams() {
-  return [...allStaticParams(), ...requestStaticParams()];
+  return [...allStaticParams(), ...requestStaticParams(), ...ssStaticParams()];
 }
 
 /** Applies saved accessibility preferences before first paint (no flash). Tiny, first-party, no network. */
@@ -35,7 +35,7 @@ export default async function RootLayout({
   params: Promise<{ slug?: string[] }>;
 }) {
   const { slug } = await params;
-  const parsed = parseSlug(slug) ?? parseRequestSlug(slug) ?? { locale: DEFAULT_LOCALE, route: "home" as const };
+  const parsed = parseSlug(slug) ?? parseRequestSlug(slug) ?? parseSsSlug(slug) ?? { locale: DEFAULT_LOCALE, route: "home" as const };
   const { locale, route } = parsed;
   const t = getDictionary(locale);
   const meta = LOCALE_META[locale];
@@ -72,7 +72,7 @@ export default async function RootLayout({
       </head>
       <body>
         <SkipLink label={t.common.skip} />
-        <LanguageSuggestion locale={locale} route={isRequestRoute(route) ? "home" : route} strings={suggest} />
+        <LanguageSuggestion locale={locale} route={isRequestRoute(route) || isSsRoute(route) ? "home" : route} strings={suggest} />
         <SiteHeader locale={locale} route={route} t={t} />
         <BrandInit />
         <main id="main" tabIndex={-1}>

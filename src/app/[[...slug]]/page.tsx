@@ -3,7 +3,8 @@ import { notFound } from "next/navigation";
 import { LOCALES, LOCALE_META, type Locale } from "@/i18n/config";
 import { getDictionary } from "@/i18n";
 import { allStaticParams, parseSlug, type RouteId } from "@/lib/routes";
-import { isRequestRoute, parseRequestSlug, requestStaticParams } from "@/lib/requestRoutes";
+import { isRequestRoute, isSsRoute, parseRequestSlug, parseSsSlug, requestStaticParams, ssStaticParams } from "@/lib/requestRoutes";
+import { journeyPath } from "@/lib/ssJourney";
 import { SITE_URL, absoluteUrl } from "@/lib/site";
 import { EA_ON } from "@/lib/earlyAccess";
 import { SS_ON } from "@/lib/selfService";
@@ -14,12 +15,13 @@ import { ProductPage } from "@/components/pages/ProductPage";
 import { PricingPage } from "@/components/pages/PricingPage";
 import { QuestionsPage } from "@/components/pages/QuestionsPage";
 import { LegalPage } from "@/components/pages/LegalPage";
+import { GetStartedPage } from "@/components/pages/GetStartedPage";
 
 type Params = { slug?: string[] };
 
 export const dynamicParams = false;
 export function generateStaticParams() {
-  return [...allStaticParams(), ...requestStaticParams()];
+  return [...allStaticParams(), ...requestStaticParams(), ...ssStaticParams()];
 }
 
 const META_KEY: Record<RouteId, "home" | "product" | "pricing" | "dataTrust" | "privacy" | "terms" | "refund" | "accessibility" | "questions"> = {
@@ -36,10 +38,44 @@ const META_KEY: Record<RouteId, "home" | "product" | "pricing" | "dataTrust" | "
 
 export async function generateMetadata({ params }: { params: Promise<Params> }): Promise<Metadata> {
   const slugParts = (await params).slug;
-  const parsed = parseSlug(slugParts) ?? parseRequestSlug(slugParts);
+  const parsed = parseSlug(slugParts) ?? parseRequestSlug(slugParts) ?? parseSsSlug(slugParts);
   if (!parsed) return {};
   const { locale, route } = parsed;
   const t = getDictionary(locale);
+  if (isSsRoute(route)) {
+    // P41: the journey page: indexable, four languages with hreflang, canonical on the www origin; its social card is the Home card of the same language
+    const jm = t.ea.journey.meta;
+    const url = `${SITE_URL}${journeyPath(locale)}`;
+    const languages: Record<string, string> = {};
+    for (const l of LOCALES) languages[LOCALE_META[l].htmlLang] = `${SITE_URL}${journeyPath(l)}`;
+    languages["x-default"] = `${SITE_URL}${journeyPath("en")}`;
+    const ogImage = `${SITE_URL}/og/${locale}-home.jpg`;
+    return {
+      title: { absolute: jm.title },
+      description: jm.description,
+      metadataBase: new URL(SITE_URL),
+      alternates: { canonical: url, languages },
+      icons: {
+        icon: [
+          { url: kitAsset("favicon.svg"), type: "image/svg+xml" },
+          { url: kitAsset("icon-192.png"), sizes: "192x192", type: "image/png" },
+        ],
+        apple: [{ url: kitAsset("icon-180.png"), sizes: "180x180" }],
+      },
+      openGraph: {
+        type: "website",
+        siteName: t.meta.siteName,
+        title: jm.title,
+        description: jm.description,
+        url,
+        locale: LOCALE_META[locale].ogLocale,
+        alternateLocale: LOCALES.filter((l) => l !== locale).map((l) => LOCALE_META[l].ogLocale),
+        images: [{ url: ogImage, width: 1200, height: 630, alt: t.meta.ogImageAlt }],
+      },
+      twitter: { card: "summary_large_image", title: jm.title, description: jm.description, images: [ogImage] },
+      robots: { index: true, follow: true },
+    };
+  }
   if (isRequestRoute(route)) {
     // the launch-offer request pages (OPEN builds only): a plain title, never indexed or followed, no Open Graph card, and the confirm link must not leak anywhere (no referrer)
     const rt = route === "request-access" ? t.ea.request.pageTitle : t.ea.request.confirm.pageTitle;
@@ -57,7 +93,7 @@ export async function generateMetadata({ params }: { params: Promise<Params> }):
       robots: "noindex,nofollow",
     };
   }
-  const m = t.meta.pages[META_KEY[route]];
+  const m = t.meta.pages[META_KEY[route as RouteId]];
   const ctx = { locale, t };
   const title = formatPlain(m.title, ctx);
   // a launch-offer build leaves the 14-day guarantee out of the Pricing description (no payment is taken, the cards say nothing about it); the text names no offer and no date, so it never goes stale
@@ -97,11 +133,14 @@ export async function generateMetadata({ params }: { params: Promise<Params> }):
 
 export default async function Page({ params }: { params: Promise<Params> }) {
   const slugParts = (await params).slug;
-  const parsed = parseSlug(slugParts) ?? parseRequestSlug(slugParts);
+  const parsed = parseSlug(slugParts) ?? parseRequestSlug(slugParts) ?? parseSsSlug(slugParts);
   if (!parsed) notFound();
   const { locale, route } = parsed;
   const t = getDictionary(locale as Locale);
   switch (route) {
+    // P41: the journey page (self-service builds only: parseSsSlug is null in every other build, so this branch is never reached there)
+    case "get-started":
+      return <GetStartedPage locale={locale} t={t} />;
     // The request pages: the import sits behind a compile-time constant (next.config.ts) so that every build but an OPEN one folds it away and carries none of their code.
     case "request-access": {
       if (process.env.NEXT_PUBLIC_AICC_EA_REQUEST_PAGES === "1") {
