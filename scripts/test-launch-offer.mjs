@@ -446,6 +446,19 @@ function ssChecks(mode, root, initial = "coming_soon") {
       check(txt.includes(norm(ss.band.lead)) && txt.includes(norm(ss.plan.regLabel)) && txt.includes(norm(ss.plan.regValue)) && txt.includes(norm(ss.plan.endLabel)) && txt.includes(norm(ss.plan.endValue)), `${l} ${tag}: the ${name} band (${id}) has its lead sentence and the two labelled dates`);
       check(!an.some((a) => /request-access/.test(a.href)) && !anchorsOf(live).some((a) => /aicc-btn--primary/.test(a.cls) && /#demo/.test(a.href) && id !== "final-title" && id !== "pricing-final"), `${l} ${tag}: the ${name} band (${id}) has no request link`);
     }
+    // ---- P39 round 2: the Product bands and the Product "Get started" disappear after the trial end instant like Home / Pricing (launch-offer builds), and the Product bands keep the contact line of S0
+    for (const id of ["safety-cta", "product-final"]) {
+      const sec = sectionOf(product, id), p = nb(sec);
+      check(p.includes("support@copilt.org") && /data-commerce="closed"/.test(p), `${l} ${tag}: the Product band (${id}) keeps "Questions in the meantime? Write to support@copilt.org" (the S0 contact line)`);
+      if (mode !== "off") {
+        const live = /<div[^>]*data-ss-band[^>]*data-ea-live/.test(p), after = /<div class="aicc-stack aicc-stack--lg" data-ea-after[\s\S]*?<\/div>/.exec(p)?.[0] || "";
+        check(live && after.includes("pricing/"), `${l} ${tag}: the Product band (${id}) is a live block (data-ea-live) and its ordinary replacement (data-ea-after, See pricing) exists for the ended view`);
+      }
+    }
+    if (mode !== "off") {
+      const hh = nb(product), i0 = hh.indexOf('class="aicc-hero-actions'), hero = hh.slice(i0, hh.indexOf("</div>", i0 + 600));
+      check(/<span style="display:contents" data-ea-live=""><a [^>]*data-ss-getstarted/.test(hero) && /<span style="display:contents" data-ea-after="(?:true)?"><a [^>]*href="https:\/\/www\.copilt\.org(\/(he|es|ru))?\/my-account\/"/.test(hero), `${l} ${tag}: the Product "Get started" is live-only (data-ea-live) and the ordinary account link is the ended view (data-ea-after)`);
+    }
     {
       const hero = nb(product).slice(nb(product).indexOf('class="aicc-hero-actions'), nb(product).indexOf("</div>", nb(product).indexOf('class="aicc-hero-actions')));
       const gs = anchorsOf(hero).find((a) => a.text === norm(dict.common.getStarted));

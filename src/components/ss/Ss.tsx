@@ -7,6 +7,7 @@ import { SS_INITIAL, SS_ON, startUrl } from "@/lib/selfService";
 import { EA_ON } from "@/lib/earlyAccess";
 import { getStartedUrl, type PlanId } from "@/lib/site";
 import { localePath } from "@/lib/routes";
+import { SoonContact } from "@/components/ui/Soon";
 
 /**
  * P37/P39 self-service presentation. Server components only (plus the client controls, imported behind the compile-time constant so a build without self-service carries none of their code).
@@ -40,6 +41,13 @@ export const SS_CSS = [
   ".aicc-ssdates--band{max-inline-size:28rem}",
   // the card's secondary demo link: a text link under the status line, clearly not the sign-up action
   ".aicc-plan__ssctl{display:grid;gap:0.75rem}",
+  // P39 round 2 (M2): the plan grid columns may shrink below their content (an implicit `auto` column grew to the width of the big Russian word and pushed the page 42 to 110 px past a 320 px screen); the long Russian FREE word is sized to the screen on phones.
+  // Self-service builds only (inline), so the CSS file and every other build stay byte-identical to S0.
+  ".aicc-plans{grid-template-columns:minmax(0,1fr)}",
+  "@media (min-width:62rem){.aicc-plans{grid-template-columns:repeat(3,minmax(0,1fr))}}",
+  ".aicc-plan{min-inline-size:0}",
+  ".aicc-plan .aicc-plan__free-word{overflow-wrap:anywhere}",
+  "@media (max-width:39.99rem){html:lang(ru) .aicc-plan .aicc-plan__free-word{font-size:clamp(1.75rem,9.5vw,3rem)}}",
   ".aicc-plan__demo{margin:0;display:flex;align-items:center;gap:0.375rem;font-size:var(--aicc-text-sm)}",
   ".aicc-plan__demo svg{flex:none}",
   ".aicc-plan__demo a{display:flex;align-items:center;inline-size:fit-content;min-block-size:2.75rem}",
@@ -106,16 +114,18 @@ export function SsTerms({ locale, t, anchor = false }: { locale: Locale; t: Dict
 }
 
 /** The closing band's lead sentence, the two labelled dates and the self-service action: used on Home, Pricing and Product while self-service is on. `children` are the extra actions (See Pricing, Live Demo). */
-export function SsBand({ locale, t, children }: { locale: Locale; t: Dictionary; children?: ReactNode }) {
+export function SsBand({ locale, t, children, contact = false }: { locale: Locale; t: Dictionary; children?: ReactNode; contact?: boolean }) {
   if (!SS_ON) return null;
   return (
-    <div className="aicc-stack aicc-stack--lg" data-ss-band>
+    // P39 round 2: a launch-offer build hides the band after the trial end instant (data-ea-live) and shows the ordinary band instead (data-ea-after, rendered by the page); `contact` = "Questions in the meantime? Write to ..." (Product bands, as in S0)
+    <div className="aicc-stack aicc-stack--lg" data-ss-band {...(EA_ON ? { "data-ea-live": "" } : {})}>
       <p className="aicc-lead" {...A(locale, "ea.ss.band")}>{t.ea.ss.band.lead}</p>
       <SsDates locale={locale} t={t} inverse band />
       <div className="aicc-hero-actions">
         <SsCtaSlot locale={locale} t={t} variant="primary" size="lg" inverse />
         {children}
       </div>
+      {contact ? <SoonContact locale={locale} t={t} inverse /> : null}
     </div>
   );
 }

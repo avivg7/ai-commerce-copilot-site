@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/Button";
 import { COMMERCE_OPEN, getStartedUrl } from "@/lib/site";
 import { SoonBandActions } from "@/components/ui/Soon";
 import { SS_INITIAL, SS_ON } from "@/lib/selfService";
+import { EA_ON } from "@/lib/earlyAccess";
 import { SsBand, SsGetStartedSlot } from "@/components/ss/Ss";
 import { Fb, Pair, Ruled, SlotRows, Strip, Track } from "@/components/blocks/Blocks";
 import { DashPreview, Flow, Loop, RecoAskPanel, RulesDemo } from "@/components/blocks/KitMounts";
@@ -53,8 +54,17 @@ export function ProductPage({ locale, t }: { locale: Locale; t: Dictionary }) {
         <PageHead locale={locale} t={t} pageName={t.common.pageNames.product} title={<span {...fb("product.hero")}>{p.hero.title}</span>} lead={<span {...fb("product.hero")}>{p.hero.lead}</span>}>
           <div className="aicc-hero-actions">
             {SS_ON ? (
-              /* P39: the account page until sign-up is known to work, then the sign-up page (never /start/ while it may be a 404, never the demo) */
-              <SsGetStartedSlot locale={locale} className="aicc-btn aicc-btn--primary aicc-btn--lg" icon={<ArrowRight size={16} className="aicc-flip" aria-hidden="true" />}>{t.common.getStarted}</SsGetStartedSlot>
+              /* P39: the account page until sign-up is known to work, then the sign-up page (never /start/ while it may be a 404, never the demo). A launch-offer build hides it after the trial end instant and shows the ordinary Get started instead. */
+              <>
+                <span style={{ display: "contents" }} {...(EA_ON ? { "data-ea-live": "" } : {})}>
+                  <SsGetStartedSlot locale={locale} className="aicc-btn aicc-btn--primary aicc-btn--lg" icon={<ArrowRight size={16} className="aicc-flip" aria-hidden="true" />}>{t.common.getStarted}</SsGetStartedSlot>
+                </span>
+                {EA_ON ? (
+                  <span style={{ display: "contents" }} data-ea-after>
+                    <Button href={getStartedUrl(locale)} variant="primary" size="lg" {...tx("common.getStarted")} icon={<ArrowRight size={16} className="aicc-flip" aria-hidden="true" />}>{t.common.getStarted}</Button>
+                  </span>
+                ) : null}
+              </>
             ) : (
               <Button href={getStartedUrl(locale)} variant="primary" size="lg" {...tx("common.getStarted")} icon={<ArrowRight size={16} className="aicc-flip" aria-hidden="true" />}>{t.common.getStarted}</Button>
             )}
@@ -276,9 +286,18 @@ export function ProductPage({ locale, t }: { locale: Locale; t: Dictionary }) {
             <div className="aicc-stack aicc-stack--lg">
               <h2 id="safety-cta" className="aicc-h2">{p.safetyCta.title}</h2>
               {SS_ON ? (
-                <SsBand locale={locale} t={t}>
-                  <Button href={localePath(locale, "pricing")} variant={SS_INITIAL === "link" ? "ghost" : "primary"} size="lg" {...tx("common.seePricing")}>{t.common.seePricing}</Button>
-                </SsBand>
+                <>
+                  <SsBand locale={locale} t={t} contact>
+                    <Button href={localePath(locale, "pricing")} variant={SS_INITIAL === "link" ? "ghost" : "primary"} size="lg" {...tx("common.seePricing")}>{t.common.seePricing}</Button>
+                  </SsBand>
+                  {/* after the trial end instant the ordinary band returns (a launch-offer build only) */}
+                  {EA_ON ? (
+                    <div className="aicc-stack aicc-stack--lg" data-ea-after>
+                      {COMMERCE_OPEN ? <p className="aicc-lead">{p.safetyCta.body}</p> : <p className="aicc-lead" {...tx("common.soon.band")}>{t.common.soon.band}</p>}
+                      {COMMERCE_OPEN ? null : <SoonBandActions locale={locale} t={t} />}
+                    </div>
+                  ) : null}
+                </>
               ) : COMMERCE_OPEN ? <p className="aicc-lead">{p.safetyCta.body}</p> : <p className="aicc-lead" {...tx("common.soon.band")}>{t.common.soon.band}</p>}
               {SS_ON ? null : COMMERCE_OPEN ? (
                 <div className="aicc-hero-actions">
@@ -372,9 +391,18 @@ export function ProductPage({ locale, t }: { locale: Locale; t: Dictionary }) {
             <div className="aicc-stack aicc-stack--lg">
               <h2 id="product-final" className="aicc-h2">{p.cta.title}</h2>
               {SS_ON ? (
-                <SsBand locale={locale} t={t}>
-                  <Button href={localePath(locale, "pricing")} variant={SS_INITIAL === "link" ? "ghost" : "primary"} size="lg" {...tx("common.seePricing")}>{t.common.seePricing}</Button>
-                </SsBand>
+                <>
+                  <SsBand locale={locale} t={t} contact>
+                    <Button href={localePath(locale, "pricing")} variant={SS_INITIAL === "link" ? "ghost" : "primary"} size="lg" {...tx("common.seePricing")}>{t.common.seePricing}</Button>
+                  </SsBand>
+                  {/* after the trial end instant the ordinary band returns (a launch-offer build only) */}
+                  {EA_ON ? (
+                    <div className="aicc-stack aicc-stack--lg" data-ea-after>
+                      {COMMERCE_OPEN ? <p className="aicc-lead">{p.cta.body}</p> : <p className="aicc-lead" {...tx("common.soon.band")}>{t.common.soon.band}</p>}
+                      {COMMERCE_OPEN ? null : <SoonBandActions locale={locale} t={t} />}
+                    </div>
+                  ) : null}
+                </>
               ) : COMMERCE_OPEN ? <p className="aicc-lead">{p.cta.body}</p> : <p className="aicc-lead" {...tx("common.soon.band")}>{t.common.soon.band}</p>}
               {SS_ON ? null : COMMERCE_OPEN ? (
                 <div className="aicc-hero-actions">
