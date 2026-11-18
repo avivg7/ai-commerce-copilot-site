@@ -51,9 +51,8 @@ const mockLink = LINK ? await startMock({ dir: LINK, port: PORT ? PORT + 1 : 0 }
 const mockBase = BASE ? await startMock({ dir: BASE, port: PORT ? PORT + 2 : 0 }) : null;
 const browser = await launch();
 async function read(m, route, w = 1440) {
-  m.set({ signup: "http404" }); // the status request fails: the build's static state stays (what a search engine, a no-JS visitor and the first paint see)
-  const ctx = await browser.newContext({ viewport: { width: w, height: 900 }, reducedMotion: "reduce" });
-  await ctx.clock.setFixedTime(new Date(Date.UTC(2026, 10, 20)));
+  // JavaScript is OFF on purpose: the page is read exactly as the static HTML says it (what a crawler, a no-JS visitor and the first paint see); React would otherwise re-render the DOM and hide an edited export
+  const ctx = await browser.newContext({ viewport: { width: w, height: 900 }, reducedMotion: "reduce", javaScriptEnabled: false });
   const page = await ctx.newPage();
   await page.goto(m.url + route, { waitUntil: "load" });
   await page.waitForTimeout(250);

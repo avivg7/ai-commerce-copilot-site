@@ -17,7 +17,8 @@ const run = (dir) => spawnSync(process.execPath, ["scripts/test-pricing-consiste
 const M = [
   ["a card states the wrong registration date (Dec 30)", "two labelled lines|exact UTC", (d) => edit(d, "pricing/index.html", (t) => t.replace("Dec 24, 2026 at 00:00 UTC", "Dec 30, 2026 at 00:00 UTC"))],
   ["the trial end is moved to 23:00 UTC (Hebrew Pricing)", "two labelled lines|exact UTC", (d) => edit(d, "he/pricing/index.html", (t) => t.replace(/22:00 UTC/g, "23:00 UTC"))],
-  ["a price changes ($199 -> $299 on the Spanish Pricing page)", "US\\$299|US\\$199|price", (d) => edit(d, "es/pricing/index.html", (t) => t.replace("US$199", "US$299"))],
+  ["a price changes everywhere on the Spanish Pricing page (199 -> 299)", "US\\$199|price", (d) => edit(d, "es/pricing/index.html", (t) => t.split("US$199").join("US$299"))],
+  ["only the first price of the Spanish Pricing page changes (the meta description)", "meta description|price", (d) => edit(d, "es/pricing/index.html", (t) => t.replace("US$199", "US$299"))],
   ["the paid capacity changes (up to 3 -> up to 5)", "Paid plan: up to 3", (d) => edit(d, "pricing/index.html", (t) => t.replace("Paid plan: up to 3 stores", "Paid plan: up to 5 stores"))],
   ["'Approved stores only' returns", "stale phrase", (d) => edit(d, "pricing/index.html", (t) => t.replace("</main>", "<p>Approved stores only</p></main>"))],
   ["'Requests close 24 hours before the offer ends' returns", "stale phrase", (d) => edit(d, "ru/pricing/index.html", (t) => t.replace("</main>", "<p>Requests close 24 hours before the offer ends.</p></main>"))],
