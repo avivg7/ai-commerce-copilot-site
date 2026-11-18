@@ -1071,8 +1071,6 @@ html.aicc-scroll-lock { overflow: hidden; scrollbar-gutter: stable; }
 .aicc-tier__price-line { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 0.5rem; }
 .aicc-tier__amount { font-size: min(2.25rem, 11vw); font-weight: 700; line-height: 1.1; letter-spacing: -0.025em; font-variant-numeric: tabular-nums; color: var(--aicc-text); }
 .aicc-tier__per { font-size: var(--aicc-text-sm); font-weight: 500; color: var(--aicc-text-muted); }
-/* feature-gated variant (never public): the regular price struck through. Default build never renders it. */
-.aicc-tier__price--strike .aicc-tier__amount { color: var(--aicc-text-muted); text-decoration: line-through; text-decoration-thickness: 2px; }
 
 /* launch zone: FREE (the dominant word), the trial allowance, then the ONE control */
 .aicc-tier__launch { display: flex; flex-direction: column; flex: 1 1 auto; min-inline-size: 0; padding: 1.375rem var(--aicc-tier-px) 1.5rem; }
@@ -1251,3 +1249,58 @@ html.aicc-scroll-lock { overflow: hidden; scrollbar-gutter: stable; }
   .aicc-pcta .aicc-btn { border: 1px solid #000; background: none; color: #000; box-shadow: none; }
 }
 /* ═══ P40 PRICING END ═══════════════════════════════════════════════════════════════════════════════════════════════════════ */
+
+/* ═══ P41 OFFER BEGIN ═══════════════════════════════════════════════════════════════════════════════════════════════════════
+   The planned annual price sits DIRECTLY above FREE (launch zone), and the control of an unopened trial is a real link (info) instead of an inert pill. Class contract additions (docs/design/p41-journey.md):
+   .aicc-tier--offer (the card carries the offer block in its launch zone: three subgrid rows plan / launch / incl = 3 + 3 + 1) .aicc-tier__offer (--planned = the compliant default, --strike = the counsel-gated variant)
+   .aicc-tier__offer-price .aicc-tier__offer-label .aicc-tier__offer-pill .aicc-tier__offer-note  .aicc-pstate (the ONE compact status line of the section).
+   ═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════ */
+.aicc-tier--offer .aicc-tier__plan { padding-block-end: 1.25rem; }
+.aicc-tier--offer .aicc-tier__launch { padding-block-start: 1.25rem; }
+.aicc-tier__offer { --aicc-offer-size: min(2.5rem, 11vw); display: grid; justify-items: start; gap: 0.375rem; margin-block-end: 0.875rem; min-inline-size: 0; }
+.aicc-tier__offer-price { max-inline-size: 100%; font-size: var(--aicc-offer-size); font-weight: 800; line-height: 1.12; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; text-wrap: balance; overflow-wrap: break-word; color: var(--aicc-slate-700); }
+.aicc-tier__offer-price .aicc-tier__amount { font-size: inherit; font-weight: inherit; letter-spacing: inherit; color: inherit; line-height: inherit; }
+.aicc-tier__offer-price .aicc-tier__per { font-size: inherit; font-weight: 600; letter-spacing: 0; color: inherit; }
+.aicc-tier__offer-price .aicc-tier__cur { font-size: 0.4em; font-weight: 650; letter-spacing: 0; white-space: nowrap; margin-inline-start: 0.4em; } /* the explicit currency (Russian "(USD)"): outside the struck text, small */
+.aicc-tier__offer-price s { text-decoration-line: line-through; text-decoration-style: solid; text-decoration-skip-ink: none; }
+.aicc-tier__offer-label { font-size: 1rem; font-weight: 600; line-height: 1.4; color: var(--aicc-slate-700); text-wrap: pretty; } /* label >= 14 px and >= 35 % of the amount (2.5rem x .35 = 14 px; 1rem = 40 %) */
+.aicc-tier__offer-note { display: block; margin-block-start: 0.625rem; font-size: var(--aicc-text-sm); font-weight: 500; line-height: 1.45; color: var(--aicc-slate-700); text-wrap: pretty; }
+/* the counsel-gated strike: the whole amount AND its unit (one decorating box, one size: the line is continuous and sits through every glyph), a thick line in the danger colour (6.5:1 on white), never faint grey */
+.aicc-tier__offer--strike .aicc-tier__offer-price s { text-decoration-color: var(--aicc-danger); text-decoration-thickness: max(3px, 0.085em); }
+/* the compliant default (no strike, no "was"): a large muted price, a pill saying it starts after the launch offer, and a chevron that leads the eye down to FREE */
+.aicc-tier__offer--planned .aicc-tier__offer-price { color: var(--aicc-slate-600); }
+.aicc-tier__offer-pill { display: inline-flex; align-items: center; max-inline-size: 100%; padding: 0.1875rem 0.75rem; border: 1px solid var(--aicc-border-strong); border-radius: var(--aicc-radius-pill); background: var(--aicc-surface); font-size: 0.875rem; font-weight: 650; line-height: 1.3; color: var(--aicc-slate-700); text-wrap: balance; }
+.aicc-tier__offer--planned::after { content: ""; justify-self: start; inline-size: 0.625rem; block-size: 0.625rem; margin-inline-start: 0.5rem; margin-block-start: 0.125rem; border-inline-end: 2.5px solid var(--aicc-slate-500); border-block-end: 2.5px solid var(--aicc-slate-500); transform: rotate(45deg); }
+@supports (grid-template-rows: subgrid) {
+  @media (min-width: 62rem) {
+    .aicc-tiers > .aicc-tier--offer > .aicc-tier__plan { grid-row: 1 / span 3; }
+    .aicc-tiers > .aicc-tier--offer > .aicc-tier__launch { grid-row: 4 / span 3; }
+    .aicc-tier--offer .aicc-tier__launch > .aicc-pcta { grid-row: 3; }
+    .aicc-tier--offer .aicc-tier__launch > .aicc-tier__offer { grid-row: 1; }
+    .aicc-tier--offer .aicc-tier__launch > .aicc-tier__free { grid-row: 2; }
+  }
+}
+/* the compact status line of the section: ONE per section, above the cards (the unopened-trial fact is said here, never under every card) */
+.aicc-pstate { display: flex; flex-wrap: wrap; align-items: center; gap: 0.375rem 0.875rem; margin-block-end: var(--aicc-space-5); padding: 0.75rem 1rem; border: 1px solid rgb(29 78 216 / 0.35); border-radius: var(--aicc-radius-lg); background: var(--aicc-info-bg); font-size: var(--aicc-text-sm); line-height: 1.45; color: var(--aicc-text); }
+.aicc-pstate__icon { display: inline-flex; flex: none; align-items: center; justify-content: center; inline-size: 2rem; block-size: 2rem; border-radius: 50%; background: var(--aicc-surface); color: var(--aicc-primary-strong); }
+.aicc-pstate__text { flex: 1 1 12rem; font-weight: 650; text-wrap: pretty; }
+.aicc-pstate__link { display: inline-flex; align-items: center; min-block-size: 2.75rem; font-weight: 650; color: var(--aicc-link); text-decoration: underline; text-decoration-thickness: 1.5px; text-underline-offset: 0.22em; }
+.aicc-pstate__link:hover { color: var(--aicc-link-hover); }
+.aicc-pstate__link:focus-visible { outline: 2px solid var(--aicc-focus); outline-offset: 2px; border-radius: 0.25rem; }
+.aicc-pstate[data-ss-state="open"] { border-color: rgb(4 120 87 / 0.4); background: var(--aicc-success-bg); }
+.aicc-pstate[data-ss-state="open"] .aicc-pstate__icon { color: var(--aicc-success); }
+.aicc-pstate[data-ss-state="closed_cutoff"] { border-color: var(--aicc-border-strong); background: var(--aicc-surface-sunken); }
+.aicc-pstate[data-ss-state="closed_cutoff"] .aicc-pstate__icon { color: var(--aicc-slate-700); }
+:root[data-aicc-contrast="high"] .aicc-tier__offer-pill, :root[data-aicc-contrast="high"] .aicc-pstate { border-color: var(--aicc-text); }
+:root[data-aicc-contrast="high"] .aicc-tier__offer--planned .aicc-tier__offer-price { color: var(--aicc-text); }
+@media (forced-colors: active) {
+  .aicc-tier__offer-pill, .aicc-pstate { border: 1px solid CanvasText; }
+  .aicc-tier__offer--planned::after { border-color: CanvasText; }
+  .aicc-tier__offer-price s { text-decoration-color: CanvasText; }
+}
+@media print {
+  .aicc-tier__offer-price, .aicc-tier__offer-label, .aicc-tier__offer-note { color: #000; }
+  .aicc-tier__offer-pill, .aicc-pstate { border-color: #000; background: none; color: #000; }
+  .aicc-tier__offer--strike .aicc-tier__offer-price s { text-decoration-color: #000; }
+}
+/* ═══ P41 OFFER END ═════════════════════════════════════════════════════════════════════════════════════════════════════════ */
