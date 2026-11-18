@@ -54,29 +54,31 @@ export const JOURNEY_CSS = [
   "html[data-ss-closed] .aicc-jr__terms{display:none}",
   // the nine steps: a real sequence (numbered, joined by a rail), in three phases
   ".aicc-jr__steps>section+section{margin-block-start:2.5rem}",
+  ".aicc-jr__phase>span:last-child{min-inline-size:0;overflow-wrap:anywhere}",
   ".aicc-jr__phase{display:flex;align-items:center;gap:0.75rem;margin-block-end:1.25rem;font-size:var(--aicc-text-xl);font-weight:700;line-height:1.2;letter-spacing:-0.01em;color:var(--aicc-text)}",
   ".aicc-jr__phase-icon{display:inline-flex;flex:none;align-items:center;justify-content:center;inline-size:2.5rem;block-size:2.5rem;border-radius:0.875rem;background:var(--aicc-info-bg);color:var(--jr-ink)}",
   "[data-jr-phase=account]{--jr-ink:var(--aicc-primary-strong)}[data-jr-phase=store]{--jr-ink:var(--aicc-navy-900)}[data-jr-phase=recs]{--jr-ink:var(--aicc-success)}",
   "[data-jr-phase=recs] .aicc-jr__phase-icon{background:var(--aicc-success-bg)}[data-jr-phase=store] .aicc-jr__phase-icon{background:var(--aicc-surface-sunken)}",
+  ".aicc-jr{--jr-node:min(2.5rem,10.5vw);--jr-gap:min(1rem,4vw)}",
   ".aicc-jr__list{display:grid}",
-  ".aicc-jr__step{position:relative;counter-increment:jr;padding-inline-start:3.5rem;padding-block-end:1.75rem}",
+  ".aicc-jr__step{position:relative;counter-increment:jr;padding-inline-start:calc(var(--jr-node) + var(--jr-gap));padding-block-end:1.75rem}",
   ".aicc-jr__step:last-child{padding-block-end:0}",
-  ".aicc-jr__step::before{content:counter(jr);position:absolute;inset-block-start:0;inset-inline-start:0;display:grid;place-items:center;inline-size:2.5rem;block-size:2.5rem;border:2px solid var(--jr-ink);border-radius:50%;background:var(--aicc-surface);color:var(--jr-ink);font-size:1rem;font-weight:700;font-variant-numeric:tabular-nums;line-height:1}",
-  ".aicc-jr__step::after{content:\"\";position:absolute;inset-inline-start:calc(1.25rem - 1px);inset-block:2.75rem 0.25rem;border-inline-start:2px solid var(--aicc-border-strong)}",
+  ".aicc-jr__step::before{content:counter(jr);position:absolute;inset-block-start:0;inset-inline-start:0;display:grid;place-items:center;inline-size:var(--jr-node);block-size:var(--jr-node);border:2px solid var(--jr-ink);border-radius:50%;background:var(--aicc-surface);color:var(--jr-ink);font-size:min(1rem,calc(var(--jr-node) * 0.42));font-weight:700;font-variant-numeric:tabular-nums;line-height:1}",
+  ".aicc-jr__step::after{content:\"\";position:absolute;inset-inline-start:calc(var(--jr-node) / 2 - 1px);inset-block:calc(var(--jr-node) + 0.25rem) 0.25rem;border-inline-start:2px solid var(--aicc-border-strong)}",
   ".aicc-jr__step:last-child::after{display:none}",
   ".aicc-jr__step-title{padding-block-start:0.4rem;font-size:var(--aicc-text-lg);font-weight:650;line-height:1.25;letter-spacing:-0.005em;color:var(--aicc-text)}",
   ".aicc-jr__step-body{margin-block-start:0.375rem;max-inline-size:38rem;font-size:var(--aicc-text-base);line-height:1.6;color:var(--aicc-text-muted);text-wrap:pretty}",
-  ".aicc-jr__path{display:inline-block;padding:0.0625rem 0.5rem;border:1px solid var(--aicc-border-strong);border-radius:0.5rem;background:var(--aicc-surface-sunken);font-weight:650;color:var(--aicc-text);white-space:normal}",
+  ".aicc-jr__path{display:inline-block;padding:0.0625rem 0.5rem;border:1px solid var(--aicc-border-strong);border-radius:0.5rem;background:var(--aicc-surface-sunken);font-weight:650;color:var(--aicc-text);white-space:normal;max-inline-size:100%;overflow-wrap:anywhere}",
   // plan preference chips (step 1)
   ".aicc-jr__plan{margin-block-start:0.875rem}",
   ".aicc-jr__chips{display:flex;flex-wrap:wrap;gap:0.5rem}",
-  ".aicc-jr__chip{display:inline-flex;align-items:center;gap:0.5rem;min-block-size:2.75rem;padding:0.5rem 1.125rem;border:1.5px solid var(--aicc-border-strong);border-radius:var(--aicc-radius-pill);background:var(--aicc-surface);font-size:var(--aicc-text-sm);font-weight:650;color:var(--aicc-text);text-decoration:none;transition:border-color var(--aicc-dur) var(--aicc-ease),background-color var(--aicc-dur) var(--aicc-ease)}",
+  ".aicc-jr__chips li{min-inline-size:0;max-inline-size:100%}",
+  ".aicc-jr__chip{display:inline-flex;align-items:center;gap:0.5rem;max-inline-size:100%;overflow-wrap:anywhere;min-block-size:2.75rem;padding:0.5rem min(1.125rem,3.5vw);border:1.5px solid var(--aicc-border-strong);border-radius:var(--aicc-radius-pill);background:var(--aicc-surface);font-size:var(--aicc-text-sm);font-weight:650;color:var(--aicc-text);text-decoration:none;transition:border-color var(--aicc-dur) var(--aicc-ease),background-color var(--aicc-dur) var(--aicc-ease)}",
   ".aicc-jr__chip:hover{border-color:var(--aicc-primary-strong);background:var(--aicc-info-bg)}",
   ".aicc-jr__chip:focus-visible{outline:2px solid var(--aicc-focus);outline-offset:2px}",
   ".aicc-jr__chip[aria-current=true]{border-color:var(--aicc-primary-strong);background:var(--aicc-primary-strong);color:#fff}",
   ".aicc-jr__chip[aria-current=true]::before{content:\"\";inline-size:0.375rem;block-size:0.625rem;margin-inline-end:0.125rem;border-inline-end:2.5px solid currentColor;border-block-end:2.5px solid currentColor;transform:rotate(45deg) translateY(-1px)}",
   ".aicc-jr__hint{margin-block-start:0.625rem;font-size:var(--aicc-text-sm);line-height:1.5;color:var(--aicc-text-muted)}",
-  "@media (max-width:22rem){.aicc-jr__step{padding-inline-start:3rem}.aicc-jr__step::before{inline-size:2.25rem;block-size:2.25rem}.aicc-jr__step::after{inset-inline-start:calc(1.125rem - 1px);inset-block-start:2.5rem}}",
   ":root[data-aicc-contrast=high] .aicc-jr__terms,:root[data-aicc-contrast=high] .aicc-jr__chip{border-color:var(--aicc-text)}",
   "@media (forced-colors:active){.aicc-jr__act,.aicc-jr__terms{border:1px solid CanvasText}.aicc-jr__chip{border:1px solid ButtonText}.aicc-jr__chip[aria-current=true]{border:3px solid Highlight}.aicc-jr__step::before{border-color:CanvasText}.aicc-jr__step::after{border-color:CanvasText}}",
 ].join("");
@@ -109,7 +111,7 @@ export async function GetStartedPage({ locale, t }: { locale: Locale; t: Diction
     <>
       <style dangerouslySetInnerHTML={{ __html: JOURNEY_CSS }} />
       <PageHead locale={locale} t={t} pageName={t.common.getStarted} title={<span {...A(locale, "ea.journey")}>{j.title}</span>} lead={<span {...A(locale, "ea.journey")}>{j.lead}</span>} />
-      <Section tone="surface" labelledBy="jr-act-title">
+      <Section tone="surface">
         <Container>
           <div className="aicc-jr" {...A(locale, "ea.journey")}>
             <aside className="aicc-jr__aside" aria-label={j.terms.title}>
@@ -146,7 +148,7 @@ export async function GetStartedPage({ locale, t }: { locale: Locale; t: Diction
                 const id = `jr-phase-${ph.id}`;
                 return (
                   <section key={ph.id} aria-labelledby={id} data-jr-phase={ph.id}>
-                    <h2 className="aicc-jr__phase" id={id}><span className="aicc-jr__phase-icon" aria-hidden="true"><Icon size={20} focusable="false" /></span>{j.phase[ph.id]}</h2>
+                    <h2 className="aicc-jr__phase" id={id}><span className="aicc-jr__phase-icon" aria-hidden="true"><Icon size={20} focusable="false" /></span><span>{j.phase[ph.id]}</span></h2>
                     <ol className="aicc-jr__list" role="list" start={ph.steps[0]} style={{ counterReset: `jr ${ph.steps[0] - 1}` }}>
                       {ph.steps.map((n) => {
                         const k = `s${n}` as keyof typeof j.steps;

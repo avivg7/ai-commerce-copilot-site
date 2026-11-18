@@ -66,7 +66,7 @@ export async function SsStateSlot({ locale, t }: { locale: Locale; t: Dictionary
     const { SsState } = await import("./SsState");
     const l = t.ea.ss.state.line;
     const line = (
-      <SsState strings={{ soon: l.soon, paused: l.paused, open: l.open, waitlist: l.waitlist, demo: t.ea.ss.state.demo }} demoHref={withBase(`${localePath(locale)}#demo`)} initial={SS_INITIAL} {...A(locale, "ea.ss.state")} />
+      <SsState strings={{ soon: l.soon, paused: l.paused, open: l.open, waitlist: l.waitlist, demo: t.ea.ss.state.demo, how: t.ea.ss.cta.how }} demoHref={withBase(`${localePath(locale)}#demo`)} howHref={journeyUrl(locale)} initial={SS_INITIAL} {...A(locale, "ea.ss.state")} />
     );
     return EA_ON ? <div style={{ display: "contents" }} data-ea-live>{line}</div> : line;
   }

@@ -3,6 +3,8 @@ import { LOCALES, LOCALE_META } from "@/i18n/config";
 import { ROUTE_IDS, WORDPRESS_SITEMAP_PAGES } from "@/lib/routes";
 import { absoluteUrl, SITE_URL } from "@/lib/site";
 import { DRAFT_UPDATED_ON as REVIEWED_ON } from "@/lib/site";
+import { SS_ON } from "@/lib/selfService";
+import { journeyPath } from "@/lib/ssJourney";
 
 export const dynamic = "force-static";
 
@@ -37,5 +39,14 @@ export default function sitemap(): MetadataRoute.Sitemap {
       };
     }),
   );
-  return [...pages, ...wordpress];
+  // P41: the journey page exists only in a self-service build (src/lib/requestRoutes.ts): four languages, one hreflang cluster, indexable
+  const journey = SS_ON
+    ? LOCALES.map((locale) => {
+        const languages: Record<string, string> = {};
+        for (const l of LOCALES) languages[LOCALE_META[l].htmlLang] = `${SITE_URL}${journeyPath(l)}`;
+        languages["x-default"] = `${SITE_URL}${journeyPath("en")}`;
+        return { url: `${SITE_URL}${journeyPath(locale)}`, lastModified: REVIEWED_ON, changeFrequency: "monthly" as const, priority: 0.7, alternates: { languages } };
+      })
+    : [];
+  return [...pages, ...journey, ...wordpress];
 }

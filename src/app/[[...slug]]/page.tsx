@@ -15,7 +15,6 @@ import { ProductPage } from "@/components/pages/ProductPage";
 import { PricingPage } from "@/components/pages/PricingPage";
 import { QuestionsPage } from "@/components/pages/QuestionsPage";
 import { LegalPage } from "@/components/pages/LegalPage";
-import { GetStartedPage } from "@/components/pages/GetStartedPage";
 
 type Params = { slug?: string[] };
 
@@ -139,8 +138,14 @@ export default async function Page({ params }: { params: Promise<Params> }) {
   const t = getDictionary(locale as Locale);
   switch (route) {
     // P41: the journey page (self-service builds only: parseSsSlug is null in every other build, so this branch is never reached there)
-    case "get-started":
-      return <GetStartedPage locale={locale} t={t} />;
+    // The import sits behind the compile-time constant of a self-service build (next.config.ts), like the request pages: every other build folds it away and carries none of the page or of its client islands.
+    case "get-started": {
+      if (process.env.NEXT_PUBLIC_AICC_SS_CODE === "1") {
+        const { GetStartedPage } = await import("@/components/pages/GetStartedPage");
+        return <GetStartedPage locale={locale} t={t} />;
+      }
+      notFound();
+    }
     // The request pages: the import sits behind a compile-time constant (next.config.ts) so that every build but an OPEN one folds it away and carries none of their code.
     case "request-access": {
       if (process.env.NEXT_PUBLIC_AICC_EA_REQUEST_PAGES === "1") {

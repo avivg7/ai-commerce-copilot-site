@@ -34,17 +34,14 @@ function Cap({ n, trial = false }: { n: number; trial?: boolean }) {
 }
 
 /**
- * The ordinary (closed) card's yearly price: the price leads, "Planned regular price / per year" (a fact, never a reduction). Live cards use `Offer` below (the price sits directly above FREE).
+ * The ordinary (closed) card's yearly price: the price leads, the price and "per year" (the closed layout has no FREE and no label: the price is the plain fact). Live cards use `Offer` below (the price sits directly above FREE).
  */
 function Price({ locale, t, plan }: { locale: Locale; t: Dictionary; plan: (typeof PLANS)[number] }) {
   const s = t.ea.ss.pricing;
   const amount = formatPrice(plan.price, locale);
   const per = <span className="aicc-tier__per">{s.per}{currencySuffix(locale)}</span>;
   return (
-    <p className="aicc-tier__price" data-aicc-ss="regular">
-      <span className="aicc-tier__price-label">{s.priceLabel}</span>
-      <span className="aicc-tier__price-line"><bdi className="aicc-tier__amount">{amount}</bdi> {per}</span>
-    </p>
+    <p className="aicc-tier__price" data-aicc-ss="regular"><span className="aicc-tier__price-line"><bdi className="aicc-tier__amount">{amount}</bdi> {per}</span></p>
   );
 }
 
