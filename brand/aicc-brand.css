@@ -1078,14 +1078,14 @@ html.aicc-scroll-lock { overflow: hidden; scrollbar-gutter: stable; }
 .aicc-tier__launch { display: flex; flex-direction: column; flex: 1 1 auto; min-inline-size: 0; padding: 1.375rem var(--aicc-tier-px) 1.5rem; }
 .aicc-tier__free { container-type: inline-size; }
 .aicc-tier__free-word {
-  --aicc-free-em: 2.7; /* the word's width in em, per language (below): the size follows the card so БЕСПЛАТНО never clips */
-  display: block; font-size: clamp(1.5rem, 11vw, 3.75rem); font-weight: 800; line-height: 1; letter-spacing: -0.035em; color: var(--aicc-text); overflow-wrap: anywhere;
+  --aicc-free-em: 3.4; /* the word's width in em, per language (below), WITH headroom for WCAG 1.4.12 text spacing (letter-spacing .12em adds about .14em per letter): the size follows the card so the word never breaks or clips */
+  display: block; font-size: clamp(1.5rem, 11vw, 3.75rem); font-weight: 800; line-height: 1; letter-spacing: -0.035em; color: var(--aicc-text); overflow-wrap: break-word;
 }
-@supports (width: 1cqi) { .aicc-tier__free-word { font-size: clamp(min(1.5rem, 9vw), calc(100cqi / var(--aicc-free-em)), 3.75rem); } }
-.aicc-tier__free-word:lang(he) { --aicc-free-em: 2.6; letter-spacing: 0; }
-.aicc-tier__free-word:lang(es) { --aicc-free-em: 4.1; }
-.aicc-tier__free-word:lang(ru) { --aicc-free-em: 7; letter-spacing: -0.02em; }
-.aicc-tier__trial { overflow-wrap: anywhere; display: flex; align-items: center; gap: 0.5rem; margin-block-start: 0.625rem; font-size: 1rem; font-weight: 650; line-height: 1.3; color: var(--aicc-success); }
+@supports (width: 1cqi) { .aicc-tier__free-word { font-size: min(calc(100cqi / var(--aicc-free-em)), 3.75rem); } }
+.aicc-tier__free-word:lang(he) { --aicc-free-em: 3.1; letter-spacing: 0; }
+.aicc-tier__free-word:lang(es) { --aicc-free-em: 5; }
+.aicc-tier__free-word:lang(ru) { --aicc-free-em: 8.5; letter-spacing: -0.02em; }
+.aicc-tier__trial { overflow-wrap: break-word; display: flex; align-items: center; gap: 0.5rem; margin-block-start: 0.625rem; font-size: 1rem; font-weight: 650; line-height: 1.3; color: var(--aicc-success); }
 .aicc-tier__launch > .aicc-pcta { margin-block-start: auto; padding-block-start: 1.25rem; }
 .aicc-tier__incl { display: flex; align-items: center; gap: 0.5rem; padding: 0.875rem var(--aicc-tier-px); border-block-start: 1px solid var(--aicc-border); font-size: 0.875rem; line-height: 1.35; color: var(--aicc-text-muted); }
 .aicc-tier__incl-icon { display: inline-flex; flex: none; color: var(--aicc-success); }
@@ -1100,13 +1100,13 @@ html.aicc-scroll-lock { overflow: hidden; scrollbar-gutter: stable; }
 @media (hover: hover) { .aicc-tier--featured:hover { border-color: transparent; box-shadow: 0 28px 56px -24px rgb(30 58 138 / 0.4); } }
 
 /* registration closed (after the cutoff, or paused): FREE steps back so the card never advertises something that cannot be started; the price and, with paid purchase open, the purchase link lead */
-.aicc-tier--closed .aicc-tier__free-word { font-size: clamp(1.5rem, calc(100cqi / (var(--aicc-free-em) * 1.9)), 2.25rem); color: var(--aicc-text-muted); }
+.aicc-tier--closed .aicc-tier__free-word { font-size: clamp(min(1.5rem, calc(100cqi / var(--aicc-free-em))), calc(100cqi / (var(--aicc-free-em) * 1.9)), 2.25rem); color: var(--aicc-text-muted); }
 .aicc-tier--closed .aicc-tier__trial { color: var(--aicc-text-muted); }
 .aicc-tier--closed .aicc-cap--trial { --aicc-cap-ink: var(--aicc-slate-500); }
 .aicc-tier--closed .aicc-cap--trial .aicc-cap__slot--on { background: rgb(100 116 139 / 0.12); }
 /* the same state without a class: when the control itself says closed or paused (the Site's client control changes it after hydration) the card follows through :has() */
 @supports selector(:has(*)) {
-  .aicc-tier:has([data-ss-state="closed_cutoff"], [data-ss-state="paused"]) .aicc-tier__free-word { font-size: clamp(1.5rem, calc(100cqi / (var(--aicc-free-em) * 1.9)), 2.25rem); color: var(--aicc-text-muted); }
+  .aicc-tier:has([data-ss-state="closed_cutoff"], [data-ss-state="paused"]) .aicc-tier__free-word { font-size: clamp(min(1.5rem, calc(100cqi / var(--aicc-free-em))), calc(100cqi / (var(--aicc-free-em) * 1.9)), 2.25rem); color: var(--aicc-text-muted); }
   .aicc-tier:has([data-ss-state="closed_cutoff"], [data-ss-state="paused"]) .aicc-tier__trial { color: var(--aicc-text-muted); }
   .aicc-tier:has([data-ss-state="closed_cutoff"], [data-ss-state="paused"]) .aicc-cap--trial { --aicc-cap-ink: var(--aicc-slate-500); }
   .aicc-tier:has([data-ss-state="closed_cutoff"], [data-ss-state="paused"]) .aicc-cap--trial .aicc-cap__slot--on { background: rgb(100 116 139 / 0.12); }
@@ -1149,21 +1149,22 @@ html.aicc-scroll-lock { overflow: hidden; scrollbar-gutter: stable; }
    link states = a real <a class="aicc-btn ..."> (Studio primary, others outline). status states = a NON-interactive region: dashed tinted pill + icon + words, second line says what happens. ── */
 .aicc-pcta { display: grid; gap: 0.625rem; align-content: end; }
 .aicc-pcta__note { font-size: 0.875rem; line-height: 1.4; color: var(--aicc-text-muted); text-align: center; text-wrap: pretty; }
-.aicc-pcta .aicc-btn { min-block-size: 3.5rem; padding-inline: min(2rem, 4vw); }
+.aicc-pcta .aicc-btn { min-block-size: 3.625rem; padding-inline: min(2rem, 4vw); border-radius: min(var(--aicc-radius-pill), 1.75rem); } /* 3.625rem = the lg button's natural height: a status pill and the link that replaces it share ONE box height */
 .aicc-pstatus { display: grid; gap: 0.5rem; cursor: default; }
 .aicc-pstatus__pill {
-  display: flex; align-items: center; justify-content: center; gap: 0.5rem; min-block-size: 3.5rem; padding: 0.75rem min(1.25rem, 4vw);
+  display: flex; align-items: center; justify-content: center; gap: 0.5rem; min-block-size: 3.625rem; padding: 0.75rem min(1.25rem, 4vw);
   border: 1.5px dashed var(--aicc-border-strong); border-radius: 1.75rem; background: var(--aicc-surface-sunken);
   font-size: var(--aicc-text-sm); font-weight: 650; line-height: 1.3; color: var(--aicc-slate-700); text-align: center; text-wrap: balance; user-select: text;
 }
 .aicc-pstatus__pill > svg { flex: none; }
+.aicc-pstatus__label { overflow-wrap: break-word; min-inline-size: 0; }
 .aicc-pstatus__note { font-size: 0.875rem; line-height: 1.4; color: var(--aicc-text-muted); text-align: center; text-wrap: pretty; }
 .aicc-tier--featured .aicc-pstatus__pill { background: var(--aicc-info-bg); border-color: rgb(29 78 216 / 0.5); color: var(--aicc-primary-strong); }
 .aicc-btn[data-ss-state] { text-wrap: balance; }
 
 /* ── The shared launch panel: the dates and the trial conditions, said ONCE per page ── */
 .aicc-launch {
-  display: grid; grid-template-columns: minmax(0, 1fr); gap: 1.5rem 3rem; margin-block-start: var(--aicc-space-6); padding: clamp(1rem, 5vw, 2rem);
+  display: grid; grid-template-columns: minmax(0, 1fr); gap: 1.5rem 3rem; margin-block-start: var(--aicc-space-6); padding: min(clamp(1rem, 5vw, 2rem), 5vw);
   background: var(--aicc-surface); border: 1px solid var(--aicc-border); border-radius: var(--aicc-radius-xl); box-shadow: var(--aicc-shadow-sm); color: var(--aicc-text); scroll-margin-block-start: 6rem;
 }
 .aicc-launch__intro { display: grid; gap: 0.625rem; align-content: start; justify-items: start; }
@@ -1189,10 +1190,20 @@ html.aicc-scroll-lock { overflow: hidden; scrollbar-gutter: stable; }
 @media (min-width: 40rem) {
   .aicc-timeline { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .aicc-timeline__step { padding-inline-start: 0; padding-block-start: 2.125rem; }
-  .aicc-timeline__step:first-child { padding-block-end: 0; padding-inline-end: var(--aicc-tl-gap); }
+  .aicc-timeline__step { padding-inline-end: var(--aicc-tl-gap); } /* both milestones get the same width, so their dates wrap alike */
   .aicc-timeline__node { inset-block-start: 0; }
   .aicc-timeline__step:first-child::after { inset-block: 0.5625rem auto; inset-inline-start: 1.25rem; inline-size: auto; inset-inline-end: 0; block-size: 0; border-inline-start: 0; border-block-start: 2px solid var(--aicc-primary); }
   .aicc-launch__facts { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1.5rem; }
+}
+/* very narrow screens (a 320 px phone, also with larger text): rem-sized gutters, node and rail are capped by the viewport, the fact icon sits above its text */
+@media (max-width: 24rem) {
+  .aicc-launch__fact { flex-direction: column; gap: 0.5rem; }
+  .aicc-launch__fact > span:last-child { padding-block-start: 0; }
+}
+@media (max-width: 22rem) {
+  .aicc-timeline__step { padding-inline-start: min(2.25rem, 12vw); }
+  .aicc-timeline__node { inline-size: min(1.25rem, 6.25vw); block-size: min(1.25rem, 6.25vw); }
+  .aicc-timeline__step:first-child::after { inset-inline-start: min(0.5625rem, 2.8vw); }
 }
 @media (min-width: 62rem) {
   .aicc-launch { grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.5fr); align-items: start; }
@@ -1203,7 +1214,8 @@ html.aicc-scroll-lock { overflow: hidden; scrollbar-gutter: stable; }
 /* ── Closing band: the lead and the state control (no dates). Sits inside the page's dark band (.aicc-section--inverse or the theme's CTA band). ── */
 .aicc-pband :where(*) { min-inline-size: 0; }
 .aicc-pband, .aicc-launch :where(p, h3, span, li) { overflow-wrap: anywhere; }
-.aicc-pband { display: grid; gap: var(--aicc-space-5); justify-items: start; max-inline-size: 40rem; }
+.aicc-pband { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--aicc-space-5); justify-items: start; max-inline-size: 40rem; }
+.aicc-pband .aicc-btn { white-space: normal; text-align: center; border-radius: min(var(--aicc-radius-pill), 1.75rem); }
 .aicc-pband__lead { font-size: var(--aicc-text-lg); line-height: 1.5; color: var(--aicc-text-inverse); text-wrap: pretty; }
 .aicc-pband__actions { display: flex; flex-wrap: wrap; align-items: flex-start; gap: var(--aicc-space-4); inline-size: 100%; }
 .aicc-pband .aicc-pcta { inline-size: min(100%, 22rem); }
