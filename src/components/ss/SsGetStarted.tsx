@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useSyncExternalStore, type ReactNode } from "react";
-import { ssServerSnapshot, ssSnapshot, ssStart, ssStartsSignup, ssSubscribe, type SsInitial } from "@/lib/ssStatus";
+import { ssRegClosedServerSnapshot, ssRegClosedSnapshot, ssRegClosedSubscribe, ssServerSnapshot, ssSnapshot, ssStart, ssStartsSignup, ssSubscribe, type SsInitial } from "@/lib/ssStatus";
 
 /**
  * P39: "Get started" of a self-service build (header, mobile menu, Product hero). It is an ordinary link; only its TARGET depends on the sign-up state:
@@ -11,9 +11,11 @@ import { ssServerSnapshot, ssSnapshot, ssStart, ssStartsSignup, ssSubscribe, typ
 export function SsGetStarted({ startHref, accountHref, initial, className, icon, children, lang, dir }: { startHref: string; accountHref: string; initial: SsInitial; className: string; icon?: ReactNode; children: ReactNode; lang?: string; dir?: "ltr" | "rtl" }) {
   const view = useSyncExternalStore(ssSubscribe, ssSnapshot, ssServerSnapshot);
   useEffect(() => { void ssStart(); }, []);
-  const href = ssStartsSignup(view, initial) ? startHref : accountHref;
+  const closedByClock = useSyncExternalStore(ssRegClosedSubscribe, ssRegClosedSnapshot, ssRegClosedServerSnapshot);
+  const starts = ssStartsSignup(view, initial, closedByClock);
+  const href = starts ? startHref : accountHref;
   return (
-    <a href={href} className={className} lang={lang} dir={dir} data-ss-getstarted={ssStartsSignup(view, initial) ? "start" : "account"}>
+    <a href={href} className={className} lang={lang} dir={dir} data-ss-getstarted={starts ? "start" : "account"}>
       {children}
       {icon ? <span className="aicc-btn__icon">{icon}</span> : null}
     </a>

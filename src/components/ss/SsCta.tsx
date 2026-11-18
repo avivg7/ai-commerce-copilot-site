@@ -2,7 +2,7 @@
 import { useEffect, useSyncExternalStore } from "react";
 import { Clock } from "lucide-react";
 import { Button } from "@/components/ui/Button";
-import { ssDecision, ssServerSnapshot, ssSnapshot, ssStart, ssSubscribe, type SsInitial, type SsLabelKey } from "@/lib/ssStatus";
+import { ssDecision, ssRegClosedServerSnapshot, ssRegClosedSnapshot, ssRegClosedSubscribe, ssServerSnapshot, ssSnapshot, ssStart, ssSubscribe, type SsInitial, type SsLabelKey } from "@/lib/ssStatus";
 
 /**
  * P37/P39: the one self-service control of a plan card, band or finder result. Server HTML and first client render are the build's STATIC state (src/lib/ssStatus.ts: `initial`, default coming_soon = PLAIN TEXT
@@ -27,9 +27,11 @@ export function SsCta({ href, labels, initial, variant = "primary", size = "lg",
 }) {
   const view = useSyncExternalStore(ssSubscribe, ssSnapshot, ssServerSnapshot);
   useEffect(() => { void ssStart(); }, []);
-  const d = ssDecision(view, initial);
+  // from 2026-12-24T00:00:00Z the browser clock alone forces the closed text (a stale or cached page, a late status answer of open / waitlist): the Control Plane accepts no registration from then on
+  const closedByClock = useSyncExternalStore(ssRegClosedSubscribe, ssRegClosedSnapshot, ssRegClosedServerSnapshot);
+  const d = ssDecision(view, initial, closedByClock);
   if (d.kind === "text") {
-    return <p className={inverse ? "aicc-sstate aicc-sstate--inverse" : "aicc-sstate"} data-ss-state={view} role="status" lang={lang} dir={dir}><Clock size={16} aria-hidden="true" /><span>{labels[d.label]}</span></p>;
+    return <p className={inverse ? "aicc-sstate aicc-sstate--inverse" : "aicc-sstate"} data-ss-state={closedByClock ? "closed_cutoff" : view} role="status" lang={lang} dir={dir}><Clock size={16} aria-hidden="true" /><span>{labels[d.label]}</span></p>;
   }
   return (
     <Button href={href} variant={variant} size={size} block={block} lang={lang} dir={dir}>

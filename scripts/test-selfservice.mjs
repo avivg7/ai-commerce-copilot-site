@@ -41,6 +41,18 @@ for (const l of ["en", "he", "es", "ru"]) {
 }
 check(D.en.ea.ss.cta.soon === "Free trial registration opens soon" && D.en.ea.ss.cta.start === "Start free trial" && D.en.ea.ss.cta.waitlist === "Join the waitlist" && D.en.ea.ss.cta.closed === "Free trial registration closed" && D.en.ea.ss.cta.paused === "Free trial registration paused", "en: the labels are 'Free trial registration opens soon', 'Start free trial', 'Join the waitlist', 'Free trial registration closed', 'Free trial registration paused'");
 
+console.log("== registration cutoff by the browser clock (P39 round 2): from 2026-12-24T00:00:00Z every control is the closed text");
+{
+  const toks = await loadTs("src/i18n/eaTokens.ts");
+  check(SS.SS_REG_CLOSE_MS === toks.SS_REG_CLOSE_UTC_MS && SS.SS_REG_CLOSE_MS === 1798070400000 && new Date(SS.SS_REG_CLOSE_MS).toISOString() === "2026-12-24T00:00:00.000Z", "SS_REG_CLOSE_MS equals the Control Plane cutoff 1798070400 (2026-12-24T00:00:00Z) and the token table's constant");
+  check(SS.ssRegClosed(SS.SS_REG_CLOSE_MS - 1) === false && SS.ssRegClosed(SS.SS_REG_CLOSE_MS) === true && SS.ssRegClosed(SS.SS_REG_CLOSE_MS + 1) === true, "the cutoff is exact: one ms before = open, at the instant = closed (the server accepts only now < cutoff)");
+  for (const initial of ["coming_soon", "link"]) for (const view of ["static", ...SS.SS_MODES]) {
+    eq(SS.ssDecision(view, initial, true), { kind: "text", label: "closed" }, `after the cutoff ssDecision(${view}, ${initial}) is the closed text (never a link: even open / waitlist)`);
+    check(SS.ssStartsSignup(view, initial, true) === false, `after the cutoff "Get started" does not lead to the sign-up page (${view}, ${initial})`);
+    eq(SS.ssDecision(view, initial, false), SS.ssDecision(view, initial), `before the cutoff nothing changes (${view}, ${initial})`);
+  }
+}
+
 console.log("== status answer parser: only a complete, valid, consistent answer is used");
 const P = SS.parseSsStatus;
 for (const m of SS.SS_MODES) eq(P({ open: m === "open", mode: m, plan_options: ["solo"], cap_remaining: "some" }), m, `a ${m} answer -> ${m}`);
@@ -92,6 +104,32 @@ console.log("== shared store: one request for any number of buttons; invalid ans
   check(!called, "outside a browser (server render, build) no request is made");
 }
 
+console.log("== status cache (P39 round 2): one request per full page load, client-side navigation reuses the answer for the TTL");
+{
+  globalThis.window = {};
+  let calls = 0;
+  const f = async () => { calls++; return { status: 200, json: async () => ({ open: true, mode: "open" }) }; };
+  let clock = 1_000_000;
+  const now = () => clock;
+  check(SS.SS_STATUS_TTL_MS === 30000, "the TTL is 30 s");
+  SS.ssReset();
+  await Promise.all([SS.ssStart(f, now), SS.ssStart(f, now), SS.ssStart(f, now)]);
+  check(calls === 1 && SS.ssSnapshot() === "open", "the first mount asks once (three controls, one request)");
+  clock += 5000; await SS.ssStart(f, now); clock += 20000; await SS.ssStart(f, now);
+  check(calls === 1, "two client-side navigations (5 s and 25 s later) make NO new request");
+  clock += 6000; await SS.ssStart(f, now);
+  check(calls === 2, "a mount after the TTL (31 s) asks again once");
+  // a failed attempt is cached too (no hammering) and never downgrades a valid answer
+  const bad = async () => { calls++; return { status: 500, json: async () => ({}) }; };
+  clock += 31000; await SS.ssStart(bad, now);
+  check(calls === 3 && SS.ssSnapshot() === "open", "a failed answer after the TTL changes nothing (the valid view stays)");
+  clock += 1000; await SS.ssStart(bad, now);
+  check(calls === 3, "the failed attempt is cached for the TTL as well");
+  const startCalls = calls; SS.ssReset(); await SS.ssStart(f, now);
+  check(calls === startCalls + 1 && SS.ssSnapshot() === "open", "ssReset forgets the cache (test seam only)");
+  SS.ssReset();
+  delete globalThis.window;
+}
 console.log("== sign-up URL: {CP}/start/?plan=<id>, language prefix, host and base path");
 const withEnv = async (env, fn) => {
   const old = {}; for (const k of Object.keys(env)) { old[k] = process.env[k]; if (env[k] === undefined) delete process.env[k]; else process.env[k] = env[k]; }

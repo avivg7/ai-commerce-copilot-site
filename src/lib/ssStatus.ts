@@ -51,15 +51,25 @@ export const SS_STATE_TABLE: Readonly<Record<SsMode, SsDecision>> = Object.freez
   off: { kind: "text", label: "soon" },
 });
 
-/** The decision for a view. `static` (and any unknown view) takes the build's initial state; the default build is the truthful plain text. */
-export function ssDecision(view: SsView, initial: SsInitial = SS_INITIAL_DEFAULT): SsDecision {
+/**
+ * P39 round 2: the registration cutoff of the Control Plane (2026-12-24T00:00:00Z = unix 1798070400, `AICC_LM_Trial::REGISTRATION_CUTOFF_UNIX`; a registration is accepted only while the clock is BEFORE it). The browser clock is compared with this
+ * absolute UTC constant (no request, no time zone, like the launch-offer end script): from that instant every control is the plain text "Free trial registration closed", whatever the build or the status answer says
+ * (a stale page, a cached page, a status answer of open / waitlist that arrives late). `scripts/test-selfservice.mjs` pins it to src/i18n/eaTokens.ts SS_REG_CLOSE_UTC_MS.
+ */
+export const SS_REG_CLOSE_MS = 1798070400000;
+export function ssRegClosed(now: number = Date.now()): boolean { return now >= SS_REG_CLOSE_MS; }
+const CLOSED_BY_CLOCK: SsDecision = Object.freeze({ kind: "text", label: "closed" });
+
+/** The decision for a view. `static` (and any unknown view) takes the build's initial state; the default build is the truthful plain text. `regClosed` (the clock is at or past the registration cutoff) overrides everything with the closed text. */
+export function ssDecision(view: SsView, initial: SsInitial = SS_INITIAL_DEFAULT, regClosed = false): SsDecision {
+  if (regClosed) return CLOSED_BY_CLOCK;
   if (view !== "static" && Object.prototype.hasOwnProperty.call(SS_STATE_TABLE, view)) return SS_STATE_TABLE[view as SsMode];
   return SS_INITIAL_TABLE[initial] ?? SS_INITIAL_TABLE[SS_INITIAL_DEFAULT];
 }
 
 /** Does this decision, in this view, use the sign-up URL of the card's plan? Header / Product "Get started" use the same rule: the start page only when sign-up is known (or built) to work. */
-export function ssStartsSignup(view: SsView, initial: SsInitial = SS_INITIAL_DEFAULT): boolean {
-  return ssDecision(view, initial).kind === "link";
+export function ssStartsSignup(view: SsView, initial: SsInitial = SS_INITIAL_DEFAULT, regClosed = false): boolean {
+  return ssDecision(view, initial, regClosed).kind === "link";
 }
 
 /** The mode of a status answer, or null when the answer is not a complete, valid and consistent one (null = keep the static button). */
@@ -87,19 +97,41 @@ export async function fetchSsMode(fetchFn: typeof fetch = fetch, timeoutMs = 500
   }
 }
 
-// ---- the tiny shared store: ONE request per page load, however many buttons the page has ----
+// ---- the tiny shared store: ONE request per full page load, however many controls the page has; a module-level in-memory cache (no storage, no cookie) so client-side navigation does not ask again within the TTL ----
 type Listener = () => void;
+/** How long a status answer (or a failed attempt) is reused by client-side navigation. One uncached WordPress request per full page load is the capacity cost; docs/cutover/p39-marketing.md has the note. */
+export const SS_STATUS_TTL_MS = 30_000;
 let view: SsView = "static";
-let started = false;
+let fetchedAt: number | null = null;
+let inflight: Promise<void> | null = null;
 const listeners = new Set<Listener>();
 export const ssSubscribe = (l: Listener) => { listeners.add(l); return () => { listeners.delete(l); }; };
 export const ssSnapshot = (): SsView => view;
 export const ssServerSnapshot = (): SsView => "static";
-/** Start the single status request (idempotent; a no-op outside a browser). The view changes only on a valid answer. */
-export function ssStart(fetchFn?: typeof fetch): Promise<void> {
-  if (started || typeof window === "undefined") return Promise.resolve();
-  started = true;
-  return fetchSsMode(fetchFn).then((m) => { if (m && m !== view) { view = m; listeners.forEach((l) => l()); } });
+/**
+ * Start the status request (a no-op outside a browser). Concurrent callers share ONE request; a caller within SS_STATUS_TTL_MS of the last attempt (answered or failed) gets the cached view and no request.
+ * The view changes only on a valid answer: a failed answer never downgrades a valid one.
+ */
+export function ssStart(fetchFn?: typeof fetch, now: () => number = Date.now): Promise<void> {
+  if (typeof window === "undefined") return Promise.resolve();
+  if (inflight) return inflight;
+  const t = now();
+  if (fetchedAt !== null && t - fetchedAt < SS_STATUS_TTL_MS) return Promise.resolve();
+  fetchedAt = t;
+  inflight = fetchSsMode(fetchFn).then((m) => { if (m && m !== view) { view = m; listeners.forEach((l) => l()); } }).finally(() => { inflight = null; });
+  return inflight;
 }
-/** Test seam: forget the answer and allow a new request. */
-export function ssReset(): void { view = "static"; started = false; }
+/** Test seam: forget the answer and the cache. */
+export function ssReset(): void { view = "static"; fetchedAt = null; inflight = null; }
+
+// ---- the registration cutoff by the browser clock (see SS_REG_CLOSE_MS) ----
+export const ssRegClosedSnapshot = (): boolean => ssRegClosed();
+export const ssRegClosedServerSnapshot = (): boolean => false;
+/** Notifies once at the cutoff instant for a page that stays open across it (a timer on the absolute constant; nothing is requested). */
+export function ssRegClosedSubscribe(l: Listener): () => void {
+  if (typeof window === "undefined") return () => {};
+  const wait = SS_REG_CLOSE_MS - Date.now();
+  if (wait <= 0 || wait > 2_000_000_000) return () => {};
+  const id = setTimeout(l, wait + 50);
+  return () => clearTimeout(id);
+}
