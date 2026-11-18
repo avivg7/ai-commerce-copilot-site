@@ -213,7 +213,7 @@ export const eaEs: DeepPartial<EaDict> = {
     },
     terms: {
       label: "Condiciones de la prueba gratuita",
-      state: "El registro puede cerrarse o pasar a una lista de espera, y la página de registro muestra siempre el estado actual.",
+      state: "El registro puede cerrarse o pasar a una lista de espera.",
     },
   },
 

@@ -237,7 +237,7 @@ export const eaEn = {
     },
     terms: {
       label: "Free trial terms",
-      state: "Registration can close or move to a waitlist, and the sign-up page always shows the current state.",
+      state: "Registration can close or move to a waitlist.",
     },
   },
   // The request pages (/request-access/ and /request-access/confirm/). They exist only in an OPEN build and talk only to the Control Plane routes of the intake contract.
