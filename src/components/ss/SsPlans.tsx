@@ -8,7 +8,7 @@ import { COMMERCE_OPEN, planUrl } from "@/lib/site";
 import { EA_ON, EA_STRIKE } from "@/lib/earlyAccess";
 import { SS_ON } from "@/lib/selfService";
 import { paidCapacity } from "@/lib/ssCapacity";
-import { SsCtaSlot } from "./Ss";
+import { SsCtaSlot, SsStateSlot } from "./Ss";
 
 /**
  * P40: the premium pricing section of a self-service build (docs/design/p40-pricing.md, sections 3.1 to 3.4; classes are the shared kit's `.aicc-pricing` block, brand/aicc-brand.css, the same ones the Control Plane writes in PHP):
@@ -33,27 +33,50 @@ function Cap({ n, trial = false }: { n: number; trial?: boolean }) {
   );
 }
 
-/** The regular yearly price. Standard = "Planned regular price / per year" (a fact, never a reduction); the counsel-gated variant strikes the amount (build flag NEXT_PUBLIC_AICC_EA_STRIKE, refused in production without the counsel reference). */
-function Price({ locale, t, plan, ended }: { locale: Locale; t: Dictionary; plan: (typeof PLANS)[number]; ended: boolean }) {
+/**
+ * The ordinary (closed) card's yearly price: the price leads, "Planned regular price / per year" (a fact, never a reduction). Live cards use `Offer` below (the price sits directly above FREE).
+ */
+function Price({ locale, t, plan }: { locale: Locale; t: Dictionary; plan: (typeof PLANS)[number] }) {
   const s = t.ea.ss.pricing;
   const amount = formatPrice(plan.price, locale);
   const per = <span className="aicc-tier__per">{s.per}{currencySuffix(locale)}</span>;
-  if (ended) {
-    return <p className="aicc-tier__price" data-aicc-ss="regular"><span className="aicc-tier__price-line"><bdi className="aicc-tier__amount">{amount}</bdi> {per}</span></p>;
-  }
-  if (EA_STRIKE) {
-    return (
-      <p className="aicc-tier__price aicc-tier__price--strike" data-aicc-ss="regular" data-ss-price="strike">
-        <span className="aicc-tier__price-label">{s.priceLabelStrike}</span>
-        <span className="aicc-tier__price-line"><s className="aicc-tier__amount"><bdi>{amount}</bdi></s> {per}</span>
-      </p>
-    );
-  }
   return (
     <p className="aicc-tier__price" data-aicc-ss="regular">
       <span className="aicc-tier__price-label">{s.priceLabel}</span>
       <span className="aicc-tier__price-line"><bdi className="aicc-tier__amount">{amount}</bdi> {per}</span>
     </p>
+  );
+}
+
+/**
+ * P41: the planned annual price of a LIVE card, directly above the large FREE (docs/design/p41-journey.md). Two variants of ONE block (`.aicc-tier__offer`):
+ *   planned (the default, public build)   a large muted price, NOT struck, "Planned regular price" and a pill "Starts after the launch offer", with a chevron leading the eye to FREE
+ *   strike  (NEXT_PUBLIC_AICC_EA_STRIKE=on, counsel-gated: the production builder refuses it unless AICC_EA_STRIKE_COUNSEL_APPROVED=<reference>)   the same amount in a real <s> (the whole "$99 / year", one decorating box), a visually hidden
+ *           announcement, the label "Planned regular annual price after the launch offer, not a current or past price." directly under it and the disclosure (`.aicc-tier__offer-note`, rendered by the card inside the FREE block) under FREE.
+ * Fail closed: the strike needs a finite, positive price that equals the plan source (src/data/plans.ts: the only place a price is written; test:strike-gate re-derives it from the export). Never "was", "previously", "original", "save", "worth", "normally".
+ * The strike is only ever in the LIVE card set, which the closed view and the ended view hide (browser clock: `<html data-ss-closed>` from 2026-12-24T00:00:00Z, `data-ea-over` from the trial end) and the build refuses at or after the end (EA_ON).
+ */
+export const OFFER_STRIKE = (plan: (typeof PLANS)[number]) => EA_STRIKE && EA_ON && Number.isFinite(plan.price) && plan.price > 0;
+function Offer({ locale, t, plan }: { locale: Locale; t: Dictionary; plan: (typeof PLANS)[number] }) {
+  const s = t.ea.ss.pricing;
+  const amount = formatPrice(plan.price, locale);
+  const per = <span className="aicc-tier__per">{s.perShort}</span>;
+  const cur = currencySuffix(locale).trim();
+  const curEl = cur ? <> <span className="aicc-tier__cur">{cur}</span></> : null;
+  if (OFFER_STRIKE(plan)) {
+    return (
+      <div className="aicc-tier__offer aicc-tier__offer--strike" data-aicc-ss="regular" data-ss-price="strike">
+        <p className="aicc-tier__offer-price"><span className="aicc-sr-only">{s.strikeSr} </span><s><bdi className="aicc-tier__amount">{amount}</bdi> {per}</s>{curEl}</p>
+        <p className="aicc-tier__offer-label">{s.strikeLabel}</p>
+      </div>
+    );
+  }
+  return (
+    <div className="aicc-tier__offer aicc-tier__offer--planned" data-aicc-ss="regular" data-ss-price="planned">
+      <p className="aicc-tier__offer-price"><bdi className="aicc-tier__amount">{amount}</bdi> {per}{curEl}</p>
+      <p className="aicc-tier__offer-label">{s.priceLabel}</p>
+      <p className="aicc-tier__offer-pill">{s.afterOffer}</p>
+    </div>
   );
 }
 
@@ -77,13 +100,13 @@ function StandardControl({ locale, t, id }: { locale: Locale; t: Dictionary; id:
   );
 }
 
-/** One plan card. `ended` = the closed / ordinary card: the price leads, the lower zone holds the closed status (and, after the trial end, the ordinary control). */
+/** One plan card. `ended` = the closed / ordinary card: the price leads, the lower zone holds the closed status (and, after the trial end, the ordinary control). A live card carries the offer block (price above FREE) in its launch zone. */
 function Tier({ locale, t, plan, ended = false }: { locale: Locale; t: Dictionary; plan: (typeof PLANS)[number]; ended?: boolean }) {
   const s = t.ea.ss;
   const name = t.pricing.plans[plan.id].name;
   const id = ended ? `plan-${plan.id}-closed` : `plan-${plan.id}`;
   const paid = paidCapacity(s.plan, plan.stores);
-  const cls = ["aicc-tier", plan.featured ? "aicc-tier--featured" : "", ended ? "aicc-tier--standard" : ""].filter(Boolean).join(" ");
+  const cls = ["aicc-tier", plan.featured ? "aicc-tier--featured" : "", ended ? "aicc-tier--standard" : "aicc-tier--offer"].filter(Boolean).join(" ");
   return (
     <article className={cls} aria-labelledby={id} data-plan={plan.id} {...(plan.featured ? { "data-featured": "" } : {})} {...A(locale, "ea.ss.pricing")}>
       <div className="aicc-tier__plan">
@@ -96,23 +119,25 @@ function Tier({ locale, t, plan, ended = false }: { locale: Locale; t: Dictionar
           <p className="aicc-tier__cap-text">{paid}</p>
           <Cap n={plan.stores} />
         </div>
-        <Price locale={locale} t={t} plan={plan} ended={ended} />
+        {ended ? <Price locale={locale} t={t} plan={plan} /> : null}
       </div>
       <div className="aicc-tier__launch">
         {ended ? (
           EA_ON ? (
             <>
-              <div style={{ display: "contents" }} data-ea-live><SsCtaSlot locale={locale} t={t} plan={plan.id} featured={plan.featured} announce={false} srName={name} noteId={`plan-${plan.id}-closed-note`} /></div>
+              <div style={{ display: "contents" }} data-ea-live><SsCtaSlot locale={locale} t={t} plan={plan.id} featured={plan.featured} announce={false} srName={name} /></div>
               <div style={{ display: "contents" }} data-ea-after><StandardControl locale={locale} t={t} id={plan.id} /></div>
             </>
           ) : (
-            <SsCtaSlot locale={locale} t={t} plan={plan.id} featured={plan.featured} announce={false} srName={name} noteId={`plan-${plan.id}-closed-note`} />
+            <SsCtaSlot locale={locale} t={t} plan={plan.id} featured={plan.featured} announce={false} srName={name} />
           )
         ) : (
           <>
+            <Offer locale={locale} t={t} plan={plan} />
             <p className="aicc-tier__free" data-aicc-ss="free" data-ss-free>
               <span className="aicc-tier__free-word">{s.pricing.free}</span>
               <span className="aicc-tier__trial"><Cap n={1} trial />{s.pricing.trial}</span>
+              {OFFER_STRIKE(plan) ? <span className="aicc-tier__offer-note">{s.pricing.strikeNote}</span> : null}
             </p>
             <SsCtaSlot locale={locale} t={t} plan={plan.id} featured={plan.featured} srName={name} />
           </>
@@ -185,6 +210,7 @@ export async function SsPricing({ locale, t, titleId }: { locale: Locale; t: Dic
   return (
     <div className="aicc-pricing" data-aicc-pricing data-ss-pricing>
       <Head locale={locale} t={t} titleId={titleId} />
+      <SsStateSlot locale={locale} t={t} />
       <div className="aicc-tiers" data-aicc-ss="plans" data-ss-set="live" {...LIVE}>
         {PLANS.map((p) => (<Tier key={p.id} locale={locale} t={t} plan={p} />))}
       </div>

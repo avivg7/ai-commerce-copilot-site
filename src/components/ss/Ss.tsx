@@ -2,9 +2,10 @@ import type { ReactNode } from "react";
 import type { Locale } from "@/i18n/config";
 import type { Dictionary } from "@/i18n";
 import { txProps } from "@/i18n";
-import { SS_INITIAL, SS_ON, startUrl } from "@/lib/selfService";
+import { SS_INITIAL, SS_ON, journeyUrl, startUrl } from "@/lib/selfService";
 import { EA_ON } from "@/lib/earlyAccess";
-import { getStartedUrl, type PlanId } from "@/lib/site";
+import { withBase, type PlanId } from "@/lib/site";
+import { localePath } from "@/lib/routes";
 import { planById } from "@/data/plans";
 import { COMMERCE_OPEN } from "@/lib/site";
 import { paidCapacity } from "@/lib/ssCapacity";
@@ -22,15 +23,11 @@ const A = (locale: Locale, path: string) => { const { lang, dir } = txProps(loca
  * Site-only part: the invisible reserve that keeps a link as tall as the status region it replaces, and the plan finder's result.
  */
 export const SS_CSS = [
-  // the link states keep the height of the status region's note (the note is rendered invisibly from the same text): the status answer arriving shifts nothing. (The pill and the link share one box height in the kit.)
-  ".aicc-ss-reserve{display:block;margin-block-start:-0.125rem;font-size:0.875rem;line-height:1.4;text-align:center;text-wrap:pretty;visibility:hidden;pointer-events:none;user-select:none}",
-  ".aicc-ss-reserve::before{content:attr(data-reserve)}",
-  ".aicc-pcta--inverse .aicc-ss-reserve{text-align:start}",
   // the band's wrapper (kit resets apply) keeps the dark band's own text colour
   ".aicc-pricing.aicc-pricing--band{color:inherit}",
   // the two card sets: live (FREE + trial) while registration can start, closed / ordinary (the price leads, no FREE, no trial line) once it cannot (html[data-ss-closed]) and after the trial end (html[data-ea-over]); the launch panel is not shown when closed
   "html:not([data-ss-closed]):not([data-ea-over]) .aicc-pricing [data-ss-set=\"closed\"]{display:none}",
-  "html[data-ss-closed] .aicc-pricing [data-ss-set=\"live\"],html[data-ss-closed] .aicc-pricing .aicc-launch{display:none}",
+  "html[data-ss-closed] .aicc-pricing [data-ss-set=\"live\"],html[data-ss-closed] .aicc-pricing .aicc-launch,html[data-ss-closed] .aicc-pricing .aicc-pstate{display:none}",
   // the announcement bar says the trial: from the cutoff it stays in place (the hero keeps its spacing) but is hidden from sight and from the focus order
   "html[data-ss-closed] .aicc-eabar{visibility:hidden}",
   // the page's own `.aicc-final` grid had an implicit auto column: a band action that cannot shrink pushed it past a 320 px screen at 200% text
@@ -41,33 +38,50 @@ export const SS_CSS = [
   ".aicc-ssfinder__result .aicc-pcta{inline-size:min(100%,22rem)}",
 ].join("");
 
-const labelsOf = (t: Dictionary) => { const c = t.ea.ss.cta; return { soon: c.soon, start: c.start, waitlist: c.waitlist, closed: c.closed, paused: c.paused }; };
-/** The explanation line of each status (and of the waitlist link): the per-state notes of the pack. */
+const labelsOf = (t: Dictionary) => { const c = t.ea.ss.cta; return { start: c.start, waitlist: c.waitlist, closed: c.closed, how: c.how }; };
+/** The line under the closed status: the per-state note of the pack. The unopened / paused / waitlist facts are said ONCE, in the status line of the section (SsState), never per control. */
 // the closed note says paid plans are not open for purchase: when the build has commerce open it says only that registration has closed (closedPaidNote), like the launch panel footnote (foot.paidOpen)
-const notesOf = (t: Dictionary) => { const n = t.ea.ss.state; return { soon: n.soonNote, closed: COMMERCE_OPEN ? n.closedPaidNote : n.closedNote, paused: n.pausedNote, waitlist: n.waitlistNote }; };
+const closedNoteOf = (t: Dictionary) => { const n = t.ea.ss.state; return COMMERCE_OPEN ? n.closedPaidNote : n.closedNote; };
 
 /**
- * The self-service control (docs/design/p40-pricing.md 3.3): a NON-interactive status region "Free trial opens soon" in the static HTML of the default build, a link to {CP}/start/?plan=<plan> in the page language when the build
- * says `link`, and, at run time, a link only when the Control Plane answers open or waitlist (see SsCta / src/lib/ssStatus.ts). Async so the client component is imported lazily behind the constant.
+ * The self-service control (docs/design/p41-journey.md): a real link to this site's journey page "See how it works" while registration is not open (the static HTML of the default build and every failed answer), a link to
+ * {CP}/start/?plan=<plan> in the page language when the build says `link`, and, at run time, that sign-up link only when the Control Plane answers open or waitlist (see SsCta / src/lib/ssStatus.ts); the closed status region
+ * from the registration cutoff. Async so the client component is imported lazily behind the constant.
  * `featured` = Studio (primary link); `inverse` = on the dark closing band (plan-less: no `plan`, so "/start/" without ?plan= and no plan name for screen readers).
  */
-export async function SsCtaSlot({ locale, t, plan, featured = false, inverse = false, announce = true, srName, noteId }: { locale: Locale; t: Dictionary; plan?: PlanId; featured?: boolean; inverse?: boolean; announce?: boolean; srName?: string; noteId?: string }): Promise<ReactNode> {
+export async function SsCtaSlot({ locale, t, plan, featured = false, inverse = false, announce = true, srName }: { locale: Locale; t: Dictionary; plan?: PlanId; featured?: boolean; inverse?: boolean; announce?: boolean; srName?: string }): Promise<ReactNode> {
   // the import sits INSIDE a branch that webpack folds away when the compile-time constant is not "1" (an early `return` would not remove the import): every other build carries no trace of the client control
   if (process.env.NEXT_PUBLIC_AICC_SS_CODE === "1" && SS_ON) {
     const { SsCta } = await import("./SsCta");
-    return <SsCta href={startUrl(locale, plan)} initial={SS_INITIAL} labels={labelsOf(t)} notes={notesOf(t)} featured={featured} inverse={inverse} announce={announce} srName={srName} noteId={noteId ?? (plan ? `plan-${plan}-note` : "band-note")} {...A(locale, "ea.ss.cta")} />;
+    return <SsCta href={startUrl(locale, plan)} infoHref={journeyUrl(locale, plan)} initial={SS_INITIAL} labels={labelsOf(t)} closedNote={closedNoteOf(t)} featured={featured} inverse={inverse} announce={announce} srName={srName} {...A(locale, "ea.ss.cta")} />;
   }
   return null;
 }
 
 /**
- * "Get started" (header, mobile menu, Product hero): the account page (the S0 destination, a page that exists) until sign-up is KNOWN to work, then the sign-up page: a build with initial `link`, or at run time an answer of open or waitlist.
- * It is never a link to /start/ while that page may be a 404, and never the Live Demo. A plain <a> with the same classes as the button it replaces.
+ * The compact status line of the pricing section (ONE per section): the unopened-trial fact and the Live Demo link, or the plain waitlist / open state. Nothing for the closed view (the closed cards and the band say it).
+ */
+export async function SsStateSlot({ locale, t }: { locale: Locale; t: Dictionary }): Promise<ReactNode> {
+  if (process.env.NEXT_PUBLIC_AICC_SS_CODE === "1" && SS_ON) {
+    const { SsState } = await import("./SsState");
+    const l = t.ea.ss.state.line;
+    const line = (
+      <SsState strings={{ soon: l.soon, paused: l.paused, open: l.open, waitlist: l.waitlist, demo: t.ea.ss.state.demo }} demoHref={withBase(`${localePath(locale)}#demo`)} initial={SS_INITIAL} {...A(locale, "ea.ss.state")} />
+    );
+    return EA_ON ? <div style={{ display: "contents" }} data-ea-live>{line}</div> : line;
+  }
+  return null;
+}
+
+/**
+ * "Get started" (header, mobile menu, Product hero): the journey page of this site (`/<lang>/get-started/`, a page that exists in every self-service build) until sign-up is KNOWN to work, then the sign-up page: a build with
+ * initial `link`, or at run time an answer of open or waitlist. It is never a link to /start/ while that page may be a 404, never the Live Demo, never the account page (whose copy says "Purchases open soon").
+ * A plain <a> with the same classes as the button it replaces.
  */
 export async function SsGetStartedSlot({ locale, className, children, icon }: { locale: Locale; className: string; children: ReactNode; icon?: ReactNode }): Promise<ReactNode> {
   if (process.env.NEXT_PUBLIC_AICC_SS_CODE === "1" && SS_ON) {
     const { SsGetStarted } = await import("./SsGetStarted");
-    return <SsGetStarted startHref={startUrl(locale)} accountHref={getStartedUrl(locale)} initial={SS_INITIAL} className={className} icon={icon} {...A(locale, "common.getStarted")}>{children}</SsGetStarted>;
+    return <SsGetStarted startHref={startUrl(locale)} journeyHref={journeyUrl(locale)} initial={SS_INITIAL} className={className} icon={icon} {...A(locale, "common.getStarted")}>{children}</SsGetStarted>;
   }
   return null;
 }
@@ -108,8 +122,9 @@ export async function SsPlanFinderSlot({ locale, t, s, lang, dir }: { locale: Lo
         dir={dir}
         initial={SS_INITIAL}
         hrefs={{ solo: startUrl(locale, "solo"), studio: startUrl(locale, "studio"), agency: startUrl(locale, "agency") }}
+        infoHrefs={{ solo: journeyUrl(locale, "solo"), studio: journeyUrl(locale, "studio"), agency: journeyUrl(locale, "agency") }}
         labels={labelsOf(t)}
-        notes={notesOf(t)}
+        closedNote={closedNoteOf(t)}
         capacity={{ solo: cap(planById("solo").stores), studio: cap(planById("studio").stores), agency: cap(planById("agency").stores), lang: a.lang, dir: a.dir }}
       />
     );

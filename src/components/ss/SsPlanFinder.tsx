@@ -2,8 +2,8 @@
 import { useState } from "react";
 import { FormField, Badge } from "@/components/ui/Primitives";
 import { PLANS } from "@/data/plans";
-import type { SsInitial, SsLabelKey } from "@/lib/ssStatus";
-import { SsCta, type SsNotes } from "./SsCta";
+import type { SsInitial } from "@/lib/ssStatus";
+import { SsCta, type SsCtaLabels } from "./SsCta";
 
 /**
  * P37/P40: the "Which plan?" finder of a self-service build. Same behaviour as src/components/home/PlanFinder.tsx (which stays untouched so every other build is byte-identical), but the result action is the
@@ -24,7 +24,7 @@ export interface SsPlanFinderStrings {
 /** The PAID capacity line of each plan ("Paid plan: up to 3 stores"), computed on the server from src/data/plans.ts, in the language the pack is written in. */
 export interface SsPlanFinderCapacity { solo: string; studio: string; agency: string; lang?: string; dir?: "ltr" | "rtl" }
 
-export function SsPlanFinder({ s, hrefs, labels, notes, initial, capacity, lang, dir }: { s: SsPlanFinderStrings; hrefs: Record<"solo" | "studio" | "agency", string>; labels: Record<SsLabelKey, string>; notes: SsNotes; initial: SsInitial; capacity: SsPlanFinderCapacity; lang?: string; dir?: "ltr" | "rtl" }) {
+export function SsPlanFinder({ s, hrefs, infoHrefs, labels, closedNote, initial, capacity, lang, dir }: { s: SsPlanFinderStrings; hrefs: Record<"solo" | "studio" | "agency", string>; infoHrefs: Record<"solo" | "studio" | "agency", string>; labels: SsCtaLabels; closedNote: string; initial: SsInitial; capacity: SsPlanFinderCapacity; lang?: string; dir?: "ltr" | "rtl" }) {
   const [raw, setRaw] = useState("");
   const [touched, setTouched] = useState(false);
   const n = /^\d+$/.test(raw.trim()) ? Number(raw.trim()) : NaN;
@@ -47,7 +47,7 @@ export function SsPlanFinder({ s, hrefs, labels, notes, initial, capacity, lang,
               </p>
               <div className="aicc-ssfinder__result" data-ss-finder-result>
                 <p className="aicc-ssfinder__cap" lang={capacity.lang} dir={capacity.dir} data-ss-finder-cap>{capacity[plan.id]}</p>
-              <SsCta href={hrefs[plan.id]} initial={initial} labels={labels} notes={notes} featured={plan.featured} srName={s.names[plan.id]} noteId="finder-note" lang={capacity.lang} dir={capacity.dir} />
+              <SsCta href={hrefs[plan.id]} infoHref={infoHrefs[plan.id]} initial={initial} labels={labels} closedNote={closedNote} featured={plan.featured} srName={s.names[plan.id]} lang={capacity.lang} dir={capacity.dir} />
               </div>
             </div>
           ) : (
