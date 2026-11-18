@@ -20,19 +20,14 @@ const A = (locale: Locale, path: string) => { const { lang, dir } = txProps(loca
  * Site-only part: the invisible reserve that keeps a link as tall as the status region it replaces, and the plan finder's result.
  */
 export const SS_CSS = [
-  // the link states keep the height of the status region (a link and a status pill share ONE box height: the pill takes the lg button's natural 3.625rem, the kit's 3.5rem minimum leaves it 2px short) and of its note
-  // (rendered invisibly from the same text): the status answer arriving shifts nothing
-  ".aicc-pricing .aicc-pcta .aicc-pstatus__pill,.aicc-pricing .aicc-pcta .aicc-btn{min-block-size:3.625rem}",
+  // the link states keep the height of the status region's note (the note is rendered invisibly from the same text): the status answer arriving shifts nothing. (The pill and the link share one box height in the kit.)
   ".aicc-ss-reserve{display:block;margin-block-start:-0.125rem;font-size:0.875rem;line-height:1.4;text-align:center;text-wrap:pretty;visibility:hidden;pointer-events:none;user-select:none}",
   ".aicc-ss-reserve::before{content:attr(data-reserve)}",
   ".aicc-pcta--inverse .aicc-ss-reserve{text-align:start}",
-  // the closing band's grid column may shrink below its widest action (an action label that cannot wrap, such as the Russian "Попробовать живое демо", pushed the band 45 px past a 320 px screen at 200% text; the page's own `.aicc-final` grid had an implicit auto column) and its buttons may wrap
-  ".aicc-final{grid-template-columns:minmax(0,1fr)}",
+  // the band's wrapper (kit resets apply) keeps the dark band's own text colour
   ".aicc-pricing.aicc-pricing--band{color:inherit}",
-  ".aicc-pband{grid-template-columns:minmax(0,1fr)}",
-  ".aicc-pband .aicc-btn{white-space:normal;text-align:center}",
-  // registration closed or paused: FREE steps back, and its size must keep the narrow-screen floor min(1.5rem, 9vw) at larger text too (the kit's closed floor is a plain 1.5rem, which let the Russian word wrap mid-word in a card at 200% text)
-  ".aicc-pricing .aicc-tier:has([data-ss-state=\"closed_cutoff\"],[data-ss-state=\"paused\"]) .aicc-tier__free-word{font-size:clamp(min(1.5rem,9vw),calc(100cqi / (var(--aicc-free-em) * 1.9)),2.25rem)}",
+  // the page's own `.aicc-final` grid had an implicit auto column: a band action that cannot shrink pushed it past a 320 px screen at 200% text
+  ".aicc-final{grid-template-columns:minmax(0,1fr)}",
   // the finder's result: the plan, its paid capacity, then the control (the same region as a card)
   ".aicc-ssfinder__result{display:grid;gap:0.75rem;justify-items:start;inline-size:100%}",
   ".aicc-ssfinder__cap{margin:0;font-size:var(--aicc-text-sm);font-weight:650;line-height:1.35;color:var(--aicc-text)}",

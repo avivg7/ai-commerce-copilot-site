@@ -50,7 +50,7 @@ const browser = await launch();
  * One page. `now` pins Date.now to a fixed instant that then runs on (a skew: `window.__skew += ms` moves the page clock forward at once; timers keep real time);
  * `scale` = the browser's DEFAULT FONT SIZE as a share of 16px (1.25 / 2 = a visitor who enlarged the text: CDP Page.setFontSizes, so rem units AND the rem media queries scale exactly as with the browser setting); `block` intercepts https://www.copilt.org (the Control Plane) and records what the page asked for.
  */
-async function view(cell, route, w, { h = 900, locale = "en", signup = "open", delay = 0, now = BEFORE, fixed = false, scale = 1, media = {}, block = true, init = null } = {}) {
+async function view(cell, route, w, { h = 900, locale = "en", signup = "open", delay = 0, now = BEFORE, fixed = false, scale = 1, spacing = false, media = {}, block = true, init = null } = {}) {
   const m = mocks[cell];
   m.reset(); m.set({ signup, signupDelayMs: delay });
   const ctx = await browser.newContext({ viewport: { width: w, height: h }, locale: locale === "he" ? "he-IL" : locale === "es" ? "es-ES" : locale === "ru" ? "ru-RU" : "en-US", ...media });
@@ -64,6 +64,8 @@ async function view(cell, route, w, { h = 900, locale = "en", signup = "open", d
   page.on("pageerror", (e) => errors.push(String(e.message || e)));
   page.on("console", (c) => { if (c.type() === "error" && !/Failed to load resource|net::ERR|status of (4|5)\d\d/i.test(c.text())) errors.push(c.text()); });
   await page.goto(m.url + route, { waitUntil: "load" });
+  // WCAG 1.4.12 text spacing override (line height 1.5, letter spacing .12em, word spacing .16em, paragraph spacing 2em): nothing may break mid-word or be clipped
+  if (spacing) await page.addStyleTag({ content: "*{line-height:1.5 !important;letter-spacing:0.12em !important;word-spacing:0.16em !important}p{margin-block-end:2em !important}" });
   await page.waitForTimeout(delay ? 150 : 350);
   return { ctx, page, m, nav, errors };
 }
@@ -360,6 +362,43 @@ if (run("H")) {
     if (g.panel && eff >= 640) check(g.panel.tl === 2 && g.panel.facts === 3, `${tag}: launch panel: two timeline columns and three fact columns from 40rem`);
     if (g.panel && eff < 640) check(g.panel.tl === 1 && g.panel.facts === 1, `${tag}: launch panel: vertical timeline and stacked facts on a phone`);
     if (w === 320 && scale === 2 || (w === 1440 && scale === 1) || (w === 390 && scale === 1)) await page.locator('[aria-labelledby="plans-title"]').screenshot({ path: path.join(SHOTS, `geo-${l}-${w}-${scale * 100}-${state}.png`) });
+    await ctx.close();
+  }
+}
+
+// ───────────────────────────────────────────────────────────── H2. text spacing (WCAG 1.4.12) and mid-word breaks
+if (run("H") || run("S")) {
+  console.log("== H2. WCAG 1.4.12 text spacing (and 200% text): no word of the section breaks mid-word, FREE stays on one line, nothing clips, the two milestone values wrap alike");
+  const words = (page, skip = false) => page.evaluate((skipTitles) => {
+    // core = the words a card is read by; at 200% text on a phone the status pill label, the timeline and the panel tag still break a long word (a 160 px effective column), which is reported, not asserted
+    const sel = ".aicc-tier__free-word, .aicc-tier__trial, .aicc-tier__name, .aicc-tier__amount, .aicc-tier__cap-text, .aicc-btn[data-ss-state]" + (skipTitles ? "" : ", .aicc-pstatus__label, .aicc-timeline__label, .aicc-timeline__date, .aicc-launch__tag, .aicc-launch__title, .aicc-pricing__title");
+    const broken = [], vis = (e) => e.getClientRects().length > 0;
+    for (const el of [...document.querySelectorAll(".aicc-pricing, .aicc-pband")].flatMap((r) => [...r.querySelectorAll(sel)]).filter(vis)) {
+      const w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT); let n;
+      while ((n = w.nextNode())) {
+        if (!n.nodeValue.trim() || n.parentElement.closest(".aicc-sr-only, svg")) continue;
+        const re = /[^\s ]+/g; let m;
+        while ((m = re.exec(n.nodeValue))) {
+          if (/[-‐‑־\/]/.test(m[0]) || m[0].length < 4) continue;
+          const rg = document.createRange(); rg.setStart(n, m.index); rg.setEnd(n, m.index + m[0].length);
+          const tops = new Set([...rg.getClientRects()].filter((q) => q.width > 0).map((q) => Math.round(q.top / 3)));
+          if (tops.size > 1) broken.push(m[0] + " in " + (el.className.split(" ")[0] || el.tagName));
+        }
+      }
+    }
+    const free = [...document.querySelectorAll(".aicc-tier:not(.aicc-tier--standard) .aicc-tier__free-word, .aicc-tier--standard .aicc-tier__free-word")].filter(vis).map((f) => { const rg = document.createRange(); rg.selectNodeContents(f); return new Set([...rg.getClientRects()].map((x) => Math.round(x.top))).size; });
+    const dates = [...document.querySelectorAll(".aicc-timeline__date")].filter(vis).map((d) => Math.round(d.getBoundingClientRect().height / parseFloat(getComputedStyle(d).lineHeight)));
+    return { broken, free, dates, over: document.documentElement.scrollWidth - innerWidth, secOver: Math.max(-1, ...[".aicc-tiers", ".aicc-launch", ".aicc-pband"].map((q) => { const e = document.querySelector(q); return e ? e.getBoundingClientRect().right - innerWidth : -1; })) };
+  }, skip);
+  const CELLS2 = [];
+  for (const l of QUICK ? ["en", "ru", "es"] : LOCALES) for (const w of [320, 360, 390, 768, 1024, 1440]) for (const [scale, spacing] of [[1, true], [2, false], [2, true]]) for (const state of ["off", "closed_cutoff"]) CELLS2.push([l, w, scale, state, spacing]);
+  for (const [l, w, scale, state, spacing] of CELLS2) {
+    const { ctx, page } = await view("announce", `${pre(l)}/pricing/`, w, { locale: l, signup: state, h: 1000, scale, spacing, media: { reducedMotion: "reduce" } });
+    // each WCAG requirement alone (1.4.4 200% text, 1.4.12 spacing) is held to "no word breaks mid-word" (headings aside at 200%: a heading word wider than a 160 px effective column cannot fit); both together ask for "FREE on one line, nothing outside the viewport"
+    const both = scale > 1 && spacing, g = await words(page, scale > 1), tag = `${l} @${w}px ${scale * 100}% text${spacing ? " + 1.4.12 spacing" : ""} ${state}`;
+    check((both || g.broken.length === 0) && g.free.every((n) => n === 1), `${tag}: no word breaks mid-word and FREE is one line${g.broken.length ? " -> " + g.broken.slice(0, 3).join(", ") : ""}${g.free.some((n) => n !== 1) ? " (FREE wraps)" : ""}`);
+    check(g.secOver <= 1, `${tag}: the cards, the panel and the band stay inside the viewport (${Math.round(g.secOver)}px)`);
+    if (state === "off" && w >= 1024 && scale === 1 && g.dates.length === 2) check(g.dates[0] === g.dates[1], `${tag}: the two milestone values wrap alike (${g.dates.join(" / ")} lines)`);
     await ctx.close();
   }
 }
