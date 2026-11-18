@@ -545,7 +545,7 @@ function ssChecks(mode, root, initial = "coming_soon") {
     const chunkDir = path.join(root, "_next/static/chunks"), refs = new Set();
     for (const c of walk(chunkDir, (p) => p.endsWith(".js"))) { const t = fs.readFileSync(c, "utf8"); if (t.includes("signup/status")) for (const m of t.matchAll(/\/wp-json\/[^"'`\s\\)]*/g)) refs.add(m[0]); }
     check([...refs].length === 1 && [...refs][0] === "/wp-json/aicc/v1/signup/status", `${tag}: the only API surface the self-service button names is GET /wp-json/aicc/v1/signup/status (${[...refs].join(", ")})`);
-    check(htmlFiles(root).every((f) => [...fs.readFileSync(f, "utf8").matchAll(/data-ss-state="(\w+)"/g)].every((m) => m[1] === "static")), `${tag}: no page ships a RUN-TIME state (open / waitlist / closed_cutoff / paused / off / purchase) in its static HTML; the static state is ${soon ? "the status region of the default build" : "the link of the link build"}`);
+    check(htmlFiles(root).every((f) => [...fs.readFileSync(f, "utf8").replace(/<style[\s\S]*?<\/style>/g, "").matchAll(/data-ss-state="(\w+)"/g)].every((m) => m[1] === "static")), `${tag}: no page ships a RUN-TIME state (open / waitlist / closed_cutoff / paused / off / purchase) in its static HTML; the static state is ${soon ? "the status region of the default build" : "the link of the link build"}`);
     check(htmlFiles(root).every((f) => !/<a\b[^>]*href="[^"]*\/start\/[^"]*"/.test(fs.readFileSync(f, "utf8").replace(/<script[\s\S]*?<\/script>/g, "")) || !soon), `${tag}: ${soon ? "no <a> to the Control Plane /start/ page exists in any static page (the page may be a 404 while sign-up is off)" : "link build: /start/ links allowed"}`);
   }
 }

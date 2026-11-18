@@ -41,6 +41,7 @@ const CAT = { he: readMo(path.join(THEME, "languages/he_IL.mo")), es: readMo(pat
 // ---- mapping CP key -> Site dictionary path
 const MAP = (k) => ({ "support.noCard": "pricing.support.noCard", "support.manual": "pricing.support.manual", "support.regular": "pricing.support.regular", "support.label": "hero.supportLabel", "plan.limited": "hero.support.limited", "plan.demo": "@home.hero.ctaDemo", "plan.seePricing": "@home.hero.ctaPlans" }[k] || k);
 // CP-only strings (no Site counterpart by design; each is listed in the report): the Site has no "closed" bar variant (a static page has no request-closure state)
+// P40: keys starting with "cp." are Control Plane page strings (e.g. the purchase / closed meta descriptions of /pricing/) with no Site counterpart by design
 const CP_ONLY = new Set(["bar.closed"]);
 const get = (o, p) => p.split(".").reduce((a, k) => (a == null ? a : a[k]), o);
 const nrm = (s) => String(s).replace(/[\u00a0\u202f\u2009]/g, " ").replace(/\s+/g, " ").trim();
@@ -50,7 +51,7 @@ for (const l of ["en", "he", "es", "ru"]) {
   for (const [k, src] of cp) {
     const sp = MAP(k);
     let want = sp.startsWith("@") ? get(getDictionary(l), sp.slice(1)) : get(site, sp);
-    if (want === undefined) { if (CP_ONLY.has(k)) { rows.push(`${l} ${k}: CP-only (declared)`); continue; } fails.push(`${l} ${k}: no Site string at ea.${sp}`); continue; }
+    if (want === undefined) { if (CP_ONLY.has(k) || k.startsWith("cp.")) { rows.push(`${l} ${k}: CP-only (declared)`); continue; } fails.push(`${l} ${k}: no Site string at ea.${sp}`); continue; }
     let have = l === "en" ? src : CAT[l].get(src);
     if (have === undefined || have === "") { fails.push(`${l} ${k}: CP has NO ${l} translation (msgid falls back to English)`); continue; }
     // CP resolves the date tokens with its own table (inside aicc_lo_resolved); do the same here, with the CP table
