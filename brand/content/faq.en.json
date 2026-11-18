@@ -72,7 +72,7 @@
     "q43": {
       "layer": "sales", "topic": "recs",
       "q": "What does AICC learn from my store?",
-      "a": "Which of your products are bought together. AICC reads your catalog and your orders, and counts pairs from completed and processing orders: how often each pair of products appears in the same order. If you choose to import your order history, it can learn from up to 24 months of past orders from the start.\n\nIt does not build a profile of each shopper. [Data and trust](route:data-and-trust) lists exactly what is used."
+      "a": "Which of your products are bought together. AICC reads your catalog and your orders, and counts pairs from completed and processing orders: how often each pair of products appears in the same order. If you choose to import your order history, it can learn from up to 24 months of past orders from the start.\n\nRecommendations are not based on a profile of the shopper. [Data and trust](route:data-and-trust) lists exactly what is used."
     },
     "q44": {
       "layer": "sales", "topic": "recs",
@@ -82,7 +82,7 @@
     "q48": {
       "layer": "sales", "topic": "recs",
       "q": "Does AICC personalize recommendations for each shopper?",
-      "a": "No. Recommendations follow the product being viewed, not a profile of the shopper. Products already in a shopper's cart are left out of the widget.\n\nThat keeps the logic easy to explain and means AICC needs no profile of each shopper."
+      "a": "No. Recommendations follow the product being viewed, not a profile of the shopper. Products already in a shopper's cart are left out of the widget.\n\nThat keeps the logic easy to explain and means the recommendations need no profile of the shopper."
     },
     "q45": {
       "layer": "sales", "topic": "merchant",
@@ -137,7 +137,7 @@
     "q63": {
       "layer": "account", "topic": "billing", "legalReview": true,
       "q": "What happens on refund, revocation, suspension or expiry?",
-      "a": "In each case AICC stops on the affected storefront and the store stops sending business data. Your WooCommerce store keeps selling: its products, orders, customers and checkout are unaffected, and WooCommerce's own related products return.\n\nIf your plan expired, renew the same plan and your stores return without reconnecting. After a full refund the plan is revoked permanently and is not revived; buy a new plan and connect the store again. If a plan was revoked or suspended and you think that is a mistake, contact support. A disconnected store stops sending data and its slot becomes free.\n\nYour store history may be kept for up to 12 months as our retention target, but today nothing is deleted automatically, so it may be kept longer until it is deleted on request. [Data and trust](route:data-and-trust) has the details."
+      "a": "In each case AICC is designed to stop on the affected storefront, and the store stops sending business data. Your WooCommerce store keeps selling: its products, orders, customers and checkout are unaffected, and WooCommerce's own related products return.\n\nIf your plan expired, renew the same plan and your stores return without reconnecting. After a full refund the plan is revoked permanently and is not revived; buy a new plan and connect the store again. If a plan was revoked or suspended and you think that is a mistake, contact support. A disconnected store stops sending data and its slot becomes free.\n\nYour store history is not deleted automatically today; it is kept until it is deleted on request. [Data and trust](route:data-and-trust) has the details."
     },
     "q64": {
       "layer": "sales", "topic": "why",
@@ -217,7 +217,7 @@
     "q15": {
       "layer": "account", "topic": "plans", "legalReview": true,
       "q": "What happens to the disconnected store?",
-      "a": "AICC stops there: no widget on the storefront and no store data sent (the technical registration check still runs). WooCommerce works as normal. The store's AICC history may be kept for up to 12 months, but today nothing is deleted automatically, so it may be kept longer until it is deleted on request; reconnecting can pick up where it left off. [Exact retention](route:data-and-trust)."
+      "a": "AICC stops there: no widget on the storefront, and the plugin sends no orders, catalog or shopper data. It can still register the store with AICC when an administrator opens its settings page ([what it sends](route:data-and-trust)). WooCommerce works as normal. The store's AICC history is not deleted automatically: it is kept until it is deleted on request, and reconnecting can pick up where it left off. [Exact retention](route:data-and-trust)."
     },
     "q22": {
       "layer": "account", "topic": "plans",
@@ -237,12 +237,12 @@
     "q53": {
       "layer": "sales", "topic": "billing",
       "q": "Can I try AICC without committing to automatic renewal?",
-      "a": "Yes. A plan is a fixed 365 days, renewal is manual, and AICC never charges you automatically. Your initial plan purchase also includes a 14-day money-back guarantee. See the [refund policy](route:refund-policy) for full terms."
+      "a": "Yes. A plan is a fixed 365 days, renewal is manual, and AICC never charges you automatically. An eligible paid purchase also includes a 14-day money-back guarantee. See the [refund policy](route:refund-policy) for full terms."
     },
     "q56": {
       "layer": "sales", "topic": "billing", "legalReview": true,
       "q": "What if I try AICC and it isn't right for my store?",
-      "a": "Your initial plan purchase includes a 14-day money-back guarantee. The 14 days start when payment is received and your plan is issued. See the [refund policy](route:refund-policy) for full terms.\n\nAfter a full refund the plan is revoked and AICC stops on your stores; WooCommerce carries on as before, and there is nothing else to cancel."
+      "a": "An eligible paid purchase of a plan includes a 14-day money-back guarantee. The 14 days start when payment is received and your plan is issued. See the [refund policy](route:refund-policy) for full terms.\n\nAfter a full refund the plan is revoked and AICC is designed to stop on your stores; WooCommerce carries on as before, and there is nothing else to cancel."
     },
     "q17": {
       "layer": "account", "topic": "billing",
@@ -257,7 +257,7 @@
     "q19": {
       "layer": "account", "topic": "billing",
       "q": "Will AICC store permission to charge me again?",
-      "a": "No. AICC keeps no authorization to charge you again, so nothing can be charged later without you. Each renewal is a purchase you start yourself."
+      "a": "No. AICC does not charge you unless you place a new order, and AICC stores no card number. Each renewal is a purchase you start yourself."
     },
     "q20": {
       "layer": "account", "topic": "billing",
@@ -267,7 +267,7 @@
     "q26": {
       "layer": "account", "topic": "billing", "legalReview": true,
       "q": "What is the 14-day refund policy?",
-      "a": "Your initial plan purchase includes a 14-day money-back guarantee. The 14 days start when payment is received and your plan is issued. A refund goes to the original payment method where the processor allows it. See the [refund policy](route:refund-policy) for full terms."
+      "a": "An eligible paid purchase of a plan includes a 14-day money-back guarantee. The 14 days start when payment is received and your plan is issued. A refund goes to the original payment method where the payment provider allows it. See the [refund policy](route:refund-policy) for full terms."
     },
     "q27": {
       "layer": "account", "topic": "billing",
@@ -277,7 +277,7 @@
     "q28": {
       "layer": "account", "topic": "billing",
       "q": "Does the 14-day guarantee apply to renewals?",
-      "a": "The guarantee covers the initial purchase. Later manual renewals aren't automatically covered."
+      "a": "The guarantee does not automatically apply to later manual renewals; a refund request about a renewal is handled manually by support."
     },
     "q54": {
       "layer": "account", "topic": "billing", "legalReview": true,
@@ -287,7 +287,7 @@
     "q29": {
       "layer": "account", "topic": "billing",
       "q": "What happens after a full refund?",
-      "a": "The plan is revoked and AICC stops on your stores. The refund goes to the original payment method where the payment processor allows it. Your WooCommerce store is unaffected."
+      "a": "The plan is revoked and AICC is designed to stop on your stores. The refund goes to the original payment method where the payment provider allows it. Your WooCommerce store is unaffected."
     },
     "q30": {
       "layer": "account", "topic": "billing",
@@ -312,37 +312,37 @@
     "q40": {
       "layer": "product", "topic": "safety",
       "q": "Can I remove or uninstall AICC cleanly?",
-      "a": "Yes. AICC doesn't edit WooCommerce's products, prices or templates; by default it only hides WooCommerce's related-products block while its widget shows. Disconnect the store in Plans & Stores first to free its slot, then deactivate AICC and the native recommendations return.\n\nAICC leaves its settings, and the private visitor and session fields it added to orders, in your database. [Data and trust](route:data-and-trust) covers what stays with AICC."
+      "a": "Yes. AICC doesn't edit WooCommerce's products, prices or templates; by default it only hides WooCommerce's related-products block while its widget shows. Disconnect the store in Plans & Stores first to free its slot, then deactivate AICC and the native recommendations return.\n\nUninstalling removes AICC's settings, credential and license state from your site. It leaves the private visitor and session fields it added to orders, and it does not delete data AICC already holds. [Data and trust](route:data-and-trust) covers what stays with AICC."
     },
     "q33": {
       "layer": "account", "topic": "data", "legalReview": true,
       "q": "What data does AICC use?",
-      "a": "AICC uses the catalog and order facts it needs to understand product relationships. It never receives payment details or raw shopper contact details (email, name, phone, address). Visitor-level measurement is consent-gated: it needs your cookie consent tool to allow statistics.\n\n[See exactly what AICC uses](route:data-and-trust). The legal detail is in the [privacy policy](route:privacy)."
+      "a": "AICC uses the catalog and order facts it needs to understand product relationships. The plugin does not collect payment details or raw shopper contact details (email, name, phone, address) by design. Text a shopper types into your store's search box (with statistics consent), the address of the page they came from, and product names in orders are passed on as typed; AICC does not look for or ask for personal details in them. Visitor-level measurement is consent-gated: it needs your cookie consent tool to allow statistics.\n\n[See exactly what AICC uses](route:data-and-trust). The legal detail is in the [privacy policy](route:privacy)."
     },
     "q34": {
       "layer": "account", "topic": "data",
       "q": "Is data from my different stores pooled or used across stores?",
-      "a": "No. Each store's data is kept separate. AICC doesn't pool it, and one store's data isn't used to make recommendations for another."
+      "a": "No. Each store's data is kept separate by design. AICC doesn't pool it, and one store's data isn't used to make recommendations for another."
     },
     "q35": {
       "layer": "account", "topic": "data",
       "q": "Can one store, or its credential, access another store's data?",
-      "a": "No. Each store has its own credential, and everything AICC stores is scoped to the one store it belongs to. A credential only works for its own store."
+      "a": "Not by design. Each store has its own credential, and everything AICC stores is scoped to the one store it belongs to. A credential is meant to work only for its own store."
     },
     "q36": {
       "layer": "account", "topic": "data", "legalReview": true,
       "q": "How can I request deletion or export of my data?",
-      "a": "Write to the support address from your account email; these requests are handled by hand. Deletion removes events, impressions, clicks and conversions and anonymizes orders. Some records follow their own retention or must be kept, and exports are prepared by hand. [Data and trust](route:data-and-trust) has the details."
+      "a": "Write to the support address from your account email; deletion requests are handled by hand. For the store data it covers, we delete or de-link what the request covers: visitor events, widget impressions, clicks and conversions, and the identifiers that link orders to a person (visitor ID, session ID, WordPress user ID and the hashed email). Our answer says what we deleted and what remains. Order records, the store record, account and purchase records, audit records, our note of the deletion request and copies in backups are not removed by default. There is no self-service export; ask us what we can provide. [Data and trust](route:data-and-trust) has the details."
     },
     "q21": {
       "layer": "account", "topic": "data", "legalReview": true,
       "q": "What happens to my data if my plan expires?",
-      "a": "AICC can preserve your store history when access pauses, so you can continue instead of starting from zero. Operational data may be kept for up to 12 months after access ends, but today nothing is deleted automatically, so data may be kept longer until it is deleted on request. Account and purchase records follow separate rules. [Exact retention](route:data-and-trust)."
+      "a": "AICC can preserve your store history when access pauses, so you can continue instead of starting from zero. We do not currently delete store data automatically: it is kept until it is deleted on request. Account and purchase records follow separate rules. [Exact retention](route:data-and-trust)."
     },
     "q23": {
       "layer": "account", "topic": "data", "legalReview": true,
       "q": "Is my previous store history retained?",
-      "a": "Possibly. Operational data may be kept for up to 12 months after access ends, but today nothing is deleted automatically, so data may be kept longer until it is deleted on request. [Exact retention](route:data-and-trust)."
+      "a": "Possibly. We do not currently delete store data automatically: it is kept until it is deleted on request. [Exact retention](route:data-and-trust)."
     }
   }
 }

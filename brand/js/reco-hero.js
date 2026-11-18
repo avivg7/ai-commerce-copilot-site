@@ -41,7 +41,7 @@ export function initRecoHero(root) {
       userPaused = !userPaused;
       root.dataset.paused = String(userPaused);
       pauseBtn.setAttribute("aria-pressed", String(userPaused));
-      pauseBtn.setAttribute("aria-label", userPaused ? pauseBtn.dataset.playLabel : pauseBtn.dataset.pauseLabel);
+      // One name for the button, the state in aria-pressed (Production 22, F8): a pressed "Pause animation" means the animation is paused. The icon still changes.
       pauseBtn.querySelector('[data-ic="pause"]').hidden = userPaused;
       pauseBtn.querySelector('[data-ic="play"]').hidden = !userPaused;
       sync();

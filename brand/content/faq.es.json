@@ -55,7 +55,7 @@
     },
     "q43": {
       "q": "¿Qué aprende AICC de mi tienda?",
-      "a": "Cuáles de sus productos se compran juntos. AICC lee su catálogo y sus pedidos, y cuenta los pares de los pedidos completados y en proceso: con qué frecuencia aparece cada par de productos en el mismo pedido. Si decide importar su historial de pedidos, puede aprender desde el principio de hasta 24 meses de pedidos anteriores.\n\nNo construye un perfil de cada comprador. [Datos y confianza](route:data-and-trust) enumera exactamente qué se usa."
+      "a": "Cuáles de sus productos se compran juntos. AICC lee su catálogo y sus pedidos, y cuenta los pares de los pedidos completados y en proceso: con qué frecuencia aparece cada par de productos en el mismo pedido. Si decide importar su historial de pedidos, puede aprender desde el principio de hasta 24 meses de pedidos anteriores.\n\nLas recomendaciones no se basan en un perfil del comprador. [Datos y confianza](route:data-and-trust) enumera exactamente qué se usa."
     },
     "q44": {
       "q": "¿Qué ocurre cuando un producto tiene poco o ningún historial de pedidos?",
@@ -63,7 +63,7 @@
     },
     "q48": {
       "q": "¿Personaliza AICC las recomendaciones para cada comprador?",
-      "a": "No. Las recomendaciones siguen al producto que se está viendo, no a un perfil del comprador. Los productos que ya están en el carrito de un comprador se dejan fuera del widget.\n\nEso mantiene la lógica fácil de explicar y significa que AICC no necesita un perfil de cada comprador."
+      "a": "No. Las recomendaciones siguen al producto que se está viendo, no a un perfil del comprador. Los productos que ya están en el carrito de un comprador se dejan fuera del widget.\n\nEso mantiene la lógica fácil de explicar y significa que las recomendaciones no necesitan un perfil del comprador."
     },
     "q45": {
       "q": "¿Puedo controlar qué productos se recomiendan?",
@@ -107,7 +107,7 @@
     },
     "q63": {
       "q": "¿Qué ocurre con un reembolso, una revocación, una suspensión o el vencimiento?",
-      "a": "En cada caso, AICC se detiene en la tienda online afectada y la tienda deja de enviar datos de negocio. Su tienda WooCommerce sigue vendiendo: sus productos, pedidos, clientes y proceso de pago no se ven afectados, y vuelven los productos relacionados propios de WooCommerce.\n\nSi su plan venció, renueve el mismo plan y sus tiendas vuelven sin reconectar. Tras un reembolso completo, el plan se revoca de forma permanente y no se reactiva; compre un plan nuevo y vuelva a conectar la tienda. Si un plan fue revocado o suspendido y cree que es un error, contacte con soporte. Una tienda desconectada deja de enviar datos y su cupo queda libre.\n\nEl historial de su tienda puede conservarse hasta 12 meses como objetivo de conservación, pero hoy no se elimina nada automáticamente, así que puede conservarse más tiempo hasta que se elimine a petición. [Datos y confianza](route:data-and-trust) tiene los detalles."
+      "a": "En cada caso, AICC está diseñado para detenerse en la tienda online afectada, y la tienda deja de enviar datos de negocio. Su tienda WooCommerce sigue vendiendo: sus productos, pedidos, clientes y proceso de pago no se ven afectados, y vuelven los productos relacionados propios de WooCommerce.\n\nSi su plan venció, renueve el mismo plan y sus tiendas vuelven sin reconectar. Tras un reembolso completo, el plan se revoca de forma permanente y no se reactiva; compre un plan nuevo y vuelva a conectar la tienda. Si un plan fue revocado o suspendido y cree que es un error, contacte con soporte. Una tienda desconectada deja de enviar datos y su cupo queda libre.\n\nEl historial de su tienda no se elimina automáticamente hoy; se conserva hasta que se elimine a petición. [Datos y confianza](route:data-and-trust) tiene los detalles."
     },
     "q64": {
       "q": "¿AICC funciona con plataformas distintas de WooCommerce?",
@@ -171,7 +171,7 @@
     },
     "q15": {
       "q": "¿Qué pasa con la tienda desconectada?",
-      "a": "AICC se detiene allí: no hay widget en la tienda online y no se envían datos de la tienda (la comprobación técnica de registro sigue ejecutándose). WooCommerce funciona con normalidad. El historial de AICC de la tienda puede conservarse hasta 12 meses, pero hoy no se elimina nada automáticamente, así que puede conservarse más tiempo hasta que se elimine a petición; al reconectar puede retomarse donde se dejó. [Conservación exacta](route:data-and-trust)."
+      "a": "AICC se detiene allí: no hay widget en la tienda online, y el plugin no envía pedidos, catálogo ni datos de compradores. Aun así, puede registrar la tienda en AICC cuando un administrador abre su página de ajustes ([qué envía](route:data-and-trust)). WooCommerce funciona con normalidad. El historial de AICC de la tienda no se elimina automáticamente: se conserva hasta que se elimine a petición, y al reconectar puede retomarse donde se dejó. [Conservación exacta](route:data-and-trust)."
     },
     "q22": {
       "q": "Si me voy y vuelvo más tarde, ¿empiezo desde cero?",
@@ -187,11 +187,11 @@
     },
     "q53": {
       "q": "¿Puedo probar AICC sin comprometerme a renovar automáticamente?",
-      "a": "Sí. Un plan dura 365 días fijos, la renovación es manual y AICC nunca le cobra automáticamente. La compra inicial de su plan incluye además una garantía de devolución del dinero de 14 días. Consulte la [política de reembolso](route:refund-policy) para ver las condiciones completas."
+      "a": "Sí. Un plan dura 365 días fijos, la renovación es manual y AICC nunca le cobra automáticamente. Una compra de pago admisible incluye además una garantía de devolución del dinero de 14 días. Consulte la [política de reembolso](route:refund-policy) para ver las condiciones completas."
     },
     "q56": {
       "q": "¿Y si pruebo AICC y no encaja con mi tienda?",
-      "a": "La compra inicial de su plan incluye una garantía de devolución del dinero de 14 días. Los 14 días empiezan cuando se recibe el pago y se emite su plan. Consulte la [política de reembolso](route:refund-policy) para ver las condiciones completas.\n\nTras un reembolso completo, el plan se revoca y AICC se detiene en sus tiendas; WooCommerce sigue como antes, y no hay nada más que cancelar."
+      "a": "Una compra de pago admisible de un plan incluye una garantía de devolución del dinero de 14 días. Los 14 días empiezan cuando se recibe el pago y se emite su plan. Consulte la [política de reembolso](route:refund-policy) para ver las condiciones completas.\n\nTras un reembolso completo, el plan se revoca y AICC está diseñado para detenerse en sus tiendas; WooCommerce sigue como antes, y no hay nada más que cancelar."
     },
     "q17": {
       "q": "¿Qué pasa si mi plan vence?",
@@ -203,7 +203,7 @@
     },
     "q19": {
       "q": "¿Guardará AICC un permiso para volver a cobrarme?",
-      "a": "No. No se guarda ninguna autorización de cobro: AICC no conserva permiso para volver a cobrarle, así que no se puede cobrar nada más tarde sin usted. Cada renovación es una compra que usted inicia."
+      "a": "No. AICC no le cobra a menos que usted haga un pedido nuevo, y AICC no guarda ningún número de tarjeta. Cada renovación es una compra que usted inicia."
     },
     "q20": {
       "q": "¿Cómo renuevo?",
@@ -211,7 +211,7 @@
     },
     "q26": {
       "q": "¿Qué es la política de reembolso de 14 días?",
-      "a": "La compra inicial de su plan incluye una garantía de devolución del dinero de 14 días. Los 14 días empiezan cuando se recibe el pago y se emite su plan. Un reembolso se hace al método de pago original cuando el procesador lo permite. Consulte la [política de reembolso](route:refund-policy) para ver las condiciones completas."
+      "a": "Una compra de pago admisible de un plan incluye una garantía de devolución del dinero de 14 días. Los 14 días empiezan cuando se recibe el pago y se emite su plan. Un reembolso se hace al método de pago original cuando el proveedor de pagos lo permite. Consulte la [política de reembolso](route:refund-policy) para ver las condiciones completas."
     },
     "q27": {
       "q": "¿Cuándo empiezan los 14 días?",
@@ -219,7 +219,7 @@
     },
     "q28": {
       "q": "¿La garantía de 14 días se aplica a las renovaciones?",
-      "a": "La garantía cubre la compra inicial. Las renovaciones manuales posteriores no están cubiertas automáticamente."
+      "a": "La garantía no se aplica automáticamente a las renovaciones manuales posteriores; una solicitud de reembolso relativa a una renovación la gestiona manualmente el soporte."
     },
     "q54": {
       "q": "¿Qué pasa después de los primeros 14 días?",
@@ -227,7 +227,7 @@
     },
     "q29": {
       "q": "¿Qué pasa después de un reembolso completo?",
-      "a": "El plan se revoca y AICC se detiene en sus tiendas. El reembolso se hace al método de pago original cuando el procesador de pagos lo permite. Su tienda WooCommerce no se ve afectada."
+      "a": "El plan se revoca y AICC está diseñado para detenerse en sus tiendas. El reembolso se hace al método de pago original cuando el proveedor de pagos lo permite. Su tienda WooCommerce no se ve afectada."
     },
     "q30": {
       "q": "¿Un reembolso afecta a mi tienda WooCommerce?",
@@ -246,32 +246,32 @@
       "a": "AICC no muestra ningún widget, no carga ningún script y no establece cookies nuevas en la tienda online, y en su lugar se muestran las recomendaciones nativas de WooCommerce. Las cookies que ya están en los navegadores se quedan allí, y nada las lee."
     },
     "q40": {
-      "q": "¿Puedo quitar o desinstalar AICC sin dejar rastro?",
-      "a": "Sí. AICC no edita los productos, precios ni plantillas de WooCommerce; por defecto solo oculta el bloque de productos relacionados de WooCommerce mientras se muestra su widget. Desconecte primero la tienda en Planes y tiendas para liberar su cupo, luego desactive AICC y vuelven las recomendaciones nativas.\n\nAICC deja en su base de datos sus ajustes y los campos privados de visitante y de sesión que añadió a los pedidos. [Datos y confianza](route:data-and-trust) explica qué se queda con AICC."
+      "q": "¿Puedo quitar o desinstalar AICC de forma limpia?",
+      "a": "Sí. AICC no edita los productos, precios ni plantillas de WooCommerce; por defecto solo oculta el bloque de productos relacionados de WooCommerce mientras se muestra su widget. Desconecte primero la tienda en Planes y tiendas para liberar su cupo, luego desactive AICC y vuelven las recomendaciones nativas.\n\nAl desinstalarlo se eliminan de su sitio los ajustes, la credencial y el estado de licencia de AICC. Deja los campos privados de visitante y de sesión que añadió a los pedidos, y no elimina los datos que AICC ya conserva. [Datos y confianza](route:data-and-trust) explica qué se queda con AICC."
     },
     "q33": {
       "q": "¿Qué datos usa AICC?",
-      "a": "AICC usa los datos de catálogo y de pedidos que necesita para entender las relaciones entre productos. Nunca recibe datos de pago ni datos de contacto de los compradores en claro (correo, nombre, teléfono, dirección). La medición a nivel de visitante depende del consentimiento: necesita que su herramienta de consentimiento de cookies permita las estadísticas.\n\n[Vea exactamente qué usa AICC](route:data-and-trust). El detalle legal está en la [política de privacidad](route:privacy)."
+      "a": "AICC usa los datos de catálogo y de pedidos que necesita para entender las relaciones entre productos. El plugin, por diseño, no recoge datos de pago ni datos de contacto de los compradores en claro (correo, nombre, teléfono, dirección). El texto que un comprador escribe en el cuadro de búsqueda de su tienda (con consentimiento para estadísticas), la dirección de la página de la que viene y los nombres de producto de los pedidos se transmiten tal como están; AICC no busca ni pide datos personales en ellos. La medición a nivel de visitante depende del consentimiento: necesita que su herramienta de consentimiento de cookies permita las estadísticas.\n\n[Vea exactamente qué usa AICC](route:data-and-trust). El detalle legal está en la [política de privacidad](route:privacy)."
     },
     "q34": {
       "q": "¿Se agrupan los datos de mis distintas tiendas o se usan entre tiendas?",
-      "a": "No. Los datos de cada tienda se mantienen separados. AICC no los agrupa, y los datos de una tienda no se usan para hacer recomendaciones a otra."
+      "a": "No. Los datos de cada tienda se mantienen separados por diseño. AICC no los agrupa, y los datos de una tienda no se usan para hacer recomendaciones a otra."
     },
     "q35": {
       "q": "¿Puede una tienda, o su credencial, acceder a los datos de otra tienda?",
-      "a": "No. Cada tienda tiene su propia credencial, y todo lo que AICC almacena está limitado a la única tienda a la que pertenece. Una credencial solo funciona para su propia tienda."
+      "a": "Por diseño, no. Cada tienda tiene su propia credencial, y todo lo que AICC almacena está limitado a la única tienda a la que pertenece. Una credencial está pensada para funcionar solo en su propia tienda."
     },
     "q36": {
       "q": "¿Cómo puedo solicitar la eliminación o la exportación de mis datos?",
-      "a": "Escriba a la dirección de soporte desde el correo de su cuenta; estas solicitudes se gestionan a mano. La eliminación borra eventos, impresiones, clics y conversiones y anonimiza los pedidos. Algunos registros siguen su propia conservación o deben mantenerse, y las exportaciones se preparan a mano. [Datos y confianza](route:data-and-trust) tiene los detalles."
+      "a": "Escriba a la dirección de soporte desde el correo electrónico de su cuenta; las solicitudes de eliminación se gestionan manualmente. Respecto de los datos de la tienda que abarca la solicitud, eliminamos o desvinculamos lo que esta abarca: los eventos de visitantes, las impresiones del widget, los clics y las conversiones, y los identificadores que vinculan los pedidos con una persona (ID de visitante, ID de sesión, ID de usuario de WordPress y el correo electrónico con hash). Nuestra respuesta indica lo que eliminamos y lo que permanece. Los registros de pedidos, el registro de la tienda, los registros de cuenta y de compra, los registros de auditoría, nuestra nota de la solicitud de eliminación y las copias contenidas en las copias de seguridad no se eliminan por defecto. No existe una exportación de autoservicio; pregúntenos qué podemos facilitar. [Datos y confianza](route:data-and-trust) tiene los detalles."
     },
     "q21": {
       "q": "¿Qué pasa con mis datos si mi plan vence?",
-      "a": "AICC puede conservar el historial de su tienda cuando se pausa el acceso, para que pueda continuar en lugar de empezar desde cero. Los datos operativos pueden conservarse hasta 12 meses después de que termine el acceso, pero hoy no se elimina nada automáticamente, así que los datos pueden conservarse más tiempo hasta que se eliminen a petición. Los registros de cuenta y de compra siguen reglas distintas. [Conservación exacta](route:data-and-trust)."
+      "a": "AICC puede conservar el historial de su tienda cuando se pausa el acceso, para que pueda continuar en lugar de empezar desde cero. Actualmente no eliminamos automáticamente los datos de las tiendas: se conservan hasta que se eliminen a petición. Los registros de cuenta y de compra siguen reglas distintas. [Conservación exacta](route:data-and-trust)."
     },
     "q23": {
       "q": "¿Se conserva el historial anterior de mi tienda?",
-      "a": "Posiblemente. Los datos operativos pueden conservarse hasta 12 meses después de que termine el acceso, pero hoy no se elimina nada automáticamente, así que los datos pueden conservarse más tiempo hasta que se eliminen a petición. [Conservación exacta](route:data-and-trust)."
+      "a": "Posiblemente. Actualmente no eliminamos automáticamente los datos de las tiendas: se conservan hasta que se eliminen a petición. [Conservación exacta](route:data-and-trust)."
     }
   }
 }

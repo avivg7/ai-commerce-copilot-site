@@ -431,7 +431,7 @@ export const es: DeepPartial<Dictionary> = {
     title: "Ask Reco",
     suggestionsLabel: "Elija una pregunta para Reco",
     answerLabel: "Respuesta de ejemplo",
-    footnote: "Las respuestas salen de los datos de su propio panel. Reco ofrece información y enlaces; nunca cambia sus ajustes. En su administración también puede escribir una pregunta breve, y Reco la asocia con los temas que conoce. Reco responde en inglés y en hebreo; aquí la conversación aparece traducida.",
+    footnote: "Las respuestas salen de los datos de su propio panel. Reco ofrece información y enlaces; nunca cambia sus ajustes. En su administración también puede escribir una pregunta breve, y Reco la asocia con los temas que conoce.",
     qa: {
       focus: {
         q: "¿En qué debería centrarme hoy?",
