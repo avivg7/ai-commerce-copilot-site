@@ -1,7 +1,7 @@
 import type { Locale } from "@/i18n/config";
 import { EA_BUILD_MS, EA_END_UTC_MS, eaIsOver } from "./earlyAccess";
 import { SITE_URL, localizeAccountUrl, type PlanId } from "./site";
-import { parseSsInitial } from "./ssStatus";
+import { parseSsInitial, SS_REG_CLOSE_MS } from "./ssStatus";
 
 /**
  * P37 SELF-SERVICE FREE TRIAL build switch, ORTHOGONAL to the launch-offer mode (NEXT_PUBLIC_AICC_EARLY_ACCESS=off|announce|open|verify):
@@ -24,12 +24,30 @@ export const SS_EXPIRED_REQUEST = SS_REQUESTED && !SS_ON;
  * The run-time status (src/lib/ssStatus.ts) upgrades a coming_soon card to a link only when the Control Plane says open or waitlist.
  */
 export const SS_INITIAL = parseSsInitial(process.env.NEXT_PUBLIC_AICC_SS_INITIAL);
+/**
+ * P40: a page that is LOADED at or after the registration cutoff (2026-12-24T00:00:00Z, the absolute instant, no time zone) is marked `<html data-ss-closed>` before the first paint (the launch-offer head script runs it):
+ * the closed view (ordinary cards, no launch panel, no announcement bar text) shows without a flash. The client store (SsGetStarted) keeps the attribute in step afterwards (a status answer "closed", a page left open across the instant).
+ */
+export const SS_HEAD_SCRIPT = `try{if(Date.now()>=${SS_REG_CLOSE_MS})document.documentElement.setAttribute("data-ss-closed","")}catch(e){}`;
 
 /**
  * The English sign-up URL: the Control Plane page, same host as the Site by default (the edge routes /start/ to WordPress). NEXT_PUBLIC_AICC_START_URL overrides it for a stage or test host (English base, like
  * NEXT_PUBLIC_AICC_ACCOUNT_URL). The default follows SITE_URL, so a stage build keeps its visitors on the staging host.
  */
-const START_URL_EN = process.env.NEXT_PUBLIC_AICC_START_URL || `${SITE_URL}/start/`;
+/**
+ * P40: the override is a build-time INPUT that becomes a link on every plan card, so it is validated: https only, a copilt.org host (the apex or any subdomain: www, stage), no credentials; anything else (http:, javascript:, data:, another host)
+ * makes the build FAIL (a malformed or hostile value is never published as a sign-up link).
+ */
+export function parseStartUrl(raw: string | undefined): string | null {
+  if (raw === undefined || raw === "") return null;
+  let u: URL;
+  try { u = new URL(raw); } catch { throw new Error(`NEXT_PUBLIC_AICC_START_URL is not a URL: "${String(raw).slice(0, 60)}"`); }
+  if (u.protocol !== "https:") throw new Error(`NEXT_PUBLIC_AICC_START_URL must be https (got ${u.protocol})`);
+  if (u.username || u.password) throw new Error("NEXT_PUBLIC_AICC_START_URL must not carry credentials");
+  if (!(u.hostname === "copilt.org" || u.hostname.endsWith(".copilt.org"))) throw new Error(`NEXT_PUBLIC_AICC_START_URL must be on copilt.org (got ${u.hostname})`);
+  return raw;
+}
+const START_URL_EN = parseStartUrl(process.env.NEXT_PUBLIC_AICC_START_URL) || `${SITE_URL}/start/`;
 /** The sign-up URL in the page language, with the plan as a plain preselection: https://www.copilt.org/he/start/?plan=studio. Same locale-prefix rule as the account URL (localizeAccountUrl). */
 export function startUrl(locale: Locale, plan?: PlanId): string {
   const base = localizeAccountUrl(START_URL_EN, locale);

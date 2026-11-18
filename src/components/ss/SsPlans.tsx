@@ -7,13 +7,17 @@ import { PLANS, currencySuffix, formatPrice, type PlanId } from "@/data/plans";
 import { COMMERCE_OPEN, planUrl } from "@/lib/site";
 import { EA_ON, EA_STRIKE } from "@/lib/earlyAccess";
 import { SS_ON } from "@/lib/selfService";
+import { paidCapacity } from "@/lib/ssCapacity";
 import { SsCtaSlot } from "./Ss";
 
 /**
  * P40: the premium pricing section of a self-service build (docs/design/p40-pricing.md, sections 3.1 to 3.4; classes are the shared kit's `.aicc-pricing` block, brand/aicc-brand.css, the same ones the Control Plane writes in PHP):
  * the header block, the three plan cards, and the ONE launch panel of the page (the dates and the trial conditions are said there and nowhere else). Server components only; the control inside every card is the client SsCta.
  * No price, store count or date is written in this file: prices and capacities come from src/data/plans.ts, the dates from the pack tokens (src/i18n/eaTokens.ts).
- * A launch-offer build also carries the ORDINARY cards (`aicc-tier--standard`, data-ea-after) that replace the launch view after the trial end instant, exactly like the P39 cards did.
+ * Two card sets (the Site decides at run time, `<html data-ss-closed>`: the browser clock at or past the registration cutoff, or a status answer closed_cutoff; src/components/ss/SsGetStarted.tsx):
+ *   live   (`data-ss-set="live"`)    FREE, the trial line and the control: while registration can still be started;
+ *   closed (`data-ss-set="closed"`)  the ordinary layout (`aicc-tier--standard`, the price leads): NO FREE word, NO trial line, the closed status; a launch-offer build shows it with the ordinary "Purchases open soon" control after the trial end.
+ * The launch panel is not shown in the closed view (nothing there can be started). The CSS that switches the sets is Site-only (Ss.tsx SS_CSS).
  */
 const A = (locale: Locale, path: string) => { const { lang, dir } = txProps(locale, path); return { lang, dir }; };
 const LIVE = EA_ON ? { "data-ea-live": "" } : {};
@@ -54,6 +58,7 @@ function Price({ locale, t, plan, ended }: { locale: Locale; t: Dictionary; plan
 }
 
 /** The ordinary control of the ended view (after the trial end): "Purchases open soon" (the P36 status, data-commerce) or, only when the build opens commerce, the link to the plan's purchase. */
+/** (the ordinary control after the trial end, `COMMERCE_OPEN` only: the account page of the plan, a link that is not a sign-up and not a checkout) */
 function StandardControl({ locale, t, id }: { locale: Locale; t: Dictionary; id: PlanId }) {
   const name = t.pricing.plans[id].name;
   if (COMMERCE_OPEN) {
@@ -72,12 +77,12 @@ function StandardControl({ locale, t, id }: { locale: Locale; t: Dictionary; id:
   );
 }
 
-/** One plan card. `ended` = the ordinary card (data-ea-after): the price leads, the lower zone holds only the ordinary control. */
+/** One plan card. `ended` = the closed / ordinary card: the price leads, the lower zone holds the closed status (and, after the trial end, the ordinary control). */
 function Tier({ locale, t, plan, ended = false }: { locale: Locale; t: Dictionary; plan: (typeof PLANS)[number]; ended?: boolean }) {
   const s = t.ea.ss;
   const name = t.pricing.plans[plan.id].name;
-  const id = ended ? `plan-${plan.id}-after` : `plan-${plan.id}`;
-  const paid = plan.stores === 1 ? s.plan.paidOne : s.plan.paidMany.replace("{n}", String(plan.stores));
+  const id = ended ? `plan-${plan.id}-closed` : `plan-${plan.id}`;
+  const paid = paidCapacity(s.plan, plan.stores);
   const cls = ["aicc-tier", plan.featured ? "aicc-tier--featured" : "", ended ? "aicc-tier--standard" : ""].filter(Boolean).join(" ");
   return (
     <article className={cls} aria-labelledby={id} data-plan={plan.id} {...(plan.featured ? { "data-featured": "" } : {})} {...A(locale, "ea.ss.pricing")}>
@@ -95,7 +100,14 @@ function Tier({ locale, t, plan, ended = false }: { locale: Locale; t: Dictionar
       </div>
       <div className="aicc-tier__launch">
         {ended ? (
-          <StandardControl locale={locale} t={t} id={plan.id} />
+          EA_ON ? (
+            <>
+              <div style={{ display: "contents" }} data-ea-live><SsCtaSlot locale={locale} t={t} plan={plan.id} featured={plan.featured} announce={false} srName={name} noteId={`plan-${plan.id}-closed-note`} /></div>
+              <div style={{ display: "contents" }} data-ea-after><StandardControl locale={locale} t={t} id={plan.id} /></div>
+            </>
+          ) : (
+            <SsCtaSlot locale={locale} t={t} plan={plan.id} featured={plan.featured} announce={false} srName={name} noteId={`plan-${plan.id}-closed-note`} />
+          )
         ) : (
           <>
             <p className="aicc-tier__free" data-aicc-ss="free" data-ss-free>
@@ -165,7 +177,7 @@ export function SsLaunch({ locale, t }: { locale: Locale; t: Dictionary }) {
 }
 
 /**
- * The pricing section of Home and Pricing in a self-service build: header, three plan cards (the ordinary cards too in a launch-offer build, shown after the trial end) and the launch panel.
+ * The pricing section of Home and Pricing in a self-service build: header, the live cards, the closed / ordinary cards and the launch panel.
  * `titleId` is the id the page's `<Section labelledBy>` points at (the H2 of the header block replaces the page's own plans heading).
  */
 export async function SsPricing({ locale, t, titleId }: { locale: Locale; t: Dictionary; titleId: string }): Promise<ReactNode> {
@@ -173,14 +185,12 @@ export async function SsPricing({ locale, t, titleId }: { locale: Locale; t: Dic
   return (
     <div className="aicc-pricing" data-aicc-pricing data-ss-pricing>
       <Head locale={locale} t={t} titleId={titleId} />
-      <div className="aicc-tiers" data-aicc-ss="plans" {...LIVE}>
+      <div className="aicc-tiers" data-aicc-ss="plans" data-ss-set="live" {...LIVE}>
         {PLANS.map((p) => (<Tier key={p.id} locale={locale} t={t} plan={p} />))}
       </div>
-      {EA_ON ? (
-        <div className="aicc-tiers" data-aicc-ss="plans-after" {...AFTER}>
-          {PLANS.map((p) => (<Tier key={p.id} locale={locale} t={t} plan={p} ended />))}
-        </div>
-      ) : null}
+      <div className="aicc-tiers" data-aicc-ss="plans-closed" data-ss-set="closed">
+        {PLANS.map((p) => (<Tier key={p.id} locale={locale} t={t} plan={p} ended />))}
+      </div>
       <SsLaunch locale={locale} t={t} />
     </div>
   );

@@ -15,7 +15,7 @@ import { withBase } from "@/lib/site";
 import { localePath } from "@/lib/routes";
 import { LanguageSuggestion, type SuggestStrings } from "@/components/layout/LanguageSuggestion";
 import { EA_HEAD_SCRIPT, EA_MODE, EA_ON } from "@/lib/earlyAccess";
-import { SS_ON } from "@/lib/selfService";
+import { SS_HEAD_SCRIPT, SS_ON } from "@/lib/selfService";
 import { SS_CSS } from "@/components/ss/Ss";
 import { EA_HERO_CSS, EA_P34_CSS, EaBar } from "@/components/ea/Ea";
 
@@ -57,7 +57,7 @@ export default async function RootLayout({
       <head>
         <script dangerouslySetInnerHTML={{ __html: PREFS_SCRIPT }} />
         {/* Early Access builds only: marks the document when the campaign end date has passed (absolute UTC time, no time zone), so an old page switches to the ended view. */}
-        {EA_ON ? (<><script dangerouslySetInnerHTML={{ __html: EA_HEAD_SCRIPT }} /><style dangerouslySetInnerHTML={{ __html: EA_HERO_CSS + EA_P34_CSS + (SS_ON ? SS_CSS : "") }} /></>) : SS_ON ? <style dangerouslySetInnerHTML={{ __html: SS_CSS }} /> : null}
+        {EA_ON ? (<><script dangerouslySetInnerHTML={{ __html: EA_HEAD_SCRIPT + (SS_ON ? SS_HEAD_SCRIPT : "") }} /><style dangerouslySetInnerHTML={{ __html: EA_HERO_CSS + EA_P34_CSS + (SS_ON ? SS_CSS : "") }} /></>) : SS_ON ? <style dangerouslySetInnerHTML={{ __html: SS_CSS }} /> : null}
         {/* P37: the SS_CSS above is the CSS of the self-service free-trial parts (self-service builds only, in the same child slot so every other page stays byte-identical) */}
         {locale === "he" ? (
           <>

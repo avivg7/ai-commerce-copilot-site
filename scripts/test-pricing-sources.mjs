@@ -74,9 +74,13 @@ for (const l of ["en", "he", "es", "ru"]) {
 }
 {
   const cta = strip(fs.readFileSync(path.join(ROOT, "src/components/ss/SsCta.tsx"), "utf8")), plans = strip(fs.readFileSync(path.join(ROOT, "src/components/ss/SsPlans.tsx"), "utf8")), ss = strip(fs.readFileSync(path.join(ROOT, "src/components/ss/Ss.tsx"), "utf8"));
-  check(!/checkout|\/cart|purchaseUrl|purchase_url|planUrl|getStartedUrl/.test(cta) && !/checkout|\/cart|purchase_url/.test(plans + ss), "the live (sign-up) controls name no checkout, cart or purchase URL: the Site never links to a purchase");
+  check(!/checkout|\/cart|purchaseUrl|purchase_url|planUrl|getStartedUrl/.test(cta) && !/checkout|\/cart|purchase_url/.test(plans + ss), "no sign-up control (SsCta, the band, the finder, the live cards) names a checkout, cart or purchase URL");
+  // the ONE place a card may link to the account page of a plan is the ordinary control of the ended view, and only when the build opens commerce (planUrl: the account page with ?plan=, not a sign-up and not a checkout)
+  const uses = [...plans.matchAll(/planUrl\(/g)].length, fn = (plans.match(/function StandardControl[\s\S]*?\n}\n/) || [""])[0];
+  check(uses === 1 && /COMMERCE_OPEN/.test(fn) && fn.includes("planUrl(") && !/planUrl\(/.test(plans.replace(fn, "")) && !/planUrl\(/.test(cta + ss), "planUrl appears exactly once, inside StandardControl, behind COMMERCE_OPEN (the Site never links to a purchase)");
+  check(/paidCapacity\(/.test(plans) && /paidCapacity\(/.test(ss) && !/paidMany\.replace/.test(plans + ss), "the paid-capacity string comes from ONE helper (src/lib/ssCapacity.ts) in the cards and the finder");
   const states = [...cta.matchAll(/data-ss-state=\{(\w+)\}/g)].length;
-  check(states >= 2 && /role="status"/.test(cta) && /data-ss-cta="status"/.test(cta) && /data-ss-cta="link"/.test(cta), "SsCta renders the two control families (link, status) with data-ss-state and role=\"status\" on the status region");
+  check(states >= 2 && /role: "status"/.test(cta) && /data-ss-cta="status"/.test(cta) && /data-ss-cta="link"/.test(cta), "SsCta renders the two control families (link, status) with data-ss-state and role=\"status\" on the status region");
   check(/#demo|ctaDemo|data-ss-demo|SsDemoLink/.test(cta + plans + ss) === false, "no control of the section can lead to #demo (the per-card demo link and SsDemoLink are retired)");
   check(/ssDecision\(view, initial, closedByClock\)/.test(cta) && /ssRegClosedSubscribe/.test(cta), "the control keeps the one decision function (ssDecision) and the browser-clock cutoff subscription");
 }

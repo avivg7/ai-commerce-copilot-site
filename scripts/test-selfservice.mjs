@@ -131,6 +131,51 @@ console.log("== status cache (P39 round 2): one request per full page load, clie
   SS.ssReset();
   delete globalThis.window;
 }
+console.log("== P40 stale view: a valid 'open' does not live for the whole session when the endpoint keeps failing; failed answers never upgrade");
+{
+  globalThis.window = {};
+  let clock = 5_000_000, calls = 0;
+  const now = () => clock;
+  const good = async () => { calls++; return { status: 200, json: async () => ({ open: true, mode: "open" }) }; };
+  const bad = async () => { calls++; return { status: 500, json: async () => ({}) }; };
+  const notes = []; const un = SS.ssSubscribe(() => notes.push(SS.ssSnapshot()));
+  check(SS.SS_STALE_AFTER_FAILURES === 5 && SS.SS_STALE_AFTER_MS === 5 * SS.SS_STATUS_TTL_MS, "the stale limits are 5 failed answers or 5 TTLs (150 s) without a valid answer");
+  SS.ssReset(); await SS.ssStart(good, now);
+  for (let i = 1; i <= 4; i++) { clock += 31000; await SS.ssStart(bad, now); }
+  check(SS.ssSnapshot() === "open", "four failed answers in a row (and under 150 s of silence is not required: each is a single failure): the valid view still stays");
+  clock += 31000; await SS.ssStart(bad, now);
+  check(SS.ssSnapshot() === "static" && notes.at(-1) === "static", "the fifth failed answer in a row (and 155 s without a valid answer) returns the control to the build's static state, and tells the subscribers");
+  clock += 31000; await SS.ssStart(bad, now);
+  check(SS.ssSnapshot() === "static", "further failures never make it 'open' again");
+  clock += 31000; await SS.ssStart(good, now);
+  check(SS.ssSnapshot() === "open", "a valid answer upgrades again");
+  // the age rule alone: one failure after more than five TTLs since the last valid answer
+  SS.ssReset(); await SS.ssStart(good, now); clock += 200000; await SS.ssStart(bad, now);
+  check(SS.ssSnapshot() === "static", "a single failed answer 200 s after the last valid one falls back to the static state");
+  SS.ssReset(); await SS.ssStart(good, now); clock += 31000; await SS.ssStart(bad, now);
+  check(SS.ssSnapshot() === "open", "a single failed answer 31 s after a valid one changes nothing");
+  // static + failures never upgrade
+  SS.ssReset(); for (let i = 0; i < 8; i++) { clock += 31000; await SS.ssStart(bad, now); }
+  check(SS.ssSnapshot() === "static", "a build that never got a valid answer stays static however often the endpoint fails");
+  un(); SS.ssReset(); delete globalThis.window;
+}
+console.log("== P40 wake-up: the page re-checks the status and the cutoff when it becomes visible or gets focus (no polling)");
+{
+  const handlers = {};
+  globalThis.window = { addEventListener: (n, f) => { (handlers["w:" + n] ||= []).push(f); }, removeEventListener: () => {} };
+  globalThis.document = { visibilityState: "visible", addEventListener: (n, f) => { (handlers["d:" + n] ||= []).push(f); }, removeEventListener: () => {} };
+  let clock = 9_000_000, calls = 0, clockNotes = 0;
+  const f = async () => { calls++; return { status: 200, json: async () => ({ open: true, mode: "open" }) }; };
+  SS.ssReset();
+  const un1 = SS.ssRegClosedSubscribe(() => { clockNotes++; }), un2 = SS.ssSubscribe(() => {});
+  check((handlers["d:visibilitychange"] || []).length === 1 && (handlers["w:focus"] || []).length === 1, "subscribing installs ONE visibilitychange and ONE focus handler (shared)");
+  const before = clockNotes; handlers["w:focus"][0]();
+  check(clockNotes === before + 1, "a focus event makes the cutoff subscribers re-read the clock");
+  globalThis.document.visibilityState = "hidden"; const b2 = clockNotes; handlers["d:visibilitychange"][0]();
+  check(clockNotes === b2, "a hidden page does nothing");
+  un1(); un2(); SS.ssReset(); delete globalThis.window; delete globalThis.document;
+  void f; void clock; void calls;
+}
 console.log("== sign-up URL: {CP}/start/?plan=<id>, language prefix, host and base path");
 const withEnv = async (env, fn) => {
   const old = {}; for (const k of Object.keys(env)) { old[k] = process.env[k]; if (env[k] === undefined) delete process.env[k]; else process.env[k] = env[k]; }
@@ -146,8 +191,23 @@ await withEnv(CLEAN, (m) => {
   eq(m.startUrl("ru"), "https://www.copilt.org/ru/start/", "ru without a plan");
 });
 await withEnv({ ...CLEAN, SITE_URL: "https://stage.copilt.org" }, (m) => eq(m.startUrl("he", "solo"), "https://stage.copilt.org/he/start/?plan=solo", "a stage build keeps its visitors on the stage host"));
-await withEnv({ ...CLEAN, NEXT_PUBLIC_AICC_START_URL: "https://shop.example.com/wp/start/" }, (m) => { eq(m.startUrl("en", "studio"), "https://shop.example.com/wp/start/?plan=studio", "an override with a base path (en)"); eq(m.startUrl("he", "studio"), "https://shop.example.com/wp/he/start/?plan=studio", "an override with a base path: the prefix goes before the last segment"); });
-await withEnv({ ...CLEAN, NEXT_PUBLIC_AICC_START_URL: "https://shop.example.com/start/?src=site#x" }, (m) => eq(m.startUrl("es", "solo"), "https://shop.example.com/es/start/?src=site&plan=solo#x", "query and hash are kept; the plan is appended"));
+await withEnv({ ...CLEAN, NEXT_PUBLIC_AICC_START_URL: "https://stage.copilt.org/wp/start/" }, (m) => { eq(m.startUrl("en", "studio"), "https://stage.copilt.org/wp/start/?plan=studio", "an override with a base path (en)"); eq(m.startUrl("he", "studio"), "https://stage.copilt.org/wp/he/start/?plan=studio", "an override with a base path: the prefix goes before the last segment"); });
+await withEnv({ ...CLEAN, NEXT_PUBLIC_AICC_START_URL: "https://stage.copilt.org/start/?src=site#x" }, (m) => eq(m.startUrl("es", "solo"), "https://stage.copilt.org/es/start/?src=site&plan=solo#x", "query and hash are kept; the plan is appended"));
+
+console.log("== P40: NEXT_PUBLIC_AICC_START_URL is validated (https only, a copilt.org host, no credentials); a bad value FAILS the build");
+await withEnv(CLEAN, (m) => {
+  for (const ok of ["https://www.copilt.org/start/", "https://stage.copilt.org/wp/start/", "https://copilt.org/start/?src=x"]) check(m.parseStartUrl(ok) === ok, `accepted: ${ok}`);
+  check(m.parseStartUrl(undefined) === null && m.parseStartUrl("") === null, "unset or empty = the default (SITE_URL/start/)");
+  for (const bad of ["http://www.copilt.org/start/", "javascript:alert(1)", "data:text/html,<p>x</p>", "https://evil.example.com/start/", "https://www.copilt.org.evil.com/start/", "https://evilcopilt.org/start/", "https://user:pw@www.copilt.org/start/", "//www.copilt.org/start/", "not a url", "ftp://www.copilt.org/"]) {
+    let threw = false; try { m.parseStartUrl(bad); } catch { threw = true; }
+    check(threw, `refused: ${bad}`);
+  }
+});
+{
+  let threw = false;
+  try { await withEnv({ ...CLEAN, NEXT_PUBLIC_AICC_START_URL: "javascript:alert(1)" }, () => {}); } catch { threw = true; }
+  check(threw, "a build with NEXT_PUBLIC_AICC_START_URL=javascript:... does not load (the build fails)");
+}
 
 console.log("== build switch NEXT_PUBLIC_AICC_SS_INITIAL: exactly 'link' selects the link build, everything else is coming_soon");
 for (const [v, want] of [["link", "link"], ["coming_soon", "coming_soon"], [undefined, "coming_soon"], ["", "coming_soon"], ["LINK", "coming_soon"], ["open", "coming_soon"]]) await withEnv({ ...CLEAN, NEXT_PUBLIC_AICC_SS_INITIAL: v }, (m) => check(m.SS_INITIAL === want, `NEXT_PUBLIC_AICC_SS_INITIAL=${JSON.stringify(v)} -> ${want}`));

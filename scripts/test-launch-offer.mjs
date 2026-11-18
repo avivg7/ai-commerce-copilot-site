@@ -370,7 +370,7 @@ function ssChecks(mode, root, initial = "coming_soon") {
     // ---- cards (Home and Pricing), P40 premium section (docs/design/p40-pricing.md 3.1 / 3.2 / 3.3): header block, three tiers (Studio recommended), the capacity glyphs, FREE + the trial line, the ONE state control; no demo link, no date, no trial condition in a card
     for (const [name, page] of [["Home", home], ["Pricing", pricing]]) {
       const cards = tiersOf(page), ended = tiersOf(page, true);
-      check(cards.length === 3 && (mode === "off" ? ended.length === 0 : ended.length === 3), `${l} ${tag} ${name}: three plan cards${mode === "off" ? "" : " and the three ordinary cards of the ended view (data-ea-after)"}`);
+      check(cards.length === 3 && ended.length === 3, `${l} ${tag} ${name}: three live plan cards and the three closed / ordinary cards (data-ss-set="closed", shown from the registration cutoff and after the trial end)`);
       const pb = nb(page), body = pb.slice(pb.indexOf("<main"), pb.indexOf("</main>"));
       // the header block: ONE h2 (the section heading) that says the trial; the closed variant only in the ended view (data-ea-after) of a launch-offer build
       {
@@ -427,7 +427,11 @@ function ssChecks(mode, root, initial = "coming_soon") {
       // the ended view (launch-offer builds): the ordinary card, no FREE, no trial line, no date, the existing "Purchases open soon" status
       ended.forEach((a, i) => {
         const plan = PLANS[i], text = norm(a.replace(/<[^>]+>/g, " | ")), price = (a.match(/<p class="aicc-tier__price"[^>]*>([\s\S]*?)<\/p>/) || [, ""])[1];
-        check(/data-commerce="closed"/.test(a) && norm(text).includes(norm(dict.common.soon.label)) && !/aicc-tier__free|aicc-cap--trial|data-ss-free/.test(a) && !a.includes("<a ") && norm(price.replace(/<[^>]+>/g, " ")) === norm(`${formatPrice(plan.price, l)} ${ss.pricing.per}${l === "ru" ? " (USD)" : ""}`), `${l} ${tag} ${name} ${plan.id}: the ordinary card of the ended view: the price leads, "${dict.common.soon.label}", no FREE, no trial line, no link`);
+        const ctl = (a.match(/<div class="aicc-pcta"[^>]*data-ss-cta="(\w+)"[\s\S]*?<\/div>/) || [])[1];
+        check(!/aicc-tier__free|aicc-cap--trial|data-ss-free/.test(a) && !text.includes(norm(ss.pricing.trial)) && !/(UTC|00:00|22:00)/.test(text) && norm(price.replace(/<[^>]+>/g, " ")) === norm(`${formatPrice(plan.price, l)} ${ss.pricing.per}${l === "ru" ? " (USD)" : ""}`) && /<article class="aicc-tier[^"]*aicc-tier--standard/.test(a) && new RegExp(`id="plan-${plan.id}-closed"`).test(a), `${l} ${tag} ${name} ${plan.id}: the closed / ordinary card: the price leads, NO FREE word, NO trial line, no date`);
+        // the closed control is the SAME self-service control (status region, or the link of a link build), announced by nobody (the band announces once); a launch-offer build adds the ordinary "Purchases open soon" control for after the trial end
+        check(soon ? /<p class="aicc-pstatus" data-ss-state="static"/.test(a) && !/<p class="aicc-pstatus"[^>]*role=/.test(a.replace(/<div style="display:contents" data-ea-after[\s\S]*?<\/p><\/div><\/div>/, "")) : /<a class="aicc-btn[^"]*" data-ss-state="static" href="[^"]*\/start\/\?plan=/.test(a), `${l} ${tag} ${name} ${plan.id}: the closed card carries the build's static control (${soon ? "a status region without role=status: the closed view announces once, in the band" : "the sign-up link"})`);
+        check(mode === "off" ? !/data-commerce="closed"/.test(a) : /<div style="display:contents" data-ea-after="true"><div class="aicc-pcta" data-ss-cta="status"><p class="aicc-pstatus" role="status" data-commerce="closed"/.test(a) && norm(text).includes(norm(dict.common.soon.label)), `${l} ${tag} ${name} ${plan.id}: ${mode === "off" ? "no ordinary control (a self-service-only build has no ended view)" : `the ordinary "${dict.common.soon.label}" control is the data-ea-after part`}`);
       });
       // the inert "Purchases open soon" chip: only in the hidden ended view of a launch-offer build, never visible; in self-service-only builds nowhere
       const bad = []; const h = nb(page);

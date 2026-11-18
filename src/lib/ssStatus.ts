@@ -103,14 +103,32 @@ type Listener = () => void;
 export const SS_STATUS_TTL_MS = 30_000;
 let view: SsView = "static";
 let fetchedAt: number | null = null;
+let lastValidAt: number | null = null;
+let failures = 0;
 let inflight: Promise<void> | null = null;
 const listeners = new Set<Listener>();
-export const ssSubscribe = (l: Listener) => { listeners.add(l); return () => { listeners.delete(l); }; };
+const clockListeners = new Set<Listener>();
+let wakeInstalled = false;
+/**
+ * P40 stale-view limits: a valid answer other than "static" is kept through single failed answers (a hiccup changes nothing), but not for the whole session: after SS_STALE_AFTER_FAILURES failed answers in a row, or when
+ * SS_STALE_AFTER_MS have passed since the last VALID answer, the control returns to the build's static state (never to "open": a failed or invalid answer never upgrades anything).
+ */
+export const SS_STALE_AFTER_FAILURES = 5;
+export const SS_STALE_AFTER_MS = 5 * SS_STATUS_TTL_MS;
+/** Re-check when the page becomes visible or gets focus (a laptop that slept across the cutoff, a visitor waiting on "opens soon"): the TTL cache still decides whether a request is made; no polling, no timer. */
+function installWake(): void {
+  if (wakeInstalled || typeof window === "undefined" || typeof document === "undefined") return;
+  wakeInstalled = true;
+  const wake = () => { if (document.visibilityState === "hidden") return; void ssStart(); clockListeners.forEach((l) => l()); };
+  document.addEventListener("visibilitychange", wake);
+  window.addEventListener("focus", wake);
+}
+export const ssSubscribe = (l: Listener) => { installWake(); listeners.add(l); return () => { listeners.delete(l); }; };
 export const ssSnapshot = (): SsView => view;
 export const ssServerSnapshot = (): SsView => "static";
 /**
  * Start the status request (a no-op outside a browser). Concurrent callers share ONE request; a caller within SS_STATUS_TTL_MS of the last attempt (answered or failed) gets the cached view and no request.
- * The view changes only on a valid answer: a failed answer never downgrades a valid one.
+ * The view changes on a valid answer; a failed answer changes nothing until the stale limits above are reached, and then only back to "static".
  */
 export function ssStart(fetchFn?: typeof fetch, now: () => number = Date.now): Promise<void> {
   if (typeof window === "undefined") return Promise.resolve();
@@ -118,11 +136,19 @@ export function ssStart(fetchFn?: typeof fetch, now: () => number = Date.now): P
   const t = now();
   if (fetchedAt !== null && t - fetchedAt < SS_STATUS_TTL_MS) return Promise.resolve();
   fetchedAt = t;
-  inflight = fetchSsMode(fetchFn).then((m) => { if (m && m !== view) { view = m; listeners.forEach((l) => l()); } }).finally(() => { inflight = null; });
+  inflight = fetchSsMode(fetchFn).then((m) => {
+    if (m) {
+      failures = 0; lastValidAt = t;
+      if (m !== view) { view = m; listeners.forEach((l) => l()); }
+    } else {
+      failures++;
+      if (view !== "static" && (failures >= SS_STALE_AFTER_FAILURES || (lastValidAt !== null && t - lastValidAt >= SS_STALE_AFTER_MS))) { view = "static"; listeners.forEach((l) => l()); }
+    }
+  }).finally(() => { inflight = null; });
   return inflight;
 }
 /** Test seam: forget the answer and the cache. */
-export function ssReset(): void { view = "static"; fetchedAt = null; inflight = null; }
+export function ssReset(): void { view = "static"; fetchedAt = null; lastValidAt = null; failures = 0; inflight = null; }
 
 // ---- the registration cutoff by the browser clock (see SS_REG_CLOSE_MS) ----
 export const ssRegClosedSnapshot = (): boolean => ssRegClosed();
@@ -130,8 +156,9 @@ export const ssRegClosedServerSnapshot = (): boolean => false;
 /** Notifies once at the cutoff instant for a page that stays open across it (a timer on the absolute constant; nothing is requested). */
 export function ssRegClosedSubscribe(l: Listener): () => void {
   if (typeof window === "undefined") return () => {};
+  installWake();
+  clockListeners.add(l); // woken by a visibilitychange / focus too (a slept page whose timer was late)
   const wait = SS_REG_CLOSE_MS - Date.now();
-  if (wait <= 0 || wait > 2_000_000_000) return () => {};
-  const id = setTimeout(l, wait + 50);
-  return () => clearTimeout(id);
+  const id = wait > 0 && wait <= 2_000_000_000 ? setTimeout(l, wait + 50) : null;
+  return () => { clockListeners.delete(l); if (id !== null) clearTimeout(id); };
 }

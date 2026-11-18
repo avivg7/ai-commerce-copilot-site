@@ -14,7 +14,7 @@ export type SsNotes = { soon: string; closed: string; paused: string; waitlist: 
  * The browser clock alone forces the closed region from 2026-12-24T00:00:00Z (a timer in the store flips a page that is left open). This Site has no purchase link: its closed state is always the unavailable one.
  * This module is imported only by builds that carry the self-service code (next.config.ts NEXT_PUBLIC_AICC_SS_CODE).
  */
-export function SsCta({ href, labels, notes, initial, featured = false, inverse = false, srName, noteId, lang, dir }: {
+export function SsCta({ href, labels, notes, initial, featured = false, inverse = false, announce = true, srName, noteId, lang, dir }: {
   href: string;
   /** The build-time initial state (NEXT_PUBLIC_AICC_SS_INITIAL, resolved on the server). */
   initial: SsInitial;
@@ -24,6 +24,8 @@ export function SsCta({ href, labels, notes, initial, featured = false, inverse 
   featured?: boolean;
   /** The control sits on the dark closing band (primary link, inverse status region). */
   inverse?: boolean;
+  /** role="status" on the status region (a live region). The closed view announces ONCE (the band): the cards of that view pass false, their text stays visible. */
+  announce?: boolean;
   /** The plan name, read by screen readers after the label (a plan-less control has none). */
   srName?: string;
   /** id of the waitlist note (aria-describedby of the link). */
@@ -43,7 +45,7 @@ export function SsCta({ href, labels, notes, initial, featured = false, inverse 
     const note = d.label === "closed" ? notes.closed : d.label === "paused" ? notes.paused : notes.soon;
     return (
       <div className={wrap} data-ss-cta="status" lang={lang} dir={dir}>
-        <p className="aicc-pstatus" role="status" data-ss-state={state}>
+        <p className="aicc-pstatus" {...(announce ? { role: "status" } : {})} data-ss-state={state}>
           <span className="aicc-pstatus__pill"><Icon size={18} aria-hidden="true" focusable="false" /><span className="aicc-pstatus__label">{labels[d.label]}</span></span>
           <span className="aicc-pstatus__note">{note}</span>
         </p>

@@ -6,6 +6,8 @@ import { SS_INITIAL, SS_ON, startUrl } from "@/lib/selfService";
 import { EA_ON } from "@/lib/earlyAccess";
 import { getStartedUrl, type PlanId } from "@/lib/site";
 import { planById } from "@/data/plans";
+import { COMMERCE_OPEN } from "@/lib/site";
+import { paidCapacity } from "@/lib/ssCapacity";
 import { SoonContact } from "@/components/ui/Soon";
 
 /**
@@ -26,6 +28,11 @@ export const SS_CSS = [
   ".aicc-pcta--inverse .aicc-ss-reserve{text-align:start}",
   // the band's wrapper (kit resets apply) keeps the dark band's own text colour
   ".aicc-pricing.aicc-pricing--band{color:inherit}",
+  // the two card sets: live (FREE + trial) while registration can start, closed / ordinary (the price leads, no FREE, no trial line) once it cannot (html[data-ss-closed]) and after the trial end (html[data-ea-over]); the launch panel is not shown when closed
+  "html:not([data-ss-closed]):not([data-ea-over]) .aicc-pricing [data-ss-set=\"closed\"]{display:none}",
+  "html[data-ss-closed] .aicc-pricing [data-ss-set=\"live\"],html[data-ss-closed] .aicc-pricing .aicc-launch{display:none}",
+  // the announcement bar says the trial: from the cutoff it stays in place (the hero keeps its spacing) but is hidden from sight and from the focus order
+  "html[data-ss-closed] .aicc-eabar{visibility:hidden}",
   // the page's own `.aicc-final` grid had an implicit auto column: a band action that cannot shrink pushed it past a 320 px screen at 200% text
   ".aicc-final{grid-template-columns:minmax(0,1fr)}",
   // the finder's result: the plan, its paid capacity, then the control (the same region as a card)
@@ -36,18 +43,19 @@ export const SS_CSS = [
 
 const labelsOf = (t: Dictionary) => { const c = t.ea.ss.cta; return { soon: c.soon, start: c.start, waitlist: c.waitlist, closed: c.closed, paused: c.paused }; };
 /** The explanation line of each status (and of the waitlist link): the per-state notes of the pack. */
-const notesOf = (t: Dictionary) => { const n = t.ea.ss.state; return { soon: n.soonNote, closed: n.closedNote, paused: n.pausedNote, waitlist: n.waitlistNote }; };
+// the closed note says paid plans are not open for purchase: when the build has commerce open it says only that registration has closed (closedPaidNote), like the launch panel footnote (foot.paidOpen)
+const notesOf = (t: Dictionary) => { const n = t.ea.ss.state; return { soon: n.soonNote, closed: COMMERCE_OPEN ? n.closedPaidNote : n.closedNote, paused: n.pausedNote, waitlist: n.waitlistNote }; };
 
 /**
  * The self-service control (docs/design/p40-pricing.md 3.3): a NON-interactive status region "Free trial opens soon" in the static HTML of the default build, a link to {CP}/start/?plan=<plan> in the page language when the build
  * says `link`, and, at run time, a link only when the Control Plane answers open or waitlist (see SsCta / src/lib/ssStatus.ts). Async so the client component is imported lazily behind the constant.
  * `featured` = Studio (primary link); `inverse` = on the dark closing band (plan-less: no `plan`, so "/start/" without ?plan= and no plan name for screen readers).
  */
-export async function SsCtaSlot({ locale, t, plan, featured = false, inverse = false, srName }: { locale: Locale; t: Dictionary; plan?: PlanId; featured?: boolean; inverse?: boolean; srName?: string }): Promise<ReactNode> {
+export async function SsCtaSlot({ locale, t, plan, featured = false, inverse = false, announce = true, srName, noteId }: { locale: Locale; t: Dictionary; plan?: PlanId; featured?: boolean; inverse?: boolean; announce?: boolean; srName?: string; noteId?: string }): Promise<ReactNode> {
   // the import sits INSIDE a branch that webpack folds away when the compile-time constant is not "1" (an early `return` would not remove the import): every other build carries no trace of the client control
   if (process.env.NEXT_PUBLIC_AICC_SS_CODE === "1" && SS_ON) {
     const { SsCta } = await import("./SsCta");
-    return <SsCta href={startUrl(locale, plan)} initial={SS_INITIAL} labels={labelsOf(t)} notes={notesOf(t)} featured={featured} inverse={inverse} srName={srName} noteId={plan ? `plan-${plan}-note` : "band-note"} {...A(locale, "ea.ss.cta")} />;
+    return <SsCta href={startUrl(locale, plan)} initial={SS_INITIAL} labels={labelsOf(t)} notes={notesOf(t)} featured={featured} inverse={inverse} announce={announce} srName={srName} noteId={noteId ?? (plan ? `plan-${plan}-note` : "band-note")} {...A(locale, "ea.ss.cta")} />;
   }
   return null;
 }
@@ -92,7 +100,7 @@ export async function SsPlanFinderSlot({ locale, t, s, lang, dir }: { locale: Lo
     const { SsPlanFinder } = await import("./SsPlanFinder");
     const ss = t.ea.ss;
     const a = A(locale, "ea.ss.plan");
-    const cap = (stores: number) => (stores === 1 ? ss.plan.paidOne : ss.plan.paidMany.replace("{n}", String(stores)));
+    const cap = (stores: number) => paidCapacity(ss.plan, stores);
     return (
       <SsPlanFinder
         s={s}

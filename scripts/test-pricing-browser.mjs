@@ -11,6 +11,7 @@
 // G  axe-core (WCAG 2.x A/AA + best-practice): zero violations in every state, four languages, 320 / 768 / 1440, high contrast, 200% text
 // H  geometry: 320 / 375 / 390 / 430 / 768 / 1024 / 1440 / 1920 px with 100 / 125 / 200 % text, four languages: no horizontal scroll, nothing clipped, FREE on one line and dominant, layout per breakpoint, shared rows
 // I  reduced motion, RTL mirroring, print, forced colours, layout shift (CLS) when the status answer arrives
+// L  the closed view (registration closed): ordinary cards, no FREE / trial line / panel / dates, one announcement
 // K  scope: every tier, launch panel and band of Home, Pricing and Product sits inside the kit wrapper `.aicc-pricing`; computed padding is > 0 and nothing is clipped, in every state
 // J  the gated strike variant: struck price only in its own build; the default builds carry none
 import fs from "node:fs";
@@ -69,7 +70,8 @@ async function view(cell, route, w, { h = 900, locale = "en", signup = "open", d
   await page.waitForTimeout(delay ? 150 : 350);
   return { ctx, page, m, nav, errors };
 }
-const cards = (page) => page.evaluate((TIER) => [...document.querySelectorAll(TIER)].map((a) => {
+// the VISIBLE cards: the live set while registration can start, the closed / ordinary set from the cutoff
+const cards = (page) => page.evaluate((TIER) => [...document.querySelectorAll("article.aicc-tier")].filter((a) => a.getClientRects().length > 0).map((a) => {
   const vis = (e) => e.getClientRects().length > 0;
   const link = [...a.querySelectorAll("a.aicc-btn")].filter(vis).map((e) => ({ href: e.getAttribute("href"), text: e.innerText.replace(/\s+/g, " ").trim(), state: e.getAttribute("data-ss-state"), describedBy: e.getAttribute("aria-describedby"), cls: e.className, h: e.getBoundingClientRect().height }));
   const st = [...a.querySelectorAll("p.aicc-pstatus")].filter(vis).map((e) => ({ text: e.querySelector(".aicc-pstatus__label").innerText.trim(), note: (e.querySelector(".aicc-pstatus__note") || { innerText: "" }).innerText.trim(), state: e.getAttribute("data-ss-state"), role: e.getAttribute("role") }));
@@ -136,8 +138,8 @@ if (run("C")) {
     await clickNav(page, `${pre(l)}/product/`); await clickNav(page, `${pre(l)}/pricing/`);
     cs = await cards(page);
     check(n() === 1 && cs.every((c) => c.link.length === 1), `${l}: 5 s later (inside the 30 s TTL) client navigation makes NO new request and keeps the links (${n()} request)`);
-    // after the TTL a FAILED answer never downgrades
-    for (const bad of ["http500", "badjson", "drop", "inconsistent", "unknown", "http404"]) {
+    // after the TTL a FAILED answer never changes the view (a single hiccup), up to four in a row; the fifth returns the control to the build's static state, never to open
+    for (const bad of ["http500", "badjson", "drop", "inconsistent"]) {
       m.set({ signup: bad }); await page.evaluate(() => { window.__skew += 31000; });
       const before = n();
       await clickNav(page, `${pre(l)}/product/`); await clickNav(page, `${pre(l)}/pricing/`);
@@ -145,7 +147,14 @@ if (run("C")) {
       // (a dropped connection is retried once by the browser itself, so "once" may be two lines in the mock's log)
       check(n() >= before + 1 && n() <= before + (bad === "drop" ? 2 : 1) && cs.every((c) => c.link.length === 1 && c.st.length === 0), `${l}: after the TTL a failed or invalid answer (${bad}) is requested once and changes NOTHING: the links stay`);
     }
-    // a VALID downgrade is followed
+    m.set({ signup: "unknown" }); await page.evaluate(() => { window.__skew += 31000; });
+    await clickNav(page, `${pre(l)}/product/`); await clickNav(page, `${pre(l)}/pricing/`);
+    cs = await cards(page);
+    check(cs.every((c) => c.link.length === 0 && c.st.length === 1 && c.st[0].text === soonOf(l) && c.st[0].state === "static"), `${l}: the FIFTH failed answer in a row (the 'open' view is 155 s old): the cards fall back to the build's static status "${soonOf(l)}", not to open`);
+    for (const bad of ["http404", "http500"]) { m.set({ signup: bad }); await page.evaluate(() => { window.__skew += 31000; }); await clickNav(page, `${pre(l)}/product/`); await clickNav(page, `${pre(l)}/pricing/`); }
+    cs = await cards(page);
+    check(cs.every((c) => c.link.length === 0 && c.st.length === 1), `${l}: further failed answers never make a link again`);
+    // a VALID answer is followed (down here: off)
     m.set({ signup: "off" }); await page.evaluate(() => { window.__skew += 31000; });
     await clickNav(page, `${pre(l)}/product/`); await clickNav(page, `${pre(l)}/pricing/`);
     cs = await cards(page);
@@ -184,6 +193,22 @@ if (run("C")) {
     check((cell === "link" || ["open", "waitlist"].includes(signup) ? wasLink : before.every((c) => c.st.length === 1 && c.st[0].state !== "closed_cutoff")) && headBefore === L(l).pricing.title, `${cell} ${l} (${signup}): 4.5 s before 2026-12-24T00:00:00Z the cards are ${wasLink ? "links" : "the status region"} and the header is "${L(l).pricing.title}"`);
     check(after.every((c) => c.link.length === 0 && c.st.length === 1 && c.st[0].state === "closed_cutoff" && c.st[0].text === L(l).cta.closed && c.st[0].note === L(l).state.closedNote) && bd.st.length === 1 && bd.st[0] === L(l).cta.closed && !bd.a.some((a) => /\/start\//.test(a.href)), `${cell} ${l} (${signup}): the page left open flips to "${L(l).cta.closed}" at the cutoff WITHOUT a reload (cards and band; the explanation says paid plans are not open)`);
     check(gs.length >= 2 && gs.every((h) => h === accountOf(l)) && head === L(l).pricing.titleClosed, `${cell} ${l} (${signup}): "Get started" now leads to the account page (${gsBefore[0] === accountOf(l) ? "as before" : "was /start/"}) and the header reads "${L(l).pricing.titleClosed}"`);
+    await ctx.close();
+  }
+  // a page that slept: no timer fires, the visitor comes back (focus / visibilitychange) and the page re-checks the status (TTL cache) and the clock without a reload or a navigation
+  for (const l of QUICK ? ["en"] : LOCALES) {
+    const { ctx, page, m } = await view("announce", `${pre(l)}/pricing/`, 1440, { locale: l, signup: "off", now: CUT - 3600000 });
+    let cs = await cards(page);
+    check(cs.every((c) => c.link.length === 0 && c.st[0].state === "off"), `${l} wake: waiting on "${soonOf(l)}" (answer off)`);
+    m.set({ signup: "open" }); await page.evaluate(() => { window.__skew += 40000; window.dispatchEvent(new Event("focus")); });
+    await page.waitForTimeout(500); cs = await cards(page);
+    check(cs.every((c, i) => c.link.length === 1 && c.link[0].href === startOf(l, PLANS[i].id)), `${l} wake: a focus event after the TTL re-asks the status and the waiting cards become links (no reload, no navigation)`);
+    const n0 = m.calls("/signup/status", "GET").length; await page.evaluate(() => { window.dispatchEvent(new Event("focus")); });
+    await page.waitForTimeout(300);
+    check(m.calls("/signup/status", "GET").length === n0, `${l} wake: a second focus inside the TTL makes no request`);
+    await page.evaluate((c) => { window.__skew = c - Date.now() + window.__skew + 1500; document.dispatchEvent(new Event("visibilitychange")); }, CUT);
+    await page.waitForTimeout(500); cs = await cards(page);
+    check(cs.every((c) => c.link.length === 0 && c.st.length === 1 && c.st[0].state === "closed_cutoff"), `${l} wake: the page slept across 2026-12-24T00:00:00Z: visibilitychange re-reads the clock and every control says "${L(l).cta.closed}" at once`);
     await ctx.close();
   }
   // the boundary: 1 ms before is open, the cutoff instant is closed (client clock)
@@ -460,6 +485,49 @@ if (run("I")) {
   }
 }
 
+// ───────────────────────────────────────────────────────────── L. the closed view
+if (run("L")) {
+  console.log("== L. registration closed (status answer or the browser clock): ordinary cards, no FREE word, no trial line, no launch panel, no dates, no #free-trial target, ONE announcement, axe clean");
+  const probe = (page) => page.evaluate(() => {
+    const vis = (e) => e.getClientRects().length > 0 && getComputedStyle(e).visibility !== "hidden";
+    const main = document.querySelector("main"), mt = main.innerText;
+    return {
+      closedCards: [...document.querySelectorAll("article.aicc-tier--standard")].filter(vis).length, liveCards: [...document.querySelectorAll("article.aicc-tier:not(.aicc-tier--standard)")].filter(vis).length,
+      free: [...document.querySelectorAll(".aicc-tier__free-word, .aicc-tier__trial, [data-ss-free]")].filter(vis).length, panel: [...document.querySelectorAll(".aicc-launch, #free-trial, [data-ss-terms], ol[data-ss-dates]")].filter(vis).length,
+      barLinks: [...document.querySelectorAll('a[href*="free-trial"]')].filter(vis).length, anchorTargets: [...document.querySelectorAll('a[href*="#free-trial"]')].filter(vis).length,
+      dates: /\b(UTC|00:00|22:00)\b|2026/.test(mt.replace(/©[^\n]*/g, "")) , roles: [...document.querySelectorAll('main [role="status"], .aicc-pricing [role="status"]')].filter(vis).filter((e) => e.innerText.trim() !== "").length, // (an empty live region of the page itself announces nothing)
+      attr: document.documentElement.hasAttribute("data-ss-closed"), notes: [...document.querySelectorAll("article.aicc-tier--standard .aicc-pstatus__note")].filter(vis).map((e) => e.innerText.trim()),
+      labels: [...document.querySelectorAll("article.aicc-tier--standard .aicc-pstatus__label")].filter(vis).map((e) => e.innerText.trim()), title: document.querySelector(".aicc-pricing__title").innerText.trim(),
+    };
+  });
+  const axe = async (page) => { await page.evaluate(axeSource); return page.evaluate(async (tags) => { const x = await axe.run(document, { runOnly: { type: "tag", values: tags } }); return x.violations.map((v) => `${v.id}: ${v.nodes.length} (${v.nodes[0].target.join(" ")})`); }, TAGS); };
+  for (const l of QUICK ? ["en", "ru"] : LOCALES) for (const [how, opts] of [["status answer closed_cutoff", { signup: "closed_cutoff" }], ["browser clock after the cutoff", { signup: "open", now: CUT + 1000, fixed: true }]]) for (const w of [390, 1440]) for (const route of ["pricing/", ""]) {
+    const { ctx, page } = await view("announce", `${pre(l)}/${route}`, w, { locale: l, h: 900, media: { reducedMotion: "reduce" }, ...opts });
+    const r = await probe(page), tag = `${l} /${route} @${w} (${how})`;
+    check(r.closedCards === 3 && r.liveCards === 0 && r.free === 0 && r.panel === 0, `${tag}: three ordinary cards (price leads), NO FREE word, NO trial line, NO launch panel, no #free-trial target`);
+    check(r.labels.length === 3 && r.labels.every((x) => x === L(l).cta.closed) && r.notes.every((x) => x === L(l).state.closedNote) && r.title === L(l).pricing.titleClosed, `${tag}: the control says "${L(l).cta.closed}" with the note "${L(l).state.closedNote.slice(0, 40)}..." and the header says "${L(l).pricing.titleClosed}"`);
+    check(r.anchorTargets === 0 && r.dates === false && r.attr, `${tag}: no visible link to #free-trial (the announcement bar is hidden), no date or clock in the main content, <html data-ss-closed> is set`);
+    check(r.roles === 1, `${tag}: ONE live region announces the closed state (the band); the cards carry the same text without role=status (${r.roles})`);
+    if (route === "pricing/" || w === 390) { const v = await axe(page); check(v.length === 0, `${tag}: axe zero violations${v.length ? " -> " + v.join(", ") : ""}`); }
+    await ctx.close();
+  }
+  { // the page left open across the cutoff loses the trial view at once: FREE, the trial lines, the panel and the bar go; the closed cards and header appear
+    for (const l of QUICK ? ["en"] : LOCALES) {
+      const { ctx, page } = await view("announce", `${pre(l)}/pricing/`, 1440, { locale: l, signup: "open", now: CUT - 4500 });
+      const before = await probe(page);
+      await page.waitForTimeout(5200);
+      const after = await probe(page), bar = await page.evaluate(() => getComputedStyle(document.querySelector(".aicc-eabar")).visibility);
+      check(before.liveCards === 3 && before.free >= 6 && before.panel >= 1 && !before.attr, `${l} left open (4.5 s before the cutoff): live cards with FREE and the trial line, the launch panel, no closed marker`);
+      check(after.closedCards === 3 && after.liveCards === 0 && after.free === 0 && after.panel === 0 && after.attr && after.anchorTargets === 0 && bar === "hidden", `${l} left open: at the cutoff the page switches to the closed view WITHOUT a reload (no FREE, no trial line, no panel, the bar hidden: ${bar})`);
+      await ctx.close();
+    }
+  }
+  { // a build that has commerce open is not part of the test builds; the note logic is asserted in the sources test (closedPaidNote when COMMERCE_OPEN)
+    const src = fs.readFileSync("src/components/ss/Ss.tsx", "utf8");
+    check(/COMMERCE_OPEN \? n\.closedPaidNote : n\.closedNote/.test(src), "the closed note is Commerce-aware: closedPaidNote when the build has commerce open (no 'not open for purchase yet' claim), closedNote otherwise");
+  }
+}
+
 // ───────────────────────────────────────────────────────────── J. the gated strike variant
 if (run("J")) {
   console.log("== J. the gated strike variant exists only in its own build; the default builds carry no struck price");
@@ -484,7 +552,7 @@ if (run("K")) {
   console.log("== K. every tier, launch panel and band (Home, Pricing, Product) is inside `.aicc-pricing`: computed padding > 0, no clipping, in every state");
   const probe = (page) => page.evaluate(() => {
     const vis = (e) => e.getClientRects().length > 0, out = { unscoped: [], pad: [], clip: [], counts: {} };
-    const boxes = [...document.querySelectorAll(".aicc-tier:not(.aicc-tier--standard), .aicc-launch, .aicc-pband")].filter(vis);
+    const boxes = [...document.querySelectorAll(".aicc-tier, .aicc-launch, .aicc-pband")].filter(vis);
     out.counts = { tiers: boxes.filter((b) => b.matches(".aicc-tier")).length, panels: boxes.filter((b) => b.matches(".aicc-launch")).length, bands: boxes.filter((b) => b.matches(".aicc-pband")).length };
     for (const b of boxes) {
       if (!b.closest(".aicc-pricing")) out.unscoped.push(b.className);
@@ -492,7 +560,7 @@ if (run("K")) {
       for (const e of [...b.querySelectorAll("*")].filter(vis)) { const q = e.getBoundingClientRect(); if (q.width && (q.left < r.left - 1.5 || q.right > r.right + 1.5)) out.clip.push(`${e.className || e.tagName} leaves ${b.className.split(" ")[0]}`); const cs = getComputedStyle(e); if (!["inline", "contents"].includes(cs.display) && !e.closest("svg") && (cs.overflowX !== "visible" || cs.overflowY !== "visible") && (e.scrollWidth > e.clientWidth + 1.5 || e.scrollHeight > e.clientHeight + 1.5) && !e.matches(".aicc-sr-only")) out.clip.push(`${e.className} clipped`); }
     }
     const padOf = (sel) => [...document.querySelectorAll(sel)].filter(vis).map((e) => { const cs = getComputedStyle(e); return Math.min(parseFloat(cs.paddingInlineStart), parseFloat(cs.paddingInlineEnd), parseFloat(cs.paddingBlockStart), parseFloat(cs.paddingBlockEnd)); });
-    for (const [sel, name] of [[".aicc-tier__plan", "tier plan zone"], [".aicc-tier:not(.aicc-tier--standard) .aicc-tier__launch", "tier launch zone"], [".aicc-tier__incl", "tier footer line"], [".aicc-launch", "launch panel"], [".aicc-launch__fact-icon", "(no padding needed)"], [".aicc-pcta .aicc-pstatus__pill", "status pill"], [".aicc-pcta .aicc-btn", "link"], [".aicc-tier__badge", "badge"], [".aicc-launch__tag", "panel tag"]]) {
+    for (const [sel, name] of [[".aicc-tier__plan", "tier plan zone"], [".aicc-tier__launch", "tier launch zone"], [".aicc-tier__incl", "tier footer line"], [".aicc-launch", "launch panel"], [".aicc-launch__fact-icon", "(no padding needed)"], [".aicc-pcta .aicc-pstatus__pill", "status pill"], [".aicc-pcta .aicc-btn", "link"], [".aicc-tier__badge", "badge"], [".aicc-launch__tag", "panel tag"]]) {
       if (name === "(no padding needed)") continue;
       const v = padOf(sel); if (v.length && v.some((x) => !(x > 0))) out.pad.push(`${name}: ${v.join("/")}`);
     }
@@ -503,7 +571,7 @@ if (run("K")) {
   for (const [cell, signup] of [["announce", "off"], ["announce", "open"], ["announce", "waitlist"], ["announce", "closed_cutoff"], ["announce", "paused"], ["link", "http500"], ["off", "off"]]) for (const l of QUICK ? ["en", "he"] : LOCALES) for (const [route, name] of ROUTES) for (const w of [390, 1440]) {
     const { ctx, page } = await view(cell, `${pre(l)}/${route}`, w, { locale: l, signup, h: 900, media: { reducedMotion: "reduce" } });
     const r = await probe(page);
-    const want = name === "product" ? { tiers: 0, panels: 0, bands: 2 } : { tiers: 3, panels: 1, bands: 1 };
+    const want = name === "product" ? { tiers: 0, panels: 0, bands: 2 } : { tiers: 3, panels: signup === "closed_cutoff" ? 0 : 1, bands: 1 }; // (a closed view shows the ordinary cards and NO launch panel)
     check(JSON.stringify(r.counts) === JSON.stringify(want) && r.unscoped.length === 0 && r.pad.length === 0 && r.clip.length === 0 && r.border === 0, `${cell} ${l} ${name} @${w} (${signup}): ${JSON.stringify(r.counts)} all inside .aicc-pricing, padding > 0 on every zone, kit resets applied (border-box everywhere), nothing clipped${r.unscoped.length + r.pad.length + r.clip.length ? " -> " + [...r.unscoped, ...r.pad, ...r.clip][0] : r.border ? ` (content-box ${r.border})` : ""}`);
     await ctx.close();
   }
