@@ -30,6 +30,8 @@ const SS_PHRASES = await (async () => {
   const out = new Set();
   const walkStrings = (o) => (typeof o === "string" ? [o] : o && typeof o === "object" ? Object.values(o).flatMap(walkStrings) : []);
   for (const l of ["en", "he", "es", "ru"]) for (const step of [0, 1, 2]) for (const v of walkStrings(getEaDictionary(l, step).ss)) { out.add(v); out.add(v.replace(/\u00a0/g, " ")); out.add(v.replace(/\{n\}/g, "3").replace(/\{n\}/g, "10")); }
+  // P41: the journey page copy (`ea.journey`, Site only) is approved self-service text too; its {path} token is the WordPress menu path of that language
+  for (const l of ["en", "he", "es", "ru"]) for (const step of [0, 1, 2]) { const j = getEaDictionary(l, step).journey; for (const v of walkStrings(j)) { out.add(v); out.add(v.replace(/\u00a0/g, " ")); out.add(v.replace(/\{path\}/g, j.path)); } }
   for (const l of ["en", "he", "es", "ru"]) for (const n of [3, 10]) out.add(getEaDictionary(l, 0).ss.plan.paidMany.replace("{n}", String(n)));
   return [...out].filter((x) => x.trim().length > 3).sort((a, b) => b.length - a.length);
 })();
@@ -207,8 +209,10 @@ async function selfTest() {
     check("self-service: 'try it free' on a marked page is caught", analyzeDocument(ssPage("<p>Try it free.</p>"), c).some((x) => x.id === "free-trial"));
     check("self-service: 'free for 30 days' on a marked page is caught", analyzeDocument(ssPage("<p>Use AICC free for 30 days.</p>"), c).some((x) => x.id === "free-trial"));
     // P39: the owner-required claims (two dates, no automatic conversion, "opens soon") pass ONLY as the pack's exact strings
-    check("self-service P39: the pack's registration / end / no-conversion / opens-soon strings pass on a marked page", analyzeDocument(ssPage("<p>Free trial opens soon</p><p>No automatic conversion to a paid plan. Continuing is your decision.</p><p>Registration closes</p><p>Dec 24, 2026 at 00:00 UTC</p><p>Launch trial: 1 store</p>"), c).length === 0, JSON.stringify(analyzeDocument(ssPage("<p>Free trial opens soon</p><p>No automatic conversion to a paid plan. Continuing is your decision.</p>"), c)));
-    check("self-service P39: the same sentences on an UNMARKED page are caught", analyzeDocument(ssPage("<p>Free trial opens soon</p>", false), c).some((x) => x.id === "free-trial"));
+    check("self-service P39: the pack's registration / end / no-conversion / not-open-yet strings pass on a marked page", analyzeDocument(ssPage("<p>Free trial registration isn't open yet.</p><p>No automatic conversion to a paid plan. Continuing is your decision.</p><p>Registration closes</p><p>Dec 24, 2026 at 00:00 UTC</p><p>Launch trial: 1 store</p>"), c).length === 0, JSON.stringify(analyzeDocument(ssPage("<p>Free trial registration isn't open yet.</p><p>No automatic conversion to a paid plan. Continuing is your decision.</p>"), c)));
+    check("self-service P41: the journey page copy (nine steps, status panel) passes on a marked page", analyzeDocument(ssPage("<h2>Free trial status</h2><h3>Your free trial starts</h3><p>Your account and your free trial for 1 store are created automatically. No payment method is asked for, nothing is charged, and nothing turns into a paid plan on its own.</p>"), c).length === 0, JSON.stringify(analyzeDocument(ssPage("<h3>Your free trial starts</h3>"), c)));
+    check("self-service P41: the same journey sentence on an UNMARKED page is caught", analyzeDocument(ssPage("<h3>Your free trial starts</h3>", false), c).some((x) => x.id === "free-trial"));
+    check("self-service P39: the same sentences on an UNMARKED page are caught", analyzeDocument(ssPage("<p>Free trial: 1 store</p>", false), c).some((x) => x.id === "free-trial"));
     check("self-service P39: a loose trial deadline claim on a marked page is caught", analyzeDocument(ssPage("<p>Free trial ends soon, register by Dec 24.</p>"), c).some((x) => x.id === "free-trial"));
     check("self-service: without ssPhrases a marked page gets no allowance", analyzeDocument(ssPage('<a href="https://www.copilt.org/start/">Start free trial</a>'), ctx).some((x) => x.id === "free-trial"));
   }

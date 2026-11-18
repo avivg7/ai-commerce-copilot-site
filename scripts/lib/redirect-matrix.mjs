@@ -155,7 +155,9 @@ export const WP_ONLY_PAGES = ["/data-processing-addendum/", "/cart/", "/checkout
  */
 export const WP_SITEMAP_PAGES = ["/data-processing-addendum/"];
 /** Documented but not built anywhere yet: would be a 404 on the edge. */
-export const UNOWNED = ["/get-started/", "/docs/", "/install/", "/download/"];
+export const UNOWNED = ["/docs/", "/install/", "/download/"];
+/** P41: Site-owned in a self-service build (the production export): the journey page. No edge change: the edge sends only the WordPress pages to WordPress, every other path is the static export. */
+export const SS_STATIC_PAGES = ["/get-started/", "/he/get-started/", "/es/get-started/", "/ru/get-started/"];
 
 const W = ORIGIN;
 const r = (from, status, location, extra = {}) => ({ from, status, location, ...extra });
@@ -421,7 +423,11 @@ export const CASES = [
   o("https://www.copilt.org/wp-signup.php", "404", 404, { method: "POST" }),
   o("https://www.copilt.org/50x.html", "404", 404, { note: "served only by the edge's error handler, never as a page" }),
   // ---- 404s: never owned -------------------------------------------------------------------------------------------
-  o("https://www.copilt.org/get-started/", "404", 404, { note: "UNOWNED: promised by the docs, not built in the site" }),
+  // P41: /get-started/ is a page of the self-service export (the journey page), served by the static origin in four languages; it needs NO edge rule
+  o("https://www.copilt.org/get-started/", "static"),
+  o("https://www.copilt.org/he/get-started/", "static"),
+  o("https://www.copilt.org/es/get-started/", "static"),
+  o("https://www.copilt.org/ru/get-started/", "static"),
   o("https://www.copilt.org/install/", "404", 404, { note: "blocked alias (target not built)" }),
   o("https://www.copilt.org/download/", "404", 404),
   o("https://www.copilt.org/docs/", "404", 404),

@@ -324,6 +324,7 @@ if (fs.existsSync(OUT_DIR)) {
     const base = (l === "en" ? "" : `/${l}`) + (slug ? `/${slug}` : "");
     staticFiles.add(`${base}/index.html`); staticFiles.add(`${base}/index.txt`); staticFiles.add(`${base}/__next._tree.txt`); staticFiles.add(`${base}/__next._head.txt`);
   }
+  for (const f of M.SS_STATIC_PAGES) { staticFiles.add(`${f}index.html`); staticFiles.add(`${f}index.txt`); } // P41: the journey page of a self-service export (the production build)
   for (const f of ["/robots.txt", "/sitemap.xml", "/favicon.ico", "/404.html", "/index.txt", "/__next._tree.txt", "/_next/static/chunks/main.js", "/_next/static/chunks/a.js", "/_next/static/css/a.css", "/brand-kit/aicc-logomark.svg", "/brand-kit/x.svg", "/fonts/heebo-hebrew.woff2", "/og/en-home.jpg", "/demo/aicc-demo.mp4"]) staticFiles.add(f);
 }
 const staticExists = (p) => /^\/_next\/static\//.test(p) /* hashed names differ per build: assumed present */ || staticFiles.has(p) || (p.endsWith("/") && staticFiles.has(p + "index.html"));
@@ -608,6 +609,7 @@ for (const p of M.WP_ONLY_PAGES) { const r = await hit(`https://${CANON}${p}`); 
     if (sm) ok(sm.includes(`<loc>https://${M.CANONICAL_HOST}${p}</loc>`) || STAGE_HOST, `${p} is WordPress-owned and public but missing from the built sitemap.xml`);
   }
 }
+for (const p of M.SS_STATIC_PAGES) { const r = await hit(`https://${CANON}${p}`); ok(r.status === 200 && r.headers["x-origin"] === "static", `${p} (P41 journey page) is served by the static origin with a 200 and needs no edge rule, got ${r.headers["x-origin"]} ${r.status}`); ok(!M.WP_ONLY_PAGES.includes(p) && !new RegExp(M.WP_PAGES_RE).test(p), `${p} is not in the WordPress allow-list (a new WordPress-served top-level path would need a gated edge change; the journey page does not)`); }
 for (const p of M.UNOWNED) { const r = await hit(`https://${CANON}${p}`); ok(r.status === 404, `${p} is listed as UNOWNED and must be a 404 until it is built, got ${r.status}`); }
 // every enabled redirect target (for the sample requests above) lands on a served page: covered by hop/final checks; here: disabled rules really are disabled
 for (const rule of M.PATH_RULES.filter((x) => x.enabled === false)) ok(!redirectsSrc.matchers.has(rule.id), `disabled rule ${rule.id} leaked into the generated config`);

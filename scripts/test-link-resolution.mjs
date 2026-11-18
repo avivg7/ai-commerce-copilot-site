@@ -15,6 +15,7 @@ import { ROOT } from "./lib/load.mjs";
 const args = process.argv.slice(2);
 const DIR = args.includes("--dir") ? path.resolve(args[args.indexOf("--dir") + 1]) : null;
 const NO_START = args.includes("--no-start");
+const JOURNEY = args.includes("--journey") || args.includes("--journey-page"), JOURNEY_LINKS = args.includes("--journey"), NO_JOURNEY = args.includes("--no-journey"); // P41: a self-service export carries /get-started/ in four languages and links to it; every other export carries neither
 if (!DIR) { console.error("usage: --dir <export> [--no-start]"); process.exit(2); }
 const LOC = "(?:/(?:he|es|ru))?";
 const WP = new RegExp(WP_PAGES_RE.replace(/\$\{LOC\}/g, LOC), "i");
@@ -24,13 +25,13 @@ const htmlFiles = walk(DIR).filter((f) => f.endsWith(".html") && !/\/(_next|bran
 const ids = new Map();
 const idsOf = (file) => { if (!ids.has(file)) ids.set(file, new Set([...fs.readFileSync(file, "utf8").matchAll(/\bid="([^"]+)"/g)].map((m) => m[1]))); return ids.get(file); };
 const decode = (t) => t.replace(/&amp;/g, "&").replace(/&#x27;|&#39;/g, "'").replace(/&quot;/g, '"');
-const bad = [], cpRoutes = new Map(); let links = 0;
+const bad = [], cpRoutes = new Map(); let links = 0; const journeyLinks = new Map();
 const pageFile = (p) => { const a = path.join(DIR, p.replace(/^\//, ""), "index.html"); return fs.existsSync(a) ? a : null; };
 for (const f of htmlFiles) {
   const rel = path.relative(DIR, f), here = f;
   const raw = fs.readFileSync(f, "utf8");
-  for (const m of raw.matchAll(/<a\b[^>]*?\shref="([^"]*)"/g)) {
-    const href = decode(m[1]); links++;
+  for (const m of raw.matchAll(/<a\b[^>]*?\shref="([^"]*)"[^>]*>/g)) {
+    const href = decode(m[1]); links++; const langItem = /\sdata-lang="/.test(m[0]); // a language-menu item points to the same page in ANOTHER language by design
     if (/^(mailto|tel):/.test(href)) continue;
     let u;
     if (/^https?:/.test(href)) { if (!href.startsWith(ORIGIN + "/") && href !== ORIGIN) { bad.push(`${rel}: external origin ${href}`); continue; } u = href.slice(ORIGIN.length) || "/"; }
@@ -38,6 +39,7 @@ for (const f of htmlFiles) {
     else if (href.startsWith("/")) u = href;
     else { bad.push(`${rel}: relative or odd href ${href}`); continue; }
     const [pp, frag] = [u.split(/[?#]/)[0], (u.split("#")[1] || "")];
+    if (/get-started/.test(pp) && !langItem) { const pref = (rel.match(/^(he|es|ru)\//) || [, "en"])[1]; const want = new RegExp(`^${pref === "en" ? "" : `/${pref}`}/get-started/(\\?plan=(solo|studio|agency))?$`); if (!want.test(u)) bad.push(`${rel}: journey link ${u} is not the ${pref} journey page (language prefix, plan only)`); else journeyLinks.set(pref, (journeyLinks.get(pref) || 0) + 1); }
     if (/^\/(_next|brand-kit|og|fonts|demo)\//.test(pp) || /\.[a-z0-9]{2,5}$/i.test(pp)) { if (!fs.existsSync(path.join(DIR, pp))) bad.push(`${rel}: missing file ${pp}`); continue; }
     const target = pp === "/" ? path.join(DIR, "index.html") : pageFile(pp);
     if (target) { if (frag && !idsOf(target).has(decodeURIComponent(frag))) bad.push(`${rel}: ${pp}#${frag} has no target element`); continue; }
@@ -56,5 +58,14 @@ const startLinks = [...cpRoutes.keys()].filter((k) => /^\/start(\/|$)/.test(k));
 console.log(`${htmlFiles.length} pages, ${links} links checked`);
 console.log(`Control Plane routes linked (allow-list WP_PAGES_RE of scripts/lib/redirect-matrix.mjs): ${[...cpRoutes].map(([k, n]) => `${k} x${n}`).join(", ") || "none"}`);
 if (NO_START && startLinks.length) bad.push(`the default (coming_soon) build links to the Control Plane /start/ page ${startLinks.join(", ")}: it may be a 404`);
+if (JOURNEY) {
+  for (const l of ["en", "he", "es", "ru"]) {
+    const f = path.join(DIR, l === "en" ? "" : l, "get-started/index.html");
+    if (!fs.existsSync(f)) bad.push(`the journey page ${l === "en" ? "" : "/" + l}/get-started/ is missing from the export`);
+    if (JOURNEY_LINKS) for (const pg of ["", "product/", "pricing/"]) { const src = path.join(DIR, l === "en" ? "" : l, pg, "index.html"); const raw = fs.existsSync(src) ? fs.readFileSync(src, "utf8") : ""; if (!new RegExp(`href="${l === "en" ? "" : "/" + l}/get-started/`).test(raw)) bad.push(`${l} /${pg} carries no link to its own-language journey page`); }
+  }
+  console.log(`journey links per language: ${[...journeyLinks].map(([k, n]) => `${k} x${n}`).join(", ")}`);
+}
+if (NO_JOURNEY) { const found = ["", "he", "es", "ru"].filter((l) => fs.existsSync(path.join(DIR, l, "get-started/index.html"))); if (found.length || journeyLinks.size) bad.push(`this build must carry NO journey page and no link to it (found pages: ${found.join(",") || "none"}, link languages: ${[...journeyLinks.keys()].join(",") || "none"})`); else console.log("no journey page and no link to it (not a self-service build)"); }
 if (bad.length) { console.error(`FAIL test:link-resolution (${bad.length})\n  ` + [...new Set(bad)].slice(0, 40).join("\n  ")); process.exit(1); }
 console.log(`PASS test:link-resolution: no broken link${NO_START ? ", no link to /start/" : ""}`);

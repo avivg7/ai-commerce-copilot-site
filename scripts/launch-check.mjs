@@ -47,7 +47,8 @@ if (offersOn && processorProblems(env.NEXT_PUBLIC_AICC_PAYMENT_PROCESSOR).length
   // The plugin can only be installed if there is a route that tells the merchant where to get it. docs promise /get-started/; until it is built there is no
   // distribution path (no WordPress.org listing, no download route in the account area): "Get started" sells a journey that cannot be finished.
   const { ROUTES } = await loadTs("src/lib/routes.ts");
-  if (!Object.values(ROUTES).includes("get-started")) problems.push("plugin distribution path not available: no /get-started/ page and no download route exist, so a merchant who buys cannot obtain the plugin (docs/cutover/redirect-matrix.md section 6; owner/business decision)");
+  // P41: a self-service build exports the journey page /get-started/ (src/lib/requestRoutes.ts SS_ROUTES: the nine steps, where the plugin comes from, how it is installed and paired); it is not an ordinary route, so it is looked up by the switch
+  if (!Object.values(ROUTES).includes("get-started") && env.NEXT_PUBLIC_AICC_SELFSERVICE !== "on") problems.push("plugin distribution path not available: no /get-started/ page and no download route exist, so a merchant who buys cannot obtain the plugin (docs/cutover/redirect-matrix.md section 6; owner/business decision)");
 }
 const approved = env.NEXT_PUBLIC_LEGAL_REVIEW_APPROVED === "true";
 let flagged = 0;

@@ -10,8 +10,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
-import { ROOT } from "./lib/load.mjs";
-import { STRIKE_PAGES, strikeMarkup } from "./lib/strike-markup.mjs";
+import { ROOT, loadDictionaries, loadTs } from "./lib/load.mjs";
+import { STRIKE_PAGES, strikeMarkup, strikeCardProblems } from "./lib/strike-markup.mjs";
 
 const args = process.argv.slice(2);
 const all = (n) => args.flatMap((a, i) => (a === `--${n}` && args[i + 1] ? [path.resolve(args[i + 1])] : []));
@@ -29,15 +29,29 @@ for (const root of CLEAN) {
   const hits = htmlOf(root).map((f) => [path.relative(root, f), strikeMarkup(fs.readFileSync(f, "utf8"))]).filter(([, m]) => m.length);
   check(hits.length === 0, `${path.basename(root)}: none of ${htmlOf(root).length} HTML files carries a strike marker${hits.length ? " -> " + hits[0][0] + ": " + hits[0][1].join(", ") : ""}`);
   const css = walk(root).filter((f) => /\.css$/.test(f)).map((f) => fs.readFileSync(f, "utf8")).join("\n");
-  check(/aicc-tier__price--strike/.test(css) && htmlOf(root).every((f) => !/class="[^"]*aicc-tier__price--strike/.test(fs.readFileSync(f, "utf8"))), `${path.basename(root)}: the kit stylesheet names the strike class (it is a stylesheet rule) and no element uses it`);
+  check(/aicc-tier__offer--strike/.test(css) && !/aicc-tier__price--strike/.test(css) && htmlOf(root).every((f) => !/class="[^"]*aicc-tier__offer--strike/.test(fs.readFileSync(f, "utf8"))), `${path.basename(root)}: the kit stylesheet names the strike class (a stylesheet rule; the faint-grey P40 rule is retired) and no element uses it`);
 }
 
-console.log("== 2. the strike export carries the P40 markers (Home and Pricing, four languages)");
+console.log("== 2. the strike export carries the P41 markers (Home and Pricing, four languages): three struck cards, each with its label, disclosure and screen-reader text in the SAME card");
+const D = await loadDictionaries();
+const { PLANS: PL, formatPrice: fmtPrice } = await loadTs("src/data/plans.ts");
 for (const rel of STRIKE_PAGES) {
-  const h = fs.readFileSync(path.join(STRIKE, rel), "utf8");
+  const h = fs.readFileSync(path.join(STRIKE, rel), "utf8"), l = ["he", "es", "ru"].find((x) => rel.startsWith(`${x}/`)) || "en", pr = D[l].ea.ss.pricing;
   const found = strikeMarkup(h);
-  const per = [(h.match(/class="aicc-tier__price aicc-tier__price--strike"/g) || []).length, (h.match(/data-ss-price="strike"/g) || []).length, (h.match(/<s class="aicc-tier__amount">/g) || []).length];
+  const per = [(h.match(/class="aicc-tier__offer aicc-tier__offer--strike"/g) || []).length, (h.match(/data-ss-price="strike"/g) || []).length, (h.match(/<s>/g) || []).length];
   check(found.length >= 3 && per.every((n) => n === 3), `${rel}: markers found (${found.length} kinds), 3 struck cards [${per}]`);
+  const S = { label: pr.strikeLabel, note: pr.strikeNote, sr: pr.strikeSr };
+  check(strikeCardProblems(h, S).length === 0, `${rel}: every struck card carries the label, the disclosure and the screen-reader text in the same card${strikeCardProblems(h, S)[0] ? " -> " + strikeCardProblems(h, S)[0] : ""}`);
+  const amounts = [...h.matchAll(/<s><bdi class="aicc-tier__amount">([^<]*)<\/bdi>/g)].map((m) => m[1]);
+  check(JSON.stringify(amounts) === JSON.stringify(PL.map((p) => fmtPrice(p.price, l))), `${rel}: the struck amounts equal the single build-time plan source (${amounts})`);
+}
+{ // the CI rule: strike markup WITHOUT its label / disclosure / announcement in the same card is refused (a mutation of the real export, four failure modes)
+  const h = fs.readFileSync(path.join(STRIKE, "pricing/index.html"), "utf8"), pr = D.en.ea.ss.pricing, S = { label: pr.strikeLabel, note: pr.strikeNote, sr: pr.strikeSr };
+  const esc = (x) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  for (const [name, mut, re] of [["no label", (x) => x.replace(new RegExp(esc(S.label), "g"), ""), /no label/], ["no disclosure", (x) => x.replace(new RegExp(esc(S.note), "g"), ""), /no disclosure/], ["no screen-reader text", (x) => x.replace(new RegExp(esc(S.sr), "g"), ""), /no screen-reader/]]) {
+    const r = strikeCardProblems(mut(h), S);
+    check(r.length >= 1 && re.test(r.join(" ")), `strike markup ${name}: refused by strikeCardProblems (${r[0] || "nothing"})`);
+  }
 }
 
 console.log("== 3. the release gate refuses the strike export and accepts a real reference");
@@ -47,6 +61,16 @@ console.log("== 3. the release gate refuses the strike export and accepts a real
   check(r0.status === 1 && /struck through/.test(r0.stderr) && /AICC_EA_STRIKE_COUNSEL_APPROVED/.test(r0.stderr), "the strike export WITHOUT an approval is refused (exit 1) and the variable is named");
   for (const bad of ["yes", "approved-1", "TODO", "true-2026", "ok-1", "x-1", "/etc/hosts", "package.json", " "]) check(gate(STRIKE, bad).status === 1, `a placeholder / answer word / out-of-evidence file (${JSON.stringify(bad)}) is not an approval`);
   check(gate(STRIKE, "counsel-2026-11-30").status === 0, "a real counsel reference lets the strike export through (recorded, not verified)");
+  { // memo 7.3: even WITH the reference, a struck card without its disclosure is refused (a mutated copy of the strike export)
+    const cp = fs.mkdtempSync(path.join(os.tmpdir(), "p41-strike-mut-"));
+    try {
+      fs.cpSync(STRIKE, cp, { recursive: true });
+      const f = path.join(cp, "pricing/index.html"), h0 = fs.readFileSync(f, "utf8"), note = D.en.ea.ss.pricing.strikeNote;
+      fs.writeFileSync(f, h0.split(note).join(""));
+      const r = gate(cp, "counsel-2026-11-30");
+      check(r.status === 1 && /no disclosure|same card/.test(r.stderr), "WITH a valid counsel reference a struck card WITHOUT its disclosure is still refused (exit 1: label + disclosure in the same card, memo 7.3)");
+    } finally { fs.rmSync(cp, { recursive: true, force: true }); }
+  }
   for (const root of CLEAN) check(gate(root).status === 0, `${path.basename(root)}: a default export passes the gate without any approval`);
 }
 

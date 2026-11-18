@@ -62,14 +62,17 @@ const TIER = "article.aicc-tier:not(.aicc-tier--standard)";
 // the VISIBLE cards (P40: the live set while registration can start, the closed / ordinary set from the cutoff)
 const cards = (page) => page.evaluate((TIER) => [...document.querySelectorAll("article.aicc-tier")].filter((a) => a.getClientRects().length > 0).map((a) => {
   const vis = (e) => e.getClientRects().length > 0;
-  const link = [...a.querySelectorAll("a.aicc-btn")].filter(vis).map((e) => ({ href: e.getAttribute("href"), text: e.innerText.replace(/\s+/g, " ").trim(), h: e.getBoundingClientRect().height, state: e.getAttribute("data-ss-state"), cls: e.className }));
+  const link = [...a.querySelectorAll("a.aicc-btn")].filter(vis).map((e) => ({ kind: e.closest(".aicc-pcta").getAttribute("data-ss-cta"), href: e.getAttribute("href"), text: e.innerText.replace(/\s+/g, " ").trim(), h: e.getBoundingClientRect().height, state: e.getAttribute("data-ss-state"), cls: e.className }));
   const st = [...a.querySelectorAll("p.aicc-pstatus")].filter(vis).map((e) => ({ tag: e.tagName, text: e.querySelector(".aicc-pstatus__label").innerText.replace(/\s+/g, " ").trim(), note: (e.querySelector(".aicc-pstatus__note") || { innerText: "" }).innerText.replace(/\s+/g, " ").trim(), state: e.getAttribute("data-ss-state"), role: e.getAttribute("role"), insideAction: !!e.closest("a,button"), cls: e.className, tabindex: e.getAttribute("tabindex"), cursor: getComputedStyle(e).cursor, h: e.getBoundingClientRect().height }));
   const demo = [...a.querySelectorAll("[data-ss-demo], a[href$='#demo']")].filter(vis).length;
   const btns = [...a.querySelectorAll(".aicc-btn, button")].filter(vis).length;
   const dates = [...a.querySelectorAll("[data-ss-date], [data-ss-dates]")].filter(vis).length;
   return { link, st, demo, btns, dates, plan: a.getAttribute("data-plan") };
 }), TIER);
-const SOON = (l) => D[l].ea.ss.cta.soon;
+const HOW = (l) => D[l].ea.ss.cta.how;
+const journeyOf = (l, plan) => `${l === "en" ? "" : `/${l}`}/get-started/${plan ? `?plan=${plan}` : ""}`;
+// P41: a control of a card whose registration is not open: ONE real information link (never an inert pill, never /start/)
+const isInfo = (c, l, i, state) => c.link.length === 1 && c.link[0].kind === "info" && c.link[0].href === journeyOf(l, PLANS[i].id) && c.link[0].text.startsWith(HOW(l)) && c.link[0].h >= 44 && c.st.length === 0 && (state === undefined || c.link[0].state === state);
 
 // ───────── layout, RTL and screenshots ─────────
 console.log("== layout: Home and Pricing, four languages, 1440 and 390 px (he right-to-left); screenshots in " + SHOTS);
@@ -81,14 +84,14 @@ for (const cell of ["announce", "off", "open"]) for (const l of LOCALES) for (co
     const g = await page.evaluate(() => ({ sw: document.documentElement.scrollWidth, iw: innerWidth, dir: document.documentElement.dir }));
     check(g.sw <= g.iw && g.dir === (l === "he" ? "rtl" : "ltr"), `ss-${cell} ${l} ${name} @${w}: no horizontal scroll (${g.sw}<=${g.iw}), dir=${g.dir}`);
     const cs = await cards(page);
-    check(cs.length === 3 && cs.every((c) => c.link.length === 0 && c.btns === 0 && c.st.length === 1 && c.st[0].tag === "P" && c.st[0].role === "status" && c.st[0].text === SOON(l) && !c.st[0].insideAction && c.demo === 0 && c.dates === 0), `ss-${cell} ${l} ${name} @${w}: three cards, each the plain status "${SOON(l)}" (no button, no link), no per-card demo link, no date line (the dates are said once, in the launch panel)`);
+    check(cs.length === 3 && cs.every((c, k) => isInfo(c, l, k) && c.demo === 0 && c.dates === 0), `ss-${cell} ${l} ${name} @${w}: three cards, each a REAL information link "${HOW(l)}" to ${journeyOf(l, "<plan>")} (no inert pill, no per-card paragraph), no per-card demo link, no date line (the dates are said once, in the launch panel)`);
     // every card fits: nothing inside a card is wider than the card; the dates and the status never overflow
     const fit = await page.evaluate((TIER) => [...document.querySelectorAll(TIER)].map((a) => { const r = a.getBoundingClientRect(); return [...a.querySelectorAll("*")].filter((e) => e.getClientRects().length).every((e) => { const q = e.getBoundingClientRect(); return q.left >= r.left - 1 && q.right <= r.right + 1; }); }), TIER);
     check(fit.length === 3 && fit.every(Boolean), `ss-${cell} ${l} ${name} @${w}: every element of every card stays inside the card`);
     if (l === "he") {
       // right-to-left: the plan name starts at the right edge, the status icon sits right of its text, the card and the panel timeline are rtl (the first step, "registration closes", is on the right)
-      const rtl = await page.evaluate((TIER) => { const a = document.querySelector(TIER), r = a.getBoundingClientRect(), nm = a.querySelector(".aicc-tier__name").getBoundingClientRect(), p = a.querySelector(".aicc-pstatus__pill"), ic = p.querySelector("svg").getBoundingClientRect(), tx = p.querySelector(".aicc-pstatus__label").getBoundingClientRect(), tl = [...document.querySelectorAll(".aicc-timeline__step")].map((e) => e.getBoundingClientRect()); return { cardDir: getComputedStyle(a).direction, nameRight: r.right - nm.right, nameLeft: nm.left - r.left, iconRight: ic.left >= tx.right - 1, tlFirstRight: tl.length === 2 && tl[0].left > tl[1].left || tl.length === 2 && tl[0].top < tl[1].top }; }, TIER);
-      check(rtl.cardDir === "rtl" && rtl.nameRight < rtl.nameLeft && rtl.iconRight && rtl.tlFirstRight, `ss-${cell} he ${name} @${w}: RTL card: the plan name starts at the right edge, the status icon is right of its text, the timeline's first step is on the right [${JSON.stringify(rtl)}]`);
+      const rtl = await page.evaluate((TIER) => { const a = document.querySelector(TIER), r = a.getBoundingClientRect(), nm = a.querySelector(".aicc-tier__name").getBoundingClientRect(), p = a.querySelector(".aicc-pcta .aicc-btn"), ic = p.querySelector("svg").getBoundingClientRect(), tx = p.querySelector("span").getBoundingClientRect(), tl = [...document.querySelectorAll(".aicc-timeline__step")].map((e) => e.getBoundingClientRect()); return { cardDir: getComputedStyle(a).direction, nameRight: r.right - nm.right, nameLeft: nm.left - r.left, iconRight: ic.right <= tx.left + 1, tlFirstRight: tl.length === 2 && tl[0].left > tl[1].left || tl.length === 2 && tl[0].top < tl[1].top }; }, TIER);
+      check(rtl.cardDir === "rtl" && rtl.nameRight < rtl.nameLeft && rtl.iconRight && rtl.tlFirstRight, `ss-${cell} he ${name} @${w}: RTL card: the plan name starts at the right edge, the link arrow is LEFT of its text (mirrored), the timeline's first step is on the right [${JSON.stringify(rtl)}]`);
     }
     if (name === "home") {
       const hero = await page.evaluate(() => [...document.querySelectorAll(".aicc-hero-actions a")].filter((e) => e.closest(".aicc-hero--home")).map((e) => ({ href: e.getAttribute("href"), text: e.innerText.trim(), top: e.getBoundingClientRect().top, vis: e.getClientRects().length > 0 })));
@@ -115,13 +118,13 @@ console.log("== state matrix: what each answer of GET /signup/status shows (defa
 const L = D.en.ea.ss.cta;
 const FAIL_ANSWERS = ["http404", "http500", "badjson", "drop", "inconsistent", "unknown"];
 const MATRIX = [
-  ["open", "link", L.start], ["waitlist", "link", L.waitlist], ["closed_cutoff", "text", L.closed], ["paused", "text", L.paused], ["off", "text", L.soon],
+  ["open", "link", L.start], ["waitlist", "link", L.waitlist], ["closed_cutoff", "text", L.closed], ["paused", "info", L.how], ["off", "info", L.how],
   ...FAIL_ANSWERS.map((a) => [a, "static", null]),
 ];
 for (const initial of ["coming_soon", "link"]) {
   const cell = initial === "link" ? "link" : "announce";
   for (const [answer, kind0, label0] of MATRIX) {
-    const kind = kind0 === "static" ? (initial === "link" ? "link" : "text") : kind0, label = kind0 === "static" ? (initial === "link" ? L.start : L.soon) : label0;
+    const kind = kind0 === "static" ? (initial === "link" ? "link" : "info") : kind0, label = kind0 === "static" ? (initial === "link" ? L.start : L.how) : label0;
     const { ctx, page, m, errors } = await view(cell, "/pricing/", 1440, { signup: answer, cookie: true });
     const cs = await cards(page);
     const tag = `${initial} build, answer ${answer}`;
@@ -129,14 +132,15 @@ for (const initial of ["coming_soon", "link"]) {
     const calls = m.calls("/signup/status", "GET");
     check(calls.length === 1 && calls[0].headers.cookie === "", `${tag}: exactly ONE status request, no cookie sent (credentials omitted)`);
     if (kind === "link") check(cs.every((c, i) => c.link.length === 1 && c.st.length === 0 && c.link[0].text.startsWith(label) && c.link[0].href === startOf("en", PLANS[i].id) && c.link[0].h >= 44 && c.link[0].state === (answer === "open" || answer === "waitlist" ? answer : "static") && c.link[0].cls.includes(PLANS[i].featured ? "aicc-btn--primary" : "aicc-btn--outline")), `${tag}: every card has ONE real link to /start/?plan=<id> labelled "${label}" (>= 44 px tall, Studio primary, the others outline)${["open", "waitlist"].includes(answer) ? "" : " (the static link of a build made after activation)"}`);
-    else check(cs.every((c) => c.link.length === 0 && c.btns === 0 && c.st.length === 1 && c.st[0].tag === "P" && c.st[0].text === label && c.st[0].note.length > 10 && (label === L.closed ? c.st[0].role === null : c.st[0].role === "status") && !c.st[0].insideAction && !/aicc-btn/.test(c.st[0].cls) && c.st[0].tabindex === null && c.st[0].cursor !== "pointer"), `${tag}: every card shows the non-interactive STATUS "${label}" with its explanation: no link, no button, not inside an action, not focusable`);
+    else if (kind === "info") check(cs.every((c, k) => isInfo(c, "en", k, kind0 === "static" ? "static" : answer) && !/\/start\//.test(c.link[0].href)), `${tag}: every card is the information link "${label}" to /get-started/?plan=<id> (>= 44 px tall; no /start/, no inert pill)`);
+    else check(cs.every((c) => c.link.length === 0 && c.btns === 0 && c.st.length === 1 && c.st[0].tag === "P" && c.st[0].text === label && c.st[0].note.length > 10 && c.st[0].role === null && !c.st[0].insideAction && !/aicc-btn/.test(c.st[0].cls) && c.st[0].tabindex === null && c.st[0].cursor !== "pointer"), `${tag}: every card shows the non-interactive closed STATUS "${label}" with its explanation: no link, no button, not inside an action, not focusable`);
     // no card carries a demo link or a date; the Hero, "Sign in" and the demo links never change
     check(cs.every((c) => c.demo === 0 && c.dates === 0), `${tag}: no card carries a demo link or a date line (the dates are said once, in the launch panel)`);
     const stay = await page.evaluate((startRe) => ({ hero: [...document.querySelectorAll("a")].filter((a) => a.getAttribute("href") === "#demo" || a.getAttribute("href") === "/pricing/").length, signIn: [...document.querySelectorAll("header a")].filter((a) => a.getAttribute("href") === "https://www.copilt.org/my-account/").length, demoAsSignup: [...document.querySelectorAll("a")].filter((a) => /#demo/.test(a.getAttribute("href") || "") && new RegExp(startRe, "i").test(a.innerText)).length }), `^(${[L.start, L.waitlist].join("|")})`);
     check(stay.hero >= 2 && stay.signIn >= 2 && stay.demoAsSignup === 0, `${tag}: the Hero links (#demo, /pricing/) and "Sign in" are unchanged, and no link to #demo is labelled as a sign-up`);
     // "Get started": the account page until the answer is open / waitlist (or the static link of a link build)
     const gs = await page.evaluate(() => [...document.querySelectorAll("header [data-ss-getstarted]")].map((a) => a.getAttribute("href")));
-    const wantGs = (kind === "link") ? startOf("en") : accountOf("en");
+    const wantGs = (kind === "link") ? startOf("en") : journeyOf("en");
     check(gs.length >= 2 && gs.every((h) => h === wantGs), `${tag}: the header "Get started" (desktop and menu) leads to ${wantGs}`);
     // never a /start/ link unless the answer allows it
     const startLinks = await page.evaluate(() => [...document.querySelectorAll("a")].filter((a) => /\/start\//.test(a.getAttribute("href") || "")).length);
@@ -145,23 +149,23 @@ for (const initial of ["coming_soon", "link"]) {
   }
 }
 console.log("== the same table in every language (open, waitlist, closed_cutoff, paused, off) on Pricing and on the Home closing band");
-for (const l of LOCALES) for (const [answer, kind, key] of [["open", "link", "start"], ["waitlist", "link", "waitlist"], ["closed_cutoff", "text", "closed"], ["paused", "text", "paused"], ["off", "text", "soon"]]) {
+for (const l of LOCALES) for (const [answer, kind, key] of [["open", "link", "start"], ["waitlist", "link", "waitlist"], ["closed_cutoff", "text", "closed"], ["paused", "info", "how"], ["off", "info", "how"]]) {
   const lab = D[l].ea.ss.cta[key];
   const { ctx, page } = await view("announce", `${pre(l)}/pricing/`, 1440, { signup: answer, locale: l });
   const cs = await cards(page);
-  check(kind === "link" ? cs.every((c, i) => c.link.length === 1 && c.link[0].text.startsWith(lab) && c.link[0].href === startOf(l, PLANS[i].id)) : cs.every((c) => c.link.length === 0 && c.st.length === 1 && c.st[0].text === lab), `${l} ${answer}: cards show "${lab}" as ${kind === "link" ? "a link to " + startOf(l) : "a status region"}`);
+  check(kind === "link" ? cs.every((c, i) => c.link.length === 1 && c.link[0].text.startsWith(lab) && c.link[0].href === startOf(l, PLANS[i].id)) : kind === "info" ? cs.every((c, k) => isInfo(c, l, k)) : cs.every((c) => c.link.length === 0 && c.st.length === 1 && c.st[0].text === lab), `${l} ${answer}: cards show "${lab}" as ${kind === "link" ? "a link to " + startOf(l) : kind === "info" ? "a link to the journey page" : "a status region"}`);
   if (["closed_cutoff", "waitlist", "open"].includes(answer)) await page.locator('[aria-labelledby="plans-title"]').screenshot({ path: path.join(SHOTS, `ss-announce-${l}-pricing-plans-${answer}-1440.png`) });
   await ctx.close();
   const home = await view("announce", `${pre(l)}/`, 1440, { signup: answer, locale: l });
   const band = await home.page.evaluate(() => { const s = document.querySelector('[aria-labelledby="final-title"]'); return { a: [...s.querySelectorAll("a")].map((x) => ({ href: x.getAttribute("href"), text: x.innerText.trim() })), st: [...s.querySelectorAll("p.aicc-pstatus .aicc-pstatus__label")].map((x) => x.innerText.trim()), dates: s.querySelectorAll("[data-ss-date]").length }; });
-  check(band.dates === 0 && (kind === "link" ? band.a.some((x) => x.href === startOf(l) && x.text.startsWith(lab)) : (!band.a.some((x) => /\/start\//.test(x.href)) && band.st.length === 1 && band.st[0] === lab)) && band.a.some((x) => x.href === "#demo"), `${l} ${answer}: the Home closing band follows the same table (${kind === "link" ? "sign-up link" : `status region "${lab}"`}), carries no date and keeps Try Live Demo`);
+  check(band.dates === 0 && (kind === "link" ? band.a.some((x) => x.href === startOf(l) && x.text.startsWith(lab)) : kind === "info" ? (band.a.some((x) => x.href === journeyOf(l) && x.text.startsWith(lab)) && !band.a.some((x) => /\/start\//.test(x.href)) && band.st.length === 0) : (!band.a.some((x) => /\/start\//.test(x.href)) && band.st.length === 1 && band.st[0] === lab)) && band.a.some((x) => x.href === "#demo"), `${l} ${answer}: the Home closing band follows the same table (${kind === "link" ? "sign-up link" : kind === "info" ? "information link" : `status region "${lab}"`}), carries no date and keeps Try Live Demo`);
   await home.ctx.close();
 }
 console.log("== a slow answer: the static state works at once, the state arrives later");
 {
   const { ctx, page, m } = await view("announce", "/pricing/", 1440, { signup: "open", delay: 1500 });
   const before = await cards(page);
-  check(before.every((c) => c.link.length === 0 && c.st.length === 1 && c.st[0].text === L.soon), "before the answer (1.5 s delay) every card is the plain status (nothing clickable that could be wrong)");
+  check(before.every((c, k) => isInfo(c, "en", k, "static")), "before the answer (1.5 s delay) every card is the information link (a real, working page: nothing clickable that could be wrong)");
   await page.waitForTimeout(1900);
   const after = await cards(page);
   check(m.calls("/signup/status", "GET").length === 1 && after.every((c, i) => c.link.length === 1 && c.link[0].href === startOf("en", PLANS[i].id)), "after the answer open the cards become the sign-up links (one request)");
@@ -204,7 +208,7 @@ for (const answer of ["open", "waitlist"]) {
 {
   const { ctx, page } = await view("announce", "/product/", 1440, { signup: "off" });
   const hero = await page.evaluate(() => [...document.querySelectorAll(".aicc-hero-actions [data-ss-getstarted]")].map((a) => a.getAttribute("href")));
-  check(hero.length === 1 && hero[0] === accountOf("en"), `off: the Product "Get started" leads to the account page ${accountOf("en")} (${hero})`);
+  check(hero.length === 1 && hero[0] === journeyOf("en"), `off: the Product "Get started" leads to the journey page ${journeyOf("en")} (${hero})`);
   await ctx.close();
 }
 {
@@ -247,7 +251,7 @@ for (const [from, to, route] of [["en", "he", "pricing"], ["he", "es", "pricing"
   const r = await page.evaluate(() => ({ path: location.pathname, lang: document.documentElement.lang, dir: document.documentElement.dir }));
   const want = `${pre(to)}/${route ? route + "/" : ""}`;
   const cs = route === "product" ? [] : await cards(page);
-  check(r.path === want && r.lang.startsWith(to) && (route === "product" || (cs.length === 3 && cs.every((c) => c.st.length === 1 && c.st[0].text === SOON(to)))), `${from} -> ${to} on /${route}: lands on ${want}, html lang ${r.lang}, dir ${r.dir}${route === "product" ? "" : `, cards in ${to} ("${SOON(to)}")`}`);
+  check(r.path === want && r.lang.startsWith(to) && (route === "product" || (cs.length === 3 && cs.every((c, k) => isInfo(c, to, k)))), `${from} -> ${to} on /${route}: lands on ${want}, html lang ${r.lang}, dir ${r.dir}${route === "product" ? "" : `, cards in ${to} ("${HOW(to)}")`}`);
   await ctx.close();
 }
 
@@ -259,7 +263,7 @@ for (const [cell, initial] of [["announce", "coming_soon"], ["link", "link"]]) f
   check(cs.every((c) => c.link.length === 0 && c.btns === 0 && c.st.length === 1 && c.st[0].text === L.closed && c.st[0].state === "closed_cutoff" && c.st[0].role === null && !c.st[0].insideAction), `${initial} build, answer ${answer}, clock 2026-12-24T00:00:01Z: every card shows the plain text "${L.closed}" (no link, no button)`);
   const gs = await page.evaluate(() => [...document.querySelectorAll("[data-ss-getstarted]")].map((a) => a.getAttribute("href")));
   const links = await page.evaluate(() => [...document.querySelectorAll("a")].filter((a) => /\/start\//.test(a.getAttribute("href") || "")).length);
-  check(gs.length >= 2 && gs.every((h) => h === accountOf("en")) && links === 0, `${initial} build, answer ${answer}, after the cutoff: "Get started" leads to the account page and NO link to /start/ exists (${links})`);
+  check(gs.length >= 2 && gs.every((h) => h === journeyOf("en")) && links === 0, `${initial} build, answer ${answer}, after the cutoff: "Get started" leads to the journey page and NO link to /start/ exists (${links})`);
   await ctx.close();
 }
 for (const l of LOCALES) {
@@ -279,7 +283,7 @@ for (const l of LOCALES) {
   await before.ctx.close();
   const pr = await view("announce", "/product/", 1440, { signup: "open", now: REG_CLOSE + 1000 });
   const g = await pr.page.evaluate(() => [...document.querySelectorAll(".aicc-hero-actions [data-ss-getstarted]")].map((a) => a.getAttribute("href")));
-  check(g.length === 1 && g[0] === accountOf("en"), "after the cutoff the Product \"Get started\" leads to the account page even when the answer is open");
+  check(g.length === 1 && g[0] === journeyOf("en"), "after the cutoff the Product \"Get started\" leads to the journey page even when the answer is open");
   await pr.ctx.close();
 }
 
@@ -341,9 +345,9 @@ for (const l of LOCALES) {
   const { ctx, page } = await view("announce", `${pre(l)}/pricing/`, 1440, { locale: l, signup: "off" });
   await page.locator("#plan-stores").fill("2");
   await page.waitForTimeout(250);
-  const r = await page.evaluate(() => { const f = document.querySelector("#plan-stores").closest("form"); return { a: [...f.querySelectorAll("a.aicc-btn")].length, soon: f.querySelectorAll(".aicc-btn--soon").length, st: [...f.querySelectorAll("p.aicc-pstatus .aicc-pstatus__label")].map((e) => e.innerText.trim()), dates: f.querySelectorAll("[data-ss-date], [data-ss-dates]").length, cap: (f.querySelector("[data-ss-finder-cap]") || { innerText: "" }).innerText.trim(), text: f.innerText.replace(/\s+/g, " ") }; });
+  const r = await page.evaluate(() => { const f = document.querySelector("#plan-stores").closest("form"); return { a: [...f.querySelectorAll("a.aicc-btn")].map((e) => e.getAttribute("href")), soon: f.querySelectorAll(".aicc-btn--soon").length, st: [...f.querySelectorAll("p.aicc-pstatus .aicc-pstatus__label")].map((e) => e.innerText.trim()), dates: f.querySelectorAll("[data-ss-date], [data-ss-dates]").length, cap: (f.querySelector("[data-ss-finder-cap]") || { innerText: "" }).innerText.trim(), text: f.innerText.replace(/\s+/g, " ") }; });
   const ss = D[l].ea.ss, conds = [ss.launch.fact.store, ss.launch.fact.payment, ss.launch.fact.noAuto, ss.plan.regLabel, ss.plan.endLabel].map((x) => x.replace(/\u00a0/g, " "));
-  check(r.a === 0 && r.soon === 0 && r.st.length === 1 && r.st[0] === SOON(l) && r.dates === 0 && r.cap === ss.plan.paidMany.replace("{n}", "3") && conds.every((c) => !r.text.includes(c)) && !/UTC|Dec 2|2026/.test(r.text), `${l}: 2 stores -> ${D[l].pricing.plans.studio.name}: the finder shows the plan, its paid capacity ("${ss.plan.paidMany.replace("{n}", "3")}") and the status region only (no date, no trial condition, no button, no inert chip)`);
+  check(r.a.length === 1 && r.a[0] === journeyOf(l, "studio") && r.soon === 0 && r.st.length === 0 && r.dates === 0 && r.cap === ss.plan.paidMany.replace("{n}", "3") && conds.every((c) => !r.text.includes(c)) && !/UTC|Dec 2|2026/.test(r.text), `${l}: 2 stores -> ${D[l].pricing.plans.studio.name}: the finder shows the plan, its paid capacity ("${ss.plan.paidMany.replace("{n}", "3")}") and the information link only (no date, no trial condition, no inert chip)`);
   await ctx.close();
 }
 for (const l of ["en", "he"]) {
@@ -368,10 +372,11 @@ async function tabs(page, max = 120, stop = 0, pick = () => false) {
   return seq.filter(Boolean);
 }
 for (const l of ["en", "he"]) {
-  // static state: NO tab stop inside the cards (the status regions are not focusable and the per-card demo links are gone)
+  // static state: ONE tab stop per card, the information link (the per-card demo links are gone)
   const a = await view("announce", `${pre(l)}/pricing/`, 1440, { locale: l, signup: "off" });
   const seq = await tabs(a.page, 160);
-  check(seq.filter((s) => s.inCard).length === 0, `${l} static: Tab never lands inside a plan card (the status region is not a tab stop; no per-card demo link) [${seq.filter((s) => s.inCard).length}]`);
+  const inC = [...new Map(seq.filter((s) => s.inCard).map((s) => [s.href, s])).values()]; // (the walk of 160 stops wraps around the page more than once: each stop is counted once)
+  check(inC.length === 3 && [0, 1, 2].every((k) => inC[k].href === journeyOf(l, PLANS[k].id) && /aicc-btn/.test(inC[k].cls)) && inC.every((s) => s.ring), `${l} static: Tab lands on exactly ONE stop per plan card: the information link to the journey page, in the order Solo, Studio, Agency, each with a visible focus ring (no per-card demo link) [${inC.length}]`);
   await a.ctx.close();
   // open: ONE sign-up link per card, in the DOM order solo, studio, agency, each with a visible focus ring
   const o = await view("announce", `${pre(l)}/pricing/`, 1440, { locale: l, signup: "open" });
@@ -393,8 +398,8 @@ for (const l of ["en", "he"]) {
   await ctx.close();
 }
 {
-  const { ctx, page } = await view("announce", "/pricing/", 1440, { signup: "paused" });
-  const r = await page.evaluate(() => { const p = document.querySelector("article.aicc-tier p.aicc-pstatus"), pill = p.querySelector(".aicc-pstatus__pill"), cs = getComputedStyle(pill), icon = pill.querySelector("svg"); return { role: p.getAttribute("role"), tag: p.tagName, borderStyle: cs.borderTopStyle, radius: parseFloat(cs.borderTopLeftRadius), cursor: getComputedStyle(p).cursor, disabled: p.getAttribute("aria-disabled"), isBtn: !!p.closest("a,button"), icon: !!icon && icon.getAttribute("aria-hidden") === "true", note: !!p.querySelector(".aicc-pstatus__note"), minH: pill.getBoundingClientRect().height }; });
+  const { ctx, page } = await view("announce", "/pricing/", 1440, { signup: "closed_cutoff" });
+  const r = await page.evaluate(() => { const p = document.querySelector(".aicc-pband p.aicc-pstatus"), pill = p.querySelector(".aicc-pstatus__pill"), cs = getComputedStyle(pill), icon = pill.querySelector("svg"); return { role: p.getAttribute("role"), tag: p.tagName, borderStyle: cs.borderTopStyle, radius: parseFloat(cs.borderTopLeftRadius), cursor: getComputedStyle(p).cursor, disabled: p.getAttribute("aria-disabled"), isBtn: !!p.closest("a,button"), icon: !!icon && icon.getAttribute("aria-hidden") === "true", note: !!p.querySelector(".aicc-pstatus__note"), minH: pill.getBoundingClientRect().height }; });
   check(r.role === "status" && r.tag === "P" && r.borderStyle === "dashed" && r.radius >= 20 && r.cursor !== "pointer" && r.disabled === null && !r.isBtn && r.icon && r.note && r.minH >= 44, `the status region is a dashed, tinted, non-interactive pill with an icon and an explanation line (different from an enabled button by shape, fill, icon and text, not colour only) [${JSON.stringify(r)}]`);
   await ctx.close();
 }

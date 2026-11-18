@@ -9,7 +9,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { loadTs } from "./lib/load.mjs";
 import { makeAttested } from "./lib/ea-attest.mjs";
-import { STRIKE_PAGES, strikeMarkup } from "./lib/strike-markup.mjs";
+import { STRIKE_PAGES, strikeMarkup, strikeCardProblems } from "./lib/strike-markup.mjs";
+import { loadDictionaries } from "./lib/load.mjs";
 
 const i = process.argv.indexOf("--tree");
 if (i < 0 || !process.argv[i + 1]) { console.error("usage: ea-release-gate.mjs --tree <export dir>"); process.exit(2); }
@@ -21,6 +22,14 @@ const strikeIn = STRIKE_PAGES.filter((rel) => strikeMarkup(read(rel)).length > 0
 const limited = read("index.html").includes("data-ea-limited");
 const problems = [];
 if (strikeIn.length && !attested(process.env.AICC_EA_STRIKE_COUNSEL_APPROVED)) problems.push(`the export shows the plan price struck through (${strikeIn.slice(0, 4).join(", ")}${strikeIn.length > 4 ? ", ..." : ""}): a release needs counsel's pricing-claims approval attested with AICC_EA_STRIKE_COUNSEL_APPROVED=<reference> (an evidence-folder file or a real reference; the same rules as launch:check)`);
+// P41 (compliance memo 7.3): even WITH counsel's reference a struck price is refused unless every struck card carries its label, its disclosure and its screen-reader text in the same card (checked in the page's own language)
+if (strikeIn.length) {
+  const D = await loadDictionaries();
+  for (const rel of strikeIn) {
+    const l = ["he", "es", "ru"].find((x) => rel.startsWith(`${x}/`)) || "en", pr = D[l].ea.ss.pricing;
+    for (const q of strikeCardProblems(read(rel), { label: pr.strikeLabel, note: pr.strikeNote, sr: pr.strikeSr })) problems.push(`${rel}: ${q} (memo 7.3: strike markup needs its label and disclosure in the same card)`);
+  }
+}
 if (limited && !attested(process.env.AICC_EA_LIMITED_ATTESTED)) problems.push('the export shows "Limited availability" (data-ea-limited on Home): a release needs the owner attestation AICC_EA_LIMITED_ATTESTED=<reference> (same rules as launch:check)');
 for (const p of problems) console.error("EA RELEASE GATE FAIL: " + p);
 process.exit(problems.length ? 1 : 0);

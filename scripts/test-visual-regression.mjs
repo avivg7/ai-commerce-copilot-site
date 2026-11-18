@@ -1,11 +1,11 @@
-// npm run test:visual-regression (P39, P40 baselines): before / after screenshots and pixel checks, Home and Pricing, four languages, desktop 1440 and mobile 390.
-//   node scripts/test-visual-regression.mjs --before <S0 export> --after <new export> --shots <evidence dir> [--baseline-dir tests/approved-visuals/p40-pricing] [--update-baseline] [--port-base <n>]
+// npm run test:visual-regression (P39, P40, P41 baselines): before / after screenshots and pixel checks, Home and Pricing, four languages, desktop 1440 and mobile 390.
+//   node scripts/test-visual-regression.mjs --before <S0 export> --after <new export> --shots <evidence dir> [--baseline-dir tests/approved-visuals/p41-journey] [--update-baseline] [--port-base <n>]
 // BEFORE = the S0 release (the P36 launch-offer look that is live today, built from the same commit family: scripts/test-launch-offer.mjs proves it equals the live pages); AFTER = the P40 candidate (self-service on, initial coming_soon; the premium pricing section).
 //  * full-page screenshots of both, every language x {Home, Pricing} x {1440, 390}, saved to <shots>/before and <shots>/after (the evidence);
 //  * "the Hero must be unchanged": on Home the headline, the subtitle, the two Hero actions (Try Live Demo, See Pricing), the Reco visual, the pillars strip, the interactive demo (#demo) and the header are
 //    compared pixel by pixel between BEFORE and AFTER (element screenshots, so a shift of the surrounding layout does not hide or fake a difference): at most 0.1 % of the pixels may differ (anti-aliasing noise), the sizes must be equal;
 //    the Hero's position is reported. The pill above the headline and the support lines under the buttons are the launch-offer / free-trial wording and DO change by design (their difference is printed, not asserted);
-//  * baselines of the NEW state (stored images under tests/approved-visuals/p40-pricing/: the premium pricing section, regenerated deliberately for P40 and reviewed; the P39 card baselines are retired): the plan-card sections of Home and Pricing in every language and width are compared with the stored baseline (<= 0.5 % of the pixels
+//  * baselines of the NEW state (stored images under tests/approved-visuals/p41-journey/: the premium pricing section, regenerated deliberately for P40 and reviewed; the P39 card baselines are retired): the plan-card sections of Home and Pricing in every language and width are compared with the stored baseline (<= 0.5 % of the pixels
 //    differing beyond a per-channel tolerance of 10: the same tolerance family as scripts/visual-contract.mjs). `--update-baseline` rewrites them. Baselines are machine specific (font rasterisation): regenerate on a new machine and review the diff.
 import fs from "node:fs";
 import path from "node:path";
@@ -17,7 +17,7 @@ import { ROOT } from "./lib/load.mjs";
 const args = process.argv.slice(2);
 const arg = (n) => { const i = args.indexOf(`--${n}`); return i >= 0 ? args[i + 1] : undefined; };
 const BEFORE = arg("before") && path.resolve(arg("before")), AFTER = arg("after") && path.resolve(arg("after")), SHOTS = arg("shots") && path.resolve(arg("shots"));
-const BASEDIR = path.resolve(arg("baseline-dir") || path.join(ROOT, "tests/approved-visuals/p40-pricing")), UPDATE = args.includes("--update-baseline");
+const BASEDIR = path.resolve(arg("baseline-dir") || path.join(ROOT, "tests/approved-visuals/p41-journey")), UPDATE = args.includes("--update-baseline");
 const PB = Number(arg("port-base") || 0);
 if (!BEFORE || !AFTER || !SHOTS) { console.error("usage: --before <S0 export> --after <new export> --shots <dir> [--baseline-dir <dir>] [--update-baseline] [--port-base <n>]"); process.exit(2); }
 let failed = 0, total = 0;
@@ -94,7 +94,7 @@ for (const l of LOCALES) for (const w of WIDTHS) if (!BASELINES_ONLY) {
 
 console.log(`== baselines of the NEW plan-card sections (${path.relative(ROOT, BASEDIR)}) ${UPDATE ? "(UPDATING)" : ""}`);
 fs.mkdirSync(BASEDIR, { recursive: true });
-for (const l of LOCALES) for (const w of WIDTHS) for (const [name, route, sel] of [["home", `${pre(l)}/`, '[aria-labelledby="pricing-title"]'], ["pricing", `${pre(l)}/pricing/`, '[aria-labelledby="plans-title"]']]) {
+for (const l of LOCALES) for (const w of WIDTHS) for (const [name, route, sel] of [["home", `${pre(l)}/`, '[aria-labelledby="pricing-title"]'], ["pricing", `${pre(l)}/pricing/`, '[aria-labelledby="plans-title"]'], ["journey", `${pre(l)}/get-started/`, ".aicc-jr"]]) {
   const a = await open(ma, route, w, l);
   const png = await a.page.locator(sel).first().screenshot();
   await a.ctx.close();
@@ -102,7 +102,7 @@ for (const l of LOCALES) for (const w of WIDTHS) for (const [name, route, sel] o
   if (UPDATE) { fs.writeFileSync(file, png); check(true, `baseline written: ${path.relative(ROOT, file)}`); continue; }
   if (!fs.existsSync(file)) { check(false, `${l} ${name} @${w}: no stored baseline ${path.relative(ROOT, file)} (run with --update-baseline and review)`); continue; }
   const d = await diff(fs.readFileSync(file), png);
-  check(d.same && d.ratio <= 0.005, `${l} ${name} @${w}: the plan-card section equals its stored baseline (${d.same ? (d.ratio * 100).toFixed(3) + "% of " + d.total + " px differ, limit 0.5%" : `size ${d.w} vs ${d.v}`})`);
+  check(d.same && d.ratio <= 0.005, `${l} ${name} @${w}: the plan-card section (or, for the journey page, the steps + status panel) equals its stored baseline (${d.same ? (d.ratio * 100).toFixed(3) + "% of " + d.total + " px differ, limit 0.5%" : `size ${d.w} vs ${d.v}`})`);
 }
 await browser.close(); await mb.close(); await ma.close();
 console.log(`\n${total - failed}/${total} checks passed`);

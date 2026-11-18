@@ -17,6 +17,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { createRequire } from "node:module";
+import sharp from "sharp";
 import { launch } from "./lib/browser.mjs";
 import { loadDictionaries, loadTs } from "./lib/load.mjs";
 import { startMock } from "./lib/intake-mock.mjs";
@@ -73,14 +74,18 @@ async function view(cell, route, w, { h = 900, locale = "en", signup = "open", d
 // the VISIBLE cards: the live set while registration can start, the closed / ordinary set from the cutoff
 const cards = (page) => page.evaluate(() => [...document.querySelectorAll("article.aicc-tier")].filter((a) => a.getClientRects().length > 0).map((a) => {
   const vis = (e) => e.getClientRects().length > 0;
-  const link = [...a.querySelectorAll("a.aicc-btn")].filter(vis).map((e) => ({ href: e.getAttribute("href"), text: e.innerText.replace(/\s+/g, " ").trim(), state: e.getAttribute("data-ss-state"), describedBy: e.getAttribute("aria-describedby"), cls: e.className, h: e.getBoundingClientRect().height }));
+  const linkAll = [...a.querySelectorAll("a.aicc-btn")].filter(vis).map((e) => ({ kind: e.closest(".aicc-pcta").getAttribute("data-ss-cta"), href: e.getAttribute("href"), text: e.innerText.replace(/\s+/g, " ").trim(), state: e.getAttribute("data-ss-state"), describedBy: e.getAttribute("aria-describedby"), cls: e.className, h: e.getBoundingClientRect().height }));
   const st = [...a.querySelectorAll("p.aicc-pstatus")].filter(vis).map((e) => ({ text: e.querySelector(".aicc-pstatus__label").innerText.trim(), note: (e.querySelector(".aicc-pstatus__note") || { innerText: "" }).innerText.trim(), state: e.getAttribute("data-ss-state"), role: e.getAttribute("role") }));
   const note = [...a.querySelectorAll(".aicc-pcta__note")].filter(vis).map((e) => ({ id: e.id, text: e.innerText.trim() }));
-  return { link, st, note, plan: a.getAttribute("data-plan"), tag: a.querySelector(".aicc-pcta").getAttribute("data-ss-cta") };
+  const link = linkAll.filter((x) => x.kind === "link"), info = linkAll.filter((x) => x.kind === "info"); // P41: link = the real sign-up link (open / waitlist); info = "See how it works" (registration not open)
+  return { link, info, st, note, plan: a.getAttribute("data-plan"), tag: a.querySelector(".aicc-pcta").getAttribute("data-ss-cta") };
 }), TIER);
 const band = (page, id = "final-title") => page.evaluate((id) => { const s = document.querySelector(`[aria-labelledby="${id}"]`), vis = (e) => e.getClientRects().length > 0; return { a: [...s.querySelectorAll("a")].filter(vis).map((x) => ({ href: x.getAttribute("href"), text: x.innerText.trim() })), st: [...s.querySelectorAll("p.aicc-pstatus .aicc-pstatus__label")].filter(vis).map((x) => x.innerText.trim()) }; }, id);
 const L = (l) => D[l].ea.ss;
-const soonOf = (l) => L(l).cta.soon;
+const howOf = (l) => L(l).cta.how;
+const journeyOf = (l, plan) => `${pre(l)}/get-started/${plan ? `?plan=${plan}` : ""}`;
+// P41: a card whose registration is not open is a REAL information link (never an inert pill, never /start/)
+const infoCards = (cs, l, state) => cs.length === 3 && cs.every((c, i) => c.info.length === 1 && c.link.length === 0 && c.st.length === 0 && c.tag === "info" && c.info[0].href === journeyOf(l, PLANS[i].id) && c.info[0].text.startsWith(howOf(l)) && (state === undefined || c.info[0].state === state) && c.info[0].h >= 44);
 
 // ───────────────────────────────────────────────────────────── A. link hygiene
 if (run("A")) {
@@ -145,38 +150,38 @@ if (run("C")) {
       await clickNav(page, `${pre(l)}/product/`); await clickNav(page, `${pre(l)}/pricing/`);
       cs = await cards(page);
       // (a dropped connection is retried once by the browser itself, so "once" may be two lines in the mock's log)
-      check(n() >= before + 1 && n() <= before + (bad === "drop" ? 2 : 1) && cs.every((c) => c.link.length === 1 && c.st.length === 0), `${l}: after the TTL a failed or invalid answer (${bad}) is requested once and changes NOTHING: the links stay`);
+      check(n() >= before + 1 && n() <= before + (bad === "drop" ? 2 : 1) && cs.every((c) => c.link.length === 1 && c.st.length === 0 && c.info.length === 0), `${l}: after the TTL a failed or invalid answer (${bad}) is requested once and changes NOTHING: the links stay`);
     }
     m.set({ signup: "unknown" }); await page.evaluate(() => { window.__skew += 31000; });
     await clickNav(page, `${pre(l)}/product/`); await clickNav(page, `${pre(l)}/pricing/`);
     cs = await cards(page);
-    check(cs.every((c) => c.link.length === 0 && c.st.length === 1 && c.st[0].text === soonOf(l) && c.st[0].state === "static"), `${l}: the FIFTH failed answer in a row (the 'open' view is 155 s old): the cards fall back to the build's static status "${soonOf(l)}", not to open`);
+    check(infoCards(cs, l, "static"), `${l}: the FIFTH failed answer in a row (the 'open' view is 155 s old): the cards fall back to the build's static state, the information link "${howOf(l)}", not to open`);
     for (const bad of ["http404", "http500"]) { m.set({ signup: bad }); await page.evaluate(() => { window.__skew += 31000; }); await clickNav(page, `${pre(l)}/product/`); await clickNav(page, `${pre(l)}/pricing/`); }
     cs = await cards(page);
-    check(cs.every((c) => c.link.length === 0 && c.st.length === 1), `${l}: further failed answers never make a link again`);
+    check(infoCards(cs, l), `${l}: further failed answers never make a sign-up link again`);
     // a VALID answer is followed (down here: off)
     m.set({ signup: "off" }); await page.evaluate(() => { window.__skew += 31000; });
     await clickNav(page, `${pre(l)}/product/`); await clickNav(page, `${pre(l)}/pricing/`);
     cs = await cards(page);
-    check(cs.every((c) => c.link.length === 0 && c.st.length === 1 && c.st[0].text === soonOf(l) && c.st[0].state === "off"), `${l}: open -> off during client navigation (after the TTL): the cards become the status region "${soonOf(l)}" without a reload`);
+    check(infoCards(cs, l, "off"), `${l}: open -> off during client navigation (after the TTL): the cards become the information link "${howOf(l)}" without a reload`);
     const bd = await band(page, "pricing-final");
-    check(bd.st.length === 1 && bd.st[0] === soonOf(l) && !bd.a.some((a) => /\/start\//.test(a.href)), `${l}: the closing band follows (status region, no link)`);
+    check(bd.st.length === 0 && bd.a.some((a) => a.href === journeyOf(l) && a.text.startsWith(howOf(l))) && !bd.a.some((a) => /\/start\//.test(a.href)), `${l}: the closing band follows (the plan-less information link, no /start/ link)`);
     // a failed answer never UPGRADES either
     for (const bad of ["http500", "badjson", "inconsistent", "unknown"]) {
       m.set({ signup: bad }); await page.evaluate(() => { window.__skew += 31000; });
       await clickNav(page, `${pre(l)}/product/`); await clickNav(page, `${pre(l)}/pricing/`);
       cs = await cards(page);
-      check(cs.every((c) => c.link.length === 0 && c.st.length === 1), `${l}: after "off", a failed or invalid answer (${bad}) never makes a link`);
+      check(infoCards(cs, l), `${l}: after "off", a failed or invalid answer (${bad}) never makes a sign-up link`);
     }
     // and a valid upgrade is followed again, a closed answer too
     m.set({ signup: "waitlist" }); await page.evaluate(() => { window.__skew += 31000; });
     await clickNav(page, `${pre(l)}/product/`); await clickNav(page, `${pre(l)}/pricing/`);
     cs = await cards(page);
-    check(cs.every((c) => c.link.length === 1 && c.link[0].state === "waitlist" && c.note.length === 1), `${l}: off -> waitlist: the cards become "${L(l).cta.waitlist}" links with their note`);
+    check(cs.every((c) => c.link.length === 1 && c.link[0].state === "waitlist" && c.note.length === 0), `${l}: off -> waitlist: the cards become "${L(l).cta.waitlist}" links (the waitlist fact is said once, in the status line)`);
     m.set({ signup: "closed_cutoff" }); await page.evaluate(() => { window.__skew += 31000; });
     await clickNav(page, `${pre(l)}/product/`); await clickNav(page, `${pre(l)}/pricing/`);
     cs = await cards(page);
-    check(cs.every((c) => c.link.length === 0 && c.st.length === 1 && c.st[0].state === "closed_cutoff" && c.st[0].text === L(l).cta.closed), `${l}: waitlist -> closed_cutoff: the cards become the closed status region`);
+    check(cs.every((c) => c.link.length === 0 && c.info.length === 0 && c.st.length === 1 && c.st[0].state === "closed_cutoff" && c.st[0].text === L(l).cta.closed), `${l}: waitlist -> closed_cutoff: the cards become the closed status region`);
     check(await page.evaluate(() => window.__full === 1), `${l}: the whole sequence ran by client navigation (no reload)`);
     await ctx.close();
   }
@@ -190,16 +195,16 @@ if (run("C")) {
     const gs = await page.evaluate(() => [...document.querySelectorAll("[data-ss-getstarted]")].map((a) => a.getAttribute("href")));
     const head = await page.evaluate(() => document.querySelector(".aicc-pricing__title").innerText.trim());
     const wasLink = before.every((c) => c.link.length === 1);
-    check((cell === "link" || ["open", "waitlist"].includes(signup) ? wasLink : before.every((c) => c.st.length === 1 && c.st[0].state !== "closed_cutoff")) && headBefore === L(l).pricing.title, `${cell} ${l} (${signup}): 4.5 s before 2026-12-24T00:00:00Z the cards are ${wasLink ? "links" : "the status region"} and the header is "${L(l).pricing.title}"`);
-    check(after.every((c) => c.link.length === 0 && c.st.length === 1 && c.st[0].state === "closed_cutoff" && c.st[0].text === L(l).cta.closed && c.st[0].note === L(l).state.closedNote) && bd.st.length === 1 && bd.st[0] === L(l).cta.closed && !bd.a.some((a) => /\/start\//.test(a.href)), `${cell} ${l} (${signup}): the page left open flips to "${L(l).cta.closed}" at the cutoff WITHOUT a reload (cards and band; the explanation says paid plans are not open)`);
-    check(gs.length >= 2 && gs.every((h) => h === accountOf(l)) && head === L(l).pricing.titleClosed, `${cell} ${l} (${signup}): "Get started" now leads to the account page (${gsBefore[0] === accountOf(l) ? "as before" : "was /start/"}) and the header reads "${L(l).pricing.titleClosed}"`);
+    check((cell === "link" || ["open", "waitlist"].includes(signup) ? wasLink : infoCards(before, l)) && headBefore === L(l).pricing.title, `${cell} ${l} (${signup}): 4.5 s before 2026-12-24T00:00:00Z the cards are ${wasLink ? "links" : "the information link"} and the header is "${L(l).pricing.title}"`);
+    check(after.every((c) => c.link.length === 0 && c.info.length === 0 && c.st.length === 1 && c.st[0].state === "closed_cutoff" && c.st[0].text === L(l).cta.closed && c.st[0].note === L(l).state.closedNote) && bd.st.length === 1 && bd.st[0] === L(l).cta.closed && !bd.a.some((a) => /\/start\//.test(a.href)), `${cell} ${l} (${signup}): the page left open flips to "${L(l).cta.closed}" at the cutoff WITHOUT a reload (cards and band; the explanation says paid plans are not open)`);
+    check(gs.length >= 2 && gs.every((h) => h === journeyOf(l)) && head === L(l).pricing.titleClosed, `${cell} ${l} (${signup}): "Get started" now leads to the journey page (${gsBefore[0] === journeyOf(l) ? "as before" : "was /start/"}) and the header reads "${L(l).pricing.titleClosed}"`);
     await ctx.close();
   }
   // a page that slept: no timer fires, the visitor comes back (focus / visibilitychange) and the page re-checks the status (TTL cache) and the clock without a reload or a navigation
   for (const l of QUICK ? ["en"] : LOCALES) {
     const { ctx, page, m } = await view("announce", `${pre(l)}/pricing/`, 1440, { locale: l, signup: "off", now: CUT - 3600000 });
     let cs = await cards(page);
-    check(cs.every((c) => c.link.length === 0 && c.st[0].state === "off"), `${l} wake: waiting on "${soonOf(l)}" (answer off)`);
+    check(infoCards(cs, l, "off"), `${l} wake: waiting on "${howOf(l)}" (answer off)`);
     m.set({ signup: "open" }); await page.evaluate(() => { window.__skew += 40000; window.dispatchEvent(new Event("focus")); });
     await page.waitForTimeout(500); cs = await cards(page);
     check(cs.every((c, i) => c.link.length === 1 && c.link[0].href === startOf(l, PLANS[i].id)), `${l} wake: a focus event after the TTL re-asks the status and the waiting cards become links (no reload, no navigation)`);
@@ -208,14 +213,14 @@ if (run("C")) {
     check(m.calls("/signup/status", "GET").length === n0, `${l} wake: a second focus inside the TTL makes no request`);
     await page.evaluate((c) => { window.__skew = c - Date.now() + window.__skew + 1500; document.dispatchEvent(new Event("visibilitychange")); }, CUT);
     await page.waitForTimeout(500); cs = await cards(page);
-    check(cs.every((c) => c.link.length === 0 && c.st.length === 1 && c.st[0].state === "closed_cutoff"), `${l} wake: the page slept across 2026-12-24T00:00:00Z: visibilitychange re-reads the clock and every control says "${L(l).cta.closed}" at once`);
+    check(cs.every((c) => c.link.length === 0 && c.info.length === 0 && c.st.length === 1 && c.st[0].state === "closed_cutoff"), `${l} wake: the page slept across 2026-12-24T00:00:00Z: visibilitychange re-reads the clock and every control says "${L(l).cta.closed}" at once`);
     await ctx.close();
   }
   // the boundary: 1 ms before is open, the cutoff instant is closed (client clock)
   for (const [now, want] of [[CUT - 1, "link"], [CUT, "status"], [CUT + 86400000 * 3, "status"]]) {
     const { ctx, page } = await view("announce", "/pricing/", 1440, { signup: "open", now, fixed: true });
     const cs = await cards(page);
-    check(cs.every((c) => (want === "link" ? c.link.length === 1 : c.link.length === 0 && c.st[0].state === "closed_cutoff")), `clock ${new Date(now).toISOString()} with the answer open: the cards are ${want === "link" ? "links (now < cutoff)" : "the closed status (now >= cutoff)"}`);
+    check(cs.every((c) => (want === "link" ? c.link.length === 1 : c.link.length === 0 && c.info.length === 0 && c.st[0].state === "closed_cutoff")), `clock ${new Date(now).toISOString()} with the answer open: the cards are ${want === "link" ? "links (now < cutoff)" : "the closed status (now >= cutoff)"}`);
     await ctx.close();
   }
 }
@@ -226,13 +231,22 @@ if (run("D")) {
   for (const l of LOCALES) {
     const w = await view("announce", `${pre(l)}/pricing/`, 1440, { locale: l, signup: "waitlist" });
     const cs = await cards(w.page), ac = await w.page.evaluate((TIER) => [...document.querySelectorAll(TIER + " a.aicc-btn")].map((a) => ({ name: a.innerText.replace(/\s+/g, " ").trim(), desc: (document.getElementById(a.getAttribute("aria-describedby")) || { innerText: "" }).innerText.trim() })), TIER);
-    check(cs.every((c, i) => c.link.length === 1 && c.link[0].state === "waitlist" && c.link[0].href === startOf(l, PLANS[i].id) && c.link[0].text.startsWith(L(l).cta.waitlist) && c.link[0].text.includes(D[l].pricing.plans[PLANS[i].id].name) && c.link[0].describedBy === `plan-${PLANS[i].id}-note` && c.note.length === 1 && c.note[0].text === L(l).state.waitlistNote) && ac.every((x) => x.desc === L(l).state.waitlistNote), `${l} waitlist: "${L(l).cta.waitlist}" links to /start/?plan=<id>, named with the plan, DESCRIBED by the note ("${L(l).state.waitlistNote.slice(0, 40)}...") through aria-describedby`);
+    const sl = await w.page.evaluate(() => { const e = document.getElementById("ss-state-line"); return e && { role: e.getAttribute("role"), text: e.querySelector(".aicc-pstate__text").innerText.trim(), n: document.querySelectorAll(".aicc-pstate").length, links: e.querySelectorAll("a").length }; });
+    check(cs.every((c, i) => c.link.length === 1 && c.link[0].state === "waitlist" && c.link[0].href === startOf(l, PLANS[i].id) && c.link[0].text.startsWith(L(l).cta.waitlist) && c.link[0].text.includes(D[l].pricing.plans[PLANS[i].id].name) && c.note.length === 0 && c.info.length === 0) && sl && sl.role === "status" && sl.n === 1 && sl.text.startsWith(L(l).state.line.waitlist) && sl.links === 1, `${l} waitlist: "${L(l).cta.waitlist}" links to /start/?plan=<id>, named with the plan; the waitlist fact ("${L(l).state.line.waitlist.slice(0, 40)}...") is said ONCE, in the status line (no note under any card)`);
     await w.ctx.close();
-    for (const [state, key, note] of [["paused", "paused", "pausedNote"], ["closed_cutoff", "closed", "closedNote"], ["off", "soon", "soonNote"]]) {
+    for (const [state, key] of [["paused", "paused"], ["closed_cutoff", "closed"], ["off", "soon"]]) {
       const v = await view("announce", `${pre(l)}/pricing/`, 1440, { locale: l, signup: state });
       const c2 = await cards(v.page), all = await v.page.evaluate(() => [...document.querySelectorAll("a[href]")].filter((a) => a.getClientRects().length).map((a) => a.getAttribute("href")));
-      check(c2.every((c) => c.link.length === 0 && c.st.length === 1 && c.st[0].text === L(l).cta[key] && c.st[0].note === L(l).state[note] && (state === "closed_cutoff" ? c.st[0].role === null : c.st[0].role === "status")) && !all.some((h) => /\/start\/|#demo.*start|checkout|purchase/i.test(h) && !/#demo$/.test(h)), `${l} ${state}: "${L(l).cta[key]}" + its explanation, role=status, no /start/ link and no purchase link on the page`);
-      if (state === "closed_cutoff") check(/purchase|buy|comprar|compra|купить|покупк|רכיש/i.test(c2[0].st[0].note), `${l} closed: the explanation says paid plans are not open for purchase (the Site has no purchase link)`);
+      const sl = await v.page.evaluate(() => [...document.querySelectorAll(".aicc-pstate")].filter((e) => e.getClientRects().length > 0).map((e) => ({ role: e.getAttribute("role"), text: e.querySelector(".aicc-pstate__text").innerText.trim(), link: [...e.querySelectorAll("a")].map((a) => ({ href: a.getAttribute("href"), text: a.innerText.trim() })), state: e.getAttribute("data-ss-state") })));
+      if (state === "closed_cutoff") {
+        check(c2.every((c) => c.link.length === 0 && c.info.length === 0 && c.st.length === 1 && c.st[0].text === L(l).cta.closed && c.st[0].note === L(l).state.closedNote && c.st[0].role === null) && sl.length === 0 && !all.some((h) => /\/start\/|checkout|purchase/i.test(h)), `${l} closed: "${L(l).cta.closed}" + its explanation (cards without role=status), NO status line, no /start/ link and no purchase link on the page`);
+        check(/purchase|buy|comprar|compra|купить|покупк|רכיש/i.test(c2[0].st[0].note), `${l} closed: the explanation says paid plans are not open for purchase (the Site has no purchase link)`);
+      } else {
+        const demo = `${pre(l)}/#demo`.replace(/^\/#/, "/#");
+        check(infoCards(c2, l, state) && sl.length === 1 && sl[0].role === "status" && sl[0].text === L(l).state.line[key] && sl[0].link.length === 1 && sl[0].link[0].text === L(l).state.demo && sl[0].link[0].href === demo && !all.some((h) => /\/start\/|checkout|purchase/i.test(h)), `${l} ${state}: every card is the information link "${L(l).cta.how}" (no pill, no per-card paragraph); the fact "${L(l).state.line[key]}" is said ONCE, in the status line (role=status) with the working Live Demo link; no /start/ link and no purchase link`);
+        const para = await v.page.evaluate((t) => [...document.querySelectorAll("article.aicc-tier")].filter((a) => a.getClientRects().length).filter((a) => a.innerText.includes(t)).length, L(l).state.line[key]);
+        check(para === 0, `${l} ${state}: the not-open fact is not repeated inside any card (${para} cards)`);
+      }
       await v.ctx.close();
     }
     const ended = await view("announce", `${pre(l)}/pricing/`, 1440, { locale: l, signup: "open", now: END + 1000 });
@@ -301,7 +315,8 @@ if (run("F")) {
     await ctx.close();
     const off = await view("announce", `${pre(l)}/pricing/`, 1440, { locale: l, signup: "off" });
     const s2 = await seqOf(off.page, 90);
-    check(s2.filter((s) => s.tier).length === 0 && s2.filter((s) => s.band && /start/.test(s.href || "")).length === 0, `${l} off: no card control is a tab stop and nothing in the band leads to /start/ (the status region is not focusable)`);
+    const t2 = s2.filter((s) => s.tier);
+    check(t2.length === 3 && ["solo", "studio", "agency"].every((p, i) => t2[i].tier === p && t2[i].href === journeyOf(l, p)) && t2.every((s) => s.style !== "none" && s.w >= 2 || s.shadow) && t2.every((s) => s.h >= 44) && s2.filter((s) => s.band && /\/start\//.test(s.href || "")).length === 0, `${l} off: Tab visits the information link of Solo, Studio, Agency (one stop per card, a visible focus ring, >= 44 px), nothing in the band leads to /start/`);
     await off.ctx.close();
   }
 }
@@ -398,7 +413,7 @@ if (run("H") || run("S")) {
   console.log("== H2. WCAG 1.4.12 text spacing (and 200% text): no word of the section breaks mid-word, FREE stays on one line, nothing clips, the two milestone values wrap alike");
   const words = (page, skip = false) => page.evaluate((skipTitles) => {
     // core = the words a card is read by; at 200% text on a phone the status pill label, the timeline and the panel tag still break a long word (a 160 px effective column), which is reported, not asserted
-    const sel = ".aicc-tier__free-word, " + (skipTitles && innerWidth <= 400 ? "" : ".aicc-tier__trial, ") + ".aicc-tier__name, .aicc-tier__amount, .aicc-tier__cap-text, .aicc-btn[data-ss-state]" + (skipTitles ? "" : ", .aicc-pstatus__label, .aicc-timeline__label, .aicc-timeline__date, .aicc-launch__tag, .aicc-launch__title, .aicc-pricing__title");
+    const sel = ".aicc-tier__free-word, " + (skipTitles && innerWidth <= 400 ? "" : ".aicc-tier__trial, ") + ".aicc-tier__name, .aicc-tier__amount, .aicc-tier__cap-text" + (skipTitles && innerWidth <= 400 ? "" : ", .aicc-btn[data-ss-state]") + (skipTitles ? "" : ", .aicc-pstatus__label, .aicc-timeline__label, .aicc-timeline__date, .aicc-launch__tag, .aicc-launch__title, .aicc-pricing__title");
     const broken = [], vis = (e) => e.getClientRects().length > 0;
     for (const el of [...document.querySelectorAll(".aicc-pricing, .aicc-pband")].flatMap((r) => [...r.querySelectorAll(sel)]).filter(vis)) {
       const w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT); let n;
@@ -456,7 +471,7 @@ if (run("I")) {
     for (const l of ["en", "he", "ru"]) {
       const { ctx, page } = await view("announce", `${pre(l)}/pricing/`, 794, { locale: l, signup: "off", media: {} });
       await page.emulateMedia({ media: "print" }); await page.waitForTimeout(900);
-      const r = await page.evaluate((TIER) => { const grid = document.querySelector(".aicc-tiers"), t = document.querySelector(TIER), cs = getComputedStyle(t), pill = getComputedStyle(document.querySelector(".aicc-pstatus__pill")); return { cols: getComputedStyle(grid).gridTemplateColumns.split(" ").length, shadow: cs.boxShadow, border: cs.borderTopColor, pill: pill.borderTopColor, over: document.documentElement.scrollWidth - innerWidth }; }, TIER);
+      const r = await page.evaluate((TIER) => { const grid = document.querySelector(".aicc-tiers"), t = document.querySelector(TIER), cs = getComputedStyle(t), pill = getComputedStyle(document.querySelector(".aicc-pcta .aicc-btn")); return { cols: getComputedStyle(grid).gridTemplateColumns.split(" ").length, shadow: cs.boxShadow, border: cs.borderTopColor, pill: pill.borderTopColor, over: document.documentElement.scrollWidth - innerWidth }; }, TIER);
       check(r.cols === 3 && r.shadow === "none" && r.border === "rgb(0, 0, 0)" && r.pill === "rgb(0, 0, 0)" && r.over <= 0, `${l} print: three columns, no shadow, black borders, no overflow [${JSON.stringify(r)}]`);
       await ctx.close();
     }
@@ -472,7 +487,7 @@ if (run("I")) {
   }
   { // layout shift: the status answer arriving changes the controls; the page must not move
     const CLS = () => { window.__cls = 0; new PerformanceObserver((list) => { for (const e of list.getEntries()) if (!e.hadRecentInput) window.__cls += e.value; }).observe({ type: "layout-shift", buffered: true }); };
-    for (const [cell, signup, delay, label] of [["announce", "open", 600, "static status -> link (open)"], ["announce", "waitlist", 600, "static status -> link + note (waitlist)"], ["announce", "closed_cutoff", 600, "status -> closed status"], ["link", "off", 600, "static link -> status (link build, answer off)"], ["announce", "off", 600, "status -> status (off)"]]) for (const [w, h] of [[1440, 2600], [390, 3400]]) for (const l of QUICK ? ["en"] : LOCALES) {
+    for (const [cell, signup, delay, label] of [["announce", "open", 600, "information link -> sign-up link (open)"], ["announce", "waitlist", 600, "information link -> sign-up link (waitlist, the status line grows)"], ["announce", "closed_cutoff", 600, "status -> closed status"], ["link", "off", 600, "static sign-up link -> information link (link build, answer off)"], ["announce", "off", 600, "information link -> information link (off)"]]) for (const [w, h] of [[1440, 2600], [390, 3400]]) for (const l of QUICK ? ["en"] : LOCALES) {
       const { ctx, page } = await view(cell, `${pre(l)}/pricing/`, w, { locale: l, signup, delay, h, init: CLS });
       const before = await page.evaluate((TIER) => ({ h: [...document.querySelectorAll(TIER)].map((t) => t.getBoundingClientRect().height), panel: document.querySelector(".aicc-launch").getBoundingClientRect().top + scrollY, ctl: [...document.querySelectorAll(TIER + " .aicc-pcta")].map((t) => t.getBoundingClientRect().height) }), TIER);
       await page.waitForTimeout(delay + 700);
@@ -483,7 +498,7 @@ if (run("I")) {
       // its pill is 65 px against the link's 58 px, a 7 px difference that moves nothing above it. The closed look steps FREE back BY DESIGN, so a card gets shorter when the answer is closed: bounded, intended, and still a tiny shift score.
       const exact = !(signup === "waitlist") && !(signup === "closed_cutoff"), tol = l === "ru" ? 8 : 1.5;
       // (a status answer "closed" swaps the live cards for the closed set and removes the launch panel: a different view, so only the shift score is asserted; a visitor who loads the page after the cutoff gets it before first paint from the head script and sees no shift at all)
-      check(signup === "closed_cutoff" ? after.cls < 0.1 : after.cls < (exact ? 0.01 : 0.03) && (exact ? dh <= tol && dctl <= tol : dh <= 80) && Math.abs(after.panel - before.panel) <= (exact ? tol * (w < 600 ? 3 : 1) : 130), `${cell} ${l} @${w}: ${label}: layout shift ${after.cls.toFixed(4)}, card height change ${dh.toFixed(1)}px, control box change ${dctl.toFixed(1)}px, launch panel moved ${Math.abs(after.panel - before.panel).toFixed(1)}px`);
+      check(signup === "closed_cutoff" ? after.cls < 0.1 : after.cls < (exact ? 0.01 : 0.03) && (exact ? dh <= tol && dctl <= tol : dh <= 80) && Math.abs(after.panel - before.panel) <= (exact ? Math.max(tol * (w < 600 ? 3 : 1), l === "ru" ? 24 : 12) : 130), `${cell} ${l} @${w}: ${label}: layout shift ${after.cls.toFixed(4)}, card height change ${dh.toFixed(1)}px, control box change ${dctl.toFixed(1)}px, launch panel moved ${Math.abs(after.panel - before.panel).toFixed(1)}px`);
       await ctx.close();
     }
   }
@@ -532,23 +547,88 @@ if (run("L")) {
   }
 }
 
-// ───────────────────────────────────────────────────────────── J. the gated strike variant
+// ───────────────────────────────────────────────────────────── J. the planned price above FREE: the compliant default and the counsel-gated strike
 if (run("J")) {
-  console.log("== J. the gated strike variant exists only in its own build; the default builds carry no struck price");
-  for (const cell of ["announce", "off", "link"]) for (const l of QUICK ? ["en"] : LOCALES) {
+  console.log("== J. the planned annual price sits DIRECTLY above FREE: the compliant default (large muted price + pill + chevron, NOT struck) in every default build; the strike variant only in its own build (matrix: languages x 320..1920 x 100 / 200 % text)");
+  const BAD = { en: /\b(was|previously|originally|formerly|worth|normally|usually|savings?|saves?|discount(ed)?|reduced)\b|original price|(?<!planned )regular (annual )?price/i, he: /מחיר מקורי|מחיר קודם|היה |חיסכון|בדרך כלל|(?<!מתוכנן )מחיר רגיל(?! מתוכנן)/, es: /\b(antes|anteriormente|originalmente|ahorr[aeo]\w*|normalmente|habitualmente|descuento)\b|precio original|(?<!previsto )\bprecio (anual )?regular\b(?! previsto)/i, ru: /(?<![а-яё])(было|раньше|ранее|эконом[а-яё]*|обычно|скидк[а-яё]*)(?![а-яё])|(первоначальн|исходн)[а-яё]+ цен[а-яё]+|(?<![а-яё])(?<!планируемая )обычная (годовая )?цена/i };
+  const rgb = (c) => (c.match(/[\d.]+/g) || []).slice(0, 3).map(Number);
+  const lum = ([r, g, b]) => { const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }; return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b); };
+  const ratio = (a, b) => { const x = lum(a), y = lum(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); };
+  const offerProbe = (page) => page.evaluate(() => {
+    const vis = (e) => e.getClientRects().length > 0, out = [];
+    for (const t of [...document.querySelectorAll("article.aicc-tier:not(.aicc-tier--standard)")].filter(vis)) {
+      const o = t.querySelector(".aicc-tier__offer"), price = o.querySelector(".aicc-tier__offer-price"), s = price.querySelector("s"), label = o.querySelector(".aicc-tier__offer-label"), pill = o.querySelector(".aicc-tier__offer-pill"), free = t.querySelector(".aicc-tier__free-word"), note = t.querySelector(".aicc-tier__offer-note"), amt = price.querySelector(".aicc-tier__amount");
+      const q = (e) => e && e.getBoundingClientRect(), cs = (e) => e && getComputedStyle(e), rg = document.createRange(); rg.selectNodeContents(s || price);
+      let bg = (() => { let n = price; while (n) { const c = getComputedStyle(n).backgroundColor; if (c && c !== "rgba(0, 0, 0, 0)" && c !== "transparent") return c; n = n.parentElement; } return "rgb(255, 255, 255)"; })();
+      out.push({ plan: t.getAttribute("data-plan"), variant: o.getAttribute("data-ss-price"), inLaunch: !!o.closest(".aicc-tier__launch"), sCount: o.querySelectorAll("s").length, price: price.innerText.replace(/\s+/g, " ").trim(), amount: amt.innerText.trim(), sText: s ? s.innerText.replace(/\s+/g, " ").trim() : null, sr: price.querySelector(".aicc-sr-only") ? price.querySelector(".aicc-sr-only").textContent.trim() : null, label: label.innerText.trim(), pill: pill ? pill.innerText.trim() : null, note: note ? note.innerText.trim() : null, noteInCard: note ? t.contains(note) : null,
+        priceTop: q(price).top, priceBottom: q(price).bottom, labelTop: q(label).top, labelBottom: q(label).bottom, freeTop: q(free).top, offerBottom: q(o).bottom, orderOk: !!(price.compareDocumentPosition(free) & Node.DOCUMENT_POSITION_FOLLOWING),
+        amountFs: parseFloat(cs(amt).fontSize), labelFs: parseFloat(cs(label).fontSize), priceFs: parseFloat(cs(price).fontSize), noteFs: note ? parseFloat(cs(note).fontSize) : null, weight: Number(cs(price).fontWeight),
+        deco: s ? cs(s).textDecorationLine : cs(price).textDecorationLine, decoColor: s ? cs(s).textDecorationColor : null, decoThick: s ? parseFloat(cs(s).textDecorationThickness) : 0, decoStyle: s ? cs(s).textDecorationStyle : null, color: cs(price).color, labelColor: cs(label).color, noteColor: note ? cs(note).color : null, bg, opacity: cs(price).opacity,
+        rects: [...rg.getClientRects()].map((r) => [r.left, r.right, r.top, r.bottom]), sRect: s ? q(s) && [q(s).left, q(s).right, q(s).top, q(s).bottom] : null, chevron: getComputedStyle(o, "::after").content, over: document.documentElement.scrollWidth - innerWidth,
+        inBox: [...o.querySelectorAll("*")].filter(vis).every((e) => { const r = q(e), b = q(t); return r.left >= b.left - 1.5 && r.right <= b.right + 1.5; }), clipped: [price, label, pill, note].filter(Boolean).some((e) => e.scrollWidth > e.clientWidth + 1.5), cardText: t.innerText });
+    }
+    return out;
+  });
+  const linePixels = async (page, plan) => { // the strike line must run across the WHOLE struck text (amount AND unit), RTL included: every pixel column of the text box carries line-colour pixels
+    const loc = page.locator(`article.aicc-tier[data-plan="${plan}"]:not(.aicc-tier--standard) .aicc-tier__offer-price s`).first();
+    const buf = await loc.screenshot({ animations: "disabled" });
+    const { data, info } = await sharp(buf).raw().toBuffer({ resolveWithObject: true });
+    const isLine = (i) => data[i] > 150 && data[i + 1] < 70 && data[i + 2] < 70; // the danger colour (#b91c1c) family
+    const cols = new Array(info.width).fill(false); let rowsWithLine = new Set();
+    for (let y = 0; y < info.height; y++) for (let x = 0; x < info.width; x++) { const i = (y * info.width + x) * info.channels; if (isLine(i)) { cols[x] = true; rowsWithLine.add(y); } }
+    const covered = cols.filter(Boolean).length / info.width;
+    return { covered, rows: rowsWithLine.size, w: info.width, h: info.height };
+  };
+  const checkDefault = (r, l, tag, i) => {
+    check(r.length === 3 && r.every((x, k) => x.variant === "planned" && x.inLaunch && x.sCount === 0 && x.amount === formatPrice(PLANS[k].price, l) && x.label === L(l).pricing.priceLabel && x.pill === L(l).pricing.afterOffer && x.deco === "none" && x.note === null), `${tag}: the compliant default: a muted UNSTRUCK price (${r.map((x) => x.amount)}) in the launch zone, the label "${L(l).pricing.priceLabel}" and the pill "${L(l).pricing.afterOffer}"; 0 <s> elements, no decoration`);
+    check(r.every((x) => x.orderOk && x.chevron !== "none" && x.freeTop - x.offerBottom >= 0 && x.freeTop - x.offerBottom <= 48 && x.priceFs >= 32 && ratio(rgb(x.color), rgb(x.bg)) >= 4.5 && Number(x.opacity) === 1 && x.weight >= 700), `${tag}: price directly ABOVE the large FREE (gap <= 48px), a chevron leads down, price type >= 32px / weight >= 700 / contrast >= 4.5:1 (not faint grey) [${r.map((x) => `${Math.round(x.priceFs)}px ${ratio(rgb(x.color), rgb(x.bg)).toFixed(1)}:1`)}]`);
+  };
+  const BADTEXT = (l, text) => { const m = text.match(BAD[l]); return m ? m[0] : ""; };
+  for (const cell of ["announce", "off", "link"]) for (const l of QUICK ? ["en", "he"] : LOCALES) {
     const { ctx, page } = await view(cell, `${pre(l)}/pricing/`, 1440, { locale: l, signup: "off" });
-    const r = await page.evaluate(() => ({ s: document.querySelectorAll("main s, main del, [data-ss-price='strike'], .aicc-tier__price--strike").length, line: [...document.querySelectorAll(".aicc-tier__amount")].filter((e) => getComputedStyle(e).textDecorationLine.includes("through")).length, label: [...document.querySelectorAll(".aicc-tier__price-label")].map((e) => e.innerText.trim()) }));
-    check(r.s === 0 && r.line === 0 && r.label.length === 3 && r.label.every((x) => x === L(l).pricing.priceLabel), `${cell} ${l}: no struck price (0 <s>/<del>/strike markers, 0 struck amounts); every price is labelled "${L(l).pricing.priceLabel}"`);
+    const r = await offerProbe(page), top = await page.evaluate(() => ({ s: document.querySelectorAll("main s, main del, [data-ss-price='strike'], .aicc-tier__offer--strike").length, line: [...document.querySelectorAll("main *")].filter((e) => e.getClientRects().length && getComputedStyle(e).textDecorationLine.includes("through")).length }));
+    check(top.s === 0 && top.line === 0, `${cell} ${l}: no struck price anywhere (0 <s>/<del>/strike markers, 0 elements with line-through)`);
+    checkDefault(r, l, `${cell} ${l} @1440`);
+    check(r.every((x) => !BADTEXT(l, x.cardText)), `${cell} ${l}: no was / previously / original / save / worth / normally / "regular price" alone in any card${r.map((x) => BADTEXT(l, x.cardText)).find(Boolean) ? " -> " + r.map((x) => BADTEXT(l, x.cardText)).find(Boolean) : ""}`);
     await ctx.close();
   }
-  if (mocks.strike) for (const l of QUICK ? ["en"] : LOCALES) {
-    const { ctx, page } = await view("strike", `${pre(l)}/pricing/`, 1440, { locale: l, signup: "off" });
-    const r = await page.evaluate(() => ({ marked: document.querySelectorAll("p.aicc-tier__price--strike[data-ss-price='strike']").length, s: document.querySelectorAll("s.aicc-tier__amount").length, line: [...document.querySelectorAll("s.aicc-tier__amount")].filter((e) => getComputedStyle(e).textDecorationLine.includes("through")).length, label: [...document.querySelectorAll(".aicc-tier__price--strike .aicc-tier__price-label")].map((e) => e.innerText.trim()), amounts: [...document.querySelectorAll("s.aicc-tier__amount")].map((e) => e.innerText.trim()) }));
-    check(r.marked === 3 && r.s === 3 && r.line === 3 && r.label.every((x) => x === L(l).pricing.priceLabelStrike) && JSON.stringify(r.amounts) === JSON.stringify(PLANS.map((p) => formatPrice(p.price, l))), `strike build ${l}: the gated variant strikes each regular price (<s class="aicc-tier__amount">, struck) under the label "${L(l).pricing.priceLabelStrike}" [${JSON.stringify(r)}]`);
-    await page.locator(".aicc-tiers").first().screenshot({ path: path.join(SHOTS, `strike-${l}.png`) });
+  for (const l of QUICK ? ["en", "ru"] : LOCALES) for (const w of QUICK ? [320, 390, 1024, 1440] : [320, 375, 390, 430, 768, 1024, 1440, 1920]) for (const scale of QUICK && w > 390 ? [1] : [1, 2]) {
+    const { ctx, page } = await view("announce", `${pre(l)}/pricing/`, w, { locale: l, signup: "off", h: 1000, scale, media: { reducedMotion: "reduce" } });
+    const r = await offerProbe(page);
+    check(r.every((x) => x.over <= 0 || scale > 1.5) && r.every((x) => x.inBox && !x.clipped), `default ${l} @${w}px ${scale * 100}%: the offer block stays inside its card and is not clipped`);
+    if (w === 320 || w === 1440) await page.locator(".aicc-pricing").first().screenshot({ path: path.join(SHOTS, `planned-${l}-${w}-${scale * 100}.png`) });
     await ctx.close();
   }
-  else console.log("  note --ss-strike not given: the strike build was not audited here");
+  if (mocks.strike) {
+    for (const l of LOCALES) for (const w of QUICK ? [320, 390, 1440] : [320, 375, 390, 430, 768, 1024, 1440, 1920]) for (const scale of QUICK && w > 390 ? [1] : [1, 2]) {
+      if (QUICK && l === "es") continue;
+      const { ctx, page } = await view("strike", `${pre(l)}/pricing/`, w, { locale: l, signup: "off", h: 1000, scale, media: { reducedMotion: "reduce" } });
+      const r = await offerProbe(page), tag = `strike ${l} @${w}px ${scale * 100}%`, P = L(l).pricing;
+      check(r.length === 3 && r.every((x, k) => x.variant === "strike" && x.inLaunch && x.sCount === 1 && x.sText.startsWith(formatPrice(PLANS[k].price, l)) && x.sText.includes(P.perShort) && x.label === P.strikeLabel && x.sr === P.strikeSr && x.note === P.strikeNote && x.noteInCard && x.pill === null), `${tag}: three struck planned prices in the launch zone, each ONE <s> holding the amount and its unit, the label "${P.strikeLabel.slice(0, 50)}..." directly under it, the screen-reader text, and the disclosure in the SAME card`);
+      check(r.every((x) => x.deco.includes("through") && x.decoStyle === "solid" && x.decoThick >= 3 && ratio(rgb(x.decoColor), rgb(x.bg)) >= 3 && ratio(rgb(x.color), rgb(x.bg)) >= 4.5 && Number(x.opacity) === 1 && x.weight >= 700), `${tag}: actually struck: strikethrough, solid, line >= 3px (${r.map((x) => x.decoThick.toFixed(1))}), line colour contrast >= 3:1 (${r.map((x) => ratio(rgb(x.decoColor), rgb(x.bg)).toFixed(1))}), text contrast >= 4.5:1, weight >= 700, full opacity`);
+      check(r.every((x) => x.amountFs >= 28 && x.labelFs >= 14 && x.labelFs >= 0.35 * x.amountFs && x.noteFs >= 14 && x.noteFs >= 0.35 * x.amountFs && ratio(rgb(x.labelColor), rgb(x.bg)) >= 4.5 && ratio(rgb(x.noteColor), rgb(x.bg)) >= 4.5), `${tag}: LARGE amount (${r.map((x) => Math.round(x.amountFs))}px), label ${r.map((x) => Math.round(x.labelFs))}px >= 14px and >= 35% of the amount, disclosure >= 14px, text contrast >= 4.5:1`);
+      check(r.every((x) => x.orderOk && x.labelTop >= x.priceBottom - 1 && x.labelTop - x.priceBottom <= 16 && x.freeTop - x.labelBottom >= 0 && x.freeTop - x.labelBottom <= 40), `${tag}: hierarchy ~~price~~ -> label (directly under the strike) -> FREE (directly below, gap <= 40px)`);
+      check(r.every((x) => x.inBox && !x.clipped) && (scale > 1.5 || r.every((x) => x.over <= 0)), `${tag}: no clipping or overflow of the strike block`);
+      check(r.every((x) => !BADTEXT(l, x.cardText)), `${tag}: no was / previously / original / save / worth / normally / "regular price" alone in any card${r.map((x) => BADTEXT(l, x.cardText)).find(Boolean) ? " -> " + r.map((x) => BADTEXT(l, x.cardText)).find(Boolean) : ""}`);
+      if ((scale === 1 && [320, 390, 1440].includes(w)) || (scale === 2 && w === 320)) {
+        for (const pl of ["solo", "studio", "agency"]) { const px = await linePixels(page, pl); check(px.covered >= (scale > 1.5 ? 0.8 : 0.97) && px.rows >= 3, `${tag} ${pl}: the strike line runs across the whole amount and unit (${Math.round(px.covered * 100)}% of the ${px.w}px text width carries line pixels, ${px.rows} rows thick)${l === "he" ? " (right-to-left, price isolated by <bdi>)" : ""}`); }
+        await page.locator(".aicc-pricing").first().screenshot({ path: path.join(SHOTS, `strike-${l}-${w}-${scale * 100}.png`) });
+      }
+      if (w === 390 && scale === 1) { // WCAG 1.4.12 text spacing on the strike block
+        await page.addStyleTag({ content: "*{line-height:1.5 !important;letter-spacing:0.12em !important;word-spacing:0.16em !important}p{margin-block-end:2em !important}" }); await page.waitForTimeout(250);
+        const r2 = await offerProbe(page);
+        check(r2.every((x) => x.inBox && !x.clipped && x.over <= 0), `${tag} + text spacing: the strike block does not overflow, clip or leave its card`);
+      }
+      await ctx.close();
+    }
+    // the strike and its label vanish when registration closes (the live set is hidden: nothing struck is visible in the closed view or after the end)
+    for (const [how, opts] of [["browser clock at the registration cutoff", { signup: "open", now: CUT, fixed: true }], ["status answer closed_cutoff", { signup: "closed_cutoff" }], ["after the trial end", { signup: "open", now: END + 1000, fixed: true }]]) for (const l of QUICK ? ["en"] : LOCALES) {
+      const { ctx, page } = await view("strike", `${pre(l)}/pricing/`, 1440, { locale: l, ...opts });
+      const v = await page.evaluate(() => { const vis = (e) => e.getClientRects().length > 0 && getComputedStyle(e).visibility !== "hidden"; return { s: [...document.querySelectorAll("s, del, [data-ss-price], .aicc-tier__offer-label, .aicc-tier__offer-note")].filter(vis).length, line: [...document.querySelectorAll("main *")].filter((e) => vis(e) && getComputedStyle(e).textDecorationLine.includes("through")).length }; });
+      check(v.s === 0 && v.line === 0, `strike build ${l} (${how}): fails closed: no struck price, no planned-price label and no disclosure is visible (${v.s} / ${v.line})`);
+      await ctx.close();
+    }
+  } else console.log("  note --ss-strike not given: the strike build was not audited here");
 }
 
 // ───────────────────────────────────────────────────────────── K. scope of the kit wrapper
