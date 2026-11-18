@@ -14,6 +14,7 @@ set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"; REPO="$(cd "$HERE/../.." && pwd)"; INFRA="$REPO/infra"; PROV="$INFRA/provision"
 T_SUITE="p38-rotation"; . "$HERE/lib/t.sh"
 PROV="${P38R_PROV:-$PROV}"
+sub() { [ -z "${P38R_SUB:-}" ] || case ",$P38R_SUB," in *",$1,"*) return 0 ;; *) return 1 ;; esac; }       # P38R_SUB=G5,F4 narrows a section to some of its blocks
 want() { [ -z "${P38R_ONLY:-}" ] || case ",$P38R_ONLY," in *",$1,"*) return 0 ;; *) return 1 ;; esac; }       # P38R_ONLY=M,F runs only those sections (the fixture is always built)
 ROT="$PROV/rotate-webhook-secret.sh"; CPTOOL="$PROV/host/aicc-rotate-webhook-secret"; APITOOL="$PROV/host/aicc-rotate-webhook-secret-api"; PROBEPHP="$PROV/host/webhook-probe.php"; SNAPPHP="$PROV/host/outbox-snapshot.php"
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/ap38r.XXXX")"; TMP="$(cd "$TMP" && pwd -P)"; trap 'kill "${SRVPID:-0}" 2>/dev/null; wait "${SRVPID:-0}" 2>/dev/null; rm -rf "$TMP"' EXIT
@@ -133,7 +134,7 @@ d = load(); cmd = sys.argv[1]
 if cmd == "enqueue":
     for _ in range(int(sys.argv[2])):
         i = d["next"]; d["next"] += 1
-        d["events"].append({"event_id": "evt-%04d" % i, "activation_ref": "act-1", "license_ref": "lic-1", "status": "active", "plan": "trial", "expires_at": 2000000000, "sequence": i,
+        d["events"].append({"event_id": "evt-%04d" % i, "activation_ref": (sys.argv[4] if len(sys.argv) > 4 else "act-%d" % i), "license_ref": "lic-1", "status": "active", "plan": "trial", "expires_at": 2000000000, "sequence": i,
                             "attempts": 7 if sys.argv[3] == "exhaust" else (6 if sys.argv[3] == "att6" else 0), "delivered": False, "exhausted": False, "hold": sys.argv[3] in ("held", "att6")})
     save(d)
 elif cmd == "run":
@@ -151,15 +152,19 @@ elif cmd == "run":
             if e["attempts"] >= 8: e["exhausted"] = True
     save(d)
 elif cmd == "snapshot":      # a model of outbox-snapshot.php (the real script is a read-only SELECT through wp eval-file)
+    if os.path.exists(os.path.join(FLAGS, "snapshot-sqlerror")): print("TOTAL unavailable"); sys.exit(1)        # the real script fails CLOSED on a SQL error
+    if os.path.exists(os.path.join(FLAGS, "snapshot-empty")): print("TOTAL pending=0 exhausted=0 listed=0"); sys.exit(0)     # a snapshot that LIES: wpdb returns an empty list on a failed query
     p = e_ = 0
-    for e in d["events"]:
+    for k, e in enumerate(d["events"]):
         if e["delivered"]: continue
-        if e["exhausted"] or e["attempts"] >= 8: e_ += 1; print("EXHAUSTED %s attempts=%d" % (e["event_id"], e["attempts"]))
+        if e["exhausted"] or e["attempts"] >= 8:
+            e_ += 1; newer = any(x["activation_ref"] == e["activation_ref"] for x in d["events"][k + 1:])
+            print("EXHAUSTED %s attempts=%d superseded=%d" % (e["event_id"], e["attempts"], 1 if newer else 0))
         else: p += 1; print("EVENT %s attempts=%d" % (e["event_id"], e["attempts"]))
     print("TOTAL pending=%d exhausted=%d listed=%d" % (p, e_, p + e_))
 elif cmd == "health":
     ev = d["events"]
-    print(json.dumps({"license_outbox": {"available": True, "pending": sum(1 for e in ev if not e["delivered"] and not e["exhausted"]), "exhausted": sum(1 for e in ev if e["exhausted"]), "oldest_pending_age_seconds": 7}}))
+    print(json.dumps({"license_outbox": {"available": True, "pending": sum(1 for e in ev if not e["delivered"] and not e["exhausted"] and e["attempts"] < 8), "exhausted": sum(1 for e in ev if not e["delivered"] and (e["exhausted"] or e["attempts"] >= 8)), "oldest_pending_age_seconds": 7}}))
 PY
 cat > "$FAKE/wp-wrapper.php" <<'PHP'
 <?php
@@ -245,7 +250,7 @@ cmp=0; for a in "\$@"; do [ "\$a" != "--compare" ] || cmp=1; done
 if [ "\$cmp" = 1 ] && [ -e "$FLAGS/fast-compare" ]; then echo "IDENTICAL (fixture fast path)"; exit 0; fi
 if [ "\$cmp" = 0 ] && [ -e "$FLAGS/stale-render" ]; then echo "unchanged: (fixture: a renderer that exits 0 and writes nothing)"; exit 0; fi
 f="$FLAGS/fail-render"
-if [ "\$cmp" = 0 ] && [ -e "\$f" ] && [ "\$(cat "\$f")" -gt 0 ]; then echo \$(( \$(cat "\$f") - 1 )) > "\$f"; echo "REFUSED: fake render failure" >&2; exit 1; fi
+if [ "\$cmp" = 0 ] && [ -e "\$f" ] && [ "\$(cat "\$f")" -gt 0 ]; then echo \$(( \$(cat "\$f") - 1 )) > "\$f"; echo "REFUSED: fake render failure (token=abcDEF+/ghiJKL012345MNOpqr6789stuVWX+/yzABCD0123==)" >&2; exit 1; fi
 exec env AICC_TEST_HARNESS=1 bash "$PROV/render-wp-config.sh" --out "$CP/srv/aicc/shared/wp-config.php" --secrets-dir "$CP/etc/aicc/secrets" --mail-dir "$CP/etc/aicc-mail" --plugin-release-dir "$CP/rel" --owner-facts-file "$CP/etc/aicc/owner-facts.env" --owner "$OFU" "\$@"
 EOF
   cat > "$d/aicc-wp" <<EOF
@@ -406,7 +411,8 @@ t_contains "...runs the CP preflight (render compare, outbox)" "$R_OUT" "ok: a r
 t_contains "...runs the API preflight from this checkout without installing it" "$R_OUT" "ok: exactly one ENTITLEMENT_WEBHOOK_SECRET line, 64 hex"
 t_contains "...prints the outbox baseline" "$R_OUT" "OUTBOX pending=2 exhausted=0"
 t_contains "...prints the exact steps and the honest window statement" "$R_OUT" "FROM STEP 6 TO 7 THE HOSTS DISAGREE"
-t_contains "...(NOT ATOMIC, NOT LOSSY)" "$R_OUT" "NOT ATOMIC, NOT LOSSY"
+t_contains "...(NOT ATOMIC: events are queued and retried, no overclaim)" "$R_OUT" "NOT ATOMIC: events are queued and retried by the plugin outbox"
+t_not_contains "...never the words LOSSY or proof" "$R_OUT" "NOT LOSSY"
 t_contains "...announces what the API tool install would do" "$R_OUT" "not installed: run would install it root:root 0755"
 t_eq "...EVERY file and directory of BOTH hosts (path, mode, content hash) is identical before and after" "$(HP snap "$CP" "$API" | shasum -a 256)" "$SNAP0"
 t_eq "...the Backend was not restarted and no event was delivered" "$(be_restarts)/$(be_events)" "0/"
@@ -576,6 +582,18 @@ kept_ok() { # a journalled change always leaves its backup behind
 newscn() { reset_world; flag_set window-events 2; flag_set fast-compare; RID=""; }
 getrid() { RID="$(ID_NOW)"; }
 
+# ---- shared helpers of the review rounds (global: every section may be run alone with P38R_ONLY)
+NEW2="$(printf 'abcdef0123456789%.0s' 1 2 3 4)"; FPNEW2="$(fp16 "$NEW2")"; printf '%s' "$NEW2" > "$TMP/new2.file"; printf '%s' "$OLD" > "$TMP/old.file"; chmod 600 "$TMP/new2.file" "$TMP/old.file"
+restore_old_everywhere() { # an old-backup restore of the RETIRED secret on BOTH hosts: secret file + rendered config, env file + Backend restart
+  printf '%s' "$OLD" > "$CP/etc/aicc/secrets/entitlement-webhook.secret"; chmod 600 "$CP/etc/aicc/secrets/entitlement-webhook.secret"
+  PATH="$TMP/cpbin:$BASEPATH" "$TMP/cpbin/aicc-render-wp-config" --env production --confirm-production >/dev/null 2>&1
+  cp -p "$TMP/backend.env.orig" "$API/etc/aicc/backend.env"; chmod 640 "$API/etc/aicc/backend.env"; ctl __restart
+}
+setclock() { : > "$TMP/clock"; local l; for l in "$@"; do printf '%s\n' "$l" >> "$TMP/clock"; done; }
+clockrot() { AICC_TEST_CLOCK_FILE="$TMP/clock" ROT_NOWIN=1 rot "$@"; }
+enq() { python3 -I "$FAKE/dispatcher.py" enqueue "$@"; }
+exhaust_last() { python3 -I -c 'import json,sys; d=json.load(open(sys.argv[1])); d["events"][-1]["exhausted"]=True; d["events"][-1]["attempts"]=8; json.dump(d,open(sys.argv[1],"w"))' "$TMP/outbox.json"; }
+
 if want C0; then
 echo "== C0. every host mutation is atomic: kill -9 at every stage (host tools, direct) =="
 for st in cp_after_journal cp_prepare_after_create cp_prepare_after_write cp_prepare_after_fsync cp_prepare_after_rename; do
@@ -707,7 +725,7 @@ envcase "the bystander container is unhealthy" "the bystander container nourishv
 envcase "the bystander container does not exist" "the bystander container nourishvik-care is not healthy (state=unknown" "rm -f '$API/docker/nourishvik-care'"
 envcase "a Backend that is down" "/health is not the expected Backend" "touch '$FLAGS/down'"
 envcase "the live CP secret is already retired" "RETIRED_SECRET_IN_USE" "printf '%s %s %s\n' '$FPOLD' 2026-01-01T00:00:00Z 20260101T000000Z > '$CP/etc/aicc/webhook-secret-retired.fp'; chmod 600 '$CP/etc/aicc/webhook-secret-retired.fp'"
-envcase "the outbox already has an exhausted event" "already has 1 exhausted" "FAKE_OUTBOX='$TMP/outbox.json' FAKE_CP_CONFIG='$CP/srv/aicc/shared/wp-config.php' FAKE_BACKEND_URL='$BURL' FAKE_FLAGS='$FLAGS' python3 '$FAKE/dispatcher.py' enqueue 1 exhaust; python3 -I -c 'import json,sys; d=json.load(open(sys.argv[1])); d[\"events\"][-1][\"exhausted\"]=True; json.dump(d,open(sys.argv[1],\"w\"))' '$TMP/outbox.json'"
+envcase "the outbox already has an exhausted event" "1 exhausted event(s) already" "FAKE_OUTBOX='$TMP/outbox.json' FAKE_CP_CONFIG='$CP/srv/aicc/shared/wp-config.php' FAKE_BACKEND_URL='$BURL' FAKE_FLAGS='$FLAGS' python3 '$FAKE/dispatcher.py' enqueue 1 exhaust; python3 -I -c 'import json,sys; d=json.load(open(sys.argv[1])); d[\"events\"][-1][\"exhausted\"]=True; json.dump(d,open(sys.argv[1],\"w\"))' '$TMP/outbox.json'"
 envcase "the outbox cannot be read" "the outbox health could not be read" "touch '$FLAGS/aicc-wp-down'"
 envcase "the rendered wp-config differs from the live file" "CONFIG_MISMATCH" "sed -i.bak \"s/'$OLD'/'$NEW'/\" '$CP/srv/aicc/shared/wp-config.php'; rm -f '$CP/srv/aicc/shared/wp-config.php.bak'"
 envcase "a render would change another constant" "a render would change the wp-config BEFORE the secret changes" "printf 'AICC_MAIL_PROVIDER=brevo_api\n' > '$CP/etc/aicc/owner-facts.env'; chmod 600 '$CP/etc/aicc/owner-facts.env'"
@@ -830,8 +848,8 @@ release_held; recover_resume "after the held events were released"
 newscn; flag_set window-mode exhaust; rot run; getrid
 failed_in "exhausted events" drain
 t_contains "...EXHAUSTED EVENTS are reported and not deleted" "$R_OUT" "drain: state=exhausted new_pending=0 exhausted=2"
-rot resume --id "$RID"; t_eq "...resume refuses to go on while events are exhausted (preflight)" "$R_RC" "1"
-t_contains "...naming them" "$R_OUT" "already has 2 exhausted event(s)"
+rot resume --id "$RID"; t_eq "...resume does not re-run the START gate on an underway rotation: it goes to the drain, which refuses again (exit 1)" "$R_RC" "1"
+t_contains "...in the drain phase, naming the exhausted events" "$R_OUT" "FAILED in phase: drain"
 rot finalize --id "$RID"; t_eq "...finalize still works only on explicit decision (the tool does not forbid it) but the rotation printed no READY" "$(printf '%s' "$R_OUT" | grep -c 'READY TO FINALIZE')" "0"
 newscn; flag_set window-mode exhaust; rot run; getrid; rot rollback --id "$RID"; t_eq "...rollback works with exhausted events present" "$R_RC" "0"
 # 18 the bystander is restarted by something else during the run
@@ -1025,7 +1043,7 @@ RID="$(sed -n 's/.*READY TO FINALIZE: id \([0-9TZ]*\).*/\1/p' <<< "$(res e1 .out
 t_eq "the same run with the secrets in no ssh option or command" "$(grep -c "$OLD\|$NEW" "$REC" || true)" "0"
 # every file anywhere in the test tree that holds a canary must be one of the allowed 0600 files
 allowed_hits() { # <canary> -> lists files that hold it and are NOT in the allowed set
-  grep -rlF "$1" "$TMP" 2>/dev/null | grep -v "^$DRV/" | grep -v "^$TMP/new-secret.file\$" | grep -v "^$TMP/backend.env.orig\$" | grep -v "^$TMP/wp-config.orig\$" | grep -v "^$TMP/wp-config.cache\$" | grep -v "^$TMP/env.good\$" | grep -v "^$TMP/cpsec.good\$" \
+  grep -rlF "$1" "$TMP" 2>/dev/null | grep -v "^$DRV/" | grep -v "^$TMP/new-secret.file\$" | grep -v "^$TMP/backend.env.orig\$" | grep -v "^$TMP/wp-config.orig\$" | grep -v "^$TMP/wp-config.cache\$" | grep -v "^$TMP/env.good\$" | grep -v "^$TMP/cpsec.good\$" | grep -v "^$TMP/old.file\$" \
     | grep -v "^$CP/etc/aicc/secrets/entitlement-webhook.secret\(\.next-\|\.prev-\|\.retired-\)\{0,1\}[0-9TZ]*\$" | grep -v "^$CP/srv/aicc/shared/wp-config.php\$" \
     | grep -v "^$API/etc/aicc/backend.env\(\.pre-webhook-rotation-[0-9TZ]*\)\{0,1\}\$" | grep -v "^$API/etc/aicc/webhook-rotation/[0-9TZ]*/next.secret\$" | grep -v "^$CP.snap/\|^$API.snap/" || true
 }
@@ -1079,17 +1097,7 @@ t_ok "the three scripts are shellcheck / syntax clean (when the tools are instal
 fi
 if want F; then
 # ---- the fix round of the independent security review ------------------------------------------------------------------------------------------------------------------------------------------------------
-NEW2="$(printf 'abcdef0123456789%.0s' 1 2 3 4)"; FPNEW2="$(fp16 "$NEW2")"; printf '%s' "$NEW2" > "$TMP/new2.file"; printf '%s' "$OLD" > "$TMP/old.file"; chmod 600 "$TMP/new2.file" "$TMP/old.file"
-restore_old_everywhere() { # an old-backup restore of the RETIRED secret on BOTH hosts: secret file + rendered config, env file + Backend restart
-  printf '%s' "$OLD" > "$CP/etc/aicc/secrets/entitlement-webhook.secret"; chmod 600 "$CP/etc/aicc/secrets/entitlement-webhook.secret"
-  PATH="$TMP/cpbin:$BASEPATH" "$TMP/cpbin/aicc-render-wp-config" --env production --confirm-production >/dev/null 2>&1
-  cp -p "$TMP/backend.env.orig" "$API/etc/aicc/backend.env"; chmod 640 "$API/etc/aicc/backend.env"; ctl __restart
-}
-setclock() { : > "$TMP/clock"; local l; for l in "$@"; do printf '%s\n' "$l" >> "$TMP/clock"; done; }
-clockrot() { AICC_TEST_CLOCK_FILE="$TMP/clock" ROT_NOWIN=1 rot "$@"; }
-enq() { python3 -I "$FAKE/dispatcher.py" enqueue "$@"; }
-exhaust_last() { python3 -I -c 'import json,sys; d=json.load(open(sys.argv[1])); d["events"][-1]["exhausted"]=True; d["events"][-1]["attempts"]=8; json.dump(d,open(sys.argv[1],"w"))' "$TMP/outbox.json"; }
-
+if sub F1; then
 echo "== F1. a RETIRED live secret is the situation a rotation cures (review item 1) =="
 newscn; rot run --finalize; getrid; RF1="$RID"
 t_eq "setup: a finalized rotation (old secret retired on both hosts and off-host)" "$R_RC/$(world)" "0/new"
@@ -1115,11 +1123,12 @@ t_eq "...the retired fingerprint is registered again under the NEW rotation id o
 AICC_TEST_NEW_SECRET_FILE="$TMP/old.file" rot run --force-new-rotation; getrid
 t_eq "a NEW secret that is itself retired is still REFUSED (prepare)" "$R_RC" "1"; t_contains "...naming it" "$R_OUT" "the new secret equals the live or a retired one"
 t_eq "...nothing live changed" "$(cp_live_fp)/$(api_env_fp)" "$FPNEW2/$FPNEW2"
-
+fi
+if sub F2; then
 echo "== F2. the OFF-HOST retired list (review item 2) =="
 newscn; rot run --finalize; getrid; RF2="$RID"
-t_contains "finalize prints the retired fingerprint to store in the repo" "$R_OUT" "RETIRED FINGERPRINT (off-host list"
-t_contains "...and why" "$R_OUT" "a 16-hex domain-separated hash is not usable as a secret"
+t_contains "finalize prints the retired fingerprint to store in the repo" "$R_OUT" "RETIRED FINGERPRINT written to the off-host list"
+t_contains "...and why" "$R_OUT" "A 16-hex domain-separated hash is not usable as a secret"
 t_eq "the Mac list holds <fp16> <UTC time> <id> and is mode 0600 in a 0700 directory" "$(awk '{print $1" "$3}' "$TMP/retired-mac/retired-fingerprints")/$(mode "$TMP/retired-mac/retired-fingerprints")/$(mode "$TMP/retired-mac")" "$FPOLD $RF2/600/700"
 t_not_contains "...it holds no secret" "$(cat "$TMP/retired-mac/retired-fingerprints")" "$OLD"
 LISTED="$(env -i "PATH=$BASEPATH" "HOME=$HOMED" "AICC_ROT_RETIRED_FILE=$TMP/retired-mac/retired-fingerprints" bash "$ROT" retired-list 2>&1)"
@@ -1136,9 +1145,11 @@ rot status; t_eq "status fails too" "$R_RC" "1"; t_contains "...off-host" "$R_OU
 mv "$TMP/retired-mac" "$TMP/retired-mac.gone"; printf '%s 2026-01-01T00:00:00Z 20260101T000000Z\n' "$FPOLD" > "$TMP/repo-list.txt"
 AICC_ROT_RETIRED_REPO_FILE="$TMP/repo-list.txt" rot verify
 t_eq "the repo-committed list works the same when this workstation has no file of its own" "$R_RC" "1"; t_contains "...naming the repo list file" "$R_OUT" "repo-list.txt"
-rot verify; t_eq "RESIDUAL (documented): a workstation with NO list and wiped host registries cannot know: verify passes (docs section 8: commit the list to the repo)" "$R_RC" "0"
+rot verify; t_eq "a workstation with NO list at all while a rotation was FINALIZED on the Control Plane: verify FAILS (OFFHOST_LIST_EMPTY)" "$R_RC" "1"; t_contains "...naming it" "$R_OUT" "OFFHOST_LIST_EMPTY"
+t_contains "...and the absent list is warned about with the total of fingerprint lines" "$R_OUT" "WARNING: off-host list absent ("
 mv "$TMP/retired-mac.gone" "$TMP/retired-mac"
-
+fi
+if sub F3; then
 echo "== F3. the drain is proved event by event (review item 3) =="
 newscn; enq 1 att6; rot plan
 t_eq "a pending event at 6 failed attempts: the preflight REFUSES to start (exit 1)" "$R_RC" "1"; t_contains "...naming the reason" "$R_OUT" "1 pending event(s) at 6 or more failed attempts (of 8)"
@@ -1157,11 +1168,12 @@ t_ok "the snapshot script is a single read-only SELECT (no write statement of an
 import re, sys
 src = open(sys.argv[1]).read()
 code = re.sub(r'(?s)/\\*.*?\\*/', '', src)
-assert len(re.findall(r'(?i)\\bselect\\b', code)) == 1, 'exactly one SELECT'
+assert len(re.findall(r'[$]wpdb->get_results', code)) == 1, 'exactly one get_results (one SELECT statement)'
 assert not re.search(r'(?i)\\b(update|insert|delete|replace|drop|alter|truncate)\\b', code), 'a write statement'
 assert not re.search(r'(?i)(update_option|add_option|delete_option|wp_schedule|do_action|query\\()', code), 'a write call'
 " "$SNAPPHP"
-
+fi
+if sub F4; then
 echo "== F4. rollback reads BOTH hosts, both registries and the off-host list FIRST (review item 4) =="
 newscn; rot run; getrid; SNAPCP="$(HP snap "$CP" | shasum -a 256)"; RS0="$(be_restarts)"
 apitool finalize --id "$RID" >/dev/null
@@ -1186,19 +1198,19 @@ rot finalize --id "$RID"; t_eq "...and finalize completes it (exactly one regist
 newscn; rot run; getrid; apitool finalize --id "$RID" >/dev/null; KILL=cp_after_registry killed cptool finalize --id "$RID" >/dev/null
 t_ok "the same on the Control Plane: killed after the registry write, its journal says finalized" grep -q 'phase=finalized' "$CP/var/lib/aicc/webhook-rotation/$RID.state"
 rot rollback --id "$RID"; t_eq "...rollback refused" "$R_RC" "1"
-
+fi
+if sub F5; then
 echo "== F5. the deploy window is evaluated AGAIN right before apply, promote and finalize (review item 5) =="
 newscn; setclock 18:20:00 18:24:00; clockrot run; getrid
 failed_in "only 179 s left before apply" window
-t_contains "...says how many seconds are left and how many are required" "$R_OUT" "only 179s are left in this deploy window right before the Backend change (apply) (at least 180 s are required"
+t_contains "...says how many seconds are left and how many are required" "$R_OUT" "only 179s are left in this deploy window right before the Backend change (apply) (at least 269 s are required"
 t_eq "...nothing live changed and the Backend was not restarted" "$(world)/$(be_restarts)" "old/0"
 setclock 18:48:00; clockrot resume --id "$RID"; t_eq "...resumed in the next window it completes" "$R_RC/$(world)" "0/new"
-newscn; setclock 18:20:00 18:23:59; clockrot run; t_eq "exactly 180 s left is enough (the boundary)" "$R_RC/$(world)" "0/new"
+newscn; setclock 18:20:00 18:22:30; clockrot run; t_eq "exactly 269 s left (= 3 s health wait + 266 s of worst-case follow-up steps) is enough (the boundary)" "$R_RC/$(world)" "0/new"
+newscn; setclock 18:20:00 18:22:31; clockrot run; t_eq "268 s left is not (exit 1)" "$R_RC" "1"; t_contains "...says 268 s" "$R_OUT" "only 268s are left"
 newscn; setclock 18:20:00 18:20:10 18:27:10; clockrot run; getrid
-failed_in "the window closes between apply and promote" window
-t_contains "...CLOSED right before the promote, with the emergency way out named" "$R_OUT" "the deploy window is CLOSED right before the Control Plane promote (now 18:27:10 UTC)"
-t_eq "...the Backend is on NEW and the CP on OLD (queued deliveries, nothing lost)" "$(world)" "mixed(cp=OLD cfg=OLD env=NEW backend=NEW)"
-setclock 10:00:00; clockrot resume --id "$RID" --emergency-outside-window; t_eq "...resume with --emergency-outside-window finishes it at once" "$R_RC/$(world)" "0/new"
+t_eq "the window CLOSES between apply and promote: the promote is NOT aborted (windows limit starting changes, not finishing them): exit 0, all NEW" "$R_RC/$(world)" "0/new"
+t_contains "...the closing is logged" "$R_OUT" "note: the deploy window closed during this run (now 18:27:10 UTC). The promote proceeds anyway"
 newscn; setclock 01:50:00 02:00:05; clockrot run; getrid
 failed_in "the clock crosses 02:00 between the start and apply" window
 t_contains "...hour 02 is closed" "$R_OUT" "the deploy window is CLOSED right before the Backend change (apply) (now 02:00:05 UTC)"
@@ -1207,7 +1219,8 @@ newscn; rot run; getrid; setclock 18:20:00 18:27:00; clockrot finalize --id "$RI
 failed_in "the window closes before finalize" window
 t_ok "...nothing was retired" bash -c "[ ! -e '$CP/etc/aicc/webhook-secret-retired.fp' ] && [ ! -e '$TMP/retired-mac/retired-fingerprints' ]"
 setclock 18:20:00; clockrot finalize --id "$RID"; t_eq "...and finalize goes through inside a window" "$R_RC" "0"
-
+fi
+if sub F6; then
 echo "== F6. hardening: harness gate (7), isolated re-exec first (8), journalled old secret (9), keep the new secret (10), core dumps / locks / xattr / sudo logging (11) =="
 reset_world; GT="$TMP/gate"; rm -rf "$GT"; mkdir -p "$GT/nosent"; ln -s "$CP" "$GT/lnk"
 for tool in "$CPTOOL" "$APITOOL"; do
@@ -1290,6 +1303,8 @@ t_ok "reinstating a retired secret keeps the NEW secret as .next-ID (whole, 0600
 t_eq "...and the Backend side keeps its staged copy too" "$(cat "$API/etc/aicc/webhook-rotation/$RID/next.secret")" "$NEW"
 fi
 
+fi
+
 if want M; then
 echo "== M. tests with teeth: each assertion below exists to kill one specific mutant (review item 6) =="
 echo "-- M1. emit-next fails or lies while stage would accept: the orchestrator must still fail --"
@@ -1344,6 +1359,192 @@ t_eq "...CP file, CP config, Backend env and the running Backend all hold the SA
 SECR="$(cat "$CP/etc/aicc/secrets/entitlement-webhook.secret")"
 t_eq "...the random secret is in no captured output, log, journal, ssh record or Mac state file" "$(grep -rlF "$SECR" "$LOGS" "$ROTSTATE" "$TMP/retired-mac" 2>/dev/null | wc -l | tr -d ' ')" "0"
 SECR=""
+fi
+
+if want G; then
+echo "== G. the delta review round: fail-closed snapshot, underway recovery, superseded rows, off-host list hygiene, sudoers parser, rollback fail-open, hints, window, dry-run, wording, retired rollback, redact =="
+TOK='abcDEF+/ghiJKL012345MNOpqr6789stuVWX+/yzABCD0123=='
+if sub G1; then
+echo "-- G1. the snapshot fails CLOSED (F1) --"
+newscn; flag_set snapshot-sqlerror; rot plan
+t_eq "a SQL error in the snapshot ('TOTAL unavailable'): plan FAILS (exit 1)" "$R_RC" "1"
+t_contains "...naming the incomplete snapshot (never an empty list)" "$R_OUT" "outbox-snapshot.php failed or printed an incomplete list"
+o="$(cptool prepare --id "$R1" 2>&1)"; rc=$?
+t_eq "...prepare REFUSES (exit 1)" "$rc" "1"; t_contains "...naming it" "$o" "could not be listed or do not agree"
+t_ok "...and records NO baseline (an empty baseline would make the drain check vacuous)" test ! -e "$CP/var/lib/aicc/webhook-rotation/$R1.events"
+rm -f "$FLAGS/snapshot-sqlerror"; flag_set snapshot-empty; rot plan
+t_eq "a snapshot that prints an EMPTY list while aicc-mail health reports 2 pending events: plan FAILS" "$R_RC" "1"
+t_contains "...naming the disagreement" "$R_OUT" 'the snapshot (pending 0, exhausted 0) does not agree with `aicc-mail health` (pending 2, exhausted 0)'
+o="$(cptool prepare --id "$R1" 2>&1)"; rc=$?
+t_eq "...prepare refuses and records no baseline" "$rc/$([ -e "$CP/var/lib/aicc/webhook-rotation/$R1.events" ] && echo baseline || echo none)" "1/none"
+fi
+if sub G2; then
+echo "-- G2. a rotation that is UNDERWAY is recovered, not blocked by hot events (F2) --"
+newscn; flag_set fail-render 1; rot run; getrid; failed_in "promote fails once" promote
+python3 -I -c 'import json,sys; d=json.load(open(sys.argv[1])); d["events"][0]["attempts"]=6; json.dump(d,open(sys.argv[1],"w"))' "$TMP/outbox.json"
+rot resume --id "$RID"
+t_eq "a baseline event reached attempt 6 during the recovery: resume still completes (exit 0, all NEW)" "$R_RC/$(world)" "0/new"
+t_contains "...the preflight said the rotation is underway and the drain logic decides" "$R_OUT" "is underway: the drain logic against its own baseline decides"
+fi
+if sub G3; then
+echo "-- G3. superseded and acknowledged exhausted rows (F3) --"
+newscn; enq 1 held act-X; exhaust_last; enq 1 normal act-X
+rot plan
+t_eq "an exhausted row whose activation has a NEWER row (superseded: it can never be re-queued) does not block: plan OK" "$R_RC" "0"
+t_contains "...it is reported as superseded" "$R_OUT" "1 superseded by a newer row of the same activation"
+rot run --finalize; t_eq "...a full rotation with finalize completes with it present" "$R_RC" "0"; t_contains "...VERIFY OK" "$R_OUT" "VERIFY OK"
+newscn; enq 1 held; exhaust_last; EID="$(python3 -I -c 'import json,sys; print(json.load(open(sys.argv[1]))["events"][-1]["event_id"])' "$TMP/outbox.json")"
+rot plan; t_eq "an exhausted NEWEST row (nothing newer) blocks: plan FAILS" "$R_RC" "1"; t_contains "...naming it" "$R_OUT" "1 exhausted event(s) already"
+t_contains "ack-exhausted without --confirm-production is refused" "$(env -i "PATH=$BASEPATH" "HOME=$HOMED" bash "$ROT" ack-exhausted --event-ids "$EID" 2>&1 </dev/null || true)" "every subcommand needs --confirm-production"
+rot ack-exhausted; t_eq "ack-exhausted without an explicit id list is refused" "$R_RC" "1"
+rot ack-exhausted --event-ids 'bad id;rm'; t_eq "...a malformed id list is refused" "$R_RC" "1"
+rot ack-exhausted --event-ids evt-9999; t_eq "...an id that is not a blocking exhausted row is refused" "$R_RC" "1"; t_contains "...naming it" "$R_OUT" "is not a BLOCKING exhausted row now"
+rot ack-exhausted --event-ids "$EID"
+t_eq "the owner acknowledges the row by id: exit 0" "$R_RC" "0"; t_contains "...it says nothing is deleted or delivered" "$R_OUT" "They are NOT deleted and NOT delivered"
+t_ok "...the ack file is root-only 0600 and lists the id with a UTC time" bash -c "f='$CP/var/lib/aicc/webhook-rotation/acknowledged-exhausted-events'; [ \"\$(stat -f '%Lp' \"\$f\" 2>/dev/null || stat -c '%a' \"\$f\")\" = 600 ] && grep -q '^$EID 20' \"\$f\""
+t_ok "...the outbox row itself is untouched: still exhausted, still undelivered (never deleted)" python3 -I -c 'import json,sys; e=json.load(open(sys.argv[1]))["events"][-1]; assert e["event_id"]==sys.argv[2] and e["exhausted"] and not e["delivered"]' "$TMP/outbox.json" "$EID"
+rot plan; t_eq "...the rotation can start now" "$R_RC" "0"; t_contains "...the row is counted as acknowledged" "$R_OUT" "1 acknowledged by the owner"
+fi
+if sub G4; then
+echo "-- G4. the off-host list hygiene (F4) --"
+mkdir -p "$HOMED/.aicc-rotation"; printf '%s 2026-01-01T00:00:00Z 20260101T000000Z\n' "$FPOLD" > "$HOMED/.aicc-rotation/retired-fingerprints"; chmod 600 "$HOMED/.aicc-rotation/retired-fingerprints"; : > "$TMP/elsewhere.list"
+o="$(env -i "PATH=$BASEPATH" "HOME=$HOMED" "AICC_ROT_RETIRED_FILE=$TMP/elsewhere.list" "AICC_ROT_STATE_DIR=$TMP/elsewhere-state" bash "$ROT" retired-list 2>&1 </dev/null)"
+t_contains "AICC_ROT_RETIRED_FILE / AICC_ROT_STATE_DIR outside the harness are IGNORED with a warning" "$o" "is set in the environment and IGNORED"
+t_contains "...the real default list is the one read (it lists the fingerprint)" "$o" "$FPOLD"
+t_contains "...and it is named" "$o" "$HOMED/.aicc-rotation/retired-fingerprints"
+t_ok "...the directory the variable named was neither created nor chmod-ed" test ! -e "$TMP/elsewhere-state"
+rm -rf "$HOMED/.aicc-rotation"
+newscn; mkdir -p "$TMP/retired-mac"; ln -s "$TMP/elsewhere.list" "$TMP/retired-mac/retired-fingerprints"
+rot plan; t_eq "a symbolic link where the off-host list should be: REFUSED (exit 1)" "$R_RC" "1"; t_contains "...naming it" "$R_OUT" "is a symbolic link"
+rot retired-list; t_eq "...retired-list refuses too" "$R_RC" "1"
+rm -f "$TMP/retired-mac/retired-fingerprints"; mkdir "$TMP/retired-mac/retired-fingerprints"
+rot plan; t_eq "a DIRECTORY where the list should be: REFUSED" "$R_RC" "1"; t_contains "...naming it" "$R_OUT" "is not a regular file"
+rm -rf "$TMP/retired-mac"
+rot verify; t_contains "an absent Mac list is warned about with the total number of fingerprint lines" "$R_OUT" "WARNING: off-host list absent ("
+fi
+if sub G5; then
+echo "-- G5. the sudoers parser (F5) --"
+sudo_case() { # <tool: cp|api> <expected: warn|none> <printf %b content of /etc/sudoers.d/90-t> <name>
+  local o root="$CP" fn=cptool; [ "$1" = api ] && { root="$API"; fn=apitool; }
+  rm -rf "$root/etc/sudoers" "$root/etc/sudoers.d" "$root/etc/sudoers.local"; mkdir -p "$root/etc/sudoers.d"; printf "$3" > "$root/etc/sudoers.d/90-t"
+  o="$($fn preflight 2>&1 || true)"
+  case "$o" in *"WARN: sudo I/O logging"*) [ "$2" = warn ] && t_pass "sudoers ($1): $4 -> WARN" || t_bad "sudoers ($1): $4 expected no WARN" ;; *) [ "$2" = none ] && t_pass "sudoers ($1): $4 -> no WARN" || t_bad "sudoers ($1): $4 expected a WARN" "$(printf '%s' "$o" | tail -2 | tr '\n' '|')" ;; esac
+}
+reset_world
+for t in cp api; do
+  sudo_case $t warn 'Defaults log_output\n' "Defaults log_output"
+  sudo_case $t warn 'Defaults log_output, !log_input\n' "Defaults log_output, !log_input (the negated sibling must not cancel log_output)"
+  sudo_case $t warn 'aicc ALL=(ALL) NOPASSWD:LOG_OUTPUT: /usr/bin/x\n' "the LOG_OUTPUT: tag on a rule line"
+  sudo_case $t warn 'aicc ALL=(ALL) LOG_INPUT: ALL\n' "the LOG_INPUT: tag"
+  sudo_case $t warn 'Defaults:aicc log_input\n' "Defaults:aicc log_input"
+  sudo_case $t warn 'Defaults iolog_dir=/var/log/sudo-io\n' "iolog_dir="
+  sudo_case $t warn 'Defaults  !log_output, log_input\n' "a positive log_input after a negated log_output"
+  sudo_case $t warn 'Defaults log_output, \\\n  !log_input\n' "a line continuation"
+  sudo_case $t warn 'Defaults !log_output\nDefaults log_output\n' "the LAST setting wins (positive)"
+  sudo_case $t none 'Defaults log_output\nDefaults !log_output\n' "the LAST setting wins (negative)"
+  sudo_case $t none 'aicc ALL=(ALL) NOPASSWD:NOLOG_OUTPUT: /usr/bin/x\n' "the NOLOG_OUTPUT: tag"
+  sudo_case $t none '# Defaults log_output\n# aicc ALL=(ALL) LOG_INPUT: ALL\n' "commented lines"
+  sudo_case $t none 'Defaults env_reset\nDefaults mail_badpass\n' "unrelated Defaults"
+done
+for t in cp api; do
+  root="$CP"; fn=cptool; [ "$t" = api ] && { root="$API"; fn=apitool; }
+  rm -rf "$root/etc/sudoers" "$root/etc/sudoers.d" "$root/etc/sudoers.local" "$root/etc/sudoers.custom"; mkdir -p "$root/etc/sudoers.d" "$root/etc/sudoers.custom"
+  printf '@includedir /etc/sudoers.custom\n' > "$root/etc/sudoers"; printf 'Defaults log_output\n' > "$root/etc/sudoers.custom/10-x"
+  t_contains "sudoers ($t): an @includedir directory is followed" "$($fn preflight 2>&1 || true)" "WARN: sudo I/O logging"
+  printf '#includedir /etc/sudoers.custom\n' > "$root/etc/sudoers"
+  t_contains "sudoers ($t): a #includedir directory is followed (it is NOT a comment)" "$($fn preflight 2>&1 || true)" "WARN: sudo I/O logging"
+  printf '@include /etc/sudoers.local\n' > "$root/etc/sudoers"; printf 'Defaults log_input\n' > "$root/etc/sudoers.local"; rm -f "$root/etc/sudoers.custom/10-x"
+  t_contains "sudoers ($t): an @include file is followed" "$($fn preflight 2>&1 || true)" "WARN: sudo I/O logging"
+  printf '#include /etc/sudoers.local\n' > "$root/etc/sudoers"
+  t_contains "sudoers ($t): an #include file is followed" "$($fn preflight 2>&1 || true)" "WARN: sudo I/O logging"
+  printf '@include /etc/sudoers\n' > "$root/etc/sudoers"
+  t_not_contains "sudoers ($t): an include loop terminates without a warning" "$($fn preflight 2>&1 || true)" "WARN: sudo I/O logging"
+  rm -rf "$root/etc/sudoers" "$root/etc/sudoers.local" "$root/etc/sudoers.custom"
+done
+t_contains "the warning names what it cannot see (/etc/sudo.conf plugins and auditd)" "$(printf 'Defaults log_output\n' > "$CP/etc/sudoers.d/90-t"; cptool preflight 2>&1 || true)" "/etc/sudo.conf plugins and auditd are NOT checked"
+rm -rf "$CP/etc/sudoers.d" "$API/etc/sudoers.d"
+fi
+if sub G6; then
+echo "-- G6. rollback pre-checks do not fail open (F6) --"
+newscn; rot run; getrid; cp "$CP/usr/local/sbin/aicc-rotate-webhook-secret" "$TMP/cp-real"
+cat > "$CP/usr/local/sbin/aicc-rotate-webhook-secret" <<EOF
+#!/bin/bash
+case " \$* " in *" registry-check "*) echo "aicc-rotate-webhook-secret: error: argument mode: invalid choice: 'registry-check'" >&2; exit 2 ;; esac
+exec "$TMP/cp-real" "\$@"
+EOF
+chmod 755 "$CP/usr/local/sbin/aicc-rotate-webhook-secret"; SNAPCP="$(HP snap "$CP" | shasum -a 256)"; RS0="$(be_restarts)"
+rot rollback --id "$RID"
+t_eq "an OLD Control Plane tool without registry-check (it prints an argparse error): rollback REFUSES (exit 1)" "$R_RC" "1"; t_contains "...naming the unreadable registry state" "$R_OUT" "could not read the Control Plane's retired-registry state"
+t_eq "...and touched nothing (CP byte-identical, no Backend restart, all NEW)" "$([ "$(HP snap "$CP" | shasum -a 256)" = "$SNAPCP" ] && echo same)/$(be_restarts)/$(world)" "same/$RS0/new"
+cp -p "$TMP/cp-real" "$CP/usr/local/sbin/aicc-rotate-webhook-secret"
+printf '#!/bin/sh\necho "old tool" >&2; exit 2\n' > "$API/usr/local/sbin/aicc-rotate-webhook-secret-api"; chmod 755 "$API/usr/local/sbin/aicc-rotate-webhook-secret-api"
+rot rollback --id "$RID"
+t_eq "a STALE API tool on the host: rollback re-installs the tool of this checkout first and then completes (exit 0, all OLD)" "$R_RC/$(world)" "0/old"
+t_ok "...the installed API tool is the checkout's file again" cmp "$APITOOL" "$API/usr/local/sbin/aicc-rotate-webhook-secret-api"
+fi
+if sub G7; then
+echo "-- G7. the hints name the right command (F7) --"
+newscn; rot run; getrid; setclock 18:20:00 18:27:00; clockrot finalize --id "$RID"
+failed_in "the window closes before finalize" window
+t_contains "...the next command is FINALIZE, not resume" "$R_OUT" "finalize --confirm-production --id $RID"
+t_not_contains "...it does not tell you to resume" "$R_OUT" "resume --confirm-production --id $RID"
+newscn; rot run --finalize; restore_old_everywhere; flag_set fail-render 1
+AICC_TEST_NEW_SECRET_FILE="$TMP/new2.file" rot run --replace-retired-secret; getrid
+failed_in "a cure rotation whose promote fails" promote
+t_contains "...the resume command in the failure text carries --replace-retired-secret" "$R_OUT" "resume --confirm-production --id $RID --replace-retired-secret"
+AICC_TEST_NEW_SECRET_FILE="$TMP/new2.file" rot resume --id "$RID" --replace-retired-secret
+t_eq "...and following it completes the cure rotation" "$R_RC/$(cp_live_fp)/$(api_env_fp)" "0/$FPNEW2/$FPNEW2"
+fi
+if sub G9; then
+echo "-- G9. finalize checks BOTH hosts without writing before the first irreversible step (F9) --"
+newscn; rot run; getrid
+cp "$CP/etc/aicc/secrets/entitlement-webhook.secret.prev-$RID" "$CP/etc/aicc/secrets/entitlement-webhook.secret.retired-$RID"; chmod 600 "$CP/etc/aicc/secrets/entitlement-webhook.secret.retired-$RID"
+rot finalize --id "$RID"
+failed_in "a Control Plane that would refuse finalize (both .prev and .retired exist)" finalize
+t_contains "...it says it was a dry run, nothing written" "$R_OUT" "would refuse to finalize (dry run, nothing was written anywhere)"
+t_ok "...the off-host list was NOT written, neither registry was written, no journal says finalized" bash -c "[ ! -e '$TMP/retired-mac/retired-fingerprints' ] && [ ! -e '$CP/etc/aicc/webhook-secret-retired.fp' ] && [ ! -e '$API/etc/aicc/webhook-secret-retired.fp' ] && ! grep -q finalized '$CP/var/lib/aicc/webhook-rotation/$RID.state' '$API/var/lib/aicc/webhook-rotation/$RID.state'"
+rm -f "$CP/etc/aicc/secrets/entitlement-webhook.secret.retired-$RID"; rot finalize --id "$RID"
+t_eq "...with the cause removed finalize completes" "$R_RC" "0"
+t_contains "...and prints the EXACT line to commit, in the format of retired-list (<fp16> <UTC> <id>)" "$R_OUT" "$FPOLD 20"
+t_contains "...naming the repo file" "$R_OUT" "COMMIT THIS EXACT LINE to infra/provision/retired-webhook-fingerprints.txt"
+fi
+if sub G10; then
+echo "-- G10. no overclaim (F10) --"
+t_eq "the orchestrator and the runbook never say NOT LOSSY / PROVES / for well under a minute" "$(grep -ciE 'NOT LOSSY|PROVES|well under a minute' "$ROT" "$REPO/docs/cutover/p38-webhook-rotation.md" | awk -F: '{s+=$2} END{print s+0}')" "0"
+fi
+if sub G11; then
+echo "-- G11. rolling back a rotation that REPLACED a retired secret needs the flag (F11) --"
+newscn; rot run --finalize; restore_old_everywhere
+AICC_TEST_NEW_SECRET_FILE="$TMP/new2.file" rot run --replace-retired-secret; getrid
+rot rollback --id "$RID"
+t_eq "a cure rotation (not finalized) whose rollback would restore the RETIRED secret: REFUSED (exit 1)" "$R_RC" "1"; t_contains "...naming the retired fingerprint" "$R_OUT" "which is listed as RETIRED (this rotation replaced a retired secret)"
+t_eq "...nothing changed (CP and API on the new secret)" "$(cp_live_fp)/$(api_env_fp)" "$FPNEW2/$FPNEW2"
+t_contains "the CP tool refuses on its own" "$(cptool rollback --id "$RID" 2>&1 || true)" "listed as RETIRED"
+t_contains "...the API tool too" "$(apitool rollback --id "$RID" 2>&1 || true)" "listed as RETIRED"
+rm -f "$CP/etc/aicc/webhook-secret-retired.fp" "$API/etc/aicc/webhook-secret-retired.fp"
+rot rollback --id "$RID"; t_eq "...with both host registries wiped the OFF-HOST list still refuses" "$R_RC" "1"
+rot rollback --id "$RID" --i-reinstate-a-retired-secret; t_eq "...with --i-reinstate-a-retired-secret it is allowed (exit 0, the retired secret is back)" "$R_RC/$(cp_live_fp)/$(api_env_fp)" "0/$FPOLD/$FPOLD"
+newscn; rot run --finalize; restore_old_everywhere
+AICC_TEST_KILL_AT=cp_after_journal AICC_TEST_NEW_SECRET_FILE="$TMP/new2.file" rot run --replace-retired-secret; getrid
+rot rollback --id "$RID"; t_eq "a cure rotation that was only PREPARED (nothing live changed): rollback needs no flag (exit 0)" "$R_RC/$(cp_live_fp)" "0/$FPOLD"
+fi
+if sub G12; then
+echo "-- G12. the redact mask covers the full secret charset, paths stay readable --"
+newscn; flag_set fail-render 1; rot run
+t_not_contains "a token with + / = in a host's error line is masked by the tool and the orchestrator" "$R_OUT" "$TOK"
+t_contains "...replaced by the mask" "$R_OUT" "<long-token-hidden>"
+t_contains "...while file paths stay readable" "$R_OUT" "/etc/aicc/secrets/entitlement-webhook.secret.next-"
+reset_world; flag_set fail-render 1; cptool prepare --id "$R1" >/dev/null; o="$(cptool promote --id "$R1" --backend-already-restarted 2>&1)"
+t_not_contains "the CONTROL PLANE TOOL's own mask (called directly, no orchestrator in between) hides the full-charset token too" "$o" "$TOK"
+t_contains "...replacing it with the mask" "$o" "<long-token-hidden>"
+eval "$(grep '^redact() ' "$ROT")"
+o="$(printf 'a %s b file=/etc/aicc/secrets/entitlement-webhook.secret.next-20261117T182030Z build=%s s=%s\n' "$TOK" "$(printf 'a%.0s' $(seq 40))" "$OLD" | redact)"
+t_not_contains "the orchestrator's own redact masks the full-charset token" "$o" "$TOK"
+t_not_contains "...and a 64-hex secret" "$o" "$OLD"
+t_contains "...keeps the path" "$o" "file=/etc/aicc/secrets/entitlement-webhook.secret.next-20261117T182030Z"
+t_contains "...and a 40-hex Backend build" "$o" "build=$(printf 'a%.0s' $(seq 40))"
+fi
+
 fi
 
 t_summary

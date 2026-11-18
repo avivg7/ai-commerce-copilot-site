@@ -126,4 +126,10 @@ fresh; sed -i.bak 's#/private/var/folders#/Users#g' "$TMP/w/infra/provision/rota
 fresh; printf '\n$wpdb->query( "UPDATE x SET y = 1" );\n' >> "$TMP/w/infra/provision/host/outbox-snapshot.php"; neg "rotation: an outbox snapshot that writes is caught" 'must be ONE read-only SELECT'
 fresh; sed -i.bak 's#outbox-snapshot\.php#outbox-x.php#g' "$TMP/w/infra/provision/install-stack.sh"; neg "rotation: an installer without the outbox snapshot script is caught" 'must install the outbox snapshot script'
 fresh; rm "$TMP/w/infra/provision/retired-webhook-fingerprints.txt"; neg "rotation: a missing repo list of retired fingerprints is caught" 'the rotation the repo list of retired fingerprints must exist'
+fresh; sed -i.bak 's/last_error/last_err/g' "$TMP/w/infra/provision/host/outbox-snapshot.php"; neg "rotation: a snapshot that no longer fails closed on a SQL error is caught" 'outbox snapshot lost: last_error'
+fresh; sed -i.bak 's/snapshot_once/snapshot_x/g' "$TMP/w/infra/provision/host/aicc-rotate-webhook-secret"; neg "rotation: a snapshot that is not cross-checked against aicc-mail health is caught" 'rotation CP tool lost: snapshot_once'
+fresh; sed -i.bak 's/--rotation-underway/--rotation-x/g' "$TMP/w/infra/provision/host/aicc-rotate-webhook-secret"; neg "rotation: a CP tool whose recovery is blocked by hot events is caught" 'rotation CP tool lost: --rotation-underway'
+fresh; sed -i.bak 's/lists_sane/lists_x/g' "$TMP/w/infra/provision/rotate-webhook-secret.sh"; neg "rotation: an orchestrator that accepts a symlinked retired list is caught" 'rotation orchestrator lost: lists_sane'
+fresh; sed -i.bak 's/window_note/window_x/g' "$TMP/w/infra/provision/rotate-webhook-secret.sh"; neg "rotation: an orchestrator that aborts the promote for the window is caught" 'rotation orchestrator lost: window_note'
+fresh; sed -i.bak 's/cmd_ack_exhausted/cmd_ack_x/g' "$TMP/w/infra/provision/rotate-webhook-secret.sh"; neg "rotation: no owner acknowledgement of blocking exhausted rows is caught" 'rotation orchestrator lost: cmd_ack_exhausted'
 t_summary
