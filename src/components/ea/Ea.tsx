@@ -13,7 +13,6 @@ import { RecoImage } from "@/components/ui/RecoImage";
 import { Accordion } from "@/components/ui/Accordion";
 import { Rich } from "@/lib/rich";
 import { SS_ON } from "@/lib/selfService";
-import { SsTerms } from "@/components/ss/Ss";
 
 /**
  * Early Access presentation (Production 20). Every export renders nothing in a normal build (EA_ON false).
@@ -153,9 +152,7 @@ export function EaHeroSupport({ locale, t }: { locale: Locale; t: Dictionary }) 
  * P36: while requests are not open the status is PLAIN INFORMATIONAL TEXT ("Free access requests coming soon"): no button class, no border, no fill, no role. Nothing that can be
  * mistaken for an action is ever inert. Renders nothing in an OPEN build (the request buttons are real links there) and in an ordinary build.
  */
-export function EaStatusNote({ locale, t, terms = false }: { locale: Locale; t: Dictionary; terms?: boolean }) {
-  // P39: `terms` = the slot under the Home plan cards: with self-service on it carries the free-trial terms (the same slot in every build, so no other build gains a child)
-  if (SS_ON && terms && EA_ON) return <div style={{ marginBlockStart: "1.5rem" }}><SsTerms locale={locale} t={t} /></div>;
+export function EaStatusNote({ locale, t }: { locale: Locale; t: Dictionary }) {
   if (!EA_ON || EA_OPEN || SS_ON) return null; // P37: with self-service on the status is the sign-up control itself (the plain "registration opens soon" status, or a link once sign-up is known to work)
   return (
     <p className="aicc-eanote" data-ea-live data-ea-status {...A(locale, "ea.hero")}>

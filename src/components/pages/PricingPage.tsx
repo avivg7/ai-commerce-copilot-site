@@ -10,7 +10,8 @@ import { EA_ON, EA_OPEN } from "@/lib/earlyAccess";
 import { EaAfterNote, EaClosingLead, EaCta, EaPlanTerms, EaPricingNote, EaSection, EaStatusNote } from "@/components/ea/Ea";
 import { SoonBandActions } from "@/components/ui/Soon";
 import { SS_INITIAL, SS_ON } from "@/lib/selfService";
-import { SsBand, SsPlanFinderSlot, SsTerms } from "@/components/ss/Ss";
+import { SsBand, SsPlanFinderSlot } from "@/components/ss/Ss";
+import { SsPricing } from "@/components/ss/SsPlans";
 import { Container, Section, SectionHeading } from "@/components/ui/Primitives";
 import { PricingCard } from "@/components/ui/PricingCard";
 import { LocaleLink } from "@/components/ui/LocaleLink";
@@ -61,6 +62,11 @@ export function PricingPage({ locale, t }: { locale: Locale; t: Dictionary }) {
       {/* 3. Plans */}
       <Section tone="sunken" labelledBy="plans-title" fb={fb("pricing.plansSection")}>
         <Container>
+          {SS_ON ? (
+            /* P40: the premium pricing block of a self-service build: header, three plan cards, the ONE launch panel (src/components/ss/SsPlans.tsx); the page's own plans heading is part of its header block */
+            <SsPricing locale={locale} t={t} titleId="plans-title" />
+          ) : (
+            <>
           <SectionHeading id="plans-title" title={p.plansSection.title} />
           <div className="aicc-plans">
             {PLANS.map((pl) => (
@@ -81,13 +87,14 @@ export function PricingPage({ locale, t }: { locale: Locale; t: Dictionary }) {
                 headingLevel={3}
                 ea={t.ea.plan}
                 demoLabel={t.home.hero.ctaDemo}
-                {...(SS_ON ? { ss: t.ea.ss, t } : {})}
               />
             ))
               // the terms every plan shares take the full width under the three cards (a campaign build only; an ordinary build adds nothing here, so its page is byte-identical);
               // P34 (owner list): the three short support lines come first, right under the cards
-              .concat(SS_ON ? [<SsTerms key="ss-terms" locale={locale} t={t} anchor />] : EA_ON ? [<EaStatusNote key="ea-status" locale={locale} t={t} />, <EaPlanTerms key="ea-terms" locale={locale} t={t} />] : [])}
+              .concat(EA_ON ? [<EaStatusNote key="ea-status" locale={locale} t={t} />, <EaPlanTerms key="ea-terms" locale={locale} t={t} />] : [])}
           </div>
+            </>
+          )}
           <p className="aicc-countline" style={{ marginBlockStart: "1.5rem" }}>{EA_ON && !SS_ON ? <EaPricingNote locale={locale} t={t} ordinary={p.plansSection.note} /> : p.plansSection.note} {t.common.plan.renewal}</p>
           <p className="aicc-countline" style={{ marginBlockStart: "0.5rem" }} {...tx("pricing.teaser")}>
             {p.teaser.text}{" "}

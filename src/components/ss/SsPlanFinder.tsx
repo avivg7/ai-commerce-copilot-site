@@ -2,13 +2,13 @@
 import { useState } from "react";
 import { FormField, Badge } from "@/components/ui/Primitives";
 import { PLANS } from "@/data/plans";
-import { Check } from "lucide-react";
 import type { SsInitial, SsLabelKey } from "@/lib/ssStatus";
-import { SsCta } from "./SsCta";
+import { SsCta, type SsNotes } from "./SsCta";
 
 /**
- * P37: the "Which plan?" finder of a self-service build. Same behaviour as src/components/home/PlanFinder.tsx (which stays untouched so every other build is byte-identical), but the result action is the
- * self-service button (a link to the sign-up page for the suggested plan, state-aware) instead of the inert "Purchases open soon" chip.
+ * P37/P40: the "Which plan?" finder of a self-service build. Same behaviour as src/components/home/PlanFinder.tsx (which stays untouched so every other build is byte-identical), but the result action is the
+ * self-service control (a link to the sign-up page for the suggested plan, state-aware) instead of the inert "Purchases open soon" chip. The result is the plan and its paid capacity only: the dates and the
+ * trial conditions are said once per page, in the launch panel.
  */
 export interface SsPlanFinderStrings {
   label: string;
@@ -21,10 +21,10 @@ export interface SsPlanFinderStrings {
   names: { solo: string; studio: string; agency: string };
 }
 
-/** The trial facts shown with the suggested plan (the same strings as the plan card: one store, no payment method, no automatic conversion, the two labelled dates). */
-export interface SsPlanFinderFacts { trial: string; noPayment: string; noAuto: string; datesLabel: string; regLabel: string; regValue: string; endLabel: string; endValue: string; lang?: string; dir?: "ltr" | "rtl" }
+/** The PAID capacity line of each plan ("Paid plan: up to 3 stores"), computed on the server from src/data/plans.ts, in the language the pack is written in. */
+export interface SsPlanFinderCapacity { solo: string; studio: string; agency: string; lang?: string; dir?: "ltr" | "rtl" }
 
-export function SsPlanFinder({ s, hrefs, labels, initial, facts, lang, dir }: { s: SsPlanFinderStrings; hrefs: Record<"solo" | "studio" | "agency", string>; labels: Record<SsLabelKey, string>; initial: SsInitial; facts: SsPlanFinderFacts; lang?: string; dir?: "ltr" | "rtl" }) {
+export function SsPlanFinder({ s, hrefs, labels, notes, initial, capacity, lang, dir }: { s: SsPlanFinderStrings; hrefs: Record<"solo" | "studio" | "agency", string>; labels: Record<SsLabelKey, string>; notes: SsNotes; initial: SsInitial; capacity: SsPlanFinderCapacity; lang?: string; dir?: "ltr" | "rtl" }) {
   const [raw, setRaw] = useState("");
   const [touched, setTouched] = useState(false);
   const n = /^\d+$/.test(raw.trim()) ? Number(raw.trim()) : NaN;
@@ -45,18 +45,10 @@ export function SsPlanFinder({ s, hrefs, labels, initial, facts, lang, dir }: { 
                 <Badge tone="success">{s.suggestion}</Badge>{" "}
                 <strong>{s.results[plan.id]}</strong>
               </p>
-              <div lang={facts.lang} dir={facts.dir} data-ss-finder-facts style={{ display: "grid", gap: "0.75rem", justifyItems: "start", inlineSize: "100%" }}>
-                <ul className="aicc-plan__checks" style={{ display: "grid", gap: "0.375rem", margin: 0, padding: 0, listStyle: "none" }}>
-                  {[facts.trial, facts.noPayment, facts.noAuto].map((x) => (<li key={x} style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}><Check size={16} aria-hidden="true" /><span>{x}</span></li>))}
-                </ul>
-                <div role="group" aria-label={facts.datesLabel} style={{ inlineSize: "100%" }}>
-                  <dl className="aicc-ssdates" data-ss-dates>
-                    <div data-ss-date="registration"><dt>{facts.regLabel}</dt><dd>{facts.regValue}</dd></div>
-                    <div data-ss-date="end"><dt>{facts.endLabel}</dt><dd>{facts.endValue}</dd></div>
-                  </dl>
-                </div>
+              <div className="aicc-ssfinder__result" data-ss-finder-result>
+                <p className="aicc-ssfinder__cap" lang={capacity.lang} dir={capacity.dir} data-ss-finder-cap>{capacity[plan.id]}</p>
+              <SsCta href={hrefs[plan.id]} initial={initial} labels={labels} notes={notes} featured={plan.featured} srName={s.names[plan.id]} noteId="finder-note" lang={capacity.lang} dir={capacity.dir} />
               </div>
-              <SsCta href={hrefs[plan.id]} initial={initial} labels={labels} variant="primary" size="md" srName={s.names[plan.id]} />
             </div>
           ) : (
             <p className="aicc-muted aicc-small">{error ? "" : s.empty}</p>

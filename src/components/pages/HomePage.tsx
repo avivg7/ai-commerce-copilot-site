@@ -9,7 +9,8 @@ import { EA_ON, EA_OPEN } from "@/lib/earlyAccess";
 import { EaClosingLead, EaCta, EaHeroBadge, EaHeroSupport, EaStatusNote } from "@/components/ea/Ea";
 import { SoonBandActions } from "@/components/ui/Soon";
 import { SS_INITIAL, SS_ON } from "@/lib/selfService";
-import { SsBand, SsTerms } from "@/components/ss/Ss";
+import { SsBand } from "@/components/ss/Ss";
+import { SsPricing } from "@/components/ss/SsPlans";
 import { localePath } from "@/lib/routes";
 import { Button } from "@/components/ui/Button";
 import { Container, Section, SectionHeading } from "@/components/ui/Primitives";
@@ -244,6 +245,22 @@ export function HomePage({ locale, t }: { locale: Locale; t: Dictionary }) {
       {/* 6. Pricing, value first */}
       <Section tone="sunken" labelledBy="pricing-title" fb={fb("home.pricing")}>
         <Container>
+          {SS_ON ? (
+            <>
+              {/* P40: the premium pricing block of a self-service build (header, three plan cards, the ONE launch panel): src/components/ss/SsPlans.tsx; the plans heading of the ordinary view is part of its header block */}
+              <SsPricing locale={locale} t={t} titleId="pricing-title" />
+              {EA_ON ? (
+                /* the ordinary after-trial view keeps the two confidence lines (without the guarantee line), exactly as the launch-offer build does */
+                <div data-ea-after="">
+                  <ul className="aicc-pricing-confidence" {...fb("home.pricing")}>
+                    <li>{R(h.pricing.confidence.price)}</li>
+                    <li>{h.pricing.confidence.renewal}</li>
+                  </ul>
+                </div>
+              ) : confidence}
+            </>
+          ) : (
+            <>
           <SectionHeading id="pricing-title" title={h.pricing.title} lead={h.pricing.lead} />
           <div className="aicc-plans">
             {PLANS.map((p) => (
@@ -263,7 +280,6 @@ export function HomePage({ locale, t }: { locale: Locale; t: Dictionary }) {
                 compact
                 ea={t.ea.plan}
                 demoLabel={h.hero.ctaDemo}
-                {...(SS_ON ? { ss: t.ea.ss, t } : {})}
               />
             ))}
           </div>
@@ -271,10 +287,10 @@ export function HomePage({ locale, t }: { locale: Locale; t: Dictionary }) {
                An ordinary build renders exactly the old single list (byte-identical pages). */}
           {EA_ON ? (
             <>
-              {/* P36: ONE plain line under the cards while requests are not open; P39: with self-service on the same slot carries the free-trial terms (the two labelled dates and the facts) */}
-              <EaStatusNote locale={locale} t={t} terms />
-              <p className="aicc-small" data-ea-live style={{ marginBlockStart: "0.75rem", textAlign: "center" }} {...tx(SS_ON ? "ea.ss" : "ea.section")}>
-                <LocaleLink locale={locale} route="pricing" hash={SS_ON ? "free-trial" : "early-access"} className="aicc-link">{SS_ON ? t.ea.ss.link : t.ea.section.link}</LocaleLink>
+              {/* P36: ONE plain line under the cards while requests are not open */}
+              <EaStatusNote locale={locale} t={t} />
+              <p className="aicc-small" data-ea-live style={{ marginBlockStart: "0.75rem", textAlign: "center" }} {...tx("ea.section")}>
+                <LocaleLink locale={locale} route="pricing" hash="early-access" className="aicc-link">{t.ea.section.link}</LocaleLink>
               </p>
               {/* review P34-6: the ended view gets the list back WITHOUT the guarantee line: a campaign build never carries it in the DOM (like the cards) */}
               <div data-ea-after="">
@@ -284,15 +300,9 @@ export function HomePage({ locale, t }: { locale: Locale; t: Dictionary }) {
                 </ul>
               </div>
             </>
-          ) : SS_ON ? (
-            <>
-              {confidence}
-              <div style={{ marginBlockStart: "1.5rem" }}><SsTerms locale={locale} t={t} /></div>
-              <p className="aicc-small" style={{ marginBlockStart: "0.75rem", textAlign: "center" }} {...tx("ea.ss")}>
-                <LocaleLink locale={locale} route="pricing" hash="free-trial" className="aicc-link">{t.ea.ss.link}</LocaleLink>
-              </p>
-            </>
           ) : confidence}
+            </>
+          )}
           <p style={{ marginBlockStart: "1rem" }}>
             <LocaleLink locale={locale} route="pricing" className="aicc-link">{h.pricing.link}</LocaleLink>
           </p>
