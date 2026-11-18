@@ -28,6 +28,7 @@ export const SS_CSS = [
   ".aicc-pcta--inverse .aicc-ss-reserve{text-align:start}",
   // the closing band's grid column may shrink below its widest action (an action label that cannot wrap, such as the Russian "Попробовать живое демо", pushed the band 45 px past a 320 px screen at 200% text; the page's own `.aicc-final` grid had an implicit auto column) and its buttons may wrap
   ".aicc-final{grid-template-columns:minmax(0,1fr)}",
+  ".aicc-pricing.aicc-pricing--band{color:inherit}",
   ".aicc-pband{grid-template-columns:minmax(0,1fr)}",
   ".aicc-pband .aicc-btn{white-space:normal;text-align:center}",
   // registration closed or paused: FREE steps back, and its size must keep the narrow-screen floor min(1.5rem, 9vw) at larger text too (the kit's closed floor is a plain 1.5rem, which let the Russian word wrap mid-word in a card at 200% text)
@@ -75,14 +76,17 @@ export async function SsGetStartedSlot({ locale, className, children, icon }: { 
 export function SsBand({ locale, t, children, contact = false }: { locale: Locale; t: Dictionary; children?: ReactNode; contact?: boolean }) {
   if (!SS_ON) return null;
   return (
+    // the kit's resets (box model, zero margins, the scoped sr-only) are scoped to `.aicc-pricing`: the band sits inside that wrapper too (`--band` keeps the dark band's own text colour), so a surface without the page's Tailwind reset renders it the same
     // a launch-offer build hides the band after the trial end instant (data-ea-live) and shows the ordinary band instead (data-ea-after, rendered by the page)
-    <div className="aicc-pband" data-aicc-ss="band" data-ss-band {...(EA_ON ? { "data-ea-live": "" } : {})}>
-      <p className="aicc-pband__lead" {...A(locale, "ea.ss.band")}>{t.ea.ss.band.lead}</p>
-      <div className="aicc-pband__actions">
-        <SsCtaSlot locale={locale} t={t} inverse />
-        {children}
+    <div className="aicc-pricing aicc-pricing--band" {...(EA_ON ? { "data-ea-live": "" } : {})}>
+      <div className="aicc-pband" data-aicc-ss="band" data-ss-band {...(EA_ON ? { "data-ea-live": "" } : {})}>
+        <p className="aicc-pband__lead" {...A(locale, "ea.ss.band")}>{t.ea.ss.band.lead}</p>
+        <div className="aicc-pband__actions">
+          <SsCtaSlot locale={locale} t={t} inverse />
+          {children}
+        </div>
+        {contact ? <SoonContact locale={locale} t={t} inverse /> : null}
       </div>
-      {contact ? <SoonContact locale={locale} t={t} inverse /> : null}
     </div>
   );
 }

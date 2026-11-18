@@ -11,6 +11,7 @@
 // G  axe-core (WCAG 2.x A/AA + best-practice): zero violations in every state, four languages, 320 / 768 / 1440, high contrast, 200% text
 // H  geometry: 320 / 375 / 390 / 430 / 768 / 1024 / 1440 / 1920 px with 100 / 125 / 200 % text, four languages: no horizontal scroll, nothing clipped, FREE on one line and dominant, layout per breakpoint, shared rows
 // I  reduced motion, RTL mirroring, print, forced colours, layout shift (CLS) when the status answer arrives
+// K  scope: every tier, launch panel and band of Home, Pricing and Product sits inside the kit wrapper `.aicc-pricing`; computed padding is > 0 and nothing is clipped, in every state
 // J  the gated strike variant: struck price only in its own build; the default builds carry none
 import fs from "node:fs";
 import path from "node:path";
@@ -437,6 +438,36 @@ if (run("J")) {
     await ctx.close();
   }
   else console.log("  note --ss-strike not given: the strike build was not audited here");
+}
+
+// ───────────────────────────────────────────────────────────── K. scope of the kit wrapper
+if (run("K")) {
+  console.log("== K. every tier, launch panel and band (Home, Pricing, Product) is inside `.aicc-pricing`: computed padding > 0, no clipping, in every state");
+  const probe = (page) => page.evaluate(() => {
+    const vis = (e) => e.getClientRects().length > 0, out = { unscoped: [], pad: [], clip: [], counts: {} };
+    const boxes = [...document.querySelectorAll(".aicc-tier:not(.aicc-tier--standard), .aicc-launch, .aicc-pband")].filter(vis);
+    out.counts = { tiers: boxes.filter((b) => b.matches(".aicc-tier")).length, panels: boxes.filter((b) => b.matches(".aicc-launch")).length, bands: boxes.filter((b) => b.matches(".aicc-pband")).length };
+    for (const b of boxes) {
+      if (!b.closest(".aicc-pricing")) out.unscoped.push(b.className);
+      const r = b.getBoundingClientRect();
+      for (const e of [...b.querySelectorAll("*")].filter(vis)) { const q = e.getBoundingClientRect(); if (q.width && (q.left < r.left - 1.5 || q.right > r.right + 1.5)) out.clip.push(`${e.className || e.tagName} leaves ${b.className.split(" ")[0]}`); const cs = getComputedStyle(e); if (!["inline", "contents"].includes(cs.display) && !e.closest("svg") && (cs.overflowX !== "visible" || cs.overflowY !== "visible") && (e.scrollWidth > e.clientWidth + 1.5 || e.scrollHeight > e.clientHeight + 1.5) && !e.matches(".aicc-sr-only")) out.clip.push(`${e.className} clipped`); }
+    }
+    const padOf = (sel) => [...document.querySelectorAll(sel)].filter(vis).map((e) => { const cs = getComputedStyle(e); return Math.min(parseFloat(cs.paddingInlineStart), parseFloat(cs.paddingInlineEnd), parseFloat(cs.paddingBlockStart), parseFloat(cs.paddingBlockEnd)); });
+    for (const [sel, name] of [[".aicc-tier__plan", "tier plan zone"], [".aicc-tier:not(.aicc-tier--standard) .aicc-tier__launch", "tier launch zone"], [".aicc-tier__incl", "tier footer line"], [".aicc-launch", "launch panel"], [".aicc-launch__fact-icon", "(no padding needed)"], [".aicc-pcta .aicc-pstatus__pill", "status pill"], [".aicc-pcta .aicc-btn", "link"], [".aicc-tier__badge", "badge"], [".aicc-launch__tag", "panel tag"]]) {
+      if (name === "(no padding needed)") continue;
+      const v = padOf(sel); if (v.length && v.some((x) => !(x > 0))) out.pad.push(`${name}: ${v.join("/")}`);
+    }
+    out.border = [...document.querySelectorAll(".aicc-pricing *, .aicc-pband *")].filter((e) => getComputedStyle(e).boxSizing === "content-box" && vis(e) && e.tagName !== "svg" && !e.closest("svg") && !["path", "circle", "line", "rect", "g"].includes(e.tagName)).length;
+    return out;
+  });
+  const ROUTES = [["pricing/", "pricing"], ["", "home"], ["product/", "product"]];
+  for (const [cell, signup] of [["announce", "off"], ["announce", "open"], ["announce", "waitlist"], ["announce", "closed_cutoff"], ["announce", "paused"], ["link", "http500"], ["off", "off"]]) for (const l of QUICK ? ["en", "he"] : LOCALES) for (const [route, name] of ROUTES) for (const w of [390, 1440]) {
+    const { ctx, page } = await view(cell, `${pre(l)}/${route}`, w, { locale: l, signup, h: 900, media: { reducedMotion: "reduce" } });
+    const r = await probe(page);
+    const want = name === "product" ? { tiers: 0, panels: 0, bands: 2 } : { tiers: 3, panels: 1, bands: 1 };
+    check(JSON.stringify(r.counts) === JSON.stringify(want) && r.unscoped.length === 0 && r.pad.length === 0 && r.clip.length === 0 && r.border === 0, `${cell} ${l} ${name} @${w} (${signup}): ${JSON.stringify(r.counts)} all inside .aicc-pricing, padding > 0 on every zone, kit resets applied (border-box everywhere), nothing clipped${r.unscoped.length + r.pad.length + r.clip.length ? " -> " + [...r.unscoped, ...r.pad, ...r.clip][0] : r.border ? ` (content-box ${r.border})` : ""}`);
+    await ctx.close();
+  }
 }
 
 await browser.close();
