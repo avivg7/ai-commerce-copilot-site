@@ -41,7 +41,30 @@ Not done here (Control Plane, the C3 mirror): the server-clock check, the WooCom
 
 ## 5. Tests
 
-See the table in the hand-back and the logs under the evidence directory. New or rewritten: `test:journey-browser` (new), `test:pricing-browser` (J rewritten: planned price and strike matrix; the control and status line in every state), `test:selfservice-browser`, `test:pricing-consistency`, `test:launch-offer`, `test:selfservice`, `test:pricing-sources`, `test:ss-guards`, `test:strike-gate`, `test:redirects`, `test:visual-regression` (baselines moved to `tests/approved-visuals/p41-journey`, regenerated and reviewed). Failing-first: each new behaviour test was run against the P40 base (`1693122`) and failed there (logs `failing-first/`).
+Run against exports of the final head (`NEXT_PUBLIC_AICC_SELFSERVICE=on` with the launch-offer switch announce / unset / open, the `SS_INITIAL=link` build, the strike build; plus the four default builds). Results, with logs in the evidence directory `p41/S-site/logs`:
+
+| command | result |
+|---|---|
+| `test:selfservice` | 230 / 230 |
+| `test:ss-guards` (mutations of the copy guards, four languages) | 287 / 287 |
+| `test:pricing-sources` | pass |
+| `test:journey-browser` (full matrix) | 409 / 409 |
+| `test:selfservice-browser` | 536 / 536 |
+| `test:pricing-browser` J (planned price and strike matrix, languages x 320..1920 x 100 / 200 % text) and H (geometry), full | 560 / 560 and 1800 / 1800 |
+| `test:pricing-browser` other sections, quick | 436 / 436 |
+| `test:pricing-consistency` and its mutations | 298 / 298 and 57 / 57 |
+| `test:launch-offer` and its mutations | 3460 / 3460 and 100 / 100 |
+| `test:strike-gate` | 71 / 71 |
+| `test:visual-regression` (baselines regenerated and reviewed) | 88 / 88 |
+| `test:launch-offer-browser`, `test:early-access` (default builds) | pass |
+| `test:link-resolution` (self-service: journey links and page; default builds: none) | pass |
+| `test:public-truth` (all builds, plus self-test) | pass |
+| `ea:check` (and `--out` of the self-service builds) | pass |
+| `test:redirects` with the export | 2 failures, both present on P40 (demo assets, security.txt) |
+
+Failing-first: `failing-first/` holds the new tests run against the P40 base (`1693122`): `test:selfservice`, `test:pricing-sources` fail on the missing helpers, `test:journey-browser` reports 31 failures on the missing page, `test:pricing-browser` D / J report the inert pill and the missing status line.
+
+ New or rewritten: `test:journey-browser` (new), `test:pricing-browser` (J rewritten: planned price and strike matrix; the control and status line in every state), `test:selfservice-browser`, `test:pricing-consistency`, `test:launch-offer`, `test:selfservice`, `test:pricing-sources`, `test:ss-guards`, `test:strike-gate`, `test:redirects`, `test:visual-regression` (baselines moved to `tests/approved-visuals/p41-journey`, regenerated and reviewed). Failing-first: each new behaviour test was run against the P40 base (`1693122`) and failed there (logs `failing-first/`).
 
 ## 6. Export identity
 
