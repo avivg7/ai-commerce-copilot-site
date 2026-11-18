@@ -12,6 +12,7 @@ import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { loadTs, ROOT } from "./lib/load.mjs";
+import { edgeLegalProblems } from "./lib/edge-legal.mjs";
 import { SS_EXTRA_RULES, ssDisclosureProblems, eaDisclosureProblems, eaExtraRulesProbe } from "./lib/early-access-truth.mjs";
 
 let failed = 0, total = 0;
@@ -113,6 +114,16 @@ const OK_SS = ["No automatic conversion to a paid plan", "No payment method requ
   check(wrong.length === 0, `the allowed claims are not flagged by SS_EXTRA_RULES${wrong.length ? " -> flagged: " + wrong.join(" | ") : ""}`);
 }
 
+console.log("== H1: the edge template must keep routing the legal pages (older drafts in this export) to WordPress");
+{
+  const tpl = fs.readFileSync(path.join(ROOT, "docs/cutover/Caddyfile.edge.template"), "utf8");
+  check(edgeLegalProblems(tpl).length === 0, "the real edge template routes terms, privacy, refund-policy, accessibility, data-processing-addendum, pricing and my-account (en, he, es, ru) to WordPress");
+  for (const route of ["terms", "privacy", "refund-policy", "accessibility"]) {
+    const broken = tpl.split("\n").map((l) => (/@wp_pages\s+path_regexp/.test(l) ? l.replace(new RegExp(`(?<=[(|])${route}\\|`), "").replace(new RegExp(`\\|${route}(?=[|)])`), "") : l)).join("\n");
+    check(broken !== tpl && edgeLegalProblems(broken).some((x) => x.includes(`/${route}/`)), `an edge template that drops ${route} from @wp_pages is reported`);
+  }
+  check(edgeLegalProblems("nothing here").length === 1, "a template without the @wp_pages matcher is reported");
+}
 console.log("== end to end: copy:check on a COPY of the repo with a mutated pack exits 1 (and 0 on the untouched copy)");
 {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "p39-guards-"));

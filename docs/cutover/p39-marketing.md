@@ -40,6 +40,7 @@ Product facts (owner-decided, mirrored from the Control Plane, verified by `pric
 | `mode: closed_cutoff` | plain text `ss.cta.closed` | account page |
 | `mode: paused` | plain text `ss.cta.paused` | account page |
 | `mode: off` | plain text `ss.cta.soon` | account page |
+| ANY of the above, with the browser clock at or after 2026-12-24T00:00:00Z (`SS_REG_CLOSE_MS`) | plain text `ss.cta.closed` (never a link, whatever the build or the answer says) | account page |
 
 One `GET /wp-json/aicc/v1/signup/status` per page load, same origin, `credentials: omit`, `cache: no-store`, 5 s timeout. Nothing is sent but the request.
 
@@ -65,9 +66,30 @@ OFF builds (`NEXT_PUBLIC_AICC_SELFSERVICE` unset) are byte-equivalent to the P36
 
 Must NOT be done: set `NEXT_PUBLIC_AICC_SS_INITIAL=link` while `/start/` is not live (links to a 404); open `/request-access/`; link a signup control to `#demo`; mention any date outside the two labelled lines; add card-payment / renewal / discount / urgency wording; turn on commerce or recurring switches; touch the extension step or the 22:00 UTC instant; publish he / es / ru as native-reviewed.
 
-## 6. Hero unchanged
+## 6. Hero unchanged (measured, with the real tolerances)
 
-`test:visual-regression` compares S0 and the candidate pixel by pixel for the headline, subtitle, the two Hero actions (Try Live Demo -> `#demo`, See Pricing), the Reco visual, the pillars strip, the interactive demo and the header, four languages, 1440 and 390: 0 differing pixels beyond 0.1 %. The pill and the support lines under the buttons are the offer wording and change by design.
+`test:visual-regression` compares S0 and the candidate for the headline, subtitle, the two Hero actions (Try Live Demo -> `#demo`, See Pricing), the Reco visual, the pillars strip, the interactive demo and the header, four languages, 1440 and 390, as element screenshots:
+
+* en and he: pixel-identical (0 differing pixels beyond the channel tolerance 10; limit 0.1 %), and the headline and the actions sit at exactly the S0 position.
+* es and ru: the support lines under the Hero buttons wrap differently from the S0 wording, so the vertically centred Hero block moves (measured: 13 px at es 1440 and 1280, 16 px at ru 390 and ru 1024, 13 px at es 390) and the elements below it land on another sub-pixel grid. Elements whose fractional top offset differs are compared with a 12 % limit (anti-aliasing of photos and gradients: measured es@390 Reco visual 9.17 %, demo 1.63 %); the position tolerance is 20 px and the headline-to-actions distance must be identical. A missing, moved or recoloured element would differ far more.
+* The pill above the headline and the support lines are the offer wording and change by design.
+
+## 6b. Deploy order and the legal pages (H1)
+
+1. **The Control Plane mirror goes first (or in the same window).** The 35 msgids of `scripts/snapshots/selfservice-msgids.txt` and the date tokens `regDate`, `regShort`, `regLast` must be LIVE on the Control Plane theme (`node scripts/wording-parity.mjs --cp <CP release worktree> --require-ss` green against the CP release that is deployed). Otherwise the Site Home says one thing while the live `/pricing/` (served by WordPress, not by this export) says another, and the bar link `/pricing/#free-trial` has no anchor. `launch:check` prints this order for every self-service build.
+2. **The legal pages in this export are older drafts that live does not serve.** `/terms/`, `/privacy/`, `/refund-policy/`, `/accessibility/` and their he / es / ru versions in the export are not what visitors read: the edge routes them to WordPress. The byte-equality test (`test:pricing-consistency`) proves equality with the S0 export only, not with live. This change therefore does not touch them, and the edge allow-list (`@wp_pages` in `docs/cutover/Caddyfile.edge.template`, generated from `WP_PAGES_RE`) must keep routing them to WordPress. `launch:check`, `test:link-resolution` and `test:ss-guards` assert that the template still matches every legal route in every language (`scripts/lib/edge-legal.mjs`), and that the check bites.
+
+## 6c. Capacity note for the status request (M3)
+
+A full page load makes ONE `GET /wp-json/aicc/v1/signup/status` (header and cards share it); client-side navigation reuses the answer from a module-level in-memory cache for 30 s (`SS_STATUS_TTL_MS`; no storage, no cookie), including after a failed attempt. The request is an uncached WordPress request (`Cache-Control: private, no-store`). A 10-30 s edge micro-cache for exactly `/wp-json/aicc/v1/signup/status` is an OPTIONAL edge change that needs its own approval and is NOT part of this release.
+
+## 6d. Registration cutoff on the client (M1)
+
+From 2026-12-24T00:00:00Z (`SS_REG_CLOSE_MS`, pinned to the token table and to the Control Plane constant) the browser clock alone forces the plain text `ss.cta.closed` in every control (cards, bands, plan finder) and sends "Get started" to the account page, whatever the build or the status answer says; no request is made for it. A page that stays open across the instant switches by a timer. Before hydration a page loaded after the cutoff still shows its static text for a moment.
+
+## 6e. Phone layout (M2)
+
+Self-service builds add inline CSS so the plan grid columns may shrink (`minmax(0, 1fr)`) and the long Russian FREE word is sized to the screen on phones; the 320 / 360 / 390 px check (also with the Larger text setting) covers Home, Pricing and Product in four languages. The shared stylesheet is untouched on purpose: every non-self-service build stays byte-identical to S0. The same fix is NOT applied to the shared stylesheet, so the S0 pages (and the Russian demo widget at 360 / 320, a pre-existing overflow of the demo kit) keep their old behaviour.
 
 ## 7. Guards: what changed and why (all additive; every old protection still bites)
 
@@ -78,6 +100,6 @@ The owner now requires four claims that the S1 guards deliberately avoided: no p
 * `eaDisclosureProblems`: the old rule "no 00:00" has exactly one exception (the two registration strings, in the form "<registration date> ... 00:00 UTC"); the no-break-space rule now also covers 00:00; unresolved `{regDate} {regShort} {regLast}` are caught.
 * `scripts/ea-check.mjs`: the registration tokens equal independent literals and what Intl prints for the UTC cutoff day and its last accepted millisecond; the cutoff constant equals 1798070400; built pages carry the new strings.
 * `scripts/copy-check.mjs` self-test, `scripts/public-truth-gate.mjs` self-test (and one updated sample, because the pack string it quotes changed), `scripts/wording-parity.mjs` (00:00 exception for the two strings; the Control Plane date table is compared when it has the registration tokens; `--require-ss` fails while it lacks them), `scripts/launch-check.mjs` (reports the initial state; a link build is reported as a problem until sign-up is live), `scripts/test-launch-offer.mjs` (self-service matrix rewritten for the plain status, the two labelled dates and the secondary demo link; the UTC neutrality loop allows only the registration strings).
-* Mutation proofs: `scripts/test-ss-guards.mjs` (159 checks, four languages: every new rule bites, every old protection bites, the allowed claims pass, copy:check on a mutated repo copy exits 1), `scripts/test-launch-offer-mutations.mjs` (25 self-service mutations incl. the link build), `scripts/test-pricing-consistency-mutations.mjs`.
+* Mutation proofs: `scripts/test-ss-guards.mjs` (165 checks, four languages: every new rule bites, every old protection bites, the allowed claims pass, copy:check on a mutated repo copy exits 1), `scripts/test-launch-offer-mutations.mjs` (28 self-service mutations incl. the link build), `scripts/test-pricing-consistency-mutations.mjs`.
 
 Trap found and fixed: Tailwind scans `scripts/` and `docs/` too. A test script or a document that contains the text of an attribute selector followed by a visibility pseudo-class (the Playwright habit) generates a new utility class in the site CSS and silently breaks the byte-identity of every OFF build (the CSS file name changes, so 187 files differ). Keep such selectors out of scripts and docs (use `getByRole`), and run `node scripts/export-hash.mjs <S0 export> <OFF export>` after adding any file.

@@ -116,6 +116,15 @@ if (env.NEXT_PUBLIC_LEGAL_DRAFT_NOTICE === "off" && !approved) problems.push("NE
     const rawInit = env.NEXT_PUBLIC_AICC_SS_INITIAL;
     if (rawInit !== undefined && rawInit !== "" && rawInit !== "link" && rawInit !== "coming_soon") problems.push(`self-service: NEXT_PUBLIC_AICC_SS_INITIAL is "${rawInit}": only the exact value "link" selects the link build; anything else is coming_soon (the safe default)`);
     if (ss.SS_ON && ss.SS_INITIAL === "link") problems.push("self-service: NEXT_PUBLIC_AICC_SS_INITIAL=link makes every plan card a static link to /start/, which is a 404 while the Control Plane switch is off: publish this build only AFTER the Control Plane serves /start/ and GET /wp-json/aicc/v1/signup/status answers open or waitlist (remove the variable otherwise)");
+    if (ss.SS_ON) {
+      // P39 round 2 (H1): DEPLOY ORDER and the legal pages
+      console.log("  DEPLOY ORDER (self-service build): the Control Plane mirror of the 35 self-service msgids (scripts/snapshots/selfservice-msgids.txt) and of the date tokens regDate / regShort / regLast must be LIVE before, or in the same window as, this Site build (`node scripts/wording-parity.mjs --cp <CP release worktree> --require-ss` must be green): otherwise Home says one thing and the live /pricing/ (served by WordPress) another, and the bar link /pricing/#free-trial has no anchor.");
+      console.log("  LEGAL PAGES: the legal pages inside this export (/terms/ /privacy/ /refund-policy/ /accessibility/, he/es/ru) are OLDER drafts that live does NOT serve: the edge routes them to WordPress. The byte-equality test proves equality with the S0 export only. The edge allow-list (docs/cutover/Caddyfile.edge.template, @wp_pages) must keep routing them to WordPress.");
+      const { edgeLegalProblems } = await import("./lib/edge-legal.mjs");
+      const tpl = path.join(ROOT, "docs/cutover/Caddyfile.edge.template");
+      if (!fs.existsSync(tpl)) problems.push("edge template docs/cutover/Caddyfile.edge.template not found: cannot prove that the legal pages are routed to WordPress");
+      else for (const x of edgeLegalProblems(fs.readFileSync(tpl, "utf8"))) problems.push(`self-service / legal pages: ${x}`);
+    }
     if (ss.SS_ON && ss.SS_INITIAL !== "link") console.log("  note self-service (initial coming_soon): no DEPLOY ORDER dependency: the static pages link nowhere near /start/; the run-time status upgrades the cards when the Control Plane opens sign-up (no Site redeploy)");
     if (ss.SS_ON && env.NEXT_PUBLIC_AICC_START_URL && !/^https:\/\//.test(env.NEXT_PUBLIC_AICC_START_URL)) problems.push(`self-service: NEXT_PUBLIC_AICC_START_URL ("${env.NEXT_PUBLIC_AICC_START_URL}") is not an https URL`);
   }

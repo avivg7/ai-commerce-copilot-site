@@ -9,6 +9,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import { WP_PAGES_RE } from "./lib/redirect-matrix.mjs";
+import { edgeLegalProblems, LEGAL_ROUTES } from "./lib/edge-legal.mjs";
+import { ROOT } from "./lib/load.mjs";
 
 const args = process.argv.slice(2);
 const DIR = args.includes("--dir") ? path.resolve(args[args.indexOf("--dir") + 1]) : null;
@@ -42,6 +44,13 @@ for (const f of htmlFiles) {
     if (WP.test(pp)) { const k = pp.replace(/^\/(he|es|ru)\//, "/"); cpRoutes.set(k, (cpRoutes.get(k) || 0) + 1); continue; }
     bad.push(`${rel}: ${href} resolves to no export page and to no Control Plane route of the edge allow-list`);
   }
+}
+// P39 round 2 (H1): this export carries older drafts of the legal pages that live does NOT serve: the edge template must still route them (all languages) to WordPress
+{
+  const tpl = path.join(ROOT, "docs/cutover/Caddyfile.edge.template");
+  const ep = fs.existsSync(tpl) ? edgeLegalProblems(fs.readFileSync(tpl, "utf8")) : ["docs/cutover/Caddyfile.edge.template not found"];
+  for (const x of ep) bad.push(`edge template: ${x}`);
+  console.log(`edge template: the @wp_pages matcher routes ${LEGAL_ROUTES.join(", ")} (en, he, es, ru) to WordPress: ${ep.length ? "NO" : "yes"}`);
 }
 const startLinks = [...cpRoutes.keys()].filter((k) => /^\/start(\/|$)/.test(k));
 console.log(`${htmlFiles.length} pages, ${links} links checked`);
