@@ -1085,7 +1085,7 @@ html.aicc-scroll-lock { overflow: hidden; scrollbar-gutter: stable; }
 .aicc-tier__free-word:lang(he) { --aicc-free-em: 3.1; letter-spacing: 0; }
 .aicc-tier__free-word:lang(es) { --aicc-free-em: 5; }
 .aicc-tier__free-word:lang(ru) { --aicc-free-em: 8.5; letter-spacing: -0.02em; }
-.aicc-tier__trial { overflow-wrap: break-word; display: flex; align-items: center; gap: 0.5rem; margin-block-start: 0.625rem; font-size: 1rem; font-weight: 650; line-height: 1.3; color: var(--aicc-success); }
+.aicc-tier__trial { overflow-wrap: break-word; display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; column-gap: 0.5rem; /* the text column may shrink to the card (a flex item with break-word keeps its longest word as min-content and overflowed at 200% text) */ margin-block-start: 0.625rem; font-size: 1rem; font-weight: 650; line-height: 1.3; color: var(--aicc-success); }
 .aicc-tier__launch > .aicc-pcta { margin-block-start: auto; padding-block-start: 1.25rem; }
 .aicc-tier__incl { display: flex; align-items: center; gap: 0.5rem; padding: 0.875rem var(--aicc-tier-px); border-block-start: 1px solid var(--aicc-border); font-size: 0.875rem; line-height: 1.35; color: var(--aicc-text-muted); }
 .aicc-tier__incl-icon { display: inline-flex; flex: none; color: var(--aicc-success); }
