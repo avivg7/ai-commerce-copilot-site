@@ -105,7 +105,7 @@ echo "artifact OK: $KIND $ID ($(jq -r '.file_count' "$MAN") files, tarball sha25
 
 if [ "$ENVN" = production ]; then SHK=yes; KH="$KNOWN_HOSTS"; else SHK=accept-new; KH="$HOME/.ssh/known_hosts_aicc_stage"; fi
 SSH_OPTS=(-i "$KEY" -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=15 -o StrictHostKeyChecking="$SHK" -o UserKnownHostsFile="$KH")
-SSH=(ssh "${SSH_OPTS[@]}" "$USER_NAME@$SIP")
+SSH=(ssh "${SSH_OPTS[@]}" -- "$USER_NAME@$SIP")
 RDIR="/srv/aicc/$KIND/releases"
 if [ "$DRY" = 1 ]; then
   cat <<EOT

@@ -32,7 +32,7 @@ PHPB="$(sed -n 's/^PHPB=//p' "$ST/fixture.env" | python3 -I -c 'import shlex,sys
 WPF() { "$PHPB" -d memory_limit=512M "$WPCLI" "$@" --path="$FIXD/wp"; }
 RELD="$(sed -n 's/^REL=//p' "$ST/fixture.env" | python3 -I -c 'import shlex,sys; print(shlex.split(sys.stdin.read())[0])')"
 t_eq "the release store says current = $V" "$(cat "$RELD/current")" "$V"
-VP() { local creds="$1"; shift; bash "$REL/verify-published-plugin.sh" --mode fixture --base-url "$BASE" --version "$V" --sha256 "$SHA" --manifest "$MAN" --sig "$SIG" --plugin-dir "$PD" --credentials-file "$creds" --out "$TMP/out" "$@" 2>&1; }
+VP() { local creds="$1"; shift; rm -rf "${TMP:?}/out"; bash "$REL/verify-published-plugin.sh" --mode fixture --base-url "$BASE" --version "$V" --sha256 "$SHA" --manifest "$MAN" --sig "$SIG" --plugin-dir "$PD" --credentials-file "$creds" --out "$TMP/out" "$@" 2>&1; }
 exp_fail() { local n="$1" id="$2"; shift 2; local out rc=0; out="$("$@" 2>&1)" || rc=$?; if [ "$rc" = 1 ] && printf '%s' "$out" | grep -q "^FAIL  $id"; then t_pass "$n"; else t_bad "$n" "rc=$rc; $(printf '%s' "$out" | grep '^FAIL' | head -3 | tr '\n' '|')"; fi; }
 
 echo "== F2. positive: a customer with an ACTIVE plan, a connected store, the real routes =="

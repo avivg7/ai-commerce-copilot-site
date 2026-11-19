@@ -14,8 +14,15 @@
 # Then: sign (the Plugin tool itself re-checks ZIP vs manifest and that the ZIP carries the signing key's public half); the signature must name --primary-fp (a signature by the standby key is removed:
 # that is for an emergency only); and three verifications with the Plugin repo's own tool, because `verify --pubkeys` never looks at the ZIP and `verify --zip` never looks at the list:
 #   (1) --pubkeys <list>   (2) --zip <ZIP>   (3) --pubkeys <the primary alone>   and a tamper control: the same signature over a manifest whose size is one byte larger must NOT verify.
+# TRUST, stated plainly: this script runs PHP code that lives in --plugin-dir (bin/sign-release.php and includes/class-aicc-release-signature.php) with AICC_RELEASE_SIGNING_KEY_FILE in its environment, so a tampered
+# checkout could read the key. What protects you: the checkout must be CLEAN and at the commit the coordinator gave you over a SECOND channel (--commit), the manifest must have been built from exactly that commit, and
+# --primary-fp is the fingerprint YOU read from keygen (independent of anything in the checkout): a signature by any other key is removed. Use a checkout you fetched yourself (git clone / git fetch from the repository,
+# then `git rev-parse HEAD` equal to the announced commit), never a folder somebody sent you. Temp files (the unverified signature, the tamper-control copy) are removed on EVERY exit, including a refusal or a failure.
 # Exit codes: 0 signed and verified; 1 a signing/verification step failed (any signature written is removed); 2 usage; 3 refused by a safety rule.
 set -euo pipefail
+TMPSIG=""; TD=""
+cleanup() { [ -z "$TMPSIG" ] || rm -f "$TMPSIG"; [ -z "$TD" ] || rm -rf "$TD"; }
+trap cleanup EXIT
 PLUG=""; ZIP=""; MAN=""; VERSION=""; SHA=""; COMMIT=""; FP=""; KEYS=""; SIGOUT=""
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -26,7 +33,7 @@ while [ $# -gt 0 ]; do
   esac
 done
 refuse() { echo "REFUSED: $*" >&2; exit 3; }
-fail()   { echo "FAILED: $*" >&2; [ -z "${TMPSIG:-}" ] || rm -f "$TMPSIG"; exit 1; }
+fail()   { echo "FAILED: $*" >&2; exit 1; }
 [ -n "$PLUG" ] && [ -n "$ZIP" ] && [ -n "$MAN" ] && [ -n "$VERSION" ] && [ -n "$SHA" ] && [ -n "$COMMIT" ] && [ -n "$FP" ] || { echo "usage: see the header (all of --plugin-dir --zip --manifest --version --sha256 --commit --primary-fp are required)" >&2; exit 2; }
 [[ "$VERSION" =~ ^[0-9]{1,4}\.[0-9]{1,4}\.[0-9]{1,4}$ ]] || refuse "--version must be X.Y.Z with no -dev/-rc suffix (a pre-release is never signed for customers)"
 [[ "$SHA" =~ ^[0-9a-f]{64}$ ]] || refuse "--sha256 must be 64 lowercase hex characters"
@@ -85,8 +92,8 @@ python3 -I - "$MAN" "$TD/m.json" <<'PY'
 import json, sys
 m = json.load(open(sys.argv[1])); m["size"] = int(m["size"]) + 1; json.dump(m, open(sys.argv[2], "w"))
 PY
-if php "$TOOL" verify --manifest "$TD/m.json" --sig "$TMPSIG" --pubkeys "$KEYS" >/dev/null 2>&1; then rm -rf "$TD"; fail "a TAMPERED manifest verified with this signature: stop and investigate"; fi
-rm -rf "$TD"
+if php "$TOOL" verify --manifest "$TD/m.json" --sig "$TMPSIG" --pubkeys "$KEYS" >/dev/null 2>&1; then fail "a TAMPERED manifest verified with this signature: stop and investigate"; fi
+rm -rf "$TD"; TD=""
 mv "$TMPSIG" "$SIGOUT"; TMPSIG=""
 echo "SIGNED  $VERSION  key $FP  (the primary)"
 echo "  $v1"

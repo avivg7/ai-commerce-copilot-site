@@ -217,7 +217,7 @@ if [ -n "$POINT" ]; then TARGET_DESC="point current at $POINT"; else TARGET_DESC
 
 SHK=accept-new; KH="$HOME/.ssh/known_hosts_aicc_stage"; if [ "$ENVN" = production ]; then SHK=yes; KH="$KNOWN_HOSTS"; fi
 SSH_OPTS=(-i "$KEY" -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=15 -o StrictHostKeyChecking="$SHK" -o UserKnownHostsFile="$KH")
-SSH=(ssh "${SSH_OPTS[@]}" "$USER_NAME@$SIP")
+SSH=(ssh "${SSH_OPTS[@]}" -- "$USER_NAME@$SIP")
 INC="plugin-incoming/${POINT:-$VERSION}"
 INSTALL_ARGS="--release-dir $RELDIR --group aicc-cp"
 if [ -n "$POINT" ]; then INSTALL_ARGS="$INSTALL_ARGS --point-at $POINT"

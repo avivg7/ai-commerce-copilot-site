@@ -35,8 +35,9 @@ pssh() { ssh -i ~/.ssh/aicc_cp_prod_operator -o IdentitiesOnly=yes -o StrictHost
 | Capacity: pending table, daily breaker, new buckets | **code** (`capacity_tripped`) | public mode `paused` for new signups | `dropped_24h:*` rows, an audit row per day |
 | `AICC_NOTIFY_ENABLED=true` with the signup switch | **render** (stricter than the Control Plane: the trial promises welcome/reminder/expiry mail) | renderer refuses | `REFUSED: ... needs AICC_NOTIFY_ENABLED=true` |
 | Milestone scheduling, owner-ops section, funnel counters | **owner choice** (not required for issuance) | nothing | the owner page has no section F / the funnel stays empty |
+| **Support details** (the footer line "Support details will be confirmed before purchases open." stays until the owner fact `AICC_LEGAL_SUPPORT_EMAIL` is a valid address) | **owner decision, not code-enforced** | nothing; the signup works with the line showing | the footer line on every Control Plane page (step 5b) |
 | **Legal counsel's review and removal of the "Being finalized" banners** (`AICC_LEGAL_REVIEW_APPROVED`) | **owner / process gate, NOT code-enforced for Trial signup** | nothing in the signup code reads it (the rows only have to exist) | the pages keep saying "Being finalized" |
-| **Official Plugin signed and published** | **owner / process gate, NOT enforced by the signup** | the launch gate (`AICC_PRODUCTION=1`) blocks on it, the signup does not: a customer could sign up and find "The plugin download is not available right now" | account panel text |
+| Official Plugin signed and published (a signed release is downloadable) | **code** in the P41 Control Plane (`AICC_LM_Signup::blockers()`: `plugin_release`, from `AICC_LM_Release_Store::publication_state()`) and the launch gate | public mode `paused` while no SIGNED release is downloadable (nothing published, yanked, unsigned, signature not verifying against `AICC_LM_PLUGIN_SIGNING_PUBKEYS`); `wp aicc-ops journeys blockers` prints a `BLOCKER:` line and exits 1. The signing and publishing themselves are owner actions (step 6). A Control Plane build WITHOUT this blocker does not enforce it (confirm with `aicc-trial status`) |
 | **Turnstile widget created in Cloudflare for www.copilt.org** | **owner action** | the secret file and site key cannot exist without it | n/a |
 | **Explicit owner authorization to open** | **process gate** | step 7 is the only line that opens; it is reversible by `wp aicc-trial pause` | n/a |
 | Independent review and the integrated E2E (journey, Turnstile test-key negatives, mail failure, cross-tenant download) of the P41 heads | **process gate** (coordinator) | nothing | do not start step 7 without them |
@@ -59,8 +60,12 @@ pssh 'sudo aicc-owner-facts keys' | grep -c -x -E 'AICC_TRIAL_SELF_SERVICE_ENABL
 
 # 2.4 the baseline
 pssh 'sudo aicc-wp aicc-trial status'
-#   expect rows (cap/switch off, public mode off): switch (AICC_TRIAL_SELF_SERVICE_ENABLED) | off ; cap ... | 0 ; policy mode | off ; public mode | off ; blockers | turnstile,turnstile_blocked
+#   expect rows (cap/switch off, public mode off): switch (AICC_TRIAL_SELF_SERVICE_ENABLED) | off ; cap ... | 0 ; policy mode | off ; public mode | off ; blockers | turnstile,turnstile_blocked,plugin_release
+#   (plugin_release appears only in the P41 Control Plane builds and only while no SIGNED release is downloadable: that is the code-enforced publication gate of step 6)
 #   (legal_documents / mail must NOT be in the list; if they are, fix them first: steps 5 and the Brevo runbook)
+pssh 'sudo aicc-wp aicc-ops journeys blockers'
+#   expect (before steps 3 and 6), exit 1:  BLOCKER: No signed plugin release is published: ...   and   WARNING: The Backend milestone mirror has never run ...
+#   (P41 Control Plane builds; on an older build the command does not exist)
 pssh 'sudo aicc-owner-facts list | grep -c -E "^AICC_(OWNER_METRICS_TOKEN_FILE|OWNER_METRICS_BASE|OWNER_DASHBOARD_USER_IDS|EA_LAUNCH_OFFER_MODE|OWNER_OPS_SNAPSHOT_FILE|MAIL_PROVIDER)="'    # expect: 6
 ```
 
@@ -133,7 +138,7 @@ pssh 'sudo aicc-render-wp-config --env production --confirm-production --compare
 pssh 'sudo aicc-render-wp-config --env production --confirm-production && sudo systemctl reload php8.3-fpm'
 ```
 
-Verify: `pssh 'sudo aicc-wp cron event list --fields=hook,next_run_relative | grep aicc_lm_backend_milestones_sync'` shows the hourly event; `pssh 'sudo aicc-wp aicc-ops milestones sync'` prints a counts table and exits 0 (without the token it makes no request and says why). Rollback: `unset` + render (the event is removed by the next request).
+Verify: `pssh 'sudo aicc-wp cron event list --fields=hook,next_run_relative | grep aicc_lm_backend_milestones_sync'` shows the hourly event; `pssh 'sudo aicc-wp aicc-ops milestones sync'` prints a counts table and exits 0 (without the token it makes no request and says why). The `WARNING: The Backend milestone mirror has never run` line of `wp aicc-ops journeys blockers` disappears after this first sync. Rollback: `unset` + render (the event is removed by the next request).
 
 ### Step 4. Owner dashboard: ops section F and funnel counters
 
@@ -157,9 +162,22 @@ pssh 'sudo aicc-wp aicc-trial status' | grep blockers                       # mu
 
 Process gate (owner and counsel, not enforced by code): the published pages still carry the "Being finalized" banner until `AICC_LEGAL_REVIEW_APPROVED=true` is set as an owner fact (`aicc-owner-facts set AICC_LEGAL_REVIEW_APPROVED true`, then `--compare`/render/reload). Decide this BEFORE opening: a signup records the Terms and Privacy versions it accepted, so republishing versions mid-flight splits the records. Opening with the banner is a conscious decision (the signup form's own terms block states the one-store, no-payment trial).
 
+### Step 5b. Support details (owner decision, settle BEFORE opening)
+
+Every Control Plane page footer says "Support details will be confirmed before purchases open." until the owner fact `AICC_LEGAL_SUPPORT_EMAIL` is a valid address (`aicc_support_email_known()` in the theme). Customers who sign up will see that line next to the signup, so decide the address now (the P38 notes use `support@copilt.org`, the Reply-To of the Brevo mail; confirm that mailbox is staffed):
+
+```bash
+pssh 'sudo aicc-owner-facts set AICC_LEGAL_SUPPORT_EMAIL <the support address you choose>'
+pssh 'sudo aicc-render-wp-config --env production --confirm-production --compare'      # expect added: AICC_LEGAL_SUPPORT_EMAIL; removed: -; changed: -
+pssh 'sudo aicc-render-wp-config --env production --confirm-production && sudo systemctl reload php8.3-fpm'
+curl -s https://www.copilt.org/pricing/ | grep -c 'Support details will be confirmed'     # expect: 0 (and the address appears in the footer and in the legal pages' support lines)
+```
+
+The same fact feeds the legal pages' support contact, so tell counsel. Not setting it does not block the signup; it is a visible "pending" marker on a live signup flow. Rollback: `unset` + render.
+
 ### Step 6. Plugin: sign offline and publish (owner, then coordinator with the owner's approval)
 
-Follow `docs/cutover/p41-plugin-publication.md` sections 1 to 6 for the P41 successor (1.1.2) or the approved 1.1.1 (`$SITE` and the other variables are defined in its section 1): sign with `sign-plugin-release.sh`, `check-host-signing-keys.sh`, production dry run, `--apply --set-current`, then the verification:
+Follow `docs/cutover/p41-plugin-publication.md` sections 1 to 6 for the release builder P hands over (its section 1 fills `V`, `SHA`, `COMMIT` and `F` from the P-plugin release directory and the coordinator's second channel; `$SITE` and the other variables are defined there; this runbook contains no release hash): sign with `sign-plugin-release.sh`, `check-host-signing-keys.sh`, production dry run, `--apply --set-current`, then the verification:
 
 ```bash
 bash "$SITE/infra/release/verify-published-plugin.sh" --mode production --base-url https://www.copilt.org --version <V> --sha256 <SHA> \
@@ -169,11 +187,17 @@ pssh 'sudo env AICC_PRODUCTION=1 aicc-wp eval-file /var/lib/aicc-cp/seed/check-l
 #   expect: "Plugin download: current release <V>, <bytes> bytes, sha256 ... (verified now)." and "Plugin release <V> is signed (key 9d49-041f-0ced-13ac, ...) ..."
 ```
 
+With a P41 Control Plane the publication is also CODE-checked: `sudo aicc-wp aicc-trial status` must no longer list `plugin_release` among the blockers, and
+
+```bash
+pssh 'sudo aicc-wp aicc-ops journeys blockers'      # expect: Success: No journey blocker: a signed plugin release is published and the Backend mirror is fresh. (exit 0; a WARNING about the mirror means step 3 has not run)
+```
+
 Then record the ZIP's SHA-256 for the Site's `AICC_EA_PLUGIN_RELEASE_SHA256` (publication doc section 8).
 
 ### Step 7. OPEN public Trial issuance (the explicit authorization)
 
-Do this only when steps 1-6 are green, the coordinator confirms the independent review and the integrated E2E passed, and you have decided to open. First place for 25 stores (the approved first stage); 50 and 100 are later, one approval each.
+Do this only when steps 1-6 are green (steps 1, 2, 5 and 6 are also CODE-enforced: a missing Turnstile secret, notify switch, legal rows or signed release leaves the public mode `paused` or the render refused; steps 3, 4 and 5b are your choices), the coordinator confirms the independent review and the integrated E2E passed, and you have decided to open. First place for 25 stores (the approved first stage); 50 and 100 are later, one approval each.
 
 ```bash
 pssh 'sudo aicc-owner-facts set AICC_TRIAL_SELF_SERVICE_CAP 25'
@@ -195,7 +219,7 @@ pssh 'sudo aicc-wp aicc-trial status'
 #   policy mode                              | open
 #   public mode                              | open          <- "paused" means a blocker remains: read the next row
 #   turnstile mode                           | required
-#   blockers                                 | none
+#   blockers                                 | none          (no plugin_release, no turnstile, no legal_documents, no mail)
 curl -s https://www.copilt.org/wp-json/aicc/v1/signup/status           # expect: "open":true,"mode":"open" and a coarse cap_bucket (many/some/few), never an exact number
 curl -s -o /dev/null -w '%{http_code}\n' https://www.copilt.org/start/   # expect: 200
 ```
@@ -225,6 +249,7 @@ Brevo (your browser): the message shows requests + delivered; SPF/DKIM/DMARC pas
 | **Stop new signups and issuance now** (no deploy, immediate) | `pssh 'sudo aicc-wp aicc-trial pause --reason="owner stop: <8-300 characters, no e-mail address>"'` -> `Success: Paused. Mode is now paused.` | public mode `paused`; `/start/` answers paused; existing accounts and trials are untouched |
 | Resume | `pssh 'sudo aicc-wp aicc-trial resume --reason="<why>"'` -> `Success: Resumed. Mode is now open.` | open again (if no blocker) |
 | Close it in the configuration | `pssh 'sudo aicc-owner-facts unset AICC_TRIAL_SELF_SERVICE_ENABLED'`, `--compare` (removed: that constant), render, reload | mode `off` |
+| Roll back the P41 Control Plane release itself (coordinator, `rollback-release.sh`) | the code returns to the P40 release; the database keeps schema 10 (two nullable journey columns and a `created_at` index on subscriptions: additive, the P40 code ignores them). If the older code or a re-deploy needs the migration to run again: `pssh 'sudo aicc-wp option update aicc_lm_db_schema_version 9'`. **NEVER drop the columns or the index** (journey data lives in them; the migration is idempotent and re-runs on the next load) | the signup status keeps answering from whichever code is live |
 | Everything back to the live state of today | `unset` the facts of steps 1-4 and 7, remove `/etc/aicc-mail/turnstile.secret`, render: `--compare` must then say IDENTICAL to the P38 state | the five P35 constants and Brevo stay (they are facts) |
 
 Verify a pause: `pssh 'sudo aicc-wp aicc-trial status' | grep -E 'paused|public mode'` -> `PAUSED` and `paused`.
@@ -235,8 +260,8 @@ Verify a pause: `pssh 'sudo aicc-wp aicc-trial status' | grep -E 'paused|public 
 
 ## 6. Open issues for the owner (read before step 7)
 
-1. The exact `wp aicc-trial status` and `signup/status` outputs above are what the p40 Control Plane code prints; the P41 Control Plane branches (signup, funnel) add rows/blockers (`mail_budget`, per-customer journey); the expected blocker list is "none" in every build.
+1. The exact `wp aicc-trial status` and `signup/status` outputs above are what the p40 Control Plane code prints; the P41 Control Plane branches (signup, funnel) add rows and blockers (`plugin_release`, `mail_budget`, the journey blocker lines of `wp aicc-ops journeys blockers`); the expected blocker list is "none" in every build. Cross-checked read-only against `p41-cp-funnel` (`journeys blockers`, schema 10); the signup branch's `plugin_release` blocker was still being added when this was written, so confirm the exact name with `aicc-trial status` on the deployed build.
 2. The notify exclusion id `2` and the owner-dashboard allow-list `1` are the ids recorded in the P35/P37 notes; confirm them on the host (`user list`) rather than trusting this text.
 3. `AICC_LEGAL_REVIEW_APPROVED` is the owner's and counsel's decision; nothing in the signup code requires it.
-4. The Plugin publication is NOT a code gate for the signup; open only after step 6 passes or accept that new trials will see "not available right now".
+4. The Plugin publication IS a code gate for the signup in the P41 Control Plane (`plugin_release`): the signup stays `paused` until a signed release is downloadable. On a Control Plane build without that blocker it is only a process gate, so confirm it with `aicc-trial status` before relying on it.
 5. `AICC_EA_PLUGIN_RELEASE_SHA256` / `scripts/data/ea-plugin-releases.json` must list the published ZIP before a Site announce/open build (publication doc section 8).

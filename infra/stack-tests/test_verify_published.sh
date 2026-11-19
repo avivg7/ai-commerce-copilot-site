@@ -18,6 +18,7 @@ TMP="$(mktemp -d "${TMPDIR:-/tmp}/avp.XXXX")"; MOCKPID=""; trap '[ -z "$MOCKPID"
 . "$HERE/lib/tw_release.sh"
 if ! tw_release_build > "$TMP/build.log" 2>&1; then t_skip "the whole suite" "$(tail -1 "$TMP/build.log")"; t_summary; exit 0; fi
 if [ "$PLUG_COMMIT" = abdcda2 ]; then t_eq "the REAL 1.1.1 candidate rebuilds reproducibly from abdcda2 (ZIP sha256 9757ab35...)" "$RSHA" "9757ab35bc89f14a72a366c6e1ce8fdb9274722f84b2dfff232e4a268447aee2"; fi
+fo() { printf '%s/o%s%s' "$TMP" "$RANDOM" "$RANDOM"; }       # a fresh --out path every call (the tool refuses a non-empty --out)
 nfiles() { find "$1" -mindepth 1 -maxdepth 1 -name "$2" 2>/dev/null | wc -l | tr -d ' '; }
 SIGN() { env AICC_RELEASE_SIGNING_KEY_FILE="${KF:-$KEYS/primary.key}" bash "$REL/sign-plugin-release.sh" "$@"; }
 SIGNK() { local KF="$1"; shift; SIGN "$@"; }       # SIGNK <key file> <args...>
@@ -60,7 +61,7 @@ t_rc "a second run refuses to overwrite the signature (rc 3)" 3 SIGN "${S_ARGS[@
 t_ok "the throwaway build is NOT the real one (different ZIP bytes, only aicc-release-defaults.php differs)" test "$SHA" != "$RSHA"
 
 echo "== A. the release record, offline =="
-VPO() { bash "$REL/verify-published-plugin.sh" --mode offline --version "$V" --sha256 "$SHA" --manifest "$MAN" --sig "$SIG" --plugin-dir "$PD" --out "$TMP/out-a" "$@" 2>&1; }
+VPO() { rm -rf "${TMP:?}/out-a"; bash "$REL/verify-published-plugin.sh" --mode offline --version "$V" --sha256 "$SHA" --manifest "$MAN" --sig "$SIG" --plugin-dir "$PD" --out "$TMP/out-a" "$@" 2>&1; }
 OUTA="$(VPO --local-zip "$ZIP" --previous-version 1.1.0 --expect-key-id "$FP")"; rc=$?
 t_eq "positive: every record check passes (rc 0)" "$rc" "0"
 t_eq "...11 checks ran (R1 R2 R3 R4a R4b R4c R5 R6a R6b R6c R6d)" "$(printf '%s\n' "$OUTA" | grep -c '^PASS')" "11"
@@ -68,22 +69,22 @@ t_ok "...a report was written" test -f "$TMP/out-a/verify-report.json"
 exp_fail() { local n="$1" id="$2"; shift 2; local out rc=0; out="$("$@" 2>&1)" || rc=$?; if [ "$rc" = 1 ] && printf '%s' "$out" | grep -q "^FAIL  $id"; then t_pass "$n"; else t_bad "$n" "rc=$rc; $(printf '%s' "$out" | grep '^FAIL' | head -3 | tr '\n' '|')"; fi; }
 exp_fail "a TAMPERED local ZIP fails R6a (the --pubkeys form of the Plugin tool would not notice)" R6a VPO --local-zip "$TMP/tampered.zip"
 t_ok "...(characterisation) bin/sign-release.php verify --pubkeys ignores a tampered --zip: why the tool runs the --zip form too" bash -c "php '$PD/bin/sign-release.php' verify --manifest '$MAN' --sig '$SIG' --pubkeys '$LIST' --zip '$TMP/tampered.zip' >/dev/null 2>&1; r1=\$?; php '$PD/bin/sign-release.php' verify --manifest '$MAN' --sig '$SIG' --zip '$TMP/tampered.zip' >/dev/null 2>&1; r2=\$?; [ \$r2 -ne 0 ] && echo \"pubkeys+zip rc=\$r1, zip-only rc=\$r2\""
-exp_fail "a wrong SHA-256 from the second channel fails R1" R1 bash "$REL/verify-published-plugin.sh" --mode offline --version "$V" --sha256 "$(printf 'b%.0s' $(seq 64))" --manifest "$MAN" --sig "$SIG" --plugin-dir "$PD" --out "$TMP/out-a"
-exp_fail "a wrong --version fails R1" R1 bash "$REL/verify-published-plugin.sh" --mode offline --version 1.1.9 --sha256 "$SHA" --manifest "$MAN" --sig "$SIG" --plugin-dir "$PD" --out "$TMP/out-a"
+exp_fail "a wrong SHA-256 from the second channel fails R1" R1 bash "$REL/verify-published-plugin.sh" --mode offline --version "$V" --sha256 "$(printf 'b%.0s' $(seq 64))" --manifest "$MAN" --sig "$SIG" --plugin-dir "$PD" --out "$(fo)"
+exp_fail "a wrong --version fails R1" R1 bash "$REL/verify-published-plugin.sh" --mode offline --version 1.1.9 --sha256 "$SHA" --manifest "$MAN" --sig "$SIG" --plugin-dir "$PD" --out "$(fo)"
 jq '.size = (.size + 1)' "$MAN" > "$TMP/m-size.json"; cp "$SIG" "$TMP/s.sig"
-exp_fail "a TAMPERED manifest (size) fails R3 (the signature no longer matches)" R3 bash "$REL/verify-published-plugin.sh" --mode offline --version "$V" --sha256 "$SHA" --manifest "$TMP/m-size.json" --sig "$SIG" --plugin-dir "$PD" --out "$TMP/out-a"
+exp_fail "a TAMPERED manifest (size) fails R3 (the signature no longer matches)" R3 bash "$REL/verify-published-plugin.sh" --mode offline --version "$V" --sha256 "$SHA" --manifest "$TMP/m-size.json" --sig "$SIG" --plugin-dir "$PD" --out "$(fo)"
 mkdir -p "$TMP/att"; php "$REL/../stack-tests/lib/forge_sig.php" "$PD" "$MAN" "$KEYS/attacker.key" "$TMP/att/ai-commerce-copilot-$V.manifest.sig" >/dev/null
-exp_fail "a signature by the ATTACKER's key (not on the owner's list) fails R3" R3 bash "$REL/verify-published-plugin.sh" --mode offline --version "$V" --sha256 "$SHA" --manifest "$MAN" --sig "$TMP/att/ai-commerce-copilot-$V.manifest.sig" --plugin-dir "$PD" --out "$TMP/out-a"
-exp_fail "a WRONG key list (the attacker's only) fails R3" R3 bash "$REL/verify-published-plugin.sh" --mode offline --version "$V" --sha256 "$SHA" --manifest "$MAN" --sig "$SIG" --plugin-dir "$PD" --pubkeys "$ATT" --out "$TMP/out-a"
+exp_fail "a signature by the ATTACKER's key (not on the owner's list) fails R3" R3 bash "$REL/verify-published-plugin.sh" --mode offline --version "$V" --sha256 "$SHA" --manifest "$MAN" --sig "$TMP/att/ai-commerce-copilot-$V.manifest.sig" --plugin-dir "$PD" --out "$(fo)"
+exp_fail "a WRONG key list (the attacker's only) fails R3" R3 bash "$REL/verify-published-plugin.sh" --mode offline --version "$V" --sha256 "$SHA" --manifest "$MAN" --sig "$SIG" --plugin-dir "$PD" --pubkeys "$ATT" --out "$(fo)"
 php "$REL/../stack-tests/lib/forge_sig.php" "$PD" "$MAN" "$KEYS/primary.key" "$TMP/att/hint.sig" "$FPS" >/dev/null; cp "$TMP/att/hint.sig" "$TMP/att/ai-commerce-copilot-$V.manifest.sig"
-exp_fail "an edited key_id HINT (signed by the primary, labelled as the standby) fails R4b: the hint is not trusted" R4b bash "$REL/verify-published-plugin.sh" --mode offline --version "$V" --sha256 "$SHA" --manifest "$MAN" --sig "$TMP/att/ai-commerce-copilot-$V.manifest.sig" --plugin-dir "$PD" --out "$TMP/out-a"
+exp_fail "an edited key_id HINT (signed by the primary, labelled as the standby) fails R4b: the hint is not trusted" R4b bash "$REL/verify-published-plugin.sh" --mode offline --version "$V" --sha256 "$SHA" --manifest "$MAN" --sig "$TMP/att/ai-commerce-copilot-$V.manifest.sig" --plugin-dir "$PD" --out "$(fo)"
 exp_fail "a signature by the STANDBY when the primary is expected fails R4c" R4c VPO --expect-key-id "$FPS"
 exp_fail "re-publishing the same version fails R5 (not strictly newer)" R5 VPO --previous-version "$V"
 exp_fail "a DOWNGRADE (previous version newer) fails R5" R5 VPO --previous-version 9.0.0
-cp "$SIG" "$TMP/att/wrongname.sig"; exp_fail "a signature file not named for the version fails R2" R2 bash "$REL/verify-published-plugin.sh" --mode offline --version "$V" --sha256 "$SHA" --manifest "$MAN" --sig "$TMP/att/wrongname.sig" --plugin-dir "$PD" --out "$TMP/out-a"
-jq '.dirty = true' "$MAN" > "$TMP/att/ai-commerce-copilot-$V.manifest.json"; exp_fail "a manifest saying dirty:true fails R1" R1 bash "$REL/verify-published-plugin.sh" --mode offline --version "$V" --sha256 "$SHA" --manifest "$TMP/att/ai-commerce-copilot-$V.manifest.json" --sig "$SIG" --plugin-dir "$PD" --out "$TMP/out-a"
+cp "$SIG" "$TMP/att/wrongname.sig"; exp_fail "a signature file not named for the version fails R2" R2 bash "$REL/verify-published-plugin.sh" --mode offline --version "$V" --sha256 "$SHA" --manifest "$MAN" --sig "$TMP/att/wrongname.sig" --plugin-dir "$PD" --out "$(fo)"
+jq '.dirty = true' "$MAN" > "$TMP/att/ai-commerce-copilot-$V.manifest.json"; exp_fail "a manifest saying dirty:true fails R1" R1 bash "$REL/verify-published-plugin.sh" --mode offline --version "$V" --sha256 "$SHA" --manifest "$TMP/att/ai-commerce-copilot-$V.manifest.json" --sig "$SIG" --plugin-dir "$PD" --out "$(fo)"
 # the REAL 1.1.1 candidate (owner keys baked) judged against the THROWAWAY list: its baked keys are not on the list
-exp_fail "the REAL candidate ZIP against a throwaway key list fails (its baked owner keys are not on the list)" R6d bash "$REL/verify-published-plugin.sh" --mode offline --version "$V" --sha256 "$RSHA" --manifest "$RMAN" --sig "$SIG" --plugin-dir "$PD" --local-zip "$RZIP" --out "$TMP/out-a"
+exp_fail "the REAL candidate ZIP against a throwaway key list fails (its baked owner keys are not on the list)" R6d bash "$REL/verify-published-plugin.sh" --mode offline --version "$V" --sha256 "$RSHA" --manifest "$RMAN" --sig "$SIG" --plugin-dir "$PD" --local-zip "$RZIP" --out "$(fo)"
 t_rc "usage: a non-strict version is refused (rc 2)" 2 bash "$REL/verify-published-plugin.sh" --mode offline --version 1.1.1-dev.2 --sha256 "$SHA" --manifest "$MAN" --sig "$SIG" --plugin-dir "$PD"
 t_rc "usage: a malformed --sha256 is refused (rc 2)" 2 bash "$REL/verify-published-plugin.sh" --mode offline --version "$V" --sha256 abc --manifest "$MAN" --sig "$SIG" --plugin-dir "$PD"
 t_rc "usage: a malformed key list is refused (rc 2)" 2 bash "$REL/verify-published-plugin.sh" --mode offline --version "$V" --sha256 "$SHA" --manifest "$MAN" --sig "$SIG" --plugin-dir "$PD" --pubkeys "not-a-key"
@@ -98,7 +99,7 @@ mock_up() { # fault [zip]
   MOCKPID=$!; disown "$MOCKPID" 2>/dev/null; for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do grep -q '^PORT' "$TMP/mock.out" 2>/dev/null && break; sleep 0.25; done
   MPORT="$(sed -n 's/^PORT //p' "$TMP/mock.out")"
 }
-VPM() { bash "$REL/verify-published-plugin.sh" --mode fixture --base-url "http://127.0.0.1:$MPORT" --version "$V" --sha256 "$SHA" --manifest "$MAN" --sig "$SIG" --plugin-dir "$PD" --credentials-file "$TMP/creds.env" --other-credentials-file "$TMP/creds-other.env" --store-file "$TMP/store.env" --package-download --out "$TMP/out-b" "$@" 2>&1; }
+VPM() { rm -rf "${TMP:?}/out-b"; bash "$REL/verify-published-plugin.sh" --mode fixture --base-url "http://127.0.0.1:$MPORT" --version "$V" --sha256 "$SHA" --manifest "$MAN" --sig "$SIG" --plugin-dir "$PD" --credentials-file "$TMP/creds.env" --other-credentials-file "$TMP/creds-other.env" --store-file "$TMP/store.env" --package-download --out "$TMP/out-b" "$@" 2>&1; }
 mock_up none; OUTB="$(VPM --local-zip "$ZIP" --previous-version 1.1.0 --expect-key-id "$FP")"; rc=$?
 t_eq "positive: a correct server passes every check (rc 0)" "$rc" "0"
 t_eq "...all of R, C, U and D ran (counts)" "$(printf '%s\n' "$OUTB" | grep -c '^PASS')/$(printf '%s\n' "$OUTB" | grep -c '^FAIL')" "48/0"
@@ -118,14 +119,14 @@ done
 mock_up truncate; rm -rf "$TMP/out-b"; VPM >/dev/null 2>&1
 t_eq "a truncated download leaves NOTHING under the final name and no .part file (so nothing can be installed)" "$(find "$TMP/out-b" -maxdepth 1 -name '*zip*' 2>/dev/null | wc -l | tr -d ' ')" "0"
 mock_up none; printf 'AICC_VERIFY_USER=cust\nAICC_VERIFY_PASS=wrong-wrong-wrong-wrong\n' > "$TMP/badcreds.env"; chmod 600 "$TMP/badcreds.env"
-exp_fail "NEGATIVE CONTROL: wrong password -> FAIL C1" C1 bash "$REL/verify-published-plugin.sh" --mode fixture --base-url "http://127.0.0.1:$MPORT" --version "$V" --sha256 "$SHA" --manifest "$MAN" --sig "$SIG" --plugin-dir "$PD" --credentials-file "$TMP/badcreds.env" --out "$TMP/out-b"
-exp_fail "NEGATIVE CONTROL: the tool is told a DIFFERENT version than the server publishes -> FAIL" R1 bash "$REL/verify-published-plugin.sh" --mode fixture --base-url "http://127.0.0.1:$MPORT" --version 1.1.9 --sha256 "$SHA" --manifest "$MAN" --sig "$SIG" --plugin-dir "$PD" --credentials-file "$TMP/creds.env" --out "$TMP/out-b"
+exp_fail "NEGATIVE CONTROL: wrong password -> FAIL C1" C1 bash "$REL/verify-published-plugin.sh" --mode fixture --base-url "http://127.0.0.1:$MPORT" --version "$V" --sha256 "$SHA" --manifest "$MAN" --sig "$SIG" --plugin-dir "$PD" --credentials-file "$TMP/badcreds.env" --out "$(fo)"
+exp_fail "NEGATIVE CONTROL: the tool is told a DIFFERENT version than the server publishes -> FAIL" R1 bash "$REL/verify-published-plugin.sh" --mode fixture --base-url "http://127.0.0.1:$MPORT" --version 1.1.9 --sha256 "$SHA" --manifest "$MAN" --sig "$SIG" --plugin-dir "$PD" --credentials-file "$TMP/creds.env" --out "$(fo)"
 # credentials through NAMED environment variables
-t_rc "credentials may come from NAMED environment variables (rc 0)" 0 env AVP_U=cust AVP_P="$PWSENT" bash "$REL/verify-published-plugin.sh" --mode fixture --base-url "http://127.0.0.1:$MPORT" --version "$V" --sha256 "$SHA" --manifest "$MAN" --sig "$SIG" --plugin-dir "$PD" --user-env AVP_U --pass-env AVP_P --no-updater-probes --out "$TMP/out-b"
-t_rc "...an unset variable is a usage error (rc 2)" 2 env -u AVP_P AVP_U=cust bash "$REL/verify-published-plugin.sh" --mode fixture --base-url "http://127.0.0.1:$MPORT" --version "$V" --sha256 "$SHA" --manifest "$MAN" --sig "$SIG" --plugin-dir "$PD" --user-env AVP_U --pass-env AVP_P --out "$TMP/out-b"
+t_rc "credentials may come from NAMED environment variables (rc 0)" 0 env AVP_U=cust AVP_P="$PWSENT" bash "$REL/verify-published-plugin.sh" --mode fixture --base-url "http://127.0.0.1:$MPORT" --version "$V" --sha256 "$SHA" --manifest "$MAN" --sig "$SIG" --plugin-dir "$PD" --user-env AVP_U --pass-env AVP_P --no-updater-probes --out "$(fo)"
+t_rc "...an unset variable is a usage error (rc 2)" 2 env -u AVP_P AVP_U=cust bash "$REL/verify-published-plugin.sh" --mode fixture --base-url "http://127.0.0.1:$MPORT" --version "$V" --sha256 "$SHA" --manifest "$MAN" --sig "$SIG" --plugin-dir "$PD" --user-env AVP_U --pass-env AVP_P --out "$(fo)"
 
 echo "== G. guards: production mode talks to one host only; secrets files must be private =="
-PROD() { bash "$REL/verify-published-plugin.sh" --mode "$1" --base-url "$2" --version "$V" --sha256 "$SHA" --manifest "$MAN" --sig "$SIG" --plugin-dir "$PD" --out "$TMP/out-g" "${@:3}"; }
+PROD() { bash "$REL/verify-published-plugin.sh" --mode "$1" --base-url "$2" --version "$V" --sha256 "$SHA" --manifest "$MAN" --sig "$SIG" --plugin-dir "$PD" --out "$(fo)" "${@:3}"; }
 t_rc "production mode refuses another host (rc 3)" 3 PROD production https://example.com
 t_rc "production mode refuses the API host (rc 3)" 3 PROD production https://api.copilt.org
 t_rc "production mode refuses plain http (rc 3)" 3 PROD production http://www.copilt.org
@@ -140,10 +141,25 @@ ln -s "$TMP/creds.env" "$TMP/creds-link.env"; t_rc "a symlinked credentials file
 t_contains "the tool's own header documents that production changes state only by sign-in, the account download and fabricated-proof POSTs" "$(sed -n 1,40p "$REL/verify-published-plugin.sh")" "STATE CHANGES ON PRODUCTION"
 t_eq "no password, user, token or key is a command-line argument anywhere in the tool (no --password/--pass/--token option exists)" "$(grep -c -E '"--(password|pass|token|key|secret)"' "$REL/lib/verify_published.py" || true)" "0"
 t_eq "the tool has no hard-coded release version, SHA-256 or commit" "$(grep -c -E '1\.1\.[0-9]|9757ab35|abdcda2' "$REL/lib/verify_published.py" "$REL/verify-published-plugin.sh" "$REL/sign-plugin-release.sh" | awk -F: '{s+=$2} END {print s+0}')" "0"
+echo "== O. --out handling (the tool never deletes or re-permissions what the operator points it at) =="
+OD="$TMP/preexisting"; mkdir -p "$OD"; echo keep > "$OD/keep.txt"; printf 'DO-NOT-DELETE' > "$OD/ai-commerce-copilot-$V.zip"; chmod 755 "$OD"
+t_rc "a NON-EMPTY --out is refused (rc 2)" 2 bash "$REL/verify-published-plugin.sh" --mode offline --version "$V" --sha256 "$SHA" --manifest "$MAN" --sig "$SIG" --plugin-dir "$PD" --out "$OD"
+t_eq "...nothing in it was deleted, replaced or re-permissioned" "$(cat "$OD/keep.txt")/$(cat "$OD/ai-commerce-copilot-$V.zip")/$(stat -f '%Lp' "$OD" 2>/dev/null || stat -c '%a' "$OD")" "keep/DO-NOT-DELETE/755"
+OE="$TMP/empty-out"; mkdir -p "$OE"; chmod 755 "$OE"
+t_rc "an EMPTY existing --out is accepted (rc 0)" 0 bash "$REL/verify-published-plugin.sh" --mode offline --version "$V" --sha256 "$SHA" --manifest "$MAN" --sig "$SIG" --plugin-dir "$PD" --out "$OE"
+t_eq "...its own mode is NOT changed (still 755); the work happens in a fresh 0700 subdirectory" "$(stat -f '%Lp' "$OE" 2>/dev/null || stat -c '%a' "$OE")/$(find "$OE" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')/$(find "$OE" -mindepth 1 -maxdepth 1 -type d -perm 700 | wc -l | tr -d ' ')" "755/1/1"
+ln -s "$OE" "$TMP/out-link"
+t_rc "a symlinked --out is refused (rc 2)" 2 bash "$REL/verify-published-plugin.sh" --mode offline --version "$V" --sha256 "$SHA" --manifest "$MAN" --sig "$SIG" --plugin-dir "$PD" --out "$TMP/out-link"
+mock_up none; OF="$TMP/o-fresh-not-yet"
+t_rc "a --out that does not exist is created (0700) and works (rc 0)" 0 bash "$REL/verify-published-plugin.sh" --mode fixture --base-url "http://127.0.0.1:$MPORT" --version "$V" --sha256 "$SHA" --manifest "$MAN" --sig "$SIG" --plugin-dir "$PD" --credentials-file "$TMP/creds.env" --no-updater-probes --out "$OF"
+t_eq "...with mode 700" "$(stat -f '%Lp' "$OF" 2>/dev/null || stat -c '%a' "$OF")" "700"
+t_eq "the signing wrapper leaves no temp file or directory behind after a refusal at ANY stage" "$(find "$TMP/tw" "${TMPDIR:-/tmp}" -maxdepth 1 \( -name '*.tmp.*' -o -name 'aicc-sign.*' \) 2>/dev/null | wc -l | tr -d ' ')" "0"
+
 echo "== H. the host trust-anchor check (ssh is a STUB that runs the real PHP snippet against a constant it defines; the value is never printed) =="
 STUB="$TMP/stub"; mkdir -p "$STUB"; SID=0123456789abcdef0123456789abcdef
 cat > "$STUB/ssh" <<'EOS'
 #!/usr/bin/env bash
+[ -z "${STUB_LOG:-}" ] || echo "ssh $*" >> "$STUB_LOG"
 cmd="${@: -1}"
 case "$cmd" in
   "cat /etc/aicc-stage-identity") printf 'AICC_ENV=%s\nAICC_HOSTNAME=%s\nAICC_STAGE_ID=%s\n' "${STUB_ENV:-production}" "${STUB_HOSTNAME:-www.copilt.org}" "${STUB_ID:-0123456789abcdef0123456789abcdef}" ;;
@@ -175,6 +191,13 @@ cp "$PKEY" "$TMP/aicc_key_other"; t_rc "a key file not named aicc_cp_prod* is re
 t_rc "no pinned known-hosts entry is refused (rc 3)" 3 env PATH="$STUB:$PATH" bash "$REL/check-host-signing-keys.sh" --pubkeys "$LIST" --stage-host www.copilt.org --stage-ip 203.0.113.9 --stage-id "$SID" --key "$PKEY" --known-hosts "$TMP/nokh"
 t_rc "the API Droplet's address is refused (rc 3)" 3 env PATH="$STUB:$PATH" bash "$REL/check-host-signing-keys.sh" --pubkeys "$LIST" --stage-host www.copilt.org --stage-ip 139.59.157.231 --stage-id "$SID" --key "$PKEY" --known-hosts "$KH"
 t_rc "without the owner's public key list it is a usage error (rc 2)" 2 env PATH="$STUB:$PATH" bash "$REL/check-host-signing-keys.sh" --stage-host www.copilt.org --stage-ip 203.0.113.9 --stage-id "$SID" --key "$PKEY" --known-hosts "$KH"
+: > "$TMP/h.calls"
+for bad in '-oProxyCommand=touch /tmp/avp-pwned' '-F/dev/null' 'Aicc' 'a.b' 'a b' '' ; do
+  t_rc "check-host: --user '$bad' is refused (rc 2 or 3), never reaches ssh" 3 env STUB_LOG="$TMP/h.calls" STUB_CONST="$LIST" PATH="$STUB:$PATH" bash "$REL/check-host-signing-keys.sh" --pubkeys "$LIST" --stage-host www.copilt.org --stage-ip 203.0.113.9 --stage-id "$SID" --key "$PKEY" --known-hosts "$KH" --user "$bad"
+done
+t_eq "check-host: none of those reached the ssh stub" "$(wc -l < "$TMP/h.calls" | tr -d ' ')" "0"
+STUB_LOG="$TMP/h.calls" STUB_CONST="$LIST" CHK >/dev/null 2>&1
+t_eq "check-host: every ssh call puts the destination after '--' (an operator string can never be an ssh option)" "$(grep -c -- ' -- aicc@203.0.113.9 ' "$TMP/h.calls")/$(wc -l < "$TMP/h.calls" | tr -d ' ')" "2/2"
 t_eq "the script changes nothing on the host: its remote commands are only the identity read and the eval (no tee/mv/sed -i/render/owner-facts set)" "$(grep -v '^#' "$REL/check-host-signing-keys.sh" | grep -c -E 'aicc-owner-facts|aicc-render-wp-config|tee |mv |rm |systemctl' | tr -d ' ')" "0"
 
 echo "== F. first-signed-release.sh: stage 3 cross-checks the ZIP (the --pubkeys form alone would not) =="
@@ -226,6 +249,17 @@ t_eq "...nothing else in the manifest changed (every other field equals the orig
 t_ok "...no file was deleted (ZIP, manifest, signature, current all present)" bash -c "[ -f '$RS/$V/$ZN' ] && [ -f '$M' ] && [ -f '$RS/$V/ai-commerce-copilot-$V.manifest.sig' ] && [ -f '$RS/current' ]"
 OUTY="$(YK --version "$V" --apply --unyank)"; rc=$?
 t_eq "--unyank restores it: rc 0, the field is gone, WordPress reads false" "$rc/$(jq -r 'has("yanked")' "$M")" "0/false"
+: > "$TMP/ystub.calls"
+for bad in '-oProxyCommand=touch /tmp/avp-pwned' '-F/dev/null' 'Aicc' 'a.b' ''; do
+  t_rc "yank: --user '$bad' is refused (rc 3), never reaches ssh" 3 env PATH="$YSTUB:$PATH" bash "$REL/yank-plugin-release.sh" --version "$V" --stage-host www.copilt.org --stage-ip 203.0.113.9 --stage-id "$SID" --key "$PKEY" --known-hosts "$KH" --confirm-production "$V" --apply --user "$bad"
+done
+t_eq "yank: none of those reached the ssh stub" "$(wc -l < "$TMP/ystub.calls" | tr -d ' ')" "0"
+VICTIM="$TMP/victim.txt"; echo "VICTIM-ORIGINAL" > "$VICTIM"; ln -s "$VICTIM" "$M.tmp-yank"
+OUTY="$(YK --version "$V" --apply)"; rc=$?
+t_eq "yank: a symlink planted at the old fixed temp path is NOT followed: the victim file is unchanged and the yank still succeeds" "$rc/$(cat "$VICTIM")/$(jq -r .yanked "$M")" "0/VICTIM-ORIGINAL/true"
+rm -f "$M.tmp-yank"; YK --version "$V" --apply --unyank >/dev/null
+t_eq "yank: every ssh call puts the destination after '--'" "$(grep -c -- ' -- aicc@203.0.113.9 ' "$TMP/ystub.calls")/$(wc -l < "$TMP/ystub.calls" | tr -d ' ')" "$(wc -l < "$TMP/ystub.calls" | tr -d ' ')/$(wc -l < "$TMP/ystub.calls" | tr -d ' ')"
+t_eq "yank: no temp file is left in the release directory" "$(find "$RS/$V" -name '*tmp*' | wc -l | tr -d ' ')" "0"
 t_rc "a wrong --confirm-production is refused (rc 3)" 3 env PATH="$YSTUB:$PATH" bash "$REL/yank-plugin-release.sh" --version "$V" --stage-host www.copilt.org --stage-ip 203.0.113.9 --stage-id "$SID" --key "$PKEY" --known-hosts "$KH" --confirm-production 9.9.9 --apply
 t_rc "another host name is refused (rc 3)" 3 env PATH="$YSTUB:$PATH" bash "$REL/yank-plugin-release.sh" --version "$V" --stage-host stage.copilt.org --stage-ip 203.0.113.9 --stage-id "$SID" --key "$PKEY" --known-hosts "$KH" --confirm-production "$V" --apply
 t_rc "a non-strict version is refused (rc 3)" 3 env PATH="$YSTUB:$PATH" bash "$REL/yank-plugin-release.sh" --version "1.1.1-dev.1" --stage-host www.copilt.org --stage-ip 203.0.113.9 --stage-id "$SID" --key "$PKEY" --known-hosts "$KH" --confirm-production 1.1.1-dev.1 --apply

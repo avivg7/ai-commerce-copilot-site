@@ -26,6 +26,7 @@ case "$ENVN" in production|stage) ;; *) echo "--env must be production or stage"
 if [ -z "$KEYS" ] && [ -n "$PLUGDIR" ] && [ -f "$PLUGDIR/release/endpoints.conf" ]; then KEYS="$(sed -n 's/^UPDATE_PUBLIC_KEYS=//p' "$PLUGDIR/release/endpoints.conf" | head -1 | tr -d ' \r')"; fi
 [[ "$KEYS" =~ ^[A-Za-z0-9+/]{43}=(,[A-Za-z0-9+/]{43}=)?$ ]] || { echo "need the owner's public key list: --pubkeys <primary[,standby]> or --plugin-dir with release/endpoints.conf UPDATE_PUBLIC_KEYS" >&2; exit 2; }
 [[ "$SIP" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]] || refuse "--stage-ip must be a literal IPv4 address"
+[[ "$USER_NAME" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]] || refuse "--user must match ^[a-z_][a-z0-9_-]*$ (it is put in front of the host name on an ssh command line: a leading - would be an ssh option)"
 aicc_ip_guard "$SIP" "--stage-ip " || exit 3
 for d in 139.59.157.231 185.199.108.153 185.199.109.153 185.199.110.153 185.199.111.153; do [ "$SIP" = "$d" ] && refuse "$SIP is the API Droplet or a GitHub Pages address, not a Control Plane host"; done
 [[ "$SID" =~ ^[0-9a-f]{32}$ ]] || refuse "--stage-id must be 32 lowercase hex characters"
@@ -44,7 +45,7 @@ else
   SHK=accept-new; [ -n "$KH" ] || KH="$HOME/.ssh/known_hosts_aicc_stage"
 fi
 SSH_OPTS=(-i "$KEY" -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=15 -o StrictHostKeyChecking="$SHK" -o UserKnownHostsFile="$KH")
-ident="$(ssh "${SSH_OPTS[@]}" "$USER_NAME@$SIP" 'cat /etc/aicc-stage-identity' 2>/dev/null)" || { echo "cannot read the host identity over SSH (host down, wrong key, host key not pinned)" >&2; exit 1; }
+ident="$(ssh "${SSH_OPTS[@]}" -- "$USER_NAME@$SIP" 'cat /etc/aicc-stage-identity' 2>/dev/null)" || { echo "cannot read the host identity over SSH (host down, wrong key, host key not pinned)" >&2; exit 1; }
 WANTENV=staging; [ "$ENVN" = production ] && WANTENV=production
 echo "$ident" | grep -q "^AICC_ENV=${WANTENV}\$" || refuse "host does not say AICC_ENV=$WANTENV"
 echo "$ident" | grep -q "^AICC_HOSTNAME=${SHOST}\$" || refuse "host identity AICC_HOSTNAME is not $SHOST"
@@ -58,7 +59,7 @@ $fp = function ( $b64 ) { $raw = base64_decode( $b64, true ); return ( false !==
 echo "HOSTKEYS defined entries=" . count( $have ) . " fingerprints=" . implode( ",", array_map( $fp, $have ) ) . "\n";
 foreach ( $want as $i => $k ) { echo "HOSTKEYS " . ( 0 === $i ? "primary" : "standby" ) . " " . $fp( $k ) . " " . ( in_array( $k, $have, true ) ? "PRESENT" : "ABSENT" ) . "\n"; }'
 B64="$(printf '%s' "$SNIP" | base64 | tr -d '\n')"
-out="$(ssh "${SSH_OPTS[@]}" "$USER_NAME@$SIP" "sudo aicc-wp eval \"eval(base64_decode('$B64'));\"" 2>/dev/null)" || { echo "the host query failed (aicc-wp eval)" >&2; exit 1; }
+out="$(ssh "${SSH_OPTS[@]}" -- "$USER_NAME@$SIP" "sudo aicc-wp eval \"eval(base64_decode('$B64'));\"" 2>/dev/null)" || { echo "the host query failed (aicc-wp eval)" >&2; exit 1; }
 printf '%s\n' "$out" | grep '^HOSTKEYS' || { echo "the host answered nothing usable" >&2; exit 1; }
 if printf '%s\n' "$out" | grep -q '^HOSTKEYS primary .* PRESENT$'; then
   printf '%s\n' "$out" | grep -q '^HOSTKEYS standby .* ABSENT$' && echo "NOTE: the standby key is not configured on the host (allowed; add it before a rotation)."
