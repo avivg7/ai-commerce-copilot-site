@@ -27,6 +27,7 @@ case "$ENVN" in production|stage) ;; *) echo "--env must be production or stage"
 [ -n "$VERSION" ] && [ -n "$SHOST" ] && [ -n "$SIP" ] && [ -n "$SID" ] && [ -n "$KEY" ] || { echo "usage: --version X.Y.Z --stage-host H --stage-ip IP --stage-id ID --key K" >&2; exit 2; }
 [[ "$VERSION" =~ ^[0-9]{1,4}\.[0-9]{1,4}\.[0-9]{1,4}$ ]] || refuse "--version must be a strict X.Y.Z"
 [[ "$SIP" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]] || refuse "--stage-ip must be a literal IPv4 address"
+[[ "$USER_NAME" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]] || refuse "--user must match ^[a-z_][a-z0-9_-]*$ (it is put in front of the host name on an ssh command line: a leading - would be an ssh option)"
 aicc_ip_guard "$SIP" "--stage-ip " || exit 3
 for d in 139.59.157.231 185.199.108.153 185.199.109.153 185.199.110.153 185.199.111.153; do [ "$SIP" = "$d" ] && refuse "$SIP is the API Droplet or a GitHub Pages address, not a Control Plane host"; done
 [[ "$SID" =~ ^[0-9a-f]{32}$ ]] || refuse "--stage-id must be 32 lowercase hex characters"
@@ -57,35 +58,46 @@ EOT
   exit 0
 fi
 SSH_OPTS=(-i "$KEY" -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=15 -o StrictHostKeyChecking="$SHK" -o UserKnownHostsFile="$KH")
-ident="$(ssh "${SSH_OPTS[@]}" "$USER_NAME@$SIP" 'cat /etc/aicc-stage-identity' 2>/dev/null)" || { echo "cannot read the host identity over SSH (host down, wrong key, host key not pinned)" >&2; exit 1; }
+ident="$(ssh "${SSH_OPTS[@]}" -- "$USER_NAME@$SIP" 'cat /etc/aicc-stage-identity' 2>/dev/null)" || { echo "cannot read the host identity over SSH (host down, wrong key, host key not pinned)" >&2; exit 1; }
 WANTENV=staging; [ "$ENVN" = production ] && WANTENV=production
 echo "$ident" | grep -q "^AICC_ENV=${WANTENV}\$" || refuse "host does not say AICC_ENV=$WANTENV"
 echo "$ident" | grep -q "^AICC_HOSTNAME=${SHOST}\$" || refuse "host identity AICC_HOSTNAME is not $SHOST"
 echo "$ident" | grep -q "^AICC_STAGE_ID=${SID}\$" || refuse "host identity AICC_STAGE_ID does not match --stage-id: not the host this command was meant for"
 echo "host identity OK ($SHOST, id matches)"
 rc=0
-ssh "${SSH_OPTS[@]}" "$USER_NAME@$SIP" "sudo python3 -I - $VERSION $RELDIR $ACT" <<'PY' || rc=$?
-import json, os, re, stat, sys
+ssh "${SSH_OPTS[@]}" -- "$USER_NAME@$SIP" "sudo python3 -I - $VERSION $RELDIR $ACT" <<'PY' || rc=$?
+import json, os, re, stat, sys, tempfile
 ver, rdir, act = sys.argv[1:4]
 def no(m): sys.stderr.write("yank: %s\n" % m); sys.exit(1)
 if not re.fullmatch(r"\d{1,4}\.\d{1,4}\.\d{1,4}", ver) or act not in ("yank", "unyank"): no("bad arguments")
 d = os.path.join(rdir, ver); p = os.path.join(d, "ai-commerce-copilot-%s.manifest.json" % ver)
 if os.path.islink(d) or not os.path.isdir(d): no("version directory %s does not exist (or is a symlink)" % ver)
-if os.path.islink(p) or not os.path.isfile(p): no("the manifest is not a regular file")
-st = os.stat(p)
-m = json.load(open(p))
+try:
+    fd = os.open(p, os.O_RDONLY | os.O_NOFOLLOW)     # a symlinked manifest is refused by the kernel, not by a check that could race
+except OSError:
+    no("the manifest is not a regular file (or is a symlink)")
+st = os.fstat(fd)
+if not stat.S_ISREG(st.st_mode): no("the manifest is not a regular file")
+with os.fdopen(fd) as f:
+    m = json.load(f)
 if not isinstance(m, dict) or m.get("version") != ver or m.get("slug") != "ai-commerce-copilot": no("the manifest is not this release's")
 if act == "yank": m["yanked"] = True
 else: m.pop("yanked", None)
-tmp = p + ".tmp-yank"
-with open(tmp, "w") as f:
-    json.dump(m, f, indent=2); f.write("\n"); f.flush(); os.fsync(f.fileno())
-os.chown(tmp, st.st_uid, st.st_gid); os.chmod(tmp, stat.S_IMODE(st.st_mode))
-os.replace(tmp, p)
+# the temp file is created with O_EXCL by mkstemp (unique name, 0600, never an existing or planted path), in the SAME directory so the rename is atomic; removed on any failure
+tfd, tmp = tempfile.mkstemp(prefix=".yank-", suffix=".tmp", dir=d)
+try:
+    with os.fdopen(tfd, "w") as f:
+        json.dump(m, f, indent=2); f.write("\n"); f.flush(); os.fsync(f.fileno())
+    os.chown(tmp, st.st_uid, st.st_gid); os.chmod(tmp, stat.S_IMODE(st.st_mode))
+    os.replace(tmp, p)
+except BaseException:
+    try: os.unlink(tmp)
+    except OSError: pass
+    raise
 print("%s %s: manifest rewritten (owner %d:%d mode %o)" % (act, ver, st.st_uid, st.st_gid, stat.S_IMODE(st.st_mode)))
 PY
 [ "$rc" = 0 ] || { echo "the host-side step failed (exit $rc); the manifest is unchanged unless the output above says otherwise" >&2; exit 1; }
-got="$(ssh "${SSH_OPTS[@]}" "$USER_NAME@$SIP" "sudo aicc-wp eval 'echo json_encode( AICC_LM_Release_Store::manifest( \"$VERSION\" )[\"yanked\"] );'" 2>/dev/null | tail -1 | tr -d ' \r\n')" || got=""
+got="$(ssh "${SSH_OPTS[@]}" -- "$USER_NAME@$SIP" "sudo aicc-wp eval 'echo json_encode( AICC_LM_Release_Store::manifest( \"$VERSION\" )[\"yanked\"] );'" 2>/dev/null | tail -1 | tr -d ' \r\n')" || got=""
 want=true; [ "$UN" = 0 ] || want=false
 [ "$got" = "$want" ] || { echo "WordPress reads yanked=${got:-?}, expected $want" >&2; exit 1; }
 echo "VERIFIED through WordPress: $VERSION is now $([ "$UN" = 0 ] && echo YANKED || echo NOT yanked). Nothing was deleted; the signature is unaffected."

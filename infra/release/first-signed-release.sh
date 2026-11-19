@@ -120,7 +120,7 @@ PY
    if [ -n "${AICC_VERIFY_CREDENTIALS_FILE:-}" ]; then
      need PLUG VERSION PRIMARY_PUB STANDBY_PUB
      bash "$SITE/infra/release/verify-published-plugin.sh" --mode production --base-url https://www.copilt.org --version "$VERSION" --sha256 "$(cut -d' ' -f1 "$SHAF")" --manifest "$MAN" --sig "$SIG" --plugin-dir "$PLUG" \
-       --pubkeys "$PRIMARY_PUB,$STANDBY_PUB" --expect-key-id "$PRIMARY_FP" --local-zip "$ZIP" ${PREVIOUS_VERSION:+--previous-version "$PREVIOUS_VERSION"} --credentials-file "$AICC_VERIFY_CREDENTIALS_FILE" --out "$OUT/verify-published" | tee "$OUT/verify-published.txt"
+       --pubkeys "$PRIMARY_PUB,$STANDBY_PUB" --expect-key-id "$PRIMARY_FP" --local-zip "$ZIP" ${PREVIOUS_VERSION:+--previous-version "$PREVIOUS_VERSION"} --credentials-file "$AICC_VERIFY_CREDENTIALS_FILE" --out "$OUT/verify-published-$(date -u +%Y%m%dT%H%M%SZ)" | tee "$OUT/verify-published.txt"
    else
      echo "AICC_VERIFY_CREDENTIALS_FILE is not set: the customer-path check was NOT run. Create a 0600 file with AICC_VERIFY_USER= and AICC_VERIFY_PASS= for the owner's own test account (never a customer's), then re-run stage 7."
    fi ;;

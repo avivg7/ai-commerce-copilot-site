@@ -178,7 +178,7 @@ class Http:
         final = os.path.join(dest_dir, final_name)
         for p in (part, final):
             if os.path.lexists(p):
-                os.unlink(p)
+                return None, "refusing to overwrite or delete an existing file in the work directory: %s" % os.path.basename(p), {}, 0
         rq = urllib.request.Request(url, headers={"User-Agent": self.ua, "Accept": "application/zip,*/*"})
         got, h, status, problem = 0, hashlib.sha256(), 0, ""
         lh = {}
@@ -187,7 +187,7 @@ class Http:
             status = r.status
             lh = {k.lower(): v for k, v in r.headers.items()}
             declared = int(lh["content-length"]) if lh.get("content-length", "").isdigit() else None
-            with open(part, "wb") as f:
+            with open(part, "xb") as f:
                 while True:
                     try:
                         chunk = r.read(65536)
@@ -569,12 +569,12 @@ def package_download(http, url, body, dest_dir, fname, size, sha):
     part, final = os.path.join(dest_dir, "." + fname + ".part"), os.path.join(dest_dir, fname)
     for p in (part, final):
         if os.path.lexists(p):
-            os.unlink(p)
+            return None, "refusing to overwrite or delete an existing file in the work directory: %s" % os.path.basename(p)
     rq = urllib.request.Request(url, data=json.dumps(body).encode(), headers={"Content-Type": "application/json", "User-Agent": http.ua}, method="POST")
     got, h, problem = 0, hashlib.sha256(), ""
     try:
         r = http.op.open(rq, timeout=http.timeout)
-        with open(part, "wb") as f:
+        with open(part, "xb") as f:
             while True:
                 c = r.read(65536)
                 if not c:
@@ -664,6 +664,24 @@ def download_safety(a, client, man, workdir):
 
 
 # ---------------------------------------------------------------------------------------------------------------- main
+def prepare_workdir(out):
+    """The evidence/work directory. The tool never deletes, replaces or re-permissions anything the operator points it at: a --out that does not exist is created (0700); an EXISTING one must be an empty,
+    real directory and is left as it is (the work happens in a fresh 0700 subdirectory); a non-empty one, a symlink or a file is refused."""
+    if not out:
+        return tempfile.mkdtemp(prefix="aicc-verify-")
+    if os.path.islink(out):
+        die(2, "--out is a symbolic link: refused")
+    if os.path.exists(out):
+        if not os.path.isdir(out):
+            die(2, "--out exists and is not a directory")
+        if os.listdir(out):
+            die(2, "--out is not empty: give a fresh path (or an empty directory); the tool never deletes or overwrites files you already have")
+        return tempfile.mkdtemp(prefix="verify-", dir=out)
+    os.makedirs(out, mode=0o700)
+    os.chmod(out, 0o700)      # we just created it
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser(add_help=False)
     for n in ("mode", "base_url", "version", "sha256", "plugin_dir", "manifest", "sig", "pubkeys", "expect_key_id", "previous_version", "local_zip", "credentials_file", "other_credentials_file", "user_env", "pass_env", "store_file", "out", "php", "anon_base_url"):
@@ -695,9 +713,7 @@ def main():
     if a.expect_key_id and not re.fullmatch(r"[0-9a-f]{4}(-[0-9a-f]{4}){3}", a.expect_key_id):
         die(2, "--expect-key-id must look like 9d49-041f-0ced-13ac")
     tool = Tool(a.php, a.plugin_dir)
-    workdir = a.out or tempfile.mkdtemp(prefix="aicc-verify-")
-    os.makedirs(workdir, exist_ok=True)
-    os.chmod(workdir, 0o700)
+    workdir = prepare_workdir(a.out)
     print("verify-published-plugin  mode=%s  version=%s  sha256=%s...  work=%s" % (a.mode, a.version, a.sha256[:16], workdir))
     man = check_record(a, tool, keys)
     if a.mode != "offline":
