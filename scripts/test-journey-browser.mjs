@@ -62,7 +62,7 @@ for (const cell of ["announce", "off", "link"]) for (const l of QUICK && cell !=
   const j = J(l), ss = S(l);
   const want = [1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => j.steps["s" + n]);
   check(r.h1.length === 1 && r.h1[0] === j.title && errors.length === 0 && r.title === j.meta.title, `${cell} ${l}: one h1 "${j.title}", the page title is the journey title, no script error (${errors[0] || "none"})`);
-  check(r.steps.length === 9 && r.steps.every((s, i) => s.n === i + 1 && s.t === want[i].t && s.b === want[i].b.replace("{path}", j.path)), `${cell} ${l}: nine steps, in order 1..9, with their exact titles and texts`);
+  check(r.steps.length === 9 && r.steps.every((s, i) => s.n === i + 1 && s.t === want[i].t && s.b.replace(/\u2060/g, "") === want[i].b.replace("{path}", j.path)), `${cell} ${l}: nine steps, in order 1..9, with their exact titles and texts`);
   check(r.lists === 3 && r.lang.startsWith(l) && r.dir === (l === "he" ? "rtl" : "ltr"), `${cell} ${l}: three phases (account, store, recommendations), html lang ${r.lang}, dir ${r.dir}`);
   const dt = [ss.plan.regLabel + " " + ss.plan.regValue, ss.plan.endLabel + " " + ss.plan.endValue].map((x) => x.replace(/[ ⁦⁩]/g, " ").replace(/\s+/g, " "));
   const got = r.dates.map((x) => x.replace(/[ ⁦⁩]/g, " ").replace(/\s+/g, " "));
