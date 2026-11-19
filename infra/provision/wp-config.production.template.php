@@ -93,6 +93,14 @@ define( 'AICC_MAIL_FROM_ADDRESS', 'support@copilt.org' );
 define( 'AICC_MAIL_FROM_NAME', 'AI Commerce Copilot' );
 define( 'AICC_MAIL_REPLY_TO', 'support@copilt.org' );
 // @@MAIL_END@@
+// @@BREVO_BEGIN@@
+// ---- P38 Brevo transactional e-mail over the HTTPS API: rendered by render-wp-config.sh ONLY when the owner fact AICC_MAIL_PROVIDER=brevo_api is set AND /etc/aicc-mail/brevo-api.key passed every check (regular file, not a symlink, root:aicc-cp, mode 0640 or 0440,
+// first line = the key as the Control Plane reads it); otherwise this whole region (including these lines) is removed and the render is byte-for-byte the render before P38. The sender, reply-to and budget come from owner facts; the KEY is never a constant, a fact or
+// a rendered value: only the PATH of its file is written (AICC_MAIL_API_KEY_FILE). Never defined by this region: AICC_NOTIFY_ENABLED or any campaign / scheduler / self-service switch (Brevo configuration must not activate them), AICC_MAIL_API_KEY (the Control Plane refuses a key constant).
+// The provider host is added to WP_ACCESSIBLE_HOSTS by the renderer in the same condition and never otherwise. The SMTP region above is not rendered while this one is (the provider fact decides; both secret files without the fact is refused). Procedure: docs/cutover/p38-brevo-host-update.md.
+@@BREVO_MAIL@@
+// ---- end P38 Brevo ----
+// @@BREVO_END@@
 
 // ---- AICC Control Plane plugin ---------------------------------------------------------------------------------------------------------------------
 // Client IP: the plugin trusts X-Forwarded-For only from addresses listed here. EMPTY on purpose: PHP-FPM receives the real TCP peer as REMOTE_ADDR
@@ -132,6 +140,10 @@ define( 'AICC_ENTITLEMENT_WEBHOOK_SECRET', '@@AICC_ENTITLEMENT_WEBHOOK_SECRET@@'
 // @@P37_END@@
 // AICC_LM_ALLOW_DEV_SECRET_BOOTSTRAP and AICC_LM_TEST_FIXTURE are intentionally NOT defined.
 
+// @@P35_BEGIN@@
+// (owner-dashboard / launch-offer constants of P35, rendered from owner facts by render-wp-config.sh; this whole region is replaced by those blocks, or removed when no such fact is set)
+@@P35_OWNER_BLOCKS@@
+// @@P35_END@@
 // ---- bootstrap -----------------------------------------------------------------------------------------------------------------------------------------
 // ABSPATH is defined by wp-load.php (the real release directory) BEFORE this file is read, even though this file is reached through a symlink.
 // Using __DIR__ here would resolve to /srv/aicc/shared and break every path, so refuse instead of guessing.

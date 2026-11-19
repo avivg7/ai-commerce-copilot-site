@@ -2,6 +2,7 @@
 # Sets, unsets and lists the owner's NON-SECRET launch facts that render-wp-config.sh writes into the Control Plane's wp-config.php.
 #     sudo aicc-owner-facts list
 #     sudo aicc-owner-facts set   KEY VALUE        (validated; the file is replaced atomically, mode 0600, root)
+#     sudo aicc-owner-facts set-stdin KEY          (the VALUE is read from the first line of STDIN: it is in no command line, no `ps`, no sudo log; used for personal data such as AICC_MAIL_TEST_RECIPIENTS)
 #     sudo aicc-owner-facts unset KEY
 #     sudo aicc-owner-facts check                  (validates the whole file, changes nothing)
 #     sudo aicc-owner-facts keys                   (the keys this host's environment accepts)
@@ -29,11 +30,11 @@ while [ $# -gt 0 ]; do
     esac
   fi
   ARGS+=("$1"); shift
-  if [ "${#ARGS[@]}" -ge 2 ]; then case "${ARGS[0]}" in set|unset|import) STOPOPTS=1 ;; esac; fi
+  if [ "${#ARGS[@]}" -ge 2 ]; then case "${ARGS[0]}" in set|set-stdin|unset|import) STOPOPTS=1 ;; esac; fi
 done
 [ "${#ARGS[@]}" -ge 1 ] || { usage_help >&2; exit 2; }
 CMD="${ARGS[0]}"
-case "$CMD" in list|check|keys|export|import|set|unset) ;; *) echo "unknown command: $CMD (list, check, keys, export, import, set, unset)" >&2; exit 2 ;; esac
+case "$CMD" in list|check|keys|export|import|set|set-stdin|unset) ;; *) echo "unknown command: $CMD (list, check, keys, export, import, set, set-stdin, unset)" >&2; exit 2 ;; esac
 [[ "$FILE" == /* ]] || { echo "--file must be absolute" >&2; exit 2; }
 if [ -z "$ENVN" ]; then
   case "$(sed -n 's/^AICC_ENV=//p' /etc/aicc-stage-identity 2>/dev/null | head -1)" in
@@ -43,7 +44,7 @@ if [ -z "$ENVN" ]; then
 fi
 case "$ENVN" in stage|production) ;; *) echo "--env must be stage or production" >&2; exit 2 ;; esac
 if [ "${AICC_TEST_HARNESS:-0}" != "1" ] && [ "$(id -u)" != "0" ] && [ "$CMD" != keys ]; then echo "must run as root (sudo). Refusing." >&2; exit 1; fi
-if [ "$CMD" = set ] || [ "$CMD" = unset ] || [ "$CMD" = import ]; then
+if [ "$CMD" = set ] || [ "$CMD" = set-stdin ] || [ "$CMD" = unset ] || [ "$CMD" = import ]; then
   umask 077
   [ -d "$(dirname "$FILE")" ] || { echo "REFUSED: $(dirname "$FILE") does not exist" >&2; exit 1; }
   if [ -L "$FILE" ]; then echo "REFUSED: $FILE is a symbolic link" >&2; exit 1; fi

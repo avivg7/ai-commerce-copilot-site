@@ -31,6 +31,10 @@ ORDER = [
     "AICC_EXTRA_ACCESSIBLE_HOSTS",
     "AICC_TURNSTILE_ENABLED",
     "AICC_LM_PLUGIN_SIGNING_PUBKEYS",
+    # ---- P35 hand-added constants pinned as owner facts (production only; rendered as the three delimited blocks the P35 script appended on 2026-11-13; ABSENT = OFF = today's golden render byte for byte) ----
+    "AICC_OWNER_METRICS_TOKEN_FILE", "AICC_OWNER_METRICS_BASE", "AICC_OWNER_DASHBOARD_USER_IDS", "AICC_EA_LAUNCH_OFFER_MODE", "AICC_OWNER_OPS_SNAPSHOT_FILE",
+    # ---- P38 Brevo API mail region (production only; renders into its own delimited region of the template, never into the owner-facts or P37 region; ABSENT = OFF = today's render byte for byte) ----
+    "AICC_MAIL_PROVIDER", "AICC_MAIL_FROM_ADDRESS", "AICC_MAIL_FROM_NAME", "AICC_MAIL_REPLY_TO", "AICC_MAIL_DAILY_BUDGET", "AICC_MAIL_TEST_RECIPIENTS", "AICC_MAIL_STATUS_POLL_ENABLED",
     # ---- P37 self-service region (production only; everything below renders into the delimited P37 region, never into the owner-facts region; ABSENT = OFF = today's render byte for byte) ----
     "AICC_TRIAL_SELF_SERVICE_ENABLED", "AICC_TRIAL_SELF_SERVICE_CAP",
     "AICC_TURNSTILE_SITE_KEY",
@@ -41,13 +45,16 @@ ORDER = [
     "AICC_PLAN_CHANGE_ENABLED", "AICC_PAY_RECONCILE_ENABLED", "AICC_PRIVACY_REQUESTS_ENABLED",
 ]
 P37_KEYS = ORDER[ORDER.index("AICC_TRIAL_SELF_SERVICE_ENABLED"):]
+P35_KEYS = ORDER[ORDER.index("AICC_OWNER_METRICS_TOKEN_FILE"):ORDER.index("AICC_MAIL_PROVIDER")]
+P38_KEYS = ORDER[ORDER.index("AICC_MAIL_PROVIDER"):ORDER.index("AICC_TRIAL_SELF_SERVICE_ENABLED")]
 FREE_TEXT = {  # key -> maximum length in characters
     "AICC_LEGAL_ENTITY_NAME": 200, "AICC_LEGAL_ENTITY_ADDRESS": 300, "AICC_LEGAL_GOVERNING_LAW": 300, "AICC_LEGAL_JURISDICTION": 300,
     "AICC_LEGAL_PAYMENT_PROCESSOR": 80, "AICC_LEGAL_VAT_DETAILS": 300,
+    "AICC_MAIL_FROM_NAME": 70,
 }
 TRUE_ONLY = ("AICC_LEGAL_REVIEW_APPROVED", "AICC_STRUCTURED_DATA_OFFERS", "AICC_LM_PAYMENT_GATE_STRICT", "AICC_COMMERCE_OPEN", "AICC_TURNSTILE_ENABLED",
              "AICC_TRIAL_SELF_SERVICE_ENABLED", "AICC_NOTIFY_ENABLED", "AICC_FUNNEL_COUNTERS_ENABLED", "AICC_OWNER_OPS_SECTION_ENABLED", "AICC_MILESTONE_SYNC_SCHEDULED",
-             "AICC_PLAN_CHANGE_ENABLED", "AICC_PAY_RECONCILE_ENABLED", "AICC_PRIVACY_REQUESTS_ENABLED")
+             "AICC_PLAN_CHANGE_ENABLED", "AICC_PAY_RECONCILE_ENABLED", "AICC_PRIVACY_REQUESTS_ENABLED", "AICC_MAIL_STATUS_POLL_ENABLED")
 # P37 self-service (see docs/cutover/p37-self-service-wp-config.md). Every P37 switch is TRUE_ONLY: exactly `true` or unset, and UNSET is the OFF state the Control Plane reads (each constant is "exactly boolean true or off"), so the
 # default render defines none of them and is byte-identical to the render before the region existed. The Control Plane reads these constants and nothing else; the names below were verified against the Control Plane source (class files named
 # in the doc). Secrets are never owner facts: the Turnstile SECRET and the SMTP credentials stay in root-placed files (AICC_TURNSTILE_SECRET_FILE / AICC_MAIL_SECRETS_FILE); only PUBLIC values (site key, origins, caps, user ids) are facts.
@@ -75,6 +82,38 @@ KEYS_FOR = {
     "stage": ["AICC_ACTIVATION_PROOF_KID", "AICC_LM_PAID_GATEWAYS", "AICC_LM_PAYMENT_EVIDENCE_PROVIDER", "AICC_LM_PAYMENT_GATE_STRICT", "AICC_EXTRA_ACCESSIBLE_HOSTS", "AICC_TURNSTILE_ENABLED"],
 }
 BASE_HOST = {"production": "api.copilt.org", "stage": "stage.copilt.org"}
+# ---- P35 owner-dashboard / launch-offer constants (the Control Plane reads: class-aicc-lm-owner-dashboard.php, class-aicc-lm-ea-requests.php) ---------------------------------------------------------------------------------
+# These five lines were appended BY HAND to the live wp-config.php on 2026-11-13 (P35 gates B2, OFFER, SNAP: evidence in execution-reset/cp-dark/p35/b2-exec/wpconfig-add.sh), so every render would silently remove them. They are now owner facts; the renderer writes
+# the SAME three delimited blocks, in the order the P35 script applied them (B2, OFFER, SNAP), each followed by one blank line, between the "intentionally NOT defined" line and the bootstrap banner. None of them is a secret: the token itself is a FILE the renderer never reads.
+SHARED_DIR = "/srv/aicc/shared/"
+SHARED_FORBIDDEN_FIRST = ("uploads", "plugin-releases")        # the public uploads tree and the private release store: a token or snapshot path must never point into them
+SHARED_SEGMENT = r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}"             # no leading dot: no '.', no '..', no hidden file
+OWNER_METRICS_BASE = "https://api.copilt.org"                   # AICC_LM_Owner_Dashboard::ALLOWED_BASE_HOSTS = api.copilt.org, https, default port, no path: nothing else is accepted by the Control Plane in production
+EA_OFFER_MODES = ("announce",)                                  # the Control Plane also knows `open`, which depends on the request intake and the mail-provider constant: it stays a separate reviewed step; unset = off
+P35_BLOCKS = (   # (block id, keys, the exact comment line the P35 script wrote)
+    ("B2", ("AICC_OWNER_METRICS_TOKEN_FILE", "AICC_OWNER_METRICS_BASE", "AICC_OWNER_DASHBOARD_USER_IDS"),
+     "// ---- Owner Dashboard (P35 gate B2, 2026-11-13): the Backend token is read server-side from this root-owned file (never sent to a browser), the Backend base is fixed, only the listed administrator may open the page ----"),
+    ("OFFER", ("AICC_EA_LAUNCH_OFFER_MODE",), "// ---- Launch offer, ANNOUNCE mode only (2026-11-13 owner batch authorization): no request intake, no strike-through, no limited chip ----"),
+    ("SNAP", ("AICC_OWNER_OPS_SNAPSHOT_FILE",), '// ---- Owner Dashboard ops snapshot (backup + recovery-gate state, produced on the owner Mac; 2026-11-13): optional, a stale or missing file reads "Not reported" ----'),
+)
+
+# ---- P38: Brevo transactional e-mail over the HTTPS API (docs/cutover/p38-brevo-host-update.md). Everything below is production only and DEFAULT OFF: with no P38 fact the render is byte for byte the render before P38. -----------------
+# The ONE switch is AICC_MAIL_PROVIDER=brevo_api (`smtp` only says "use the smtp.env layer" when both secret files exist). The API KEY is never a fact and never a constant: it is the FILE /etc/aicc-mail/brevo-api.key, placed by the owner with
+# infra/provision/set-brevo-key.sh (aicc-set-brevo-key on the host); wp-config carries only its PATH (AICC_MAIL_API_KEY_FILE), exactly like the Turnstile secret. Names verified against the Control Plane source (worktree p38-brevo):
+# class-aicc-lm-mail.php (AICC_MAIL_PROVIDER, AICC_MAIL_API_KEY_FILE, AICC_MAIL_DAILY_BUDGET (default 240, clamped to 1-300 and to AICC_MAIL_MAX_PER_DAY), AICC_MAIL_ALLOWED_FROM_DOMAINS (array), AICC_MAIL_FROM_*, AICC_MAIL_REPLY_TO; a constant AICC_MAIL_API_KEY is refused),
+# class-aicc-lm-mail-secret.php (KEY_PATTERN /^[A-Za-z0-9_-]{20,200}$/ on the first line; root-owned, no "other" bits, not group-writable, not a symlink, outside the web root).
+BREVO_HOST = "api.brevo.com"                                  # the ONLY host added to WP_ACCESSIBLE_HOSTS, and only while the Brevo region is rendered; never a wildcard, never a subdomain pattern
+BREVO_KEY_FILE = "/etc/aicc-mail/brevo-api.key"               # fixed host path of the key FILE (same 0750 root:aicc-cp directory as smtp.env / turnstile.secret)
+BREVO_KEY_SHAPE = re.compile(rb"[A-Za-z0-9_-]{20,200}")  # bytes: the file is read as bytes and never decoded
+BREVO_KEY_MAX_FILE_BYTES = 256
+MAIL_FROM_DOMAINS = ("copilt.org",)                            # the Brevo-authenticated domain; a sender on any other domain is refused (subdomains too: only copilt.org is authenticated)
+BREVO_FROM_NAME_DEFAULT = "AI Commerce Copilot"
+BREVO_REPLY_TO_DEFAULT = "support@copilt.org"
+BREVO_BUDGET_DEFAULT = 240
+BREVO_DAY_CEILING = 300                                        # Brevo Free: 300 e-mails per day
+MAIL_PROVIDERS = ("brevo_api", "smtp")
+MAX_TEST_RECIPIENTS = 5
+OWN_BREVO_SUFFIX = "brevo.com"
 MAX_FILE_BYTES = 16384
 PLACEHOLDER_GATEWAYS = ("bacs", "cheque", "cod")
 MAX_GATEWAYS = 12
@@ -305,6 +344,195 @@ def parse_user_ids(key, v):
     return out
 
 
+# ---- P35 validators -------------------------------------------------------------------------------------------------------------------------------------
+def _shared_path(key, v):
+    """An absolute path under /srv/aicc/shared/ naming ONE regular file (the renderer never reads it): no traversal, no hidden segment, no trailing slash, not in the public uploads tree or the private release store, not wp-config itself."""
+    if len(v) > 200 or not re.fullmatch(re.escape(SHARED_DIR) + SHARED_SEGMENT + "(?:/" + SHARED_SEGMENT + "){0,3}", v):
+        raise OwnerFactsError("%s must be an absolute path under %s naming one file (letters, digits, . _ - only; no '..', no hidden segment, no trailing slash, at most 4 segments)" % (key, SHARED_DIR))
+    first = v[len(SHARED_DIR):].split("/")[0]
+    if first in SHARED_FORBIDDEN_FIRST or first.startswith("wp-config"):
+        raise OwnerFactsError("%s must not point into %s (the public uploads tree, the private release store) or at wp-config" % (key, first))
+    return v
+
+
+def _owner_metrics_base(key, v):
+    if v != OWNER_METRICS_BASE:
+        raise OwnerFactsError("%s must be exactly %s (an https origin: no path, no port, no trailing slash; the Control Plane accepts no other Backend host in production)" % (key, OWNER_METRICS_BASE))
+    return v
+
+
+def _offer_mode(key, v):
+    if v not in EA_OFFER_MODES:
+        raise OwnerFactsError("%s must be exactly 'announce' (the Control Plane's `open` needs the request intake and the mail-provider constant and is a separate reviewed step; to turn the offer off, unset it)" % key)
+    return v
+
+
+# ---- P38 validators -------------------------------------------------------------------------------------------------------------------------------------
+def _mail_provider(key, v):
+    if v not in MAIL_PROVIDERS:
+        raise OwnerFactsError("%s must be exactly brevo_api or smtp (to turn mail off again, unset it; the SMTP layer is selected by placing smtp.env, the Brevo API by this fact)" % key)
+    return v
+
+
+def _brevo_from_address(key, v):
+    v = _email(key, v)
+    local, domain = v.rsplit("@", 1)
+    if domain.lower() not in MAIL_FROM_DOMAINS:
+        raise OwnerFactsError("%s must be an address @%s (the domain Brevo authenticated; any other sender would fail SPF/DKIM/DMARC alignment)" % (key, " or @".join(MAIL_FROM_DOMAINS)))
+    return local + "@" + domain.lower()
+
+
+def _from_name(key, v):
+    v = _text(key, v)
+    if '"' in v:
+        raise OwnerFactsError("%s contains a double quote: not allowed (it is placed into a From header)" % key)
+    return v
+
+
+def _daily_budget(key, v):
+    if not re.fullmatch(r"[1-9][0-9]{0,2}", v) or int(v) > BREVO_DAY_CEILING:
+        raise OwnerFactsError("%s must be a whole number from 1 to %d (Brevo Free sends at most %d e-mails per day; the default is %d)" % (key, BREVO_DAY_CEILING, BREVO_DAY_CEILING, BREVO_BUDGET_DEFAULT))
+    return str(int(v))
+
+
+def parse_test_recipients(key, v):
+    """1-5 exact plain addresses, comma separated. Personal data: no message in this module ever repeats a value."""
+    out, seen = [], set()
+    for raw in v.split(","):
+        a = raw.strip()
+        if not a:
+            raise OwnerFactsError("%s has an empty entry (stray comma)" % key)
+        _email(key, a)
+        if a.lower() in seen:
+            raise OwnerFactsError("%s lists the same address twice" % key)
+        seen.add(a.lower())
+        out.append(a)
+    if len(out) > MAX_TEST_RECIPIENTS:
+        raise OwnerFactsError("%s lists more than %d addresses" % (key, MAX_TEST_RECIPIENTS))
+    return out
+
+
+def mask_address(a):
+    """first character of the local part + *** + the domain: what `list` shows of a test recipient."""
+    local, _, domain = a.partition("@")
+    return (local[:1] + "***@" + domain) if domain else "***"
+
+
+def check_brevo_key_file(path):
+    """The Brevo API key FILE, judged the way the Control Plane reads it (AICC_LM_Mail_Secret): a regular file, not a symlink, the FIRST line matches [A-Za-z0-9_-]{20,200} (anything else on the file is refused: a second line could
+    be another secret), and it is not an SMTP key (`xsmtpsib-`). Reads at most BREVO_KEY_MAX_FILE_BYTES + 1 bytes and returns NOTHING derived from the content: the caller gets True or an OwnerFactsError whose text never contains
+    a character of the file. Permissions and ownership are checked by the renderer (stat), not here."""
+    if os.path.islink(path) or not os.path.isfile(path):
+        raise OwnerFactsError("%s is not a regular file" % path)
+    size = os.path.getsize(path)
+    if size < 20 or size > BREVO_KEY_MAX_FILE_BYTES:
+        raise OwnerFactsError("%s must be 20-%d bytes (is %d)" % (path, BREVO_KEY_MAX_FILE_BYTES, size))
+    with open(path, "rb") as f:
+        raw = f.read(BREVO_KEY_MAX_FILE_BYTES + 1)
+    lines = raw.split(b"\n")
+    if lines and lines[-1] == b"":
+        lines = lines[:-1]
+    if len(lines) != 1 or not BREVO_KEY_SHAPE.fullmatch(lines[0]):
+        raise OwnerFactsError("%s: the file must hold exactly one line, the Brevo API key: 20-200 characters from [A-Za-z0-9_-] (the Control Plane would read it as 'no key')" % path)
+    if lines[0].startswith(b"xsmtpsib-"):
+        raise OwnerFactsError("%s holds an SMTP key (xsmtpsib-...): an API key is needed (Brevo: SMTP & API -> API Keys)" % path)
+    return True
+
+
+def mail_mode(facts, ctx):
+    """Which mail transport the render uses: (mode, notes, problems). mode in none | smtp | brevo_api | unknown (ctx None: the host state is not known).
+    ctx: {"mail": a SAFE /etc/aicc-mail/smtp.env exists, "brevo_key": a VALID /etc/aicc-mail/brevo-api.key exists}. The explicit fact AICC_MAIL_PROVIDER decides; without it only one of the two files may exist.
+    A fact that names a transport whose file is absent yields mode none (mail OFF, never half-enabled) plus a note: a rebuilt host with the facts but without the secret must still be able to render."""
+    notes, problems = [], []
+    if ctx is None:
+        return "unknown", notes, problems
+    smtp, key = bool(ctx.get("mail")), bool(ctx.get("brevo_key"))
+    prov = facts.get("AICC_MAIL_PROVIDER")
+    if prov != "brevo_api":
+        inert = [k for k in P38_KEYS if k in facts and k != "AICC_MAIL_PROVIDER"]
+        if inert:
+            notes.append("%s set but AICC_MAIL_PROVIDER is not brevo_api: ignored (the Brevo API region is not rendered)" % ", ".join(inert))
+    if prov == "brevo_api":
+        if key:
+            return "brevo_api", notes, problems
+        notes.append("AICC_MAIL_PROVIDER=brevo_api but %s is absent: the Brevo region is NOT rendered and the site sends NO mail (place the key with set-brevo-key.sh, then re-render)" % BREVO_KEY_FILE)
+        return "none", notes, problems
+    if prov == "smtp":
+        if smtp:
+            return "smtp", notes, problems
+        notes.append("AICC_MAIL_PROVIDER=smtp but there is no safe /etc/aicc-mail/smtp.env: the SMTP region is NOT rendered and the site sends NO mail")
+        return "none", notes, problems
+    if smtp and key:
+        problems.append("both /etc/aicc-mail/smtp.env and %s exist and AICC_MAIL_PROVIDER is not set: the render will not guess. `aicc-owner-facts set AICC_MAIL_PROVIDER brevo_api` (or smtp), or remove the file you do not use" % BREVO_KEY_FILE)
+        return "none", notes, problems
+    if key:
+        notes.append("%s exists but AICC_MAIL_PROVIDER is not set to brevo_api: the key is ignored (no Brevo region, no mail through Brevo)" % BREVO_KEY_FILE)
+        return "none", notes, problems
+    return ("smtp" if smtp else "none"), notes, problems
+
+
+def p38_problems(facts, env, ctx=None):
+    """The P38 readiness rules (empty list = consistent). ctx as in mail_mode (None = host state unknown: only the rules decidable from the facts alone run)."""
+    if env != "production":
+        return []
+    out = []
+    if ctx is not None:
+        out += mail_mode(facts, ctx)[2]
+    keys_set = [k for k in P38_KEYS if k in facts]
+    day = int(facts["AICC_MAIL_MAX_PER_DAY"]) if "AICC_MAIL_MAX_PER_DAY" in facts else None
+    hour = int(facts["AICC_MAIL_MAX_PER_HOUR"]) if "AICC_MAIL_MAX_PER_HOUR" in facts else None
+    prov = facts.get("AICC_MAIL_PROVIDER")
+    if prov == "brevo_api":
+        if day is not None and day > BREVO_DAY_CEILING:
+            out.append("AICC_MAIL_MAX_PER_DAY (%d) is above %d, the Brevo Free daily limit: the provider would refuse what the site thinks it may send" % (day, BREVO_DAY_CEILING))
+        if hour is not None and hour > BREVO_DAY_CEILING:
+            out.append("AICC_MAIL_MAX_PER_HOUR (%d) is above %d, the Brevo Free daily limit" % (hour, BREVO_DAY_CEILING))
+    if not keys_set:
+        return out
+    if prov != "brevo_api":
+        # sender / name / reply-to / budget / test recipients without the provider fact are INERT (the region is not rendered; mail_mode notes them): that is what makes `unset AICC_MAIL_PROVIDER` a one-command way to turn Brevo mail off.
+        # The status poll is the exception: it is a switch that registers a WP-Cron event, so it may never stay on without the provider (unset it first, or in the same command line).
+        if "AICC_MAIL_STATUS_POLL_ENABLED" in facts:
+            out.append("AICC_MAIL_STATUS_POLL_ENABLED set but AICC_MAIL_PROVIDER is not brevo_api: the status poll exists only with the Brevo API transport (`aicc-owner-facts unset AICC_MAIL_STATUS_POLL_ENABLED` first)")
+        return out
+    if "AICC_MAIL_FROM_ADDRESS" not in facts:
+        out.append("AICC_MAIL_PROVIDER=brevo_api needs AICC_MAIL_FROM_ADDRESS (the verified sender, an address @copilt.org): no sender is guessed")
+    budget = int(facts["AICC_MAIL_DAILY_BUDGET"]) if "AICC_MAIL_DAILY_BUDGET" in facts else BREVO_BUDGET_DEFAULT
+    if day is not None and budget > day:
+        if "AICC_MAIL_DAILY_BUDGET" in facts:
+            out.append("AICC_MAIL_DAILY_BUDGET (%d) is above AICC_MAIL_MAX_PER_DAY (%d): the day cap would always stop the budget first" % (budget, day))
+        else:
+            out.append("AICC_MAIL_MAX_PER_DAY (%d) is below the default daily budget %d: set AICC_MAIL_DAILY_BUDGET to %d or less explicitly" % (day, BREVO_BUDGET_DEFAULT, day))
+    return out
+
+
+def render_p38(facts, env, ctx):
+    """(lines, hosts) of the Brevo API region: ([], []) unless the transport is brevo_api (provider fact + a valid key file). The key itself is never read here; only the PATH constant is written.
+    api.brevo.com is added to the outbound allow-list ONLY here, so it exists in the render exactly when (and once) the region does."""
+    if env != "production":
+        return [], []
+    problems = p38_problems(facts, env, ctx)
+    if problems:
+        raise OwnerFactsError("P38 Brevo mail region REFUSED (nothing is rendered): " + " | ".join(problems))
+    if mail_mode(facts, ctx)[0] != "brevo_api":
+        return [], []
+    lines = [
+        "define( 'AICC_MAIL_ENABLED', true );",
+        "define( 'AICC_MAIL_PROVIDER', 'brevo_api' );",
+        "define( 'AICC_MAIL_API_KEY_FILE', %s );" % php_str(BREVO_KEY_FILE),
+        "define( 'AICC_MAIL_FROM_ADDRESS', %s );" % php_str(facts["AICC_MAIL_FROM_ADDRESS"]),
+        "define( 'AICC_MAIL_FROM_NAME', %s );" % php_str(facts.get("AICC_MAIL_FROM_NAME", BREVO_FROM_NAME_DEFAULT)),
+        "define( 'AICC_MAIL_REPLY_TO', %s );" % php_str(facts.get("AICC_MAIL_REPLY_TO", BREVO_REPLY_TO_DEFAULT)),
+        "define( 'AICC_MAIL_ALLOWED_FROM_DOMAINS', array( %s ) );" % ", ".join(php_str(d) for d in MAIL_FROM_DOMAINS),
+        "define( 'AICC_MAIL_DAILY_BUDGET', %d );" % (int(facts["AICC_MAIL_DAILY_BUDGET"]) if "AICC_MAIL_DAILY_BUDGET" in facts else BREVO_BUDGET_DEFAULT),
+    ]
+    if "AICC_MAIL_TEST_RECIPIENTS" in facts:
+        lines.append("define( 'AICC_MAIL_TEST_RECIPIENTS', %s );" % php_str(facts["AICC_MAIL_TEST_RECIPIENTS"]))
+    if "AICC_MAIL_STATUS_POLL_ENABLED" in facts:
+        lines.append("define( 'AICC_MAIL_STATUS_POLL_ENABLED', true );")
+    return lines, [BREVO_HOST]
+
+
 def check_turnstile_secret_file(path):
     """The Turnstile secret FILE, judged exactly as the Control Plane reads it (AICC_LM_EA_Requests_Turnstile::read_secret): regular file, not a symlink, 8-1024 bytes, first line trimmed = 8-256 printable ASCII characters (0x21-0x7E).
     Returns the secret for an IN-MEMORY comparison only; callers must never print or write it. Permissions and ownership are checked by the renderer (stat), not here."""
@@ -332,10 +560,30 @@ def validate_value(key, value, env):
     v = value.strip()
     if v == "":
         raise OwnerFactsError("%s has an empty value (use `unset` to remove it)" % key)
+    if key in ("AICC_OWNER_METRICS_TOKEN_FILE", "AICC_OWNER_OPS_SNAPSHOT_FILE"):
+        return _shared_path(key, v)
+    if key == "AICC_OWNER_METRICS_BASE":
+        return _owner_metrics_base(key, v)
+    if key == "AICC_OWNER_DASHBOARD_USER_IDS":
+        return ",".join(str(i) for i in parse_user_ids(key, v))
+    if key == "AICC_EA_LAUNCH_OFFER_MODE":
+        return _offer_mode(key, v)
+    if key == "AICC_MAIL_FROM_NAME":
+        return _from_name(key, v)
     if key in FREE_TEXT:
         return _text(key, v)
     if key == "AICC_LEGAL_SUPPORT_EMAIL":
         return _email(key, v)
+    if key == "AICC_MAIL_REPLY_TO":
+        return _brevo_from_address(key, v)   # the same allowed-domain rule as the sender: replies must land in a mailbox on our own domain
+    if key == "AICC_MAIL_PROVIDER":
+        return _mail_provider(key, v)
+    if key == "AICC_MAIL_FROM_ADDRESS":
+        return _brevo_from_address(key, v)
+    if key == "AICC_MAIL_DAILY_BUDGET":
+        return _daily_budget(key, v)
+    if key == "AICC_MAIL_TEST_RECIPIENTS":
+        return ",".join(parse_test_recipients(key, v))
     if key == "AICC_ACTIVATION_PROOF_KID":
         return _kid(key, v)
     if key in TRUE_ONLY:
@@ -359,7 +607,11 @@ def validate_value(key, value, env):
     if key == "AICC_LAUNCH_REAL_GATEWAYS":
         return ",".join(parse_gateway_list(key, v))
     if key == "AICC_EXTRA_ACCESSIBLE_HOSTS":
-        return ",".join(parse_hosts(key, v, env))
+        hosts = parse_hosts(key, v, env)
+        for h in hosts:
+            if h == OWN_BREVO_SUFFIX or h.endswith("." + OWN_BREVO_SUFFIX):
+                raise OwnerFactsError("%s: '%s' is a Brevo host: %s is added to WP_ACCESSIBLE_HOSTS only by AICC_MAIL_PROVIDER=brevo_api (with a valid key file), never as an extra host" % (key, h, BREVO_HOST))
+        return ",".join(hosts)
     if key == "AICC_LM_PLUGIN_SIGNING_PUBKEYS":
         return ",".join(parse_signing_pubkeys(key, v))
     raise OwnerFactsError("no validator for %s" % key)  # unreachable: keeps a new key from being added without one
@@ -446,6 +698,9 @@ def require_render_ready(facts, env, ctx=None):
     a production render that lists paid gateways but names no evidence provider would produce gateways without `require_provider_evidence`, i.e. the payment gate would accept a
     completed order on the strength of a transaction id alone. That is the unverified path COM-GATE-01 forbids, so the render (and `check`, which the renderer and the promotion
     preflight both run first) refuses it. Dark production (no gateways listed) stays renderable."""
+    problems38 = p38_problems(facts, env, ctx)
+    if problems38:
+        raise OwnerFactsError("P38 Brevo mail region REFUSED (nothing is rendered): " + " | ".join(problems38))
     problems = p37_problems(facts, env, ctx)
     if problems:
         raise OwnerFactsError("P37 self-service region REFUSED (nothing is rendered): " + " | ".join(problems))
@@ -463,6 +718,9 @@ def p37_problems(facts, env, ctx=None):
     out = []
     on = "AICC_TRIAL_SELF_SERVICE_ENABLED" in facts
     notify = "AICC_NOTIFY_ENABLED" in facts
+    if ctx is not None:   # P38: the mail layer is "ready" when EITHER transport is the one the render uses (smtp.env, or the Brevo API with a valid key file); the P37 rules below read this
+        ctx = dict(ctx)
+        ctx["mail"] = mail_mode(facts, ctx)[0] in ("smtp", "brevo_api")
     if on:
         if "AICC_TRIAL_SELF_SERVICE_CAP" not in facts:
             out.append("AICC_TRIAL_SELF_SERVICE_ENABLED needs AICC_TRIAL_SELF_SERVICE_CAP (25, 50 or 100): without a cap the Control Plane reads the switch as OFF, so the file would claim an open signup that is closed")
@@ -475,7 +733,7 @@ def p37_problems(facts, env, ctx=None):
         if ctx is not None and not ctx.get("turnstile_secret"):
             out.append("AICC_TRIAL_SELF_SERVICE_ENABLED needs the Turnstile secret file (%s, root:aicc-cp 0640): none was found, so the signup would read `paused` (blocker `turnstile`)" % TURNSTILE_SECRET_FILE)
         if ctx is not None and not ctx.get("mail"):
-            out.append("AICC_TRIAL_SELF_SERVICE_ENABLED needs the mail layer: no safe /etc/aicc-mail/smtp.env, so AICC_MAIL_ENABLED is not rendered and the signup reads `paused` (blocker `mail`)")
+            out.append("AICC_TRIAL_SELF_SERVICE_ENABLED needs the mail layer: no safe /etc/aicc-mail/smtp.env and no Brevo API key (AICC_MAIL_PROVIDER=brevo_api + /etc/aicc-mail/brevo-api.key), so AICC_MAIL_ENABLED is not rendered and the signup reads `paused` (blocker `mail`)")
     if notify and ctx is not None and not ctx.get("mail"):
         out.append("AICC_NOTIFY_ENABLED needs the mail layer (a safe /etc/aicc-mail/smtp.env): the notification center would queue mail it can never send")
     if "AICC_TURNSTILE_SITE_KEY" in facts and ctx is not None and not ctx.get("turnstile_secret"):
@@ -516,12 +774,26 @@ def render_p37(facts, env, ctx):
     return out
 
 
+def render_p35(facts, env):
+    """The text that replaces the P35 region of the template: for each block (B2, OFFER, SNAP, in the order the P35 script applied them) that has at least one fact, its comment line, its define() lines and ONE blank line; '' when no fact is set (the region
+    disappears and the render is the golden file byte for byte). The files named are never read."""
+    if env != "production":
+        return ""
+    out = []
+    for _bid, keys, comment in P35_BLOCKS:
+        have = [k for k in keys if k in facts]
+        if not have:
+            continue
+        out.append(comment + "\n" + "".join("define( '%s', %s );\n" % (k, php_str(facts[k])) for k in have) + "\n")
+    return "".join(out)
+
+
 def render(facts, env):
     """facts: validated dict. Returns (region_lines, extra_hosts): the PHP define() lines (each on ONE line) and the validated extra host list."""
     require_render_ready(facts, env)
     out = []
     for k in ORDER:
-        if k not in facts or k in ("AICC_EXTRA_ACCESSIBLE_HOSTS", "AICC_TURNSTILE_ENABLED") or k in P37_KEYS:
+        if k not in facts or k in ("AICC_EXTRA_ACCESSIBLE_HOSTS", "AICC_TURNSTILE_ENABLED") or k in P37_KEYS or k in P38_KEYS or k in P35_KEYS:
             continue
         v = facts[k]
         if k in TRUE_ONLY:
@@ -552,13 +824,14 @@ def render(facts, env):
 def main(argv):
     import argparse
     ap = argparse.ArgumentParser(prog="owner_facts.py")
-    ap.add_argument("cmd", choices=["list", "check", "set", "unset", "keys", "export", "import", "check-turnstile-secret"])
+    ap.add_argument("cmd", choices=["list", "check", "set", "unset", "keys", "export", "import", "check-turnstile-secret", "check-brevo-key", "mail-mode", "set-stdin"])
     ap.add_argument("key", nargs="?")
     ap.add_argument("value", nargs="?")
     ap.add_argument("--file", required=True)
     ap.add_argument("--env", required=True, choices=["stage", "production"])
     ap.add_argument("--context", action="store_true", help="check only: also apply the rules that need the host state (given by --mail-ready and --turnstile-secret-file)")
-    ap.add_argument("--mail-ready", action="store_true")
+    ap.add_argument("--mail-ready", action="store_true", help="a SAFE /etc/aicc-mail/smtp.env exists (the SMTP layer)")
+    ap.add_argument("--brevo-key-ready", action="store_true", help="a VALID /etc/aicc-mail/brevo-api.key exists (the Brevo API layer)")
     ap.add_argument("--turnstile-secret-file")
     a = ap.parse_args(argv)
     try:
@@ -567,19 +840,39 @@ def main(argv):
             check_turnstile_secret_file(a.file)
             print("ok: turnstile secret file readable as the Control Plane reads it (content not shown)")
             return 0
+        if a.cmd == "check-brevo-key":
+            # --file is the KEY FILE here. Prints only a verdict, never a character of the key.
+            try:
+                check_brevo_key_file(a.file)
+            except OwnerFactsError:
+                raise
+            except Exception as e:  # never a traceback next to a secret file: only the class of the problem
+                raise OwnerFactsError("%s could not be read (%s)" % (a.file, type(e).__name__))
+            print("ok: brevo api key file readable as the Control Plane reads it (content not shown)")
+            return 0
         if a.cmd == "keys":
             print("\n".join(KEYS_FOR[a.env]))
             return 0
         facts = parse_file(a.file, a.env)
+        if a.cmd == "mail-mode":
+            # stdout: none | smtp | brevo_api. Notes go to stderr (NOTE: ...). A contradiction (both secret files, no provider fact) is a refusal.
+            mode, notes, probs = mail_mode(facts, {"mail": bool(a.mail_ready), "brevo_key": bool(a.brevo_key_ready)} if a.env == "production" else {})
+            if probs:
+                raise OwnerFactsError(" | ".join(probs))
+            for n in notes:
+                print("NOTE: %s" % n, file=sys.stderr)
+            print(mode)
+            return 0
         if a.cmd == "list":
             for k in ORDER:
                 if k in facts:
-                    print("%s=%s" % (k, facts[k]))
+                    # personal data is masked: the test recipients show only the first character of each local part and the domain (the file keeps the full value; `export` is the explicit full copy)
+                    print("%s=%s" % (k, ",".join(mask_address(x) for x in facts[k].split(",")) if k == "AICC_MAIL_TEST_RECIPIENTS" else facts[k]))
             return 0
         if a.cmd == "check":
             ctx = None
             if a.context:
-                ctx = {"mail": bool(a.mail_ready), "turnstile_secret": False}
+                ctx = {"mail": bool(a.mail_ready), "brevo_key": bool(a.brevo_key_ready), "turnstile_secret": False}
                 if a.turnstile_secret_file:
                     sec = check_turnstile_secret_file(a.turnstile_secret_file)
                     if facts.get("AICC_TURNSTILE_SITE_KEY") == sec:
@@ -609,7 +902,17 @@ def main(argv):
             raise OwnerFactsError("%s needs a KEY" % a.cmd)
         if a.key not in ORDER:
             raise OwnerFactsError("unknown key '%s' (allowed: %s)" % (a.key, ", ".join(KEYS_FOR[a.env])))
-        if a.cmd == "set":
+        if a.cmd == "set-stdin":
+            if a.value is not None:
+                raise OwnerFactsError("set-stdin needs KEY only: the value is read from stdin")
+            line = sys.stdin.buffer.readline(4097)
+            if len(line) > 4096:
+                raise OwnerFactsError("set-stdin: the value is longer than 4096 bytes")
+            try:
+                facts[a.key] = line.decode("utf-8").rstrip("\n")
+            except UnicodeDecodeError:
+                raise OwnerFactsError("set-stdin: the value is not valid UTF-8")
+        elif a.cmd == "set":
             if a.value is None:
                 raise OwnerFactsError("set needs KEY and VALUE")
             facts[a.key] = a.value
@@ -620,7 +923,7 @@ def main(argv):
             del facts[a.key]
         facts = validate_all(facts, a.env)
         write_file(a.file, facts, a.env)
-        print("%s %s in %s (mode 0600). Now re-render: sudo aicc-render-wp-config --env %s%s" % (a.key, "set" if a.cmd == "set" else "unset", a.file, a.env, " --confirm-production" if a.env == "production" else ""))
+        print("%s %s in %s (mode 0600). Now re-render: sudo aicc-render-wp-config --env %s%s" % (a.key, "set" if a.cmd in ("set", "set-stdin") else "unset", a.file, a.env, " --confirm-production" if a.env == "production" else ""))
         return 0
     except OwnerFactsError as e:
         print("REFUSED: %s" % e, file=sys.stderr)
