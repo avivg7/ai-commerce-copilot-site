@@ -54,7 +54,7 @@ function Price({ locale, t, plan }: { locale: Locale; t: Dictionary; plan: (type
  * Fail closed: the strike needs a finite, positive price that equals the plan source (src/data/plans.ts: the only place a price is written; test:strike-gate re-derives it from the export). Never "was", "previously", "original", "save", "worth", "normally".
  * The strike is only ever in the LIVE card set, which the closed view and the ended view hide (browser clock: `<html data-ss-closed>` from 2026-12-24T00:00:00Z, `data-ea-over` from the trial end) and the build refuses at or after the end (EA_ON).
  */
-const STRIKE_PREVIEW = process.env.NODE_ENV === "development" && process.env.NEXT_PUBLIC_AICC_STRIKE_PREVIEW === "1"; export const OFFER_STRIKE = (plan: (typeof PLANS)[number]) => (STRIKE_PREVIEW || (EA_STRIKE && EA_ON)) && Number.isFinite(plan.price) && plan.price > 0;
+export const OFFER_STRIKE = (plan: (typeof PLANS)[number]) => EA_STRIKE && EA_ON && Number.isFinite(plan.price) && plan.price > 0;
 function Offer({ locale, t, plan, variant, swap = false }: { locale: Locale; t: Dictionary; plan: (typeof PLANS)[number]; variant: "planned" | "strike"; swap?: boolean }) {
   const s = t.ea.ss.pricing;
   const amount = formatPrice(plan.price, locale);
@@ -101,6 +101,7 @@ function StandardControl({ locale, t, id }: { locale: Locale; t: Dictionary; id:
 /** One plan card. `ended` = the closed / ordinary card: the price leads, the lower zone holds the closed status (and, after the trial end, the ordinary control). A live card carries the offer block (price above FREE) in its launch zone. */
 function Tier({ locale, t, plan, ended = false }: { locale: Locale; t: Dictionary; plan: (typeof PLANS)[number]; ended?: boolean }) {
   const s = t.ea.ss;
+  const strike = OFFER_STRIKE(plan);
   const name = t.pricing.plans[plan.id].name;
   const id = ended ? `plan-${plan.id}-closed` : `plan-${plan.id}`;
   const paid = paidCapacity(s.plan, plan.stores);
@@ -132,12 +133,12 @@ function Tier({ locale, t, plan, ended = false }: { locale: Locale; t: Dictionar
         ) : (
           <>
             {/* P41 review: the struck price is shown ONLY while the status is open (FREE is obtainable). A strike build carries BOTH blocks in its static HTML (so every gate that reads the markup still sees the strike); the default planned block is visible, the strike block and its disclosure are `display:none` until the header island sets <html data-ss-open> (SS_CSS in Ss.tsx) */}
-            <Offer locale={locale} t={t} plan={plan} variant="planned" swap={OFFER_STRIKE(plan)} />
-            {OFFER_STRIKE(plan) ? <Offer locale={locale} t={t} plan={plan} variant="strike" /> : null}
+            <Offer locale={locale} t={t} plan={plan} variant="planned" swap={strike} />
+            {strike ? <Offer locale={locale} t={t} plan={plan} variant="strike" /> : null}
             <p className="aicc-tier__free" data-aicc-ss="free" data-ss-free>
               <span className="aicc-tier__free-word">{s.pricing.free}</span>
               <span className="aicc-tier__trial"><Cap n={1} trial />{s.pricing.trial}</span>
-              {OFFER_STRIKE(plan) ? <span className="aicc-tier__offer-note" data-ss-when-open>{s.pricing.strikeNote}</span> : null}
+              {strike ? <span className="aicc-tier__offer-note" data-ss-when-open>{s.pricing.strikeNote}</span> : null}
             </p>
             <SsCtaSlot locale={locale} t={t} plan={plan.id} featured={plan.featured} srName={name} />
           </>

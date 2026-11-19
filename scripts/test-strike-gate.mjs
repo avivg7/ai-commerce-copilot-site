@@ -25,6 +25,8 @@ const env = (extra = {}) => ({ PATH: process.env.PATH, HOME: process.env.HOME, A
 const node = (script, a, e) => spawnSync(process.execPath, [path.join(ROOT, script), ...a], { encoding: "utf8", env: env(e), cwd: ROOT, maxBuffer: 1 << 26 });
 
 console.log("== 1. OFF: no default export carries a strike marker");
+const planSource = fs.readFileSync(path.join(ROOT, "src/components/ss/SsPlans.tsx"), "utf8");
+check(!/STRIKE_PREVIEW|NODE_ENV/.test(planSource), "the pricing renderer has no environment-specific preview opt-in");
 for (const root of CLEAN) {
   const hits = htmlOf(root).map((f) => [path.relative(root, f), strikeMarkup(fs.readFileSync(f, "utf8"))]).filter(([, m]) => m.length);
   check(hits.length === 0, `${path.basename(root)}: none of ${htmlOf(root).length} HTML files carries a strike marker${hits.length ? " -> " + hits[0][0] + ": " + hits[0][1].join(", ") : ""}`);
