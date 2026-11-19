@@ -54,21 +54,26 @@ Run against exports of the final head (`NEXT_PUBLIC_AICC_SELFSERVICE=on` with th
 | command | result |
 |---|---|
 | `test:selfservice` | 230 / 230 |
-| `test:ss-guards` (mutations of the copy guards, four languages) | 287 / 287 |
-| `test:pricing-sources` | pass |
-| `test:journey-browser` (full matrix) | 409 / 409 |
+| `test:ss-guards` (mutations of the copy guards, four languages) | 299 / 299 |
+| `test:pricing-sources` | 32 / 32 |
+| `test:journey-browser` (full matrix) | 485 / 485 |
 | `test:selfservice-browser` | 536 / 536 |
-| `test:pricing-browser` J (planned price and strike matrix, languages x 320..1920 x 100 / 200 % text) and H (geometry), full | 560 / 560 and 1800 / 1800 |
-| `test:pricing-browser` other sections, quick | 436 / 436 |
+| `test:pricing-browser` H, H2, J, P (geometry, planned price and strike matrix incl. non-open / open / flips / browser clock / layout shift, status line; languages x 320..1920 x 100 / 200 % text), full | 2880 / 2880 |
+| `test:pricing-browser` other sections, quick | 443 / 443 |
 | `test:pricing-consistency` and its mutations | 298 / 298 and 57 / 57 |
-| `test:launch-offer` and its mutations | 3460 / 3460 and 100 / 100 |
-| `test:strike-gate` | 71 / 71 |
+| `test:launch-offer` (default builds + self-service builds, base = identity baseline) and its mutations | 3460 / 3460 and 100 / 100 |
+| `test:strike-gate` | 79 / 79 |
 | `test:visual-regression` (baselines regenerated and reviewed) | 88 / 88 |
-| `test:launch-offer-browser`, `test:early-access` (default builds) | pass |
+| `test:launch-offer-browser` | 525 / 525 |
+| `test:early-access` (default builds) | 828 / 828 |
 | `test:link-resolution` (self-service: journey links and page; default builds: none) | pass |
-| `test:public-truth` (all builds, plus self-test) | pass |
-| `ea:check` (and `--out` of the self-service builds) | pass |
+| `test:public-truth` (all eight builds, plus self-test 166 / 166) | pass |
+| `ea:check` (and `--out` of the self-service builds and the strike build) | pass |
+| `test:wording-parity` (without `--require-ss`), `brand:check`, `test:brand-collisions`, `copy:check` | pass |
+| `test:wording-parity --require-ss` | FAILS by design until the Control Plane mirrors the 60 self-service strings |
 | `test:redirects` with the export | 2 failures, both present on P40 (demo assets, security.txt) |
+
+Review round failing-first (logs in `failing-first/`): `r2-test-pricing-browser-J-on-KIT4.log` (64 failures: strike while not open, pill and wording, label and disclosure) and `r2-test-journey-browser-on-KIT4.log` (37 failures: terms card, aside label, sticky, path chip, 320 px) run against the previous head; `r3-ru-320-step-title-hyphenated.log` (Russian 320 px step title broken mid-word by the global heading rule); `r3-visual-regression-before-baseline-update.log` (16 baselines moved by the intended changes); `r3-export-identity-off-truncate-from-infra-scan.log`.
 
 Failing-first: `failing-first/` holds the new tests run against the P40 base (`1693122`): `test:selfservice`, `test:pricing-sources` fail on the missing helpers, `test:journey-browser` reports 31 failures on the missing page, `test:pricing-browser` D / J report the inert pill and the missing status line.
 
@@ -76,9 +81,9 @@ Failing-first: `failing-first/` holds the new tests run against the P40 base (`1
 
 ## 6. Export identity
 
-OFF, announce, open and verify builds (self-service unset) are byte-identical to an export of the kit commits built from the same checkout path (`node scripts/export-hash.mjs`, 0 differing files; recorded in the evidence). The self-service builds differ by design in: every page (header "Get started" target), Home and Pricing (cards, status line, planned price), the Product page (hero "Get started", bands), the closing bands, the plan finder, the sitemap (+4 entries) and the new `/get-started/` pages (+4 pages and their payload files); the legal pages, Questions and Data and Trust differ only in the header link and the stylesheet name. The stylesheet differs in every build by the kit commits (KIT 1 and KIT 2), nothing else.
+OFF, announce, open and verify builds (self-service unset) are byte-identical to an export of the P40 base (`1693122`) plus the four kit commits (`git checkout be46f4e -- brand`), built from the SAME checkout path (a temporary `git worktree`: module ids depend on the path) (`node scripts/export-hash.mjs`, 0 differing files at the final head; logs `export-hash5-*.log` in the evidence). The self-service builds differ by design in: every page (header "Get started" target), Home and Pricing (cards, status line, planned price), the Product page (hero "Get started", bands), the closing bands, the plan finder, the sitemap (+4 entries) and the new `/get-started/` pages (+4 pages and their payload files); the legal pages, Questions and Data and Trust differ only in the header link and the stylesheet name. The stylesheet differs in every build by the kit commits (KIT 1 to KIT 4), nothing else.
 
-Traps: Tailwind scans `scripts/` and `docs/`: a new file whose text contains a utility-looking token creates CSS in EVERY build and breaks identity (found: the bare word for the strikethrough utility in a test script; written differently now). Re-run `export-hash.mjs` after adding files.
+Traps: Tailwind scans `scripts/` and `docs/`: a new file whose text contains a utility-looking token creates CSS in EVERY build and breaks identity (found: the bare word for the strikethrough utility in a test script; written differently now). Re-run `export-hash.mjs` after adding files. Found in the review round: the merged release tooling (`infra/release/lib/verify_published.py`, `infra/stack-tests/lib/mock_cp.py`, `infra/stack-tests/test_verify_published.sh`) contains the word of a Tailwind text-overflow utility as a fault-mode name, which emitted that rule into every default build (187 differing files, only the stylesheet content differs). `src/app/globals.css` now excludes exactly those three files with `@source not`; the rest of `infra/` stays scanned on purpose (excluding all of it also dropped four rules the P40 base has, i.e. it would have broken identity the other way). Failing-first log: `failing-first/r3-export-identity-off-truncate-from-infra-scan.log`.
 
 ## 6b. Review round (items 1 to 7 of the review brief)
 
@@ -110,6 +115,6 @@ Every string below was added or changed in P41 in all of he, es, ru and is a mac
 * The language-suggestion bar on the journey page offers the Home page of the other language, not the same page.
 * `scripts/lib/redirect-matrix.mjs`: `/get-started/` moves from UNOWNED to Site-owned (static); `alias_install` stays DISABLED (enabling it is an edge change).
 * Pre-existing, unchanged: `test:interaction` 2 hero failures, shopper-demo baseline drift 10, `test:redirects` 2 failures when run against an export without the demo assets / with `.well-known/security.txt`.
-* Review round: the merged release-tools docs (`docs/cutover/p38-brevo-host-update.md` twice, `docs/cutover/p41-activation-runbook.md` once) said "Free plan" / "Free Trial", which `copy:check` bans in this repo; three lines were reworded ("the account's daily allowance", "the launch trial") in `681bac0`. Meaning unchanged; the owner of those docs may want to mirror the wording.
+* Review round: the merged release-tools docs (`docs/cutover/p38-brevo-host-update.md` twice, `docs/cutover/p41-activation-runbook.md` once) used the two banned free-tier / trial-capitalised phrasings that `copy:check` rejects in this repo; three lines were reworded ("the account's daily allowance", "the launch trial") in `681bac0`. Meaning unchanged; the owner of those docs may want to mirror the wording.
 * Review round: the strike's static HTML now carries BOTH the strike and the default planned block (hidden by CSS until `<html data-ss-open>`); a strike build is therefore slightly larger and its HTML always contains the default block. Intended: it is what keeps the gates meaningful and the no-JavaScript view honest.
 * Review round: the DOM order of the journey aside (status panel first, in the right column on a wide screen) is documented, not changed (`docs/design/p41-journey.md` 7.1).
