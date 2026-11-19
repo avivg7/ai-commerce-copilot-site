@@ -4,3 +4,7 @@
 @import "../../brand/aicc-tokens.css";
 @import "../../brand/aicc-brand.css";
 @import "../styles/aicc.css";
+/* Tailwind scans the whole repository. A word of the merged post-publication verifier and its mock (a fault mode named like the text-overflow utility) made it emit that utility class into every build. These three files are not site markup, so they are excluded; the rest of infra/ was scanned before and stays as it was, which keeps the default exports identical to the P40 base */
+@source not "../../infra/release/lib/verify_published.py";
+@source not "../../infra/stack-tests/lib/mock_cp.py";
+@source not "../../infra/stack-tests/test_verify_published.sh";
