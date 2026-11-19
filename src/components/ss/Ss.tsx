@@ -25,6 +25,9 @@ const A = (locale: Locale, path: string) => { const { lang, dir } = txProps(loca
 export const SS_CSS = [
   // the band's wrapper (kit resets apply) keeps the dark band's own text colour
   ".aicc-pricing.aicc-pricing--band{color:inherit}",
+  // P41 review: the struck price (strike build only) shows ONLY while the status is open: the strike block and its disclosure are hidden until the header island sets <html data-ss-open>; the default planned block (in a strike build marked data-ss-when-not-open) hides then
+  "html:not([data-ss-open]) .aicc-pricing [data-ss-when-open]{display:none}",
+  "html[data-ss-open] .aicc-pricing [data-ss-when-not-open]{display:none}",
   // the two card sets: live (FREE + trial) while registration can start, closed / ordinary (the price leads, no FREE, no trial line) once it cannot (html[data-ss-closed]) and after the trial end (html[data-ea-over]); the launch panel is not shown when closed
   "html:not([data-ss-closed]):not([data-ea-over]) .aicc-pricing [data-ss-set=\"closed\"]{display:none}",
   "html[data-ss-closed] .aicc-pricing [data-ss-set=\"live\"],html[data-ss-closed] .aicc-pricing .aicc-launch,html[data-ss-closed] .aicc-pricing .aicc-pstate{display:none}",

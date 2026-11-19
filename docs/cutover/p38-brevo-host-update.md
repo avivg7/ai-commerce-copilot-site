@@ -2,7 +2,7 @@
 
 Written 2026-11-14 (UTC). **Nothing in this file has been run against a host.** It describes the behaviour of `infra/provision/render-wp-config.sh`, `infra/provision/lib/owner_facts.py`, the P38 region of `infra/provision/wp-config.production.template.php`, `infra/provision/set-brevo-key.sh` (Mac) and `infra/provision/host/aicc-set-brevo-key` (host), proved by `infra/stack-tests/test_p38_brevo.sh` and `test_p38_key.sh` (scratch directories and a fake host only: no network, no real key, no server).
 
-Facts the owner confirmed: Brevo Free plan (300 e-mails a day), authenticated domain `copilt.org`, branded tracking subdomain `mail.copilt.org`, verified sender `AI Commerce Copilot <notifications@copilt.org>`, Reply-To `support@copilt.org`, a restricted API key (Transactional Email only). Production wp-config today: `WP_HTTP_BLOCK_EXTERNAL=true`, `WP_ACCESSIBLE_HOSTS='api.copilt.org'`, no `AICC_MAIL_*` constants, `/etc/aicc-mail/` empty (`root:aicc-cp 0750`), WP-Cron driven by the systemd timer.
+Facts the owner confirmed: the Brevo account's allowance of 300 e-mails a day, authenticated domain `copilt.org`, branded tracking subdomain `mail.copilt.org`, verified sender `AI Commerce Copilot <notifications@copilt.org>`, Reply-To `support@copilt.org`, a restricted API key (Transactional Email only). Production wp-config today: `WP_HTTP_BLOCK_EXTERNAL=true`, `WP_ACCESSIBLE_HOSTS='api.copilt.org'`, no `AICC_MAIL_*` constants, `/etc/aicc-mail/` empty (`root:aicc-cp 0750`), WP-Cron driven by the systemd timer.
 
 ## 1. What this is, in six lines
 
@@ -47,7 +47,7 @@ Facts live in `/etc/aicc/owner-facts.env` (root, 0600), set with `sudo aicc-owne
 | `AICC_MAIL_DAILY_BUDGET` | integer 1 to 300 | at most `AICC_MAIL_MAX_PER_DAY` when that is set; with a day cap below 240 the budget must be set explicitly |
 | `AICC_MAIL_TEST_RECIPIENTS` | 1 to 5 exact addresses, comma separated | personal data: `aicc-owner-facts list` shows `o***@gmail.com`; the facts file (root, 0600) and the rendered config (`root:aicc-cp 0640`) hold the real value; `export` is the explicit full copy; refusal messages never echo it. Set it with `sudo aicc-owner-facts set-stdin AICC_MAIL_TEST_RECIPIENTS` (value on stdin: in no command line, no `ps`, no sudo log) |
 | `AICC_MAIL_STATUS_POLL_ENABLED` | exactly `true` | refused at render without the provider fact |
-| `AICC_MAIL_MAX_PER_HOUR` / `_PER_DAY` (existing) | whole numbers | with `brevo_api` both at most 300 (the Free plan's day), hour at most day |
+| `AICC_MAIL_MAX_PER_HOUR` / `_PER_DAY` (existing) | whole numbers | with `brevo_api` both at most 300 (the account's daily allowance), hour at most day |
 
 **Which transport the render uses** (one function, `owner_facts.mail_mode`, shared by the preflight check, the renderer and the dry run):
 

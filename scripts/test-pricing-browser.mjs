@@ -551,14 +551,16 @@ if (run("L")) {
 // ───────────────────────────────────────────────────────────── J. the planned price above FREE: the compliant default and the counsel-gated strike
 if (run("J")) {
   console.log("== J. the planned annual price sits DIRECTLY above FREE: the compliant default (large muted price + pill + chevron, NOT struck) in every default build; the strike variant only in its own build (matrix: languages x 320..1920 x 100 / 200 % text)");
-  const BAD = { en: /\b(was|previously|originally|formerly|worth|normally|usually|savings?|saves?|discount(ed)?|reduced)\b|original price|(?<!planned )regular (annual )?price/i, he: /מחיר מקורי|מחיר קודם|היה |חיסכון|בדרך כלל|(?<!מתוכנן )מחיר רגיל(?! מתוכנן)/, es: /\b(antes|anteriormente|originalmente|ahorr[aeo]\w*|normalmente|habitualmente|descuento)\b|precio original|(?<!previsto )\bprecio (anual )?regular\b(?! previsto)/i, ru: /(?<![а-яё])(было|раньше|ранее|эконом[а-яё]*|обычно|скидк[а-яё]*)(?![а-яё])|(первоначальн|исходн)[а-яё]+ цен[а-яё]+|(?<![а-яё])(?<!планируемая )обычная (годовая )?цена/i };
+  const BAD = { en: /\b(was|previously|originally|formerly|worth|normally|usually|savings?|saves?|discount(ed)?|reduced)\b|original price|(?<!planned )regular (annual )?price/i, he: /מחיר מקורי|מחיר קודם|היה |חיסכון|בדרך כלל|רגיל/, es: /\b(antes|anteriormente|originalmente|ahorr[aeo]\w*|normalmente|habitualmente|descuento)\b|precio original|\bregular(es)?\b|ordinari[oa]s?|habitual(es)?/i, ru: /(?<![а-яё])(было|раньше|ранее|эконом[а-яё]*|обычно|скидк[а-яё]*)(?![а-яё])|(первоначальн|исходн)[а-яё]+ цен[а-яё]+|(?<![а-яё])(обычн|привычн)[а-яё]*/i };
   const rgb = (c) => (c.match(/[\d.]+/g) || []).slice(0, 3).map(Number);
   const lum = ([r, g, b]) => { const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }; return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b); };
   const ratio = (a, b) => { const x = lum(a), y = lum(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); };
+  // a section capture for the evidence: the page coordinates from x = 0 (an element screenshot of a section narrower than the viewport at 200% text was cut at its own left edge, 224 px wide)
+  const shotSection = async (page, sel, file) => { const b = await page.locator(sel).first().evaluate((e) => { const r = e.getBoundingClientRect(); return { x: r.left + scrollX, y: r.top + scrollY, w: r.width, h: r.height, vw: innerWidth }; }); await page.screenshot({ path: file, fullPage: true, clip: { x: 0, y: b.y, width: Math.max(b.vw, b.x + b.w), height: b.h } }); };
   const offerProbe = (page) => page.evaluate(() => {
     const vis = (e) => e.getClientRects().length > 0, out = [];
     for (const t of [...document.querySelectorAll("article.aicc-tier:not(.aicc-tier--standard)")].filter(vis)) {
-      const o = t.querySelector(".aicc-tier__offer"), price = o.querySelector(".aicc-tier__offer-price"), s = price.querySelector("s"), label = o.querySelector(".aicc-tier__offer-label"), pill = o.querySelector(".aicc-tier__offer-pill"), free = t.querySelector(".aicc-tier__free-word"), note = t.querySelector(".aicc-tier__offer-note"), amt = price.querySelector(".aicc-tier__amount");
+      const o = [...t.querySelectorAll(".aicc-tier__offer")].find(vis), price = o.querySelector(".aicc-tier__offer-price"), s = price.querySelector("s"), label = o.querySelector(".aicc-tier__offer-label"), pill = o.querySelector(".aicc-tier__offer-pill"), free = t.querySelector(".aicc-tier__free-word"), note = t.querySelector(".aicc-tier__offer-note"), amt = price.querySelector(".aicc-tier__amount");
       const q = (e) => e && e.getBoundingClientRect(), cs = (e) => e && getComputedStyle(e), rg = document.createRange(); rg.selectNodeContents(s || price);
       let bg = (() => { let n = price; while (n) { const c = getComputedStyle(n).backgroundColor; if (c && c !== "rgba(0, 0, 0, 0)" && c !== "transparent") return c; n = n.parentElement; } return "rgb(255, 255, 255)"; })();
       out.push({ plan: t.getAttribute("data-plan"), variant: o.getAttribute("data-ss-price"), inLaunch: !!o.closest(".aicc-tier__launch"), sCount: o.querySelectorAll("s").length, price: price.innerText.replace(/\s+/g, " ").trim(), amount: amt.innerText.trim(), sText: s ? s.innerText.replace(/\s+/g, " ").trim() : null, sr: price.querySelector(".aicc-sr-only") ? price.querySelector(".aicc-sr-only").textContent.trim() : null, label: label.innerText.trim(), pill: pill ? pill.innerText.trim() : null, note: note ? note.innerText.trim() : null, noteInCard: note ? t.contains(note) : null,
@@ -602,13 +604,13 @@ if (run("J")) {
     await page.addStyleTag({ content: "*{line-height:1.5 !important;letter-spacing:0.12em !important;word-spacing:0.16em !important}p{margin-block-end:2em !important}" }); await page.waitForTimeout(150);
     const rs = await offerProbe(page);
     check(rs.every((x) => x.priceLines === 1 && x.priceOver <= 1 && x.inBox), `default ${l} @${w}px ${scale * 100}% + WCAG 1.4.12 text spacing: the planned price stays ONE line and inside its card (lines ${rs.map((x) => x.priceLines)}, overflow ${rs.map((x) => x.priceOver)}px)`);
-    if (w === 320 || w === 1440) await page.locator(".aicc-pricing").first().screenshot({ path: path.join(SHOTS, `planned-${l}-${w}-${scale * 100}.png`) });
+    if (w === 320 || w === 1440) await shotSection(page, ".aicc-pricing", path.join(SHOTS, `planned-${l}-${w}-${scale * 100}.png`));
     await ctx.close();
   }
   if (mocks.strike) {
     for (const l of LOCALES) for (const w of QUICK ? [320, 390, 1440] : [320, 375, 390, 430, 768, 1024, 1440, 1920]) for (const scale of QUICK && w > 390 ? [1] : [1, 2]) {
       if (QUICK && l === "es") continue;
-      const { ctx, page } = await view("strike", `${pre(l)}/pricing/`, w, { locale: l, signup: "off", h: 1000, scale, media: { reducedMotion: "reduce" } });
+      const { ctx, page } = await view("strike", `${pre(l)}/pricing/`, w, { locale: l, signup: "open", h: 1000, scale, media: { reducedMotion: "reduce" } }); // P41 review: the strike shows ONLY while the status is open
       const r = await offerProbe(page), tag = `strike ${l} @${w}px ${scale * 100}%`, P = L(l).pricing;
       check(r.length === 3 && r.every((x, k) => x.variant === "strike" && x.inLaunch && x.sCount === 1 && x.sText.startsWith(formatPrice(PLANS[k].price, l)) && x.sText.includes(P.perShort) && x.label === P.strikeLabel && x.sr === P.strikeSr && x.note === P.strikeNote && x.noteInCard && x.pill === null), `${tag}: three struck planned prices in the launch zone, each ONE <s> holding the amount and its unit, the label "${P.strikeLabel.slice(0, 50)}..." directly under it, the screen-reader text, and the disclosure in the SAME card`);
       check(r.every((x) => x.deco.includes("through") && x.decoStyle === "solid" && x.decoThick >= 3 && ratio(rgb(x.decoColor), rgb(x.bg)) >= 3 && ratio(rgb(x.color), rgb(x.bg)) >= 4.5 && Number(x.opacity) === 1 && x.weight >= 700), `${tag}: actually struck: strikethrough, solid, line >= 3px (${r.map((x) => x.decoThick.toFixed(1))}), line colour contrast >= 3:1 (${r.map((x) => ratio(rgb(x.decoColor), rgb(x.bg)).toFixed(1))}), text contrast >= 4.5:1, weight >= 700, full opacity`);
@@ -619,13 +621,46 @@ if (run("J")) {
       check(r.every((x) => !BADTEXT(l, x.cardText)), `${tag}: no was / previously / original / save / worth / normally / "regular price" alone in any card${r.map((x) => BADTEXT(l, x.cardText)).find(Boolean) ? " -> " + r.map((x) => BADTEXT(l, x.cardText)).find(Boolean) : ""}`);
       if ((scale === 1 && [320, 390, 1440].includes(w)) || (scale === 2 && w === 320)) {
         for (const pl of ["solo", "studio", "agency"]) { const px = await linePixels(page, pl); check(px.covered >= (scale > 1.5 ? 0.7 : 0.97) && px.rows >= 3, `${tag} ${pl}: the strike line runs across the whole amount and unit (${Math.round(px.covered * 100)}% of the ${px.w}px text width carries line pixels, ${px.rows} rows thick)${l === "he" ? " (right-to-left, price isolated by <bdi>)" : ""}`); }
-        await page.locator(".aicc-pricing").first().screenshot({ path: path.join(SHOTS, `strike-${l}-${w}-${scale * 100}.png`) });
+        await shotSection(page, ".aicc-pricing", path.join(SHOTS, `strike-${l}-${w}-${scale * 100}.png`));
       }
       { // WCAG 1.4.12 text spacing on the strike block (every cell of the matrix): the price stays ONE line and the block does not overflow, clip or leave its card
         await page.addStyleTag({ content: "*{line-height:1.5 !important;letter-spacing:0.12em !important;word-spacing:0.16em !important}p{margin-block-end:2em !important}" }); await page.waitForTimeout(150);
         const r2 = await offerProbe(page);
         check(r2.every((x) => x.inBox && !x.clipped && x.tierOver <= 1 && x.priceLines === 1 && x.priceOver <= 1), `${tag} + text spacing: the struck price stays ONE line and the strike block does not overflow, clip or leave its card (lines ${r2.map((x) => x.priceLines)}, overflow ${r2.map((x) => x.priceOver)}px)`);
       }
+      await ctx.close();
+    }
+    // P41 review (compliance): the struck price renders ONLY while the status state is OPEN (FREE is obtainable). Off / paused / waitlist / a failed answer (static) / closed never show a struck element, its label or its disclosure: the default design shows
+    for (const l of QUICK ? ["en", "he", "ru"] : LOCALES) for (const state of ["off", "paused", "waitlist", "http500", "closed_cutoff", "open"]) {
+      const { ctx, page } = await view("strike", `${pre(l)}/pricing/`, 1440, { locale: l, signup: state, media: { reducedMotion: "reduce" } });
+      const v = await page.evaluate(() => { const vis = (e) => e.getClientRects().length > 0 && getComputedStyle(e).visibility !== "hidden"; return { s: [...document.querySelectorAll("main s")].filter(vis).length, sInDom: document.querySelectorAll("main s").length, labels: [...document.querySelectorAll(".aicc-tier__offer--strike, .aicc-tier__offer-note[data-ss-when-open]")].filter(vis).length, planned: [...document.querySelectorAll(".aicc-tier__offer--planned")].filter(vis).length, pills: [...document.querySelectorAll(".aicc-tier__offer-pill")].filter(vis).length, attr: document.documentElement.hasAttribute("data-ss-open"), sr: [...document.querySelectorAll(".aicc-tier__offer--strike .aicc-sr-only")].filter(vis).length, text: document.querySelector("main").innerText }; });
+      const open = state === "open", P = L(l).pricing;
+      check(open ? v.s === 3 && v.labels === 6 && v.planned === 0 && v.attr : v.s === 0 && v.labels === 0 && v.sr === 0 && v.attr === false && (state === "closed_cutoff" || (v.planned === 3 && v.pills === 3)), `strike build ${l} (${state}): ${open ? "three struck prices with their labels and disclosures, the default planned block hidden" : "NO struck element, label or disclosure is visible; the default planned design (unstruck price + pill) shows"} [s ${v.s}, strike blocks/notes ${v.labels}, planned ${v.planned}]`);
+      check(v.sInDom === 3 && (open || !v.text.includes(P.strikeNote.slice(0, 30))), `strike build ${l} (${state}): the static markup still carries the strike (so the release gates see it) but the visible text ${open ? "has" : "never has"} the disclosure`);
+      await ctx.close();
+    }
+    // flips both ways: off -> open -> waitlist -> open -> off, then the clock at the cutoff (closed view hides every live card): the strike follows the state with no layout shift above 0.1
+    for (const l of QUICK ? ["en"] : LOCALES) {
+      const CLS = () => { window.__cls = 0; new PerformanceObserver((list) => { for (const e of list.getEntries()) if (!e.hadRecentInput) window.__cls += e.value; }).observe({ type: "layout-shift", buffered: true }); };
+      const { ctx, page, m } = await view("strike", `${pre(l)}/pricing/`, 1440, { locale: l, signup: "off", delay: 600, h: 2600, init: CLS, media: { reducedMotion: "reduce" } });
+      const sv = () => page.evaluate(() => [...document.querySelectorAll("main s")].filter((e) => e.getClientRects().length > 0).length);
+      const wake = async () => { await page.evaluate(() => { window.__skew += 40000; window.dispatchEvent(new Event("focus")); }); await page.waitForTimeout(900); };
+      check((await sv()) === 0, `strike build ${l}: before the status answer (static state) NO struck price is visible (no flash of strike)`);
+      m.set({ signup: "open" }); await page.waitForTimeout(1500); await wake();
+      check((await sv()) === 3, `strike build ${l}: off -> open: the three struck prices appear without a reload`);
+      const cls1 = await page.evaluate(() => window.__cls);
+      m.set({ signup: "waitlist" }); await wake();
+      check((await sv()) === 0, `strike build ${l}: open -> waitlist: the strike goes (default design)`);
+      m.set({ signup: "open" }); await wake();
+      check((await sv()) === 3, `strike build ${l}: waitlist -> open: the strike returns`);
+      m.set({ signup: "paused" }); await wake();
+      check((await sv()) === 0, `strike build ${l}: open -> paused: the strike goes`);
+      m.set({ signup: "open" }); await wake();
+      await page.evaluate((c) => { window.__skew = c - Date.now() + window.__skew + 1500; document.dispatchEvent(new Event("visibilitychange")); }, CUT);
+      await page.waitForTimeout(700);
+      check((await sv()) === 0 && await page.evaluate(() => document.documentElement.hasAttribute("data-ss-closed") && !document.documentElement.hasAttribute("data-ss-open")), `strike build ${l}: open, then the clock reaches 2026-12-24T00:00:00Z on the same page: no struck price is visible (closed view)`);
+      const cls = await page.evaluate(() => window.__cls);
+      check(cls < 0.1 && cls1 < 0.1, `strike build ${l}: layout shift of the flips stays below 0.1 (off -> open ${cls1.toFixed(4)}, whole sequence ${cls.toFixed(4)})`);
       await ctx.close();
     }
     // the strike and its label vanish when registration closes (the live set is hidden: nothing struck is visible in the closed view or after the end)

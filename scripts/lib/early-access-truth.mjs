@@ -91,7 +91,7 @@ export const SS_REG_PATHS = ["ss.plan.regValue"];
  * P40: the two labelled lines of the launch timeline (plan.regValue, plan.endValue) and the one note that names the last day to start a trial (launch.regNote, {regLast}); the retired long forms
  * (terms.regValue {regDate} {regLast}, terms.endValue {lastDay}) carried the same facts in a second place, which is exactly what the redesign removed (dates once per page).
  */
-export const SS_DATE_PATHS = { "plan.regValue": ["regShort"], "plan.endValue": ["until"], "launch.regNote": ["regLast"] };
+export const SS_DATE_PATHS = { "plan.regValue": ["regShort"], "plan.endValue": ["until"], "launch.regNote": ["regLast"], "pricing.strikeNote": ["until"] }; // P41: the strike disclosure (strike variant only) carries the offer end ADJACENT to the claim (memo variant B)
 /** The ONLY strings that may make the "no automatic conversion to a paid plan" claim (P40: the launch panel fact replaces the card check and the terms line; the hero support line is unchanged). */
 export const SS_NOAUTO_PATHS = ["launch.fact.noAuto", "hero.support.noAuto"];
 export const SS_PAID_STORES = [1, 3, 10]; // the Backend allowance table: AICC_LM_Early_Access::PLAN_SEATS (trial: 1)
@@ -194,7 +194,7 @@ export function ssDisclosureProblems(locale, ea, step = 0, raw = null) {
   if (!/isn't|is not|not open|לא נפתחה|aún no|no está abierto|ещё не|не открыта/i.test(nb(at("state.line.soon")))) problems.push(`${locale}: ea.ss.state.line.soon states that registration is NOT open yet (it must say so in words; it promises no date and does not invite)`);
   // P40: the regular price label says it is the PLANNED regular price (a fact, not a reduction) and the strike variant's label only "regular price"; neither carries a number, a discount word or a percentage (the EA rules ban those words block-wide; this pins the pair)
   if (at("pricing.priceLabel") === at("pricing.strikeLabel")) problems.push(`${locale}: ea.ss.pricing.priceLabel and strikeLabel must differ (the plain label says it is the planned regular price)`);
-  for (const k of ["pricing.priceLabel", "pricing.strikeLabel", "pricing.strikeNote", "pricing.strikeSr", "pricing.afterOffer", "pricing.perShort"]) if (/\d|%/.test(at(k))) problems.push(`${locale}: ea.ss.${k} carries no number or percentage (the amount comes from plans.ts)`);
+  for (const k of ["pricing.priceLabel", "pricing.strikeLabel", "pricing.strikeSr", "pricing.afterOffer", "pricing.perShort"]) if (/\d|%/.test(at(k))) problems.push(`${locale}: ea.ss.${k} carries no number or percentage (the amount comes from plans.ts)`);
   // P41 (compliance memo s.4 / s.7): the strike label says PLANNED, REGULAR, ANNUAL and AFTER the launch offer and that it is not a current or past price; the disclosure says nothing has been charged and that nothing is charged automatically; the screen-reader text says planned and not charged
   { const W2 = SS_STRIKE_WORDS[locale]; for (const [k, re] of [["pricing.strikeLabel", W2.label], ["pricing.strikeNote", W2.note], ["pricing.strikeSr", W2.sr], ["pricing.afterOffer", W2.after]]) if (!re.test(nb(at(k)))) problems.push(`${locale}: ea.ss.${k} must carry its memo wording (${re})`); }
   for (const [p, v] of [...walk(ss, "", []), ...walkRoot(ea?.journey, "journey")]) { const w = priceWordProblems(locale, nb(v)); if (w) problems.push(`${locale}: ea.${p.startsWith("journey") ? p : "ss." + p} ${w}`); }
@@ -415,10 +415,10 @@ export const EA_EXEMPT_LINE = /^\s*(guarantee|auto|plugin):\s*\{/;
 export const SS_AUTO_OK_PATHS = ["pricing.strikeNote"];
 /** The memo's wording of the planned-price copy (compliance memo s.4), per language: what each string must carry. */
 export const SS_STRIKE_WORDS = {
-  en: { label: /planned regular annual price after the launch offer, not a current or past price/i, note: /nothing has been charged at this price yet.*no payment method needed.*nothing is charged automatically/i, sr: /planned price after the launch offer, not currently charged/i, after: /starts after the launch offer/i },
-  he: { label: /מתוכנן לאחר הצעת ההשקה, לא מחיר נוכחי או קודם/, note: /עדיין לא חויב אף אחד.*אין צורך באמצעי תשלום.*לא מחויב אוטומטית/, sr: /מתוכנן לאחר הצעת ההשקה, לא מחויב כרגע/, after: /מתחיל אחרי הצעת ההשקה/ },
-  es: { label: /previsto después de la oferta de lanzamiento, no un precio actual ni pasado/i, note: /todavía no se ha cobrado nada.*no hace falta método de pago.*no se cobra nada automáticamente/i, sr: /previsto después de la oferta de lanzamiento, no se cobra actualmente/i, after: /empieza después de la oferta de lanzamiento/i },
-  ru: { label: /планируемая обычная годовая цена после предложения в честь запуска, не текущая и не прежняя цена/i, note: /пока ничего не списывалось.*способ оплаты не нужен.*автоматически ничего не списывается/i, sr: /планируемая цена после предложения в честь запуска, сейчас не взимается/i, after: /начинается после предложения в честь запуска/i },
+  en: { label: /planned regular annual price after the launch offer, not a current or past price/i, note: /nothing has been charged at this price yet.*trial access ends.*no payment method needed.*nothing is charged automatically/i, sr: /planned price after the launch offer, not currently charged/i, after: /planned to start after the launch offer/i },
+  he: { label: /מחיר שנתי מתוכנן לאחר הצעת ההשקה, לא מחיר נוכחי או קודם/, note: /עדיין לא חויב אף אחד.*הגישה לניסיון מסתיימת.*אין צורך באמצעי תשלום.*לא מחויב אוטומטית/, sr: /מתוכנן לאחר הצעת ההשקה, לא מחויב כרגע/, after: /מתוכנן להתחיל אחרי הצעת ההשקה/ },
+  es: { label: /precio anual previsto después de la oferta de lanzamiento, no un precio actual ni pasado/i, note: /todavía no se ha cobrado nada.*el acceso de prueba termina.*no hace falta método de pago.*no se cobra nada automáticamente/i, sr: /previsto después de la oferta de lanzamiento, no se cobra actualmente/i, after: /previsto para empezar después de la oferta de lanzamiento/i },
+  ru: { label: /планируемая годовая цена после предложения в честь запуска, не текущая и не прежняя цена/i, note: /пока ничего не списывалось.*пробный доступ заканчивается.*способ оплаты не нужен.*автоматически ничего не списывается/i, sr: /планируемая цена после предложения в честь запуска, сейчас не взимается/i, after: /планируется начать после предложения в честь запуска/i },
 };
 /**
  * The forbidden price words of the compliance memo (s.4 "Avoid"), in all four languages: was / previously / original / save / worth / normally / "regular price" ALONE (a "regular price" must be the PLANNED regular price) and the Hebrew "מחיר מקורי" /
@@ -428,9 +428,9 @@ export function priceWordProblems(locale, text) {
   const t = String(text), bad = [];
   const rules = {
     en: [[/\b(was|previously|originally|formerly|worth|normally|usually|savings?|saves?|saving|discount(ed)?|reduced)\b/i, "price-advantage word"], [/\boriginal price\b/i, "original price"], [/(?<!planned )\bregular (annual )?prices?\b/i, "regular price without \"planned\""]],
-    he: [[/מחיר מקורי|מחיר קודם|היה |במקום |חיסכון|שווה |בדרך כלל/, "price-advantage word"], [/(?<!מתוכנן )מחיר רגיל(?! מתוכנן)/, "מחיר רגיל without מתוכנן"]],
-    es: [[/\b(antes|anteriormente|originalmente|ahorr[aeo]\w*|vale|normalmente|habitualmente|descuento|rebaj\w+)\b/i, "price-advantage word"], [/precio original/i, "original price"], [/(?<!previsto )\bprecio (anual )?regular\b(?! previsto)/i, "regular price without previsto"]],
-    ru: [[/(?<![а-яё])(было|раньше|ранее|эконом[а-яё]*|стоит|обычно|скидк[а-яё]*)(?![а-яё])/i, "price-advantage word"], [/(?<![а-яё])(первоначальн|исходн)[а-яё]+ цен[а-яё]+/i, "original price"], [/(?<![а-яё])(?<!планируемая )обычная (годовая )?цена(?![а-яё])/i, "regular price without планируемая"]],
+    he: [[/מחיר מקורי|מחיר קודם|היה |במקום |חיסכון|שווה |בדרך כלל/, "price-advantage word"], [/רגיל|מקורי/, "regular / original wording (use the planned annual price after the launch offer)"]],
+    es: [[/\b(antes|anteriormente|originalmente|ahorr[aeo]\w*|vale|normalmente|habitualmente|descuento|rebaj\w+)\b/i, "price-advantage word"], [/precio original/i, "original price"], [/\bregular(es)?\b|ordinari[oa]s?|habitual(es)?/i, "regular / ordinary wording (use the planned annual price after the launch offer)"]],
+    ru: [[/(?<![а-яё])(было|раньше|ранее|эконом[а-яё]*|стоит|обычно|скидк[а-яё]*)(?![а-яё])/i, "price-advantage word"], [/(?<![а-яё])(первоначальн|исходн)[а-яё]+ цен[а-яё]+/i, "original price"], [/(?<![а-яё])(обычн|привычн|стандартн)[а-яё]*/i, "regular / usual wording (use the planned annual price after the launch offer)"]],
   }[locale] || [];
   for (const [re, why] of rules) { const m = t.match(re); if (m) bad.push(`${why} "${m[0]}"`); }
   return bad.length ? `uses forbidden price wording: ${bad.join("; ")}` : "";

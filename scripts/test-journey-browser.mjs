@@ -70,6 +70,8 @@ for (const cell of ["announce", "off", "link"]) for (const l of QUICK && cell !=
   const occurrences = (needle) => body.split(needle).length - 1;
   check(got.length === 2 && got[0] === dt[0] && got[1] === dt[1] && occurrences(S(l).plan.regValue.replace(/[ ⁦⁩]/g, " ").replace(/\s+/g, " ").replace(/\{regShort\}.*/, "")) <= 1 && !/Israel|ישראל/.test(r.text), `${cell} ${l}: the two UTC dates are on the page exactly twice-labelled ONCE each (${got.join(" | ")})`);
   check(r.chips.length === 3 && r.chips.every((c, i) => c.plan === PLANS[i].id), `${cell} ${l}: three plan chips in order Solo, Studio, Agency`);
+  const tn = await page.evaluate(() => ({ aside: document.querySelector("aside.aicc-jr__aside").getAttribute("aria-label"), end: (document.querySelector("[data-jr-end]") || { innerText: "" }).innerText.trim(), paid: (document.querySelector("[data-jr-paid]") || { innerText: "" }).innerText.trim(), inTerms: !!document.querySelector("[data-jr-terms] [data-jr-end]") && !!document.querySelector("[data-jr-terms] [data-jr-paid]") }));
+  check(tn.aside === j.asideLabel && tn.end === j.terms.end && tn.paid === ss.launch.foot.paid && tn.inTerms, `${cell} ${l}: the terms card says what happens at the end of the trial ("${j.terms.end.slice(0, 50)}...") and that paid plans are not open for purchase yet (ss.launch.foot.paid); the aside is labelled "${j.asideLabel}"`);
   await ctx.close();
 }
 for (const [cell, dir] of [["announce", dirs.announce]]) {
@@ -243,6 +245,31 @@ for (const l of LOCALES) { // WCAG 1.4.12 text spacing: no word breaks mid-word,
   await ctx.close();
 }
 for (const l of LOCALES) { const { ctx, page } = await view("announce", `${pre(l)}/get-started/`, 1440, { locale: l, signup: "off" }); await page.screenshot({ path: path.join(SHOTS, `journey-${l}-1440-viewport.png`) }); await ctx.close(); }
+
+// ───────── F. review fixes: the aside never cuts the trial end date off, the install path chip keeps its comma, phone step titles are not hyphenated, off-state captures
+console.log("== F. the sticky aside, the path chip, phone step titles, off-state captures (4 languages)");
+for (const l of LOCALES) for (const h of QUICK ? [800, 1200] : [700, 800, 900, 1080, 1200]) {
+  const { ctx, page } = await view("announce", `${pre(l)}/get-started/`, 1440, { locale: l, signup: "off", h });
+  const g = await page.evaluate(() => { const a = document.querySelector(".aicc-jr__aside"), cs = getComputedStyle(a), r = a.getBoundingClientRect(); return { pos: cs.position, top: parseFloat(cs.top) || 0, h: r.height, vh: innerHeight, endDate: !!document.querySelector("[data-ss-date=end]") }; });
+  const sticky = g.pos === "sticky";
+  check(sticky ? g.h + g.top <= g.vh : g.pos === "static", `${l} @1440x${h}: the aside (${Math.round(g.h)}px tall) is ${sticky ? "sticky only because it fits below the header (" + Math.round(g.h + g.top) + " <= " + g.vh + ")" : "not sticky in a viewport too short to show all of it"}: no line of it is cut off while scrolling`);
+  if (sticky) { await page.evaluate(() => window.scrollTo(0, 500)); await page.waitForTimeout(250); const b = await page.evaluate(() => { const e = document.querySelector("[data-ss-date=end]").getBoundingClientRect(); return { bottom: e.bottom, vh: innerHeight }; }); check(b.bottom <= b.vh, `${l} @1440x${h}: scrolled 500px, the "Trial access ends" date is still fully visible (${Math.round(b.bottom)} <= ${b.vh})`); }
+  await ctx.close();
+}
+for (const l of LOCALES) for (const w of [320, 360]) for (const scale of [1, 2]) {
+  const { ctx, page } = await view("announce", `${pre(l)}/get-started/`, w, { locale: l, signup: "off", h: 900, scale, media: { reducedMotion: "reduce" } });
+  const r = await page.evaluate(() => { const c = document.querySelector(".aicc-jr__path"), after = c.nextSibling, txt = after && after.nodeValue || ""; const m = /^\u2060?([,.;:])/.exec(txt); const rects = [...c.getClientRects()]; const last = rects[rects.length - 1]; let punct = null; if (m) { const rg = document.createRange(); rg.setStart(after, txt.indexOf(m[1])); rg.setEnd(after, txt.indexOf(m[1]) + 1); const q = rg.getBoundingClientRect(); punct = { top: q.top, bottom: q.bottom }; } return { hasPunct: !!m, joiner: txt.startsWith("\u2060"), last: last && { top: last.top, bottom: last.bottom }, punct, over: document.documentElement.scrollWidth - innerWidth, titleBroken: (() => { const bad = []; for (const el of document.querySelectorAll(".aicc-jr__step-title")) { const w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT); let n; while ((n = w.nextNode())) { const re = /[^\s\u00a0]+/g; let q; while ((q = re.exec(n.nodeValue))) { if (q[0].length < 5) continue; const rg = document.createRange(); rg.setStart(n, q.index); rg.setEnd(n, q.index + q[0].length); const tops = new Set([...rg.getClientRects()].filter((x) => x.width > 0).map((x) => Math.round(x.top / 3))); if (tops.size > 1) bad.push(q[0]); } } } return bad; })() }; });
+  check(!r.hasPunct || (r.joiner && r.last && r.punct && r.punct.top >= r.last.top - 2 && r.punct.bottom <= r.last.bottom + 2), `${l} @${w}px ${scale * 100}%: the punctuation after the path chip stays on the chip's last line (word joiner, no orphan line)`);
+  check(scale > 1.5 || r.titleBroken.length === 0, `${l} @${w}px ${scale * 100}%: no step title word is broken or hyphenated mid-word${r.titleBroken.length ? " -> " + r.titleBroken.slice(0, 2).join(", ") : ""}`);
+  await ctx.close();
+}
+for (const l of LOCALES) for (const w of [320, 390]) { // off-state full-page captures (evidence)
+  const { ctx, page } = await view("announce", `${pre(l)}/get-started/`, w, { locale: l, signup: "off", h: 900, media: { reducedMotion: "reduce" } });
+  await page.screenshot({ path: path.join(SHOTS, `journey-off-${l}-${w}.png`), fullPage: true });
+  const o = await page.evaluate(() => document.documentElement.scrollWidth - innerWidth);
+  check(o <= 0, `${l} @${w}px (off): captured ${path.join(SHOTS, `journey-off-${l}-${w}.png`).split("/").slice(-2).join("/")}, no horizontal scroll`);
+  await ctx.close();
+}
 
 await browser.close();
 for (const m of Object.values(mocks)) await m.close();

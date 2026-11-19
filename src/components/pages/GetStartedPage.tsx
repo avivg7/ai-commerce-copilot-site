@@ -6,7 +6,7 @@ import { txProps } from "@/i18n";
 import { PLANS, type PlanId } from "@/data/plans";
 import { SS_INITIAL, journeyUrl, startUrl } from "@/lib/selfService";
 import { localePath } from "@/lib/routes";
-import { withBase } from "@/lib/site";
+import { COMMERCE_OPEN, withBase } from "@/lib/site";
 import { Container, Section } from "@/components/ui/Primitives";
 import { RecoImage } from "@/components/ui/RecoImage";
 import { PageHead } from "./shared";
@@ -27,7 +27,9 @@ export const JOURNEY_CSS = [
   ".aicc-jr :where(ul,ol){list-style:none}",
   ".aicc-jr :where(div,p,span,li,a,h2,h3){min-inline-size:0}",
   ".aicc-jr{overflow-wrap:break-word}",
-  "@media (min-width:62rem){.aicc-jr{grid-template-columns:minmax(0,1.45fr) minmax(0,1fr);column-gap:4rem}.aicc-jr__aside{grid-column:2;grid-row:1;position:sticky;inset-block-start:calc(var(--aicc-header-h) + 1.5rem)}.aicc-jr__steps{grid-column:1;grid-row:1}}",
+  "@media (min-width:62rem){.aicc-jr{grid-template-columns:minmax(0,1.45fr) minmax(0,1fr);column-gap:4rem}.aicc-jr__aside{grid-column:2;grid-row:1}.aicc-jr__steps{grid-column:1;grid-row:1}}",
+  // the aside (status panel + terms, about 50rem tall) sticks ONLY when the viewport is tall enough to show all of it below the header, so no line of it (the trial end date) is cut off while scrolling (WCAG 1.4.10 / 2.4.11)
+  "@media (min-width:62rem) and (min-height:68rem){.aicc-jr__aside{position:sticky;inset-block-start:calc(var(--aicc-header-h) + 1.5rem)}}",
   // the status panel (dark, like the closing bands): the honest state, the next useful step
   ".aicc-jr__aside{display:grid;gap:1.25rem}",
   ".aicc-jr__act{position:relative;overflow:hidden;padding:min(1.5rem,5vw);border-radius:var(--aicc-radius-xl);background:var(--aicc-surface-inverse);color:var(--aicc-text-inverse);box-shadow:var(--aicc-shadow-lg)}",
@@ -48,6 +50,7 @@ export const JOURNEY_CSS = [
   ".aicc-jr__fact-icon{display:inline-flex;flex:none;align-items:center;justify-content:center;inline-size:2rem;block-size:2rem;border-radius:50%;background:var(--aicc-success-bg);color:var(--aicc-success)}",
   ".aicc-jr__fact-icon .aicc-cap--trial{grid-template-columns:1rem;inline-size:1rem}",
   ".aicc-jr__fact>span:last-child{padding-block-start:0.28rem}",
+  ".aicc-jr__terms-note{margin-block-start:1rem;font-size:var(--aicc-text-sm);line-height:1.5;color:var(--aicc-text-muted);text-wrap:pretty}",
   ".aicc-jr__dates{display:grid;gap:0.875rem;margin-block-start:1.25rem;padding-block-start:1.25rem;border-block-start:1px solid var(--aicc-border)}",
   ".aicc-jr__date dt{font-size:var(--aicc-text-sm);font-weight:600;line-height:1.35;color:var(--aicc-text-muted)}",
   ".aicc-jr__date dd{font-size:1.125rem;font-weight:700;line-height:1.3;font-variant-numeric:tabular-nums;color:var(--aicc-text);text-wrap:balance}",
@@ -60,13 +63,14 @@ export const JOURNEY_CSS = [
   "[data-jr-phase=account]{--jr-ink:var(--aicc-primary-strong)}[data-jr-phase=store]{--jr-ink:var(--aicc-navy-900)}[data-jr-phase=recs]{--jr-ink:var(--aicc-success)}",
   "[data-jr-phase=recs] .aicc-jr__phase-icon{background:var(--aicc-success-bg)}[data-jr-phase=store] .aicc-jr__phase-icon{background:var(--aicc-surface-sunken)}",
   ".aicc-jr{--jr-node:min(2.5rem,10.5vw);--jr-gap:min(1rem,4vw)}",
+  "@media (max-width:22.5rem){.aicc-jr{--jr-node:min(2rem,9vw);--jr-gap:min(0.625rem,3vw)}.aicc-jr__step-title{font-size:1.125rem}}",
   ".aicc-jr__list{display:grid}",
   ".aicc-jr__step{position:relative;counter-increment:jr;padding-inline-start:calc(var(--jr-node) + var(--jr-gap));padding-block-end:1.75rem}",
   ".aicc-jr__step:last-child{padding-block-end:0}",
   ".aicc-jr__step::before{content:counter(jr);position:absolute;inset-block-start:0;inset-inline-start:0;display:grid;place-items:center;inline-size:var(--jr-node);block-size:var(--jr-node);border:2px solid var(--jr-ink);border-radius:50%;background:var(--aicc-surface);color:var(--jr-ink);font-size:min(1rem,calc(var(--jr-node) * 0.42));font-weight:700;font-variant-numeric:tabular-nums;line-height:1}",
   ".aicc-jr__step::after{content:\"\";position:absolute;inset-inline-start:calc(var(--jr-node) / 2 - 1px);inset-block:calc(var(--jr-node) + 0.25rem) 0.25rem;border-inline-start:2px solid var(--aicc-border-strong)}",
   ".aicc-jr__step:last-child::after{display:none}",
-  ".aicc-jr__step-title{padding-block-start:0.4rem;font-size:var(--aicc-text-lg);font-weight:650;line-height:1.25;letter-spacing:-0.005em;color:var(--aicc-text)}",
+  ".aicc-jr__step-title{hyphens:manual;overflow-wrap:anywhere;padding-block-start:0.4rem;font-size:var(--aicc-text-lg);font-weight:650;line-height:1.25;letter-spacing:-0.005em;color:var(--aicc-text)}",
   ".aicc-jr__step-body{margin-block-start:0.375rem;max-inline-size:38rem;font-size:var(--aicc-text-base);line-height:1.6;color:var(--aicc-text-muted);text-wrap:pretty}",
   ".aicc-jr__path{display:inline-block;padding:0.0625rem 0.5rem;border:1px solid var(--aicc-border-strong);border-radius:0.5rem;background:var(--aicc-surface-sunken);font-weight:650;color:var(--aicc-text);white-space:normal;max-inline-size:100%;overflow-wrap:anywhere}",
   // plan preference chips (step 1)
@@ -93,7 +97,8 @@ const PHASES = [
 function withPath(text: string, path: string): ReactNode {
   const parts = text.split("{path}");
   if (parts.length === 1) return text;
-  return <>{parts[0]}<bdi dir="ltr" className="aicc-jr__path">{path}</bdi>{parts[1]}</>;
+  // a word joiner keeps the punctuation that follows the chip ON the chip's last line (no orphan ", ..." line at 320 px)
+  return <>{parts[0]}<bdi dir="ltr" className="aicc-jr__path">{path}</bdi>{/^[,.;:]/.test(parts[1]) ? "\u2060" : ""}{parts[1]}</>;
 }
 
 export async function GetStartedPage({ locale, t }: { locale: Locale; t: Dictionary }) {
@@ -114,7 +119,7 @@ export async function GetStartedPage({ locale, t }: { locale: Locale; t: Diction
       <Section tone="surface">
         <Container>
           <div className="aicc-jr" {...A(locale, "ea.journey")}>
-            <aside className="aicc-jr__aside" aria-label={j.terms.title}>
+            <aside className="aicc-jr__aside" aria-label={j.asideLabel}>
               <section className="aicc-jr__act aicc-on-dark" aria-labelledby="jr-act-title" data-jr-panel>
                 <div className="aicc-jr__act-top">
                   <h2 className="aicc-jr__act-title" id="jr-act-title">{j.act.title}</h2>
@@ -140,6 +145,8 @@ export async function GetStartedPage({ locale, t }: { locale: Locale; t: Diction
                   <div className="aicc-jr__date" data-ss-date="registration"><dt>{ss.plan.regLabel}</dt><dd>{ss.plan.regValue}</dd></div>
                   <div className="aicc-jr__date" data-ss-date="end"><dt>{ss.plan.endLabel}</dt><dd>{ss.plan.endValue}</dd></div>
                 </dl>
+                <p className="aicc-jr__terms-note" data-jr-end>{j.terms.end}</p>
+                <p className="aicc-jr__terms-note" data-jr-paid>{COMMERCE_OPEN ? ss.launch.foot.paidOpen : ss.launch.foot.paid}</p>
               </section>
             </aside>
             <div className="aicc-jr__steps" data-jr-steps>

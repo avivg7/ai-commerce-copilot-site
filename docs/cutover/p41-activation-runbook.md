@@ -205,7 +205,7 @@ curl -s -o /dev/null -w '%{http_code}\n' https://www.copilt.org/start/   # expec
 In a private browser window: open the pricing page, choose a plan, follow the real CTA to `/start/`, enter your own mailbox (an address you own, not an operator account), accept the terms, solve Turnstile, submit. Then:
 
 1. The verification mail arrives from `notifications@copilt.org` with Reply-To `support@copilt.org`; the link opens the password page; set a password (the account exists only now).
-2. You land on the "done" page; sign in; the account shows the checklist; Plans & Stores shows a Free Trial (one store, ends 2026-12-31T22:00:00Z) and the plugin download (version, SHA-256, signing key). Download it and compare: `shasum -a 256 <file>` equals the page and the value recorded in step 6.
+2. You land on the "done" page; sign in; the account shows the checklist; Plans & Stores shows the launch trial (one store, ends 2026-12-31T22:00:00Z) and the plugin download (version, SHA-256, signing key). Download it and compare: `shasum -a 256 <file>` equals the page and the value recorded in step 6.
 3. Install it on your own test store, connect (the Connect popup), let it sync, and watch the checklist (the P41 plugin/Control Plane builds define the later stages).
 
 Evidence from the host (counts and codes only, never an address):
