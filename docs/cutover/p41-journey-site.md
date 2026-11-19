@@ -98,6 +98,8 @@ Traps: Tailwind scans `scripts/` and `docs/`: a new file whose text contains a u
 | `ss.pricing.priceLabel` | value, he / es / ru only: "מחיר שנתי מתוכנן" / "Precio anual previsto" / "Планируемая годовая цена" (en unchanged) |
 | `ss.pricing.strikeLabel` | value, he / es / ru only: "מחיר שנתי מתוכנן לאחר הצעת ההשקה, לא מחיר נוכחי או קודם." / "Precio anual previsto después de la oferta de lanzamiento, no un precio actual ni pasado." / "Планируемая годовая цена после предложения в честь запуска, не текущая и не прежняя цена." (en unchanged) |
 | `ss.launch.foot.paid` | value, he / es / ru only: the planned-annual-price wording (en unchanged) |
+| `ea.plan.planned` (P36 launch-offer card block, `PricingCard`) | value, he / es / ru only, follow-up round: now equal to `ss.pricing.priceLabel` (same English msgid "Planned regular price", one translation for the Control Plane): "מחיר שנתי מתוכנן" / "Precio anual previsto" / "Планируемая годовая цена" (were "מחיר רגיל מתוכנן" / "Precio regular previsto" / "Планируемая обычная цена"). A guard (`ssDisclosureProblems`) requires the two to stay equal |
+| `ss.pricing.strikeNote` | follow-up round, all four: "22:00" and "UTC" are joined by U+00A0 so the time never breaks across lines. Final values below |
 | `ea.journey.path` (Site only) | value, all four: the WordPress menu path |
 | `ea.journey.terms.end`, `ea.journey.asideLabel` (Site only) | NEW, all four |
 
@@ -118,3 +120,12 @@ Every string below was added or changed in P41 in all of he, es, ru and is a mac
 * Review round: the merged release-tools docs (`docs/cutover/p38-brevo-host-update.md` twice, `docs/cutover/p41-activation-runbook.md` once) used the two banned free-tier / trial-capitalised phrasings that `copy:check` rejects in this repo; three lines were reworded ("the account's daily allowance", "the launch trial") in `681bac0`. Meaning unchanged; the owner of those docs may want to mirror the wording.
 * Review round: the strike's static HTML now carries BOTH the strike and the default planned block (hidden by CSS until `<html data-ss-open>`); a strike build is therefore slightly larger and its HTML always contains the default block. Intended: it is what keeps the gates meaningful and the no-JavaScript view honest.
 * Review round: the DOM order of the journey aside (status panel first, in the right column on a wide screen) is documented, not changed (`docs/design/p41-journey.md` 7.1).
+
+### Follow-up round: exact final `ss.pricing.strikeNote` bytes (JS escapes as written in the packs)
+
+* en: `Nothing has been charged at this price yet. Trial access ends {until} at\u00a022:00\u00a0UTC. No payment method needed; nothing is charged automatically.`
+* es: `Todavía no se ha cobrado nada a este precio. El acceso de prueba termina el {until} a las\u00a022:00\u00a0UTC. No hace falta método de pago; no se cobra nada automáticamente.`
+* ru: `По этой цене пока ничего не списывалось. Пробный доступ заканчивается {until} в\u00a022:00\u00a0UTC. Способ оплаты не нужен; автоматически ничего не списывается.`
+* he: `עדיין לא חויב אף אחד במחיר הזה. הגישה לניסיון מסתיימת ב־{until} בשעה\u00a0\u206622:00\u00a0UTC\u2069. אין צורך באמצעי תשלום; שום דבר לא מחויב אוטומטית.` (the isolates U+2066 / U+2069 around the time are unchanged)
+
+`ea.plan.planned` is rendered by the P36 `PricingCard` of the launch-offer builds: in default builds only ANNOUNCE and OPEN show it, in he / es / ru on Home and Pricing (the label under each of the three planned prices). Export identity against the P40 base + kit: OFF and VERIFY stay byte-identical; ANNOUNCE and OPEN differ in exactly 24 files each (the same list): `{he,es,ru}/index.html`, `{he,es,ru}/index.txt`, `{he,es,ru}/pricing/index.html`, `{he,es,ru}/pricing/index.txt` and the `__next.$oc$slug.__PAGE__.txt` / `__next._full.txt` payloads of those two pages per language; the only text that changes is the label. English pages do not change. Lists: evidence `logs/f2-diff-files-{announce,open}.txt`.
