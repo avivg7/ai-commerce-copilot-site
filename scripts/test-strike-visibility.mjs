@@ -14,7 +14,7 @@ import { startMock } from "./lib/intake-mock.mjs";
 
 const args = process.argv.slice(2);
 const arg = (n) => { const i = args.indexOf(`--${n}`); return i >= 0 ? args[i + 1] : undefined; };
-const STRIKE = arg("strike"), LINK = arg("strike-link"), SHOTS = arg("shots"), PB = Number(arg("port-base") || 0), QUICK = args.includes("--quick");
+const SEC = arg("sections") || "12345", STRIKE = arg("strike"), LINK = arg("strike-link"), SHOTS = arg("shots"), PB = Number(arg("port-base") || 0), QUICK = args.includes("--quick");
 if (!STRIKE || !LINK || !SHOTS) { console.error("usage: --strike <dir> --strike-link <dir> --shots <dir> [--port-base <n>] [--quick]"); process.exit(2); }
 fs.mkdirSync(SHOTS, { recursive: true });
 let failed = 0, total = 0;
@@ -67,8 +67,9 @@ const defaultShows = (r) => r.cards === 3 && r.planned === 3 && r.pills === 3;
 const shown = (r) => r.cards === 3 && r.s === 3 && r.strikeBlocks === 3 && r.notes === 3 && r.planned === 0 && r.attr === true;
 const tag = (l, w, scale, what) => `${l} @${w}px ${scale * 100}% ${what}`;
 
+const run = (n) => SEC.includes(n);
 console.log("== 1. matrix: where the struck price is NOT visible, and where it is (strike preview build, /pricing/)");
-for (const l of LOCALES) for (const w of WIDTHS) for (const scale of SCALES) {
+if (run("1")) for (const l of LOCALES) for (const w of WIDTHS) for (const scale of SCALES) {
   const route = `${pre(l)}/pricing/`;
   { // no JavaScript: the static HTML alone
     const { ctx, page } = await open("strike", route, w, { locale: l, scale, js: false });
@@ -117,7 +118,7 @@ for (const l of LOCALES) for (const w of WIDTHS) for (const scale of SCALES) {
 }
 
 console.log("== 2. other failures of the status route (1440 and 390 px, four languages): never a struck price");
-for (const l of LOCALES) for (const w of [390, 1440]) for (const state of ["http404", "http500", "badjson", "unknown", "inconsistent"]) {
+if (run("2")) for (const l of LOCALES) for (const w of [390, 1440]) for (const state of ["http404", "http500", "badjson", "unknown", "inconsistent"]) {
   const { ctx, page } = await open("strike", `${pre(l)}/pricing/`, w, { locale: l, signup: state });
   const r = await probe(page);
   check(none(r) && defaultShows(r), `${l} @${w}px status answer ${state}: no struck price (default planned design)`);
@@ -125,7 +126,7 @@ for (const l of LOCALES) for (const w of [390, 1440]) for (const state of ["http
 }
 
 console.log("== 3. the Home page plan section follows the same rule (four languages x 390 / 1440)");
-for (const l of LOCALES) for (const w of [390, 1440]) for (const state of ["off", "waitlist", "open"]) {
+if (run("3")) for (const l of LOCALES) for (const w of [390, 1440]) for (const state of ["off", "waitlist", "open"]) {
   const { ctx, page } = await open("strike", `${pre(l)}/`, w, { locale: l, signup: state });
   const r = await probe(page);
   check(state === "open" ? shown(r) : none(r) && defaultShows(r), `${l} Home @${w}px ${state}: ${state === "open" ? "struck prices visible after the confirmed open" : "default design, no struck price"}`);
@@ -133,7 +134,7 @@ for (const l of LOCALES) for (const w of [390, 1440]) for (const state of ["off"
 }
 
 console.log("== 4. flips: open -> paused -> open, then the clock at the cutoff, layout shift below 0.1 (four languages x 390 / 1440)");
-for (const l of LOCALES) for (const w of QUICK ? [390] : [320, 390, 1440]) {
+if (run("4")) for (const l of LOCALES) for (const w of QUICK ? [390] : [320, 390, 1440]) {
   const CLS = () => { window.__cls = 0; new PerformanceObserver((list) => { for (const e of list.getEntries()) if (!e.hadRecentInput) window.__cls += e.value; }).observe({ type: "layout-shift", buffered: true }); };
   const { ctx, page, m } = await open("strike", `${pre(l)}/pricing/`, w, { locale: l, signup: "off", delay: 400, h: 2600, init: CLS });
   const wake = async () => { await page.evaluate(() => { window.__skew += 40000; window.dispatchEvent(new Event("focus")); }); await page.waitForTimeout(900); };
@@ -145,22 +146,24 @@ for (const l of LOCALES) for (const w of QUICK ? [390] : [320, 390, 1440]) {
   const c2 = await vis();
   m.set({ signup: "open" }); await wake();
   const c3 = await vis(), clsFlips = await page.evaluate(() => window.__cls);
-  m.set({ signup: "unknown" }); await wake(); // an unconfirmable answer after an open one: the stored state falls back, the struck price goes
+  m.set({ signup: "unknown" }); await wake(); // ONE unconfirmable answer after a confirmed open one: the store keeps the last valid view through a single hiccup (P40 rule, src/lib/ssStatus.ts)
   const c4 = await vis();
+  await page.evaluate(() => { window.__skew += 200000; window.dispatchEvent(new Event("focus")); }); await page.waitForTimeout(900); // the stale limit (5 x the 30 s TTL since the last VALID answer) passed with the status still unconfirmable: back to the static state, NEVER to open
+  const c4b = await vis();
   m.set({ signup: "open" }); await wake();
   const c5 = await vis();
   await page.evaluate((c) => { window.__skew = c - Date.now() + window.__skew + 1500; document.dispatchEvent(new Event("visibilitychange")); }, CUT);
   await page.waitForTimeout(700);
   const c6 = await vis(), closed = await page.evaluate(() => document.documentElement.hasAttribute("data-ss-closed") && !document.documentElement.hasAttribute("data-ss-open"));
   const cls = await page.evaluate(() => window.__cls);
-  check(c0 === 0 && c1 === 3 && c2 === 0 && c3 === 3 && c4 === 0 && c5 === 3, `${l} @${w}px flips: off 0 -> open 3 -> paused 0 -> open 3 -> unconfirmable 0 -> open 3 (${[c0, c1, c2, c3, c4, c5].join(",")})`);
+  check(c0 === 0 && c1 === 3 && c2 === 0 && c3 === 3 && c4 === 3 && c4b === 0 && c5 === 3, `${l} @${w}px flips: off 0 -> open 3 -> paused 0 -> open 3 -> one failed answer keeps 3 (last confirmed) -> still unconfirmable past the stale limit 0 -> open 3 (${[c0, c1, c2, c3, c4, c4b, c5].join(",")})`);
   check(c6 === 0 && closed, `${l} @${w}px: the browser clock reaching the cutoff on the same page hides it (${c6}), data-ss-closed set and data-ss-open removed`);
   check(cls1 < 0.1 && clsFlips < 0.1 && cls - clsFlips < 0.1, `${l} @${w}px: layout shift below 0.1 (off -> open ${cls1.toFixed(4)}, five state flips ${clsFlips.toFixed(4)}, the cutoff closed view alone ${(cls - clsFlips).toFixed(4)})`);
   await ctx.close();
 }
 
 console.log("== 5. the browser clock the other way: a page whose clock moves from AFTER the cutoff back to before it");
-for (const l of QUICK ? ["en"] : LOCALES) {
+if (run("5")) for (const l of QUICK ? ["en"] : LOCALES) {
   const { ctx, page, m } = await open("strike", `${pre(l)}/pricing/`, 1440, { locale: l, signup: "open", now: CUT + 3600_000 });
   const a = await probe(page);
   await page.evaluate((c) => { window.__skew = c - 3600_000 - Date.now() + window.__skew; document.dispatchEvent(new Event("visibilitychange")); }, CUT);
@@ -168,9 +171,10 @@ for (const l of QUICK ? ["en"] : LOCALES) {
   await page.waitForTimeout(900);
   await page.evaluate(() => { window.__skew += 40000; window.dispatchEvent(new Event("focus")); }); await page.waitForTimeout(900);
   const b = await probe(page);
-  // closing is STICKY by design (a registration that has closed does not reopen because a clock moved back): both outcomes are reported, only "never visible while closed" is asserted
+  // measured: the clock is the only reason the page was closed, so with the clock back before the cutoff AND a confirmed open answer the strike returns (a closed_cutoff ANSWER, in contrast, is what the server says and is not overridden by a clock)
   check(none(a), `${l}: loaded with the clock after the cutoff: nothing struck is visible`);
-  console.log(`  note ${l}: clock moved back before the cutoff on the same page: struck prices visible = ${b.s} (${b.s === 0 ? "closed stays closed: sticky" : "reopened"})`);
+  check(b.s === 3, `${l}: clock moved back before the cutoff on the same page, status open: the three struck prices return (${b.s})`);
+  console.log(`  note ${l}: clock moved back before the cutoff on the same page: struck prices visible = ${b.s} (${b.s === 3 ? "back, with the confirmed open answer" : b.s === 0 ? "stays hidden" : "partial?"})`);
   await ctx.close();
 }
 
