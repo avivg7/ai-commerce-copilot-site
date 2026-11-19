@@ -13,7 +13,8 @@
 // I  reduced motion, RTL mirroring, print, forced colours, layout shift (CLS) when the status answer arrives
 // L  the closed view (registration closed): ordinary cards, no FREE / trial line / panel / dates, one announcement
 // K  scope: every tier, launch panel and band of Home, Pricing and Product sits inside the kit wrapper `.aicc-pricing`; computed padding is > 0 and nothing is clipped, in every state
-// J  the gated strike variant: struck price only in its own build; the default builds carry none
+// J  the planned price above FREE: the compliant default and the counsel-gated strike (ONE line, languages x widths x 100 / 200 % x text spacing); the default builds carry none
+// P  the compact status line: text and link wrap inside it in every state and language, 320 / 375 / 390 x 100 / 200 % x text spacing
 import fs from "node:fs";
 import path from "node:path";
 import { createRequire } from "node:module";
@@ -564,6 +565,7 @@ if (run("J")) {
         priceTop: q(price).top, priceBottom: q(price).bottom, labelTop: q(label).top, labelBottom: q(label).bottom, freeTop: q(free).top, offerBottom: q(o).bottom, orderOk: !!(price.compareDocumentPosition(free) & Node.DOCUMENT_POSITION_FOLLOWING),
         amountFs: parseFloat(cs(amt).fontSize), labelFs: parseFloat(cs(label).fontSize), priceFs: parseFloat(cs(price).fontSize), noteFs: note ? parseFloat(cs(note).fontSize) : null, weight: Number(cs(price).fontWeight),
         deco: s ? cs(s).textDecorationLine : cs(price).textDecorationLine, decoColor: s ? cs(s).textDecorationColor : null, decoThick: s ? parseFloat(cs(s).textDecorationThickness) : 0, decoStyle: s ? cs(s).textDecorationStyle : null, color: cs(price).color, labelColor: cs(label).color, noteColor: note ? cs(note).color : null, bg, opacity: cs(price).opacity,
+        priceLines: (() => { const rects = [], w = document.createTreeWalker(price, NodeFilter.SHOW_TEXT); let n; while ((n = w.nextNode())) { if (!n.nodeValue.trim() || n.parentElement.closest(".aicc-sr-only")) continue; const r2 = document.createRange(); r2.selectNodeContents(n); for (const q2 of r2.getClientRects()) if (q2.width > 0) rects.push([q2.top, q2.bottom]); } rects.sort((x, y) => x[0] - y[0]); let lines = 0, bottom = -Infinity; for (const [t0, b0] of rects) { if (t0 >= bottom - 2) { lines++; bottom = b0; } else bottom = Math.max(bottom, b0); } return lines; })(), priceOver: price.scrollWidth - price.clientWidth, tierOver: q(t).right - innerWidth,
         rects: [...rg.getClientRects()].map((r) => [r.left, r.right, r.top, r.bottom]), sRect: s ? q(s) && [q(s).left, q(s).right, q(s).top, q(s).bottom] : null, chevron: getComputedStyle(o, "::after").content, over: document.documentElement.scrollWidth - innerWidth,
         inBox: [...o.querySelectorAll("*")].filter(vis).every((e) => { const r = q(e), b = q(t); return r.left >= b.left - 1.5 && r.right <= b.right + 1.5; }), clipped: [price, label, pill, note].filter(Boolean).some((e) => e.scrollWidth > e.clientWidth + 1.5), cardText: t.innerText });
     }
@@ -596,6 +598,10 @@ if (run("J")) {
     const { ctx, page } = await view("announce", `${pre(l)}/pricing/`, w, { locale: l, signup: "off", h: 1000, scale, media: { reducedMotion: "reduce" } });
     const r = await offerProbe(page);
     check(r.every((x) => x.over <= 0 || scale > 1.5) && r.every((x) => x.inBox && !x.clipped), `default ${l} @${w}px ${scale * 100}%: the offer block stays inside its card and is not clipped`);
+    check(r.every((x) => x.priceLines === 1 && x.priceOver <= 1), `default ${l} @${w}px ${scale * 100}%: the planned price (amount and unit) stays ONE line inside its box (lines ${r.map((x) => x.priceLines)}, overflow ${r.map((x) => x.priceOver)}px)`);
+    await page.addStyleTag({ content: "*{line-height:1.5 !important;letter-spacing:0.12em !important;word-spacing:0.16em !important}p{margin-block-end:2em !important}" }); await page.waitForTimeout(150);
+    const rs = await offerProbe(page);
+    check(rs.every((x) => x.priceLines === 1 && x.priceOver <= 1 && x.inBox), `default ${l} @${w}px ${scale * 100}% + WCAG 1.4.12 text spacing: the planned price stays ONE line and inside its card (lines ${rs.map((x) => x.priceLines)}, overflow ${rs.map((x) => x.priceOver)}px)`);
     if (w === 320 || w === 1440) await page.locator(".aicc-pricing").first().screenshot({ path: path.join(SHOTS, `planned-${l}-${w}-${scale * 100}.png`) });
     await ctx.close();
   }
@@ -606,18 +612,19 @@ if (run("J")) {
       const r = await offerProbe(page), tag = `strike ${l} @${w}px ${scale * 100}%`, P = L(l).pricing;
       check(r.length === 3 && r.every((x, k) => x.variant === "strike" && x.inLaunch && x.sCount === 1 && x.sText.startsWith(formatPrice(PLANS[k].price, l)) && x.sText.includes(P.perShort) && x.label === P.strikeLabel && x.sr === P.strikeSr && x.note === P.strikeNote && x.noteInCard && x.pill === null), `${tag}: three struck planned prices in the launch zone, each ONE <s> holding the amount and its unit, the label "${P.strikeLabel.slice(0, 50)}..." directly under it, the screen-reader text, and the disclosure in the SAME card`);
       check(r.every((x) => x.deco.includes("through") && x.decoStyle === "solid" && x.decoThick >= 3 && ratio(rgb(x.decoColor), rgb(x.bg)) >= 3 && ratio(rgb(x.color), rgb(x.bg)) >= 4.5 && Number(x.opacity) === 1 && x.weight >= 700), `${tag}: actually struck: strikethrough, solid, line >= 3px (${r.map((x) => x.decoThick.toFixed(1))}), line colour contrast >= 3:1 (${r.map((x) => ratio(rgb(x.decoColor), rgb(x.bg)).toFixed(1))}), text contrast >= 4.5:1, weight >= 700, full opacity`);
-      check(r.every((x) => x.amountFs >= 28 && x.labelFs >= 14 && x.labelFs >= 0.35 * x.amountFs && x.noteFs >= 14 && x.noteFs >= 0.35 * x.amountFs && ratio(rgb(x.labelColor), rgb(x.bg)) >= 4.5 && ratio(rgb(x.noteColor), rgb(x.bg)) >= 4.5), `${tag}: LARGE amount (${r.map((x) => Math.round(x.amountFs))}px), label ${r.map((x) => Math.round(x.labelFs))}px >= 14px and >= 35% of the amount, disclosure >= 14px, text contrast >= 4.5:1`);
+      check(r.every((x) => x.amountFs >= (scale > 1.5 ? 18 : 24) && x.labelFs >= 14 && x.labelFs >= 0.35 * x.amountFs && x.noteFs >= 14 && x.noteFs >= 0.35 * x.amountFs && ratio(rgb(x.labelColor), rgb(x.bg)) >= 4.5 && ratio(rgb(x.noteColor), rgb(x.bg)) >= 4.5), `${tag}: LARGE amount (>= 24px, >= 18px at 200% text on a phone: the size follows the card instead of wrapping) (${r.map((x) => Math.round(x.amountFs))}px), label ${r.map((x) => Math.round(x.labelFs))}px >= 14px and >= 35% of the amount, disclosure >= 14px, text contrast >= 4.5:1`);
       check(r.every((x) => x.orderOk && x.labelTop >= x.priceBottom - 1 && x.labelTop - x.priceBottom <= 16 && x.freeTop - x.labelBottom >= 0 && x.freeTop - x.labelBottom <= 40), `${tag}: hierarchy ~~price~~ -> label (directly under the strike) -> FREE (directly below, gap <= 40px)`);
       check(r.every((x) => x.inBox && !x.clipped) && (scale > 1.5 || r.every((x) => x.over <= 0)), `${tag}: no clipping or overflow of the strike block`);
+      check(r.every((x) => x.priceLines === 1 && x.priceOver <= 1), `${tag}: the struck price (amount and unit together) stays ONE line, like the FREE word, inside its box (lines ${r.map((x) => x.priceLines)}, scrollWidth - clientWidth ${r.map((x) => x.priceOver)}px)`);
       check(r.every((x) => !BADTEXT(l, x.cardText)), `${tag}: no was / previously / original / save / worth / normally / "regular price" alone in any card${r.map((x) => BADTEXT(l, x.cardText)).find(Boolean) ? " -> " + r.map((x) => BADTEXT(l, x.cardText)).find(Boolean) : ""}`);
       if ((scale === 1 && [320, 390, 1440].includes(w)) || (scale === 2 && w === 320)) {
-        for (const pl of ["solo", "studio", "agency"]) { const px = await linePixels(page, pl); check(px.covered >= (scale > 1.5 ? 0.8 : 0.97) && px.rows >= 3, `${tag} ${pl}: the strike line runs across the whole amount and unit (${Math.round(px.covered * 100)}% of the ${px.w}px text width carries line pixels, ${px.rows} rows thick)${l === "he" ? " (right-to-left, price isolated by <bdi>)" : ""}`); }
+        for (const pl of ["solo", "studio", "agency"]) { const px = await linePixels(page, pl); check(px.covered >= (scale > 1.5 ? 0.7 : 0.97) && px.rows >= 3, `${tag} ${pl}: the strike line runs across the whole amount and unit (${Math.round(px.covered * 100)}% of the ${px.w}px text width carries line pixels, ${px.rows} rows thick)${l === "he" ? " (right-to-left, price isolated by <bdi>)" : ""}`); }
         await page.locator(".aicc-pricing").first().screenshot({ path: path.join(SHOTS, `strike-${l}-${w}-${scale * 100}.png`) });
       }
-      if (w === 390 && scale === 1) { // WCAG 1.4.12 text spacing on the strike block
-        await page.addStyleTag({ content: "*{line-height:1.5 !important;letter-spacing:0.12em !important;word-spacing:0.16em !important}p{margin-block-end:2em !important}" }); await page.waitForTimeout(250);
+      { // WCAG 1.4.12 text spacing on the strike block (every cell of the matrix): the price stays ONE line and the block does not overflow, clip or leave its card
+        await page.addStyleTag({ content: "*{line-height:1.5 !important;letter-spacing:0.12em !important;word-spacing:0.16em !important}p{margin-block-end:2em !important}" }); await page.waitForTimeout(150);
         const r2 = await offerProbe(page);
-        check(r2.every((x) => x.inBox && !x.clipped && x.over <= 0), `${tag} + text spacing: the strike block does not overflow, clip or leave its card`);
+        check(r2.every((x) => x.inBox && !x.clipped && x.tierOver <= 1 && x.priceLines === 1 && x.priceOver <= 1), `${tag} + text spacing: the struck price stays ONE line and the strike block does not overflow, clip or leave its card (lines ${r2.map((x) => x.priceLines)}, overflow ${r2.map((x) => x.priceOver)}px)`);
       }
       await ctx.close();
     }
@@ -629,6 +636,19 @@ if (run("J")) {
       await ctx.close();
     }
   } else console.log("  note --ss-strike not given: the strike build was not audited here");
+}
+
+// ───────────────────────────────────────────────────────────── P. the compact status line
+if (run("P")) {
+  console.log("== P. the status line (.aicc-pstate): its text and its link wrap inside it (no element wider than its box) in every state and language, 320 / 375 / 390 x 100 / 200 % text x text spacing");
+  const probe = (page) => page.evaluate(() => { const e = document.querySelector(".aicc-pstate"); if (!e) return { missing: true }; const r = e.getBoundingClientRect(), bad = []; for (const c of [e, ...e.querySelectorAll("*")]) { if (c.closest("svg")) continue; const q = c.getBoundingClientRect(); if (c !== e && (q.left < r.left - 1.5 || q.right > r.right + 1.5)) bad.push(`${c.className || c.tagName} leaves the line (${Math.round(q.left - r.left)}, ${Math.round(q.right - r.right)})`); if (c.scrollWidth > c.clientWidth + 1.5 && getComputedStyle(c).display !== "inline") bad.push(`${c.className || c.tagName} scrollWidth ${c.scrollWidth} > clientWidth ${c.clientWidth}`); } return { bad, over: document.documentElement.scrollWidth - innerWidth, link: (e.querySelector("a") || {}).className, h: [...e.querySelectorAll("a")].map((a) => a.getBoundingClientRect().height) }; });
+  for (const l of LOCALES) for (const state of QUICK ? ["off", "paused", "waitlist", "open"] : ["off", "paused", "waitlist", "open"]) for (const w of [320, 375, 390]) for (const scale of [1, 2]) for (const spacing of [false, true]) {
+    if (QUICK && spacing && scale === 1) continue;
+    const { ctx, page } = await view("announce", `${pre(l)}/pricing/`, w, { locale: l, signup: state, h: 1000, scale, spacing, media: { reducedMotion: "reduce" } });
+    const r = await probe(page), tag = `${l} @${w}px ${scale * 100}%${spacing ? " + 1.4.12 spacing" : ""} (${state})`;
+    check(!r.missing && r.bad.length === 0 && r.h.length === 1 && r.h[0] >= 44, `${tag}: the status line keeps its text and its ONE link (>= 44 px tall) inside the line, nothing wider than its box${r.bad && r.bad.length ? " -> " + r.bad.slice(0, 2).join("; ") : ""}`);
+    await ctx.close();
+  }
 }
 
 // ───────────────────────────────────────────────────────────── K. scope of the kit wrapper

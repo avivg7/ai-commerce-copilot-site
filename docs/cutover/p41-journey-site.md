@@ -13,11 +13,12 @@ The owner's correction: three giant inert controls with paragraphs under them ar
 
 ## 2. Commits (Site worktree)
 
-Kit commits (the Control Plane syncs `brand/` from the Site HEAD; all three are CSS-only inside the new `P41 OFFER` block, listed separately on purpose):
+Kit commits (the Control Plane syncs `brand/` from the Site HEAD; all four are CSS-only inside the new `P41 OFFER` block, listed separately on purpose):
 
 * `abae783` P41 KIT 1: planned price above FREE (`.aicc-tier--offer`, `.aicc-tier__offer*`), compact status line (`.aicc-pstate*`); retires `.aicc-tier__price--strike`
 * `593060b` P41 KIT 2: `.aicc-tier__offer` stretches its items (a long word at 200% text wraps inside the card), the pill is a start-aligned flex box
 * `d20f38a` P41 KIT 3: the planned-price pill is a fit-content block that wraps a long word instead of overflowing (200% text, Russian)
+* `be46f4e` P41 KIT 4: the planned / struck price is ONE line sized by its container (per-language fit, nowrap); the status line text and link wrap inside it
 
 The remaining commits: pack strings, the journey page, the cards / bands / finder / header, tests and guards, docs (see `git log 1693122..HEAD`).
 
