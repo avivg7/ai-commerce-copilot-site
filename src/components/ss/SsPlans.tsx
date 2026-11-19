@@ -54,7 +54,7 @@ function Price({ locale, t, plan }: { locale: Locale; t: Dictionary; plan: (type
  * Fail closed: the strike needs a finite, positive price that equals the plan source (src/data/plans.ts: the only place a price is written; test:strike-gate re-derives it from the export). Never "was", "previously", "original", "save", "worth", "normally".
  * The strike is only ever in the LIVE card set, which the closed view and the ended view hide (browser clock: `<html data-ss-closed>` from 2026-12-24T00:00:00Z, `data-ea-over` from the trial end) and the build refuses at or after the end (EA_ON).
  */
-export const OFFER_STRIKE = (plan: (typeof PLANS)[number]) => EA_STRIKE && EA_ON && Number.isFinite(plan.price) && plan.price > 0;
+const STRIKE_PREVIEW = process.env.NODE_ENV === "development" && process.env.NEXT_PUBLIC_AICC_STRIKE_PREVIEW === "1"; export const OFFER_STRIKE = (plan: (typeof PLANS)[number]) => (STRIKE_PREVIEW || (EA_STRIKE && EA_ON)) && Number.isFinite(plan.price) && plan.price > 0;
 function Offer({ locale, t, plan, variant, swap = false }: { locale: Locale; t: Dictionary; plan: (typeof PLANS)[number]; variant: "planned" | "strike"; swap?: boolean }) {
   const s = t.ea.ss.pricing;
   const amount = formatPrice(plan.price, locale);
