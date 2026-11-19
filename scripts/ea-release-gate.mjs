@@ -30,6 +30,9 @@ if (strikeIn.length) {
     for (const q of strikeCardProblems(read(rel), { label: pr.strikeLabel, note: pr.strikeNote, sr: pr.strikeSr })) problems.push(`${rel}: ${q} (memo 7.3: strike markup needs its label and disclosure in the same card)`);
   }
 }
+// P41 review: the LEGACY launch-offer card (P36 `aicc-plan__regular--strike`, rendered only when self-service is off) strikes the price unconditionally: it has no status to confirm that FREE is obtainable. A release never ships it, whatever the reference says: the only releasable strike is the status-gated P41 card.
+const legacy = STRIKE_PAGES.filter((rel) => /\bclass="[^"]*\baicc-plan__regular--strike\b/.test(read(rel)));
+if (legacy.length) problems.push(`the export carries the legacy launch-offer strike card (${legacy.slice(0, 4).join(", ")}${legacy.length > 4 ? ", ..." : ""}): it shows the struck price without a confirmed open sign-up status and is never released; build with NEXT_PUBLIC_AICC_SELFSERVICE=on so the status-gated variant is used`);
 if (limited && !attested(process.env.AICC_EA_LIMITED_ATTESTED)) problems.push('the export shows "Limited availability" (data-ea-limited on Home): a release needs the owner attestation AICC_EA_LIMITED_ATTESTED=<reference> (same rules as launch:check)');
 for (const p of problems) console.error("EA RELEASE GATE FAIL: " + p);
 process.exit(problems.length ? 1 : 0);

@@ -76,6 +76,16 @@ console.log("== 3. the release gate refuses the strike export and accepts a real
       check(r.status === 1 && /no disclosure|same card/.test(r.stderr), "WITH a valid counsel reference a struck card WITHOUT its disclosure is still refused (exit 1: label + disclosure in the same card, memo 7.3)");
     } finally { fs.rmSync(cp, { recursive: true, force: true }); }
   }
+  { // P41 review: the legacy P36 card strikes without any status check: refused EVEN WITH a valid counsel reference (a clean export with the legacy marker injected)
+    const cp = fs.mkdtempSync(path.join(os.tmpdir(), "p41-strike-legacy-"));
+    try {
+      fs.cpSync(CLEAN[0], cp, { recursive: true });
+      const f = path.join(cp, "pricing/index.html"), h0 = fs.readFileSync(f, "utf8");
+      fs.writeFileSync(f, h0.replace("</body>", '<p class="aicc-plan__regular aicc-plan__regular--strike"><s><bdi>$99</bdi></s></p></body>'));
+      const r = gate(cp, "counsel-2026-11-30");
+      check(r.status === 1 && /legacy launch-offer strike card/.test(r.stderr), "the LEGACY launch-offer strike card (no status check) is refused even WITH a valid counsel reference (exit 1)");
+    } finally { fs.rmSync(cp, { recursive: true, force: true }); }
+  }
   for (const root of CLEAN) check(gate(root).status === 0, `${path.basename(root)}: a default export passes the gate without any approval`);
 }
 
