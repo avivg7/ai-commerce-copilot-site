@@ -191,7 +191,7 @@ export const eaEn = {
       perShort: "/ year",
       afterOffer: "Planned to start after the launch offer",
       strikeLabel: "Planned regular annual price after the launch offer, not a current or past price.",
-      strikeNote: "Nothing has been charged at this price yet. Trial access ends {until} at\u00a022:00 UTC. No payment method needed; nothing is charged automatically.",
+      strikeNote: "Nothing has been charged at this price yet. Trial access ends {until} at\u00a022:00\u00a0UTC. No payment method needed; nothing is charged automatically.",
       strikeSr: "Planned price after the launch offer, not currently charged:",
       free: "FREE",
       trial: "Launch trial: 1\u00a0store",
