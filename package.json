@@ -85,6 +85,7 @@
     "test:pricing-browser": "node scripts/test-pricing-browser.mjs",
     "test:pricing-sources": "node scripts/test-pricing-sources.mjs",
     "test:strike-gate": "node scripts/test-strike-gate.mjs",
+    "test:strike-visibility": "node scripts/test-strike-visibility.mjs",
     "test:visual-regression": "node scripts/test-visual-regression.mjs",
     "export:hash": "node scripts/export-hash.mjs"
   },
