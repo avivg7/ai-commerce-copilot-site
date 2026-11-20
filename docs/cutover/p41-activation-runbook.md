@@ -2,6 +2,8 @@
 
 Written 2026-11-18 (UTC), P41 builder R. **Nothing here has been run against production.** The wp-config part is proved on scratch directories (`infra/stack-tests/test_p41_lineage.sh`, 58 checks, SYNTHETIC facts); the commands that talk to the host are the repository's own tools and the Control Plane's own CLI, cross-checked against the p40 Control Plane source (`aicc-control-plane-worktrees/p40-pricing`, read-only), and are listed with the output the code prints. Everything stays default OFF until step 7.
 
+**P42 UPDATE (2026-11-20): the verified, ordered procedure is `docs/cutover/p42-activation-steps.md` (render goldens, the Turnstile secret installer, live-state facts). Where this runbook and that document differ, that document wins.** This runbook keeps the full table of gates.
+
 Read first: `docs/cutover/p37-self-service-wp-config.md` (the constants and refusal rules), `docs/cutover/p38-brevo-host-update.md` (mail), `docs/cutover/p41-wpconfig-lineage.md` (why ONE render yields everything and the `--compare` rule), `docs/cutover/p41-plugin-publication.md` (steps 3 and 6 below).
 
 ## 0. The rules of this runbook
@@ -31,9 +33,9 @@ pssh() { ssh -i ~/.ssh/aicc_cp_prod_operator -o IdentitiesOnly=yes -o StrictHost
 | A working mail transport (Brevo API active) | **code** (`mail`) and **render** | public mode `paused` | blocker `mail` |
 | Mail breaker closed; P41: mail budget/quota available | **code** (`mail_breaker`; `mail_budget` is added by the P41 Control Plane funnel/signup work: confirm with `status` once it is deployed) | public mode `paused` | blocker `mail_breaker` (and `mail_budget`) |
 | Published Terms and Privacy rows with a version | **code** (`legal_documents`) | public mode `paused` | blocker `legal_documents` |
-| Real client address (no shared private peer) | **code** (`no_trusted_proxy`) | public mode `paused` | blocker `no_trusted_proxy` (production: REMOTE_ADDR is the client, so absent) |
+| Real client address (no shared private peer) | **code** (`no_trusted_proxy`) | public mode `paused` for the request that sees a private peer | **NOT something the owner fixes.** `AICC_LM_TRUSTED_PROXIES` is correctly an EMPTY array on production (Caddy is the public edge and gives PHP the real client address through `php_fastcgi`; a trusted-proxy list would only open a path to trust a client-supplied header). The blocker appearing in `wp aicc-trial status` is a **CLI false positive** (the CLI reads a 15-minute flag that any request reaching PHP from a loopback/private address, such as a warm-up, smoke check or tunnel request, leaves behind); it is being fixed in the Control Plane, **fixed in CP release `<ID: coordinator fills in>`**. Until then, read it as noise when it is the only blocker, and confirm with the public `signup/status` route and a fresh `status` after 15 quiet minutes |
 | Capacity: pending table, daily breaker, new buckets | **code** (`capacity_tripped`) | public mode `paused` for new signups | `dropped_24h:*` rows, an audit row per day |
-| `AICC_NOTIFY_ENABLED=true` with the signup switch | **render** (stricter than the Control Plane: the trial promises welcome/reminder/expiry mail) | renderer refuses | `REFUSED: ... needs AICC_NOTIFY_ENABLED=true` |
+| `AICC_NOTIFY_ENABLED=true` (the Notification Center) | **code** in the deployed P41 Control Plane (`AICC_LM_Signup::blockers()`: `notify`: no account is created without it, the welcome and trial mails depend on it) **and** the renderer (a signup switch without it is refused) | public mode `paused` | blocker `notify` |
 | Milestone scheduling, owner-ops section, funnel counters | **owner choice** (not required for issuance) | nothing | the owner page has no section F / the funnel stays empty |
 | **Support details** (the footer line "Support details will be confirmed before purchases open." stays until the owner fact `AICC_LEGAL_SUPPORT_EMAIL` is a valid address) | **owner decision, not code-enforced** | nothing; the signup works with the line showing | the footer line on every Control Plane page (step 5b) |
 | **Legal counsel's review and removal of the "Being finalized" banners** (`AICC_LEGAL_REVIEW_APPROVED`) | **owner / process gate, NOT code-enforced for Trial signup** | nothing in the signup code reads it (the rows only have to exist) | the pages keep saying "Being finalized" |
@@ -60,7 +62,7 @@ pssh 'sudo aicc-owner-facts keys' | grep -c -x -E 'AICC_TRIAL_SELF_SERVICE_ENABL
 
 # 2.4 the baseline
 pssh 'sudo aicc-wp aicc-trial status'
-#   expect rows (cap/switch off, public mode off): switch (AICC_TRIAL_SELF_SERVICE_ENABLED) | off ; cap ... | 0 ; policy mode | off ; public mode | off ; blockers | turnstile,turnstile_blocked,plugin_release
+#   expect rows (cap/switch off, public mode off): switch (AICC_TRIAL_SELF_SERVICE_ENABLED) | off ; cap ... | 0 ; policy mode | off ; public mode | off ; blockers | turnstile,turnstile_blocked,notify,plugin_release  (plus `no_trusted_proxy` when the CLI false positive is flagged: see the table in section 1)
 #   (plugin_release appears only in the P41 Control Plane builds and only while no SIGNED release is downloadable: that is the code-enforced publication gate of step 6)
 #   (legal_documents / mail must NOT be in the list; if they are, fix them first: steps 5 and the Brevo runbook)
 pssh 'sudo aicc-wp aicc-ops journeys blockers'
@@ -93,11 +95,12 @@ Checked against the p40 Control Plane source. "Reads" is how the Control Plane i
 ### Step 1. Turnstile: the widget (owner, Cloudflare) and the secret file (owner, host)
 
 1. In the Cloudflare dashboard (Turnstile), create a widget for the hostname **www.copilt.org** (the Control Plane binds the verification to the site's own host and to the widget action `signup`, which the page sets; nothing to configure for the action). Copy the PUBLIC site key. Keep the secret key out of every file except step 2.
-2. Place the secret (hidden prompt; root-only; 0640 root:aicc-cp, the permissions the renderer demands):
+2. Place the secret with the owner-run tool (hidden prompt on the Mac, one SSH connection, never an argument, environment variable, file or log; file 0640 root:aicc-cp; `docs/cutover/p42-activation-steps.md` section 5), **without `--then-check`** (a render now would add the secret-file constant before the facts are set):
 
 ```bash
-pssh -t 'sudo bash -c '"'"'umask 027; read -rsp "Turnstile secret key: " k; echo; install -o root -g aicc-cp -m 0640 /dev/null /etc/aicc-mail/turnstile.secret; printf "%s\n" "$k" > /etc/aicc-mail/turnstile.secret; unset k'"'"''
-pssh 'sudo stat -c "%U:%G %a %s" /etc/aicc-mail/turnstile.secret'          # expect: root:aicc-cp 640 <key length + 1>
+bash infra/provision/set-turnstile-secret.sh --dry-run          # local gates and the exact command, no connection
+bash infra/provision/set-turnstile-secret.sh                    # interactive Terminal: paste the SECRET key twice (hidden); prints the fingerprint prefix only
+pssh 'sudo aicc-set-turnstile-secret status'                    # present: /etc/aicc-mail/turnstile.secret root:aicc-cp 640 <n> bytes; mode/owner ok; shape: ok
 ```
 
 3. Facts, compare, render (the order of the two `set` lines does not matter; the render checks the set):
@@ -162,7 +165,7 @@ pssh 'sudo aicc-wp aicc-trial status' | grep blockers                       # mu
 
 Process gate (owner and counsel, not enforced by code): the published pages still carry the "Being finalized" banner until `AICC_LEGAL_REVIEW_APPROVED=true` is set as an owner fact (`aicc-owner-facts set AICC_LEGAL_REVIEW_APPROVED true`, then `--compare`/render/reload). Decide this BEFORE opening: a signup records the Terms and Privacy versions it accepted, so republishing versions mid-flight splits the records. Opening with the banner is a conscious decision (the signup form's own terms block states the one-store, no-payment trial).
 
-### Step 5b. Support details (owner decision, settle BEFORE opening)
+### Step 5b. Support details (owner decision, settle BEFORE opening; LIVE since 2026-11-19: `AICC_LEGAL_SUPPORT_EMAIL=support@copilt.org` is already set, so only verify)
 
 Every Control Plane page footer says "Support details will be confirmed before purchases open." until the owner fact `AICC_LEGAL_SUPPORT_EMAIL` is a valid address (`aicc_support_email_known()` in the theme). Customers who sign up will see that line next to the signup, so decide the address now (the P38 notes use `support@copilt.org`, the Reply-To of the Brevo mail; confirm that mailbox is staffed):
 

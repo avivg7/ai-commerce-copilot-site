@@ -165,6 +165,8 @@ The tool keeps every old secret **on purpose**: the old Control Plane secret (`.
 
 ## 12. Owner execution package
 
+> **P42 note (2026-11-20):** the pins in the checklist below (Control Plane release `20261117T140823Z-42f047ea`, the `first-store-preflight-p35.sh` pins) are STALE. Use `docs/cutover/p42-webhook-rotation-owner-package.md`: today's pins (CP release `20261119T224150Z-90da3713`, Backend image `launch-p37-32db289`), the re-validated assumptions, the rollback ladder and the approval sentence. This section stays the long form.
+
 **What you are about to do:** replace the shared webhook secret on both production hosts with a new one that was generated on the Control Plane host. It is **not atomic**: for a short time (typically seconds; the script prints the measured window, an upper bound that includes the Backend health wait) the Control Plane's entitlement deliveries are answered 401 and are queued and retried by the plugin outbox; the drain check then shows whether any new undelivered row or exhausted row remains; the Backend container restarts once (a few seconds); merchants and licences are not affected; the container `nourishvik-care` on the API host is only read.
 
 **Pre-flight checklist (all must be true):**

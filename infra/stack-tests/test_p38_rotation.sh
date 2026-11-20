@@ -9,7 +9,7 @@
 #   C  every partial failure (kill -9 at every stage of every host mutation, a failing restart / health / render / reload / probe / drain) followed by resume or rollback, with the invariants
 #   D  gates: host identity, deploy window, flock, bystander, env-file shape, API tool install (sha256), seams, harness-only flags
 #   E  secret hygiene: canary scans of every output, log, journal, temp tree and the process list (pseudo terminal poller), static rules on the three scripts
-# Run: bash infra/stack-tests/test_p38_rotation.sh
+# Run: bash infra/stack-tests/test_p38_rotation.sh      (P38R_TRANSCRIPT=<file> appends every orchestrator output to a transcript: the owner package uses it)
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"; REPO="$(cd "$HERE/../.." && pwd)"; INFRA="$REPO/infra"; PROV="$INFRA/provision"
 T_SUITE="p38-rotation"; . "$HERE/lib/t.sh"
@@ -362,6 +362,7 @@ rot() { # rot <subcommand> [args]: the owner script on the fake hosts; the whole
   local common="$ROT_COMMON"; [ "${ROT_NOWIN:-0}" != 1 ] || common="${common/--ignore-window/}"
   R_OUT="$("${e[@]}" bash "$ROT" "$sub" $common "$@" 2>&1 </dev/null)"; R_RC=$?
   printf '%s\n' "$R_OUT" > "$lf"
+  [ -z "${P38R_TRANSCRIPT:-}" ] || printf '$ rotate-webhook-secret.sh %s %s --confirm-production   [simulated two-host world; harness flags omitted; exit %s]\n%s\n\n' "$sub" "$*" "$R_RC" "$R_OUT" >> "$P38R_TRANSCRIPT"
   [ -z "${ROT_DEBUG:-}" ] || { printf -- '---- rot %s %s (rc %s)\n%s\n' "$sub" "$*" "$R_RC" "$R_OUT"; }
 }
 export AICC_TEST_NEW_SECRET_FILE="$TMP/new-secret.file"
