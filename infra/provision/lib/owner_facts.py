@@ -292,7 +292,13 @@ def _p37_cap(key, v):
     return v
 
 
+CF_TEST_CREDENTIAL = re.compile(r"[123]x0")   # Cloudflare's PUBLISHED dummy Turnstile keys (site keys 1x00000000000000000000AA / 2x...AB / 3x...FF, secrets 1x0000000000000000000000000000000AA ...): always pass / always block / force interaction. Real keys start 0x4.
+CF_TEST_MSG = "Cloudflare test credentials are for tests only: create a real widget"
+
+
 def _p37_site_key(key, v):
+    if CF_TEST_CREDENTIAL.match(v):
+        raise OwnerFactsError("%s: %s (a production signup behind a dummy key either lets every bot through or blocks every visitor)" % (key, CF_TEST_MSG))
     if not re.fullmatch(r"[A-Za-z0-9_-]{8,64}", v):  # AICC_LM_EA_Requests_Turnstile::site_key(): the PUBLIC site key; the SECRET never goes here (it lives in the secret file)
         raise OwnerFactsError("%s must be the PUBLIC Turnstile site key: 8-64 characters from [A-Za-z0-9_-]. The Turnstile SECRET key is never an owner fact: it goes into %s (hidden prompt, see docs/cutover/p37-self-service-wp-config.md)" % (key, TURNSTILE_SECRET_FILE))
     return v
@@ -546,6 +552,8 @@ def check_turnstile_secret_file(path):
     first = re.split(rb"\r\n|\n|\r", raw)[0].strip(b" \t\n\r\0\x0b")
     if not re.fullmatch(rb"[\x21-\x7e]{8,256}", first):
         raise OwnerFactsError("%s: the first line must be the Turnstile secret key, 8-256 printable characters with no space (the Control Plane would read it as 'no secret')" % path)
+    if CF_TEST_CREDENTIAL.match(first.decode("ascii")):
+        raise OwnerFactsError("%s: %s (the secret file holds one of Cloudflare's public dummy secrets)" % (path, CF_TEST_MSG))
     return first.decode("ascii")
 
 
@@ -691,6 +699,14 @@ def write_file(path, facts, env):
 # ---- rendering --------------------------------------------------------------------------------------------------------------------------------------------
 def php_str(v):
     return "'" + v.replace("\\", "\\\\").replace("'", "\\'") + "'"
+
+
+def render_problems(facts, env, ctx=None):
+    """The same rules as require_render_ready, as a list of plain problems (empty = renderable)."""
+    out = ["P38: " + p for p in p38_problems(facts, env, ctx)] + ["P37: " + p for p in p37_problems(facts, env, ctx)]
+    if env == "production" and "AICC_LM_PAID_GATEWAYS" in facts and "AICC_LM_PAYMENT_EVIDENCE_PROVIDER" not in facts:
+        out.append("COM-GATE-01: AICC_LM_PAID_GATEWAYS is set but AICC_LM_PAYMENT_EVIDENCE_PROVIDER is not")
+    return out
 
 
 def require_render_ready(facts, env, ctx=None):
@@ -904,6 +920,7 @@ def main(argv):
             raise OwnerFactsError("%s needs a KEY" % a.cmd)
         if a.key not in ORDER:
             raise OwnerFactsError("unknown key '%s' (allowed: %s)" % (a.key, ", ".join(KEYS_FOR[a.env])))
+        old_facts = dict(facts)
         if a.cmd == "set-stdin":
             if a.value is not None:
                 raise OwnerFactsError("set-stdin needs KEY only: the value is read from stdin")
@@ -924,6 +941,17 @@ def main(argv):
                 return 0
             del facts[a.key]
         facts = validate_all(facts, a.env)
+        # P42 review: a change must not BREAK the signup-switch rules the renderer enforces (e.g. `unset AICC_LEGAL_REVIEW_APPROVED` while AICC_TRIAL_SELF_SERVICE_ENABLED is set, or setting the switch before its prerequisites: the next render would
+        # refuse it). Only the rules decidable from the facts alone run here (the host state is the renderer's business), and only the SIGNUP-SWITCH family: the other render rules (e.g. the Brevo provider before its sender) keep the documented
+        # "any order" editing. A problem that was ALREADY there is tolerated, so an inconsistent file can still be repaired; only a NEW problem refuses the change, and nothing is written.
+        before = {k: v for k, v in old_facts.items()}
+        try:
+            old_set = set(render_problems(validate_all(before, a.env), a.env))
+        except OwnerFactsError:
+            old_set = set()
+        new_probs = [p[5:] for p in render_problems(facts, a.env) if p not in old_set and p.startswith("P37: AICC_TRIAL_SELF_SERVICE_ENABLED needs")]
+        if new_probs:
+            raise OwnerFactsError("this change would break the render rules (nothing was written): " + " | ".join(new_probs) + ". Change the facts in the order the activation steps give (to back out: the signup switch first, then the cap, the legal approval and the site key)")
         write_file(a.file, facts, a.env)
         print("%s %s in %s (mode 0600). Now re-render: sudo aicc-render-wp-config --env %s%s" % (a.key, "set" if a.cmd in ("set", "set-stdin") else "unset", a.file, a.env, " --confirm-production" if a.env == "production" else ""))
         return 0

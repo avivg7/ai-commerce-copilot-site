@@ -131,16 +131,19 @@ refused() { # refused <name> <expected-text-in-message>   (the facts/secret file
   if [ "$rc" = 1 ] && printf '%s' "$out" | grep -qF -- "$want" && [ "$(sha "$OUT")" = "$KEEP" ]; then t_pass "$n"; else t_bad "$n" "rc=$rc want 1 + '$want' + file untouched ($( [ "$(sha "$OUT")" = "$KEEP" ] && echo untouched || echo CHANGED)): $(printf '%s' "$out" | tail -2 | cut -c1-260)"; fi
 }
 facts() { reset_facts; for kv in "$@"; do T set $kv >/dev/null 2>&1 || true; done; }
+# P42 review: the facts TOOL now refuses an edit that breaks the signup-switch rules (see test_p42_activation.sh, section RV), so these tests build the inconsistent files the way a HAND EDIT or an older tool would: by editing the file itself. The renderer must still refuse them.
+hand_unset() { grep -v "^$1=" "$OFF" > "$OFF.n"; mv "$OFF.n" "$OFF"; chmod 600 "$OFF"; }
+hand_set() { printf '%s=%s\n' "$1" "$2" >> "$OFF"; chmod 600 "$OFF"; }
 full_set() { mail_on; ts_file; facts "AICC_NOTIFY_ENABLED true" "AICC_TURNSTILE_ENABLED true" "AICC_TURNSTILE_SITE_KEY $SITEKEY" "AICC_TRIAL_SELF_SERVICE_CAP 25" "AICC_LEGAL_REVIEW_APPROVED true" "AICC_TRIAL_SELF_SERVICE_ENABLED true"; }
 full_set; t_ok "(the complete set is accepted: baseline of the refusal tests)" R; R >/dev/null 2>&1; KEEP="$(sha "$OUT")"
 # one prerequisite removed at a time from a complete set
-full_set; T unset AICC_TRIAL_SELF_SERVICE_CAP >/dev/null; refused "self-service ON without a cap is REFUSED" "needs AICC_TRIAL_SELF_SERVICE_CAP"
-full_set; T unset AICC_TURNSTILE_SITE_KEY >/dev/null; refused "self-service ON without the Turnstile site key is REFUSED" "needs AICC_TURNSTILE_SITE_KEY"
-full_set; T unset AICC_TURNSTILE_ENABLED >/dev/null; refused "self-service ON without AICC_TURNSTILE_ENABLED (the outbound host) is REFUSED" "AICC_TURNSTILE_ENABLED=true"
-full_set; T unset AICC_NOTIFY_ENABLED >/dev/null; refused "self-service ON with the notify switch OFF (campaign mail expected) is REFUSED" "needs AICC_NOTIFY_ENABLED=true"
+full_set; hand_unset AICC_TRIAL_SELF_SERVICE_CAP; refused "self-service ON without a cap is REFUSED" "needs AICC_TRIAL_SELF_SERVICE_CAP"
+full_set; hand_unset AICC_TURNSTILE_SITE_KEY; refused "self-service ON without the Turnstile site key is REFUSED" "needs AICC_TURNSTILE_SITE_KEY"
+full_set; hand_unset AICC_TURNSTILE_ENABLED; refused "self-service ON without AICC_TURNSTILE_ENABLED (the outbound host) is REFUSED" "AICC_TURNSTILE_ENABLED=true"
+full_set; hand_unset AICC_NOTIFY_ENABLED; refused "self-service ON with the notify switch OFF (campaign mail expected) is REFUSED" "needs AICC_NOTIFY_ENABLED=true"
 full_set; ts_off; refused "self-service ON without the Turnstile SECRET FILE is REFUSED" "Turnstile secret file"
 full_set; mail_off; refused "self-service ON without the mail layer (no safe smtp.env) is REFUSED" "needs the mail layer"
-full_set; refused_all="$(T unset AICC_TRIAL_SELF_SERVICE_CAP >/dev/null; T unset AICC_NOTIFY_ENABLED >/dev/null; R 2>&1 || true)"
+full_set; refused_all="$(hand_unset AICC_TRIAL_SELF_SERVICE_CAP; hand_unset AICC_NOTIFY_ENABLED; R 2>&1 || true)"
 t_contains "a file with several problems names them all in one refusal (cap and notify)" "$refused_all" "needs AICC_TRIAL_SELF_SERVICE_CAP"
 t_contains "...(second problem)" "$refused_all" "needs AICC_NOTIFY_ENABLED=true"
 full_set; T unset AICC_TRIAL_SELF_SERVICE_ENABLED >/dev/null; R >/dev/null 2>&1; KEEP="$(sha "$OUT")"
@@ -152,7 +155,7 @@ mail_on; ts_off; facts "AICC_MAIL_MAX_PER_HOUR 400" "AICC_MAIL_MAX_PER_DAY 300";
 mail_off; facts "AICC_FUNNEL_ALLOWED_ORIGINS https://copilt.org"; refused "funnel origins without the funnel switch are REFUSED" "AICC_FUNNEL_COUNTERS_ENABLED is not"
 mail_off; facts "AICC_PAY_RECONCILE_ENABLED true"; refused "the payment reconcile without a configured payment path is REFUSED" "needs a configured payment path"
 facts "AICC_NOTIFY_ENABLED true"; t_ok "(a notify switch with no mail layer passes the fact-only \`check\`: the host state is the renderer's to judge, and the renderer refused it above)" env AICC_TEST_HARNESS=1 bash "$PROV/owner-facts.sh" --file "$OFF" --env production check
-facts "AICC_TRIAL_SELF_SERVICE_ENABLED true"; t_rc "...whereas a self-service switch without its facts is refused by the fact-only \`check\` too" 1 env AICC_TEST_HARNESS=1 bash "$PROV/owner-facts.sh" --file "$OFF" --env production check
+reset_facts; hand_set AICC_TRIAL_SELF_SERVICE_ENABLED true; t_rc "...whereas a self-service switch without its facts is refused by the fact-only \`check\` too" 1 env AICC_TEST_HARNESS=1 bash "$PROV/owner-facts.sh" --file "$OFF" --env production check
 t_rc "...and the renderer's dry-run refuses it as well (no write, no surprise at the real render)" 1 R --dry-run
 # bad values, refused when set
 mail_off; reset_facts
@@ -250,7 +253,9 @@ mail_on;                                 t_ok "step 1: smtp.env placed, render: 
 T set AICC_NOTIFY_EXCLUDED_CUSTOMERS 2 >/dev/null; t_ok "step 2: exclusion list first (owner's own test customer), render" R
 T set AICC_MAIL_MAX_PER_HOUR 180 >/dev/null; T set AICC_MAIL_MAX_PER_DAY 300 >/dev/null; t_ok "step 3: mail caps matched to the relay plan, render" R
 T set AICC_NOTIFY_ENABLED true >/dev/null; t_ok "step 4: notification switch (mail is ready), render" R
-T set AICC_LEGAL_REVIEW_APPROVED true >/dev/null; T set AICC_TRIAL_SELF_SERVICE_ENABLED true >/dev/null; T set AICC_TRIAL_SELF_SERVICE_CAP 25 >/dev/null
+T set AICC_LEGAL_REVIEW_APPROVED true >/dev/null; T set AICC_TRIAL_SELF_SERVICE_CAP 25 >/dev/null
+t_rc "step 5 TOO EARLY: the facts tool itself refuses the switch while its Turnstile prerequisites are missing (P42 review)" 1 T set AICC_TRIAL_SELF_SERVICE_ENABLED true
+hand_set AICC_TRIAL_SELF_SERVICE_ENABLED true      # a hand-edited file: the RENDERER must still refuse it
 KEEP="$(sha "$OUT")"; refused "step 5 TOO EARLY: switch + cap before Turnstile is REFUSED (no key, no host, no secret file)" "needs AICC_TURNSTILE_SITE_KEY"
 T set AICC_TURNSTILE_ENABLED true >/dev/null; T set AICC_TURNSTILE_SITE_KEY "$SITEKEY" >/dev/null; refused "step 5 still too early: no secret file yet" "Turnstile secret file"
 ts_file;                                   t_ok "step 5: Turnstile secret file placed, key + host facts set: the whole set renders" R

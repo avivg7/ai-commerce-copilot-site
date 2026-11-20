@@ -9,14 +9,14 @@ Written 2026-11-20 (UTC), P42 builder R. **Nothing in this package was run again
 | The exposed secret `AICC_ENTITLEMENT_WEBHOOK_SECRET` (printed in an earlier execution transcript, 2026-11-15) | still LIVE on both hosts: **never rotated** |
 | The rotation tool (Mac orchestrator, Control Plane host tool, API host tool, probe, outbox snapshot, retired registry) | built, security-reviewed twice, tested; merged into this branch (section 1) |
 | **Live rotation** | **NOT authorized. NOT executed.** Nothing in this package, in the repository or in any test authorizes it. Engineering will not run any step of it. |
-| What the owner authorizes by giving the approval sentence (section 9) | exactly one `run` of the orchestrator in one deploy window, then `finalize`, with the rollback rules of section 6. Nothing else. |
+| What the owner authorizes by giving the approval sentence (section 9) | the three-file tool install of section 3b (a production change: `sudo install` of three root-owned files), then exactly one `run` of the orchestrator in one deploy window, then `finalize`, with the rollback rules of section 6. Nothing else. |
 | Not authorized by that sentence | a Backend code change or deploy, a dual-secret period, deleting any old secret or backup, touching `nourishvik-care`, any other secret, DNS, the Plugin, opening public signup |
 
 ## 1. Ancestry result: was the rotation tool already in the current line?
 
 **No.** `feat/p38-webhook-rotation` (head `88b99b8`, remote `avivg7/ai-commerce-copilot-site`) is an ancestor of neither `feat/p41-site-journey` (`4963a48`) nor `feat/p41-release-tools`; its merge-base with them is `9d6290e` (the P38 Brevo line). It touches only `infra/` and `docs/`: `host/aicc-rotate-webhook-secret`, `host/aicc-rotate-webhook-secret-api`, `host/outbox-snapshot.php`, `host/webhook-probe.php`, `rotate-webhook-secret.sh`, `retired-webhook-fingerprints.txt`, `install-stack.sh` (+4 lines), `docs/cutover/p38-webhook-rotation.md`, `lint.py`, `run-all.sh`, `test_lint.sh`, `test_p38_rotation.sh`. It is now merged into **`feat/p42-site-readiness`** (merge commit `658f184`, worktree `ai_copilot_site-worktrees/p42-activation`); the only two conflicts (`infra/stack-tests/lint.py` exemption list and `run-all.sh` suite list) were resolved by union, no behaviour change. The tool is on no deployed host yet (the P38 host update copied six files only).
 
-Tests after the merge (this branch): `test_p38_rotation.sh` **1069 passed / 0 failed**; `lint.sh` 694 checks, 0 problems, shellcheck clean; `test_p42_activation.sh` 62; `test_p42_turnstile_key.sh` 274; `test_p37_wpconfig.sh`, `test_p41_lineage.sh`, `test_verify_published*.sh` are re-run and listed in the hand-back.
+Tests after the merge (this branch): `test_p38_rotation.sh` **1069 passed / 0 failed**; `lint.sh` 694 checks, 0 problems, shellcheck clean; `test_p42_activation.sh` 98; `test_p42_turnstile_key.sh` 306; `test_p37_wpconfig.sh` 267; `test_p38_brevo.sh` 459; `test_p38_key.sh` 290; `test_p41_lineage.sh` 58; `test_lint.sh` 120 (counts after the P42 review fixes; `test_verify_published*.sh` and `test_plugin_publish.sh` are unchanged by them).
 
 ## 2. Re-validation against today's reality
 
@@ -34,7 +34,9 @@ Tests after the merge (this branch): `test_p38_rotation.sh` **1069 passed / 0 fa
 
 Two facts that matter for "what is in flight": the CP signs at attempt time, so **no event is ever stored with a signature**; an attempt made while the hosts disagree is answered `401`, counted as one failed attempt and retried later with the then-current secret. Entitlement lives in the Backend database, so a merchant's existing licence and the enforcement mode are not touched by a rotation at all.
 
-## 3. Before the window: tooling and gates (coordinator or owner, no production change)
+## 3. Before the window: 3a read-only gates, then 3b the tool install (a PRODUCTION CHANGE)
+
+**3a (coordinator or owner, no production change):** the local checks below.
 
 ```bash
 SITE=~/self_projects/ai_copilot_site-worktrees/p42-activation      # branch feat/p42-site-readiness (contains 88b99b8)
@@ -43,17 +45,18 @@ bash infra/stack-tests/test_p38_rotation.sh | tail -1               # ~15 min: 1
 bash infra/provision/rotate-webhook-secret.sh retired-list          # local, no connection: the off-host retired lists (today: none, the repo file lists none)
 ```
 
-Install the three CP-host files **one by one with a hash** (the bundle push mirrors with `--delete` and would roll forward unrelated tooling; the P38 update did the same targeted copy). Owner or coordinator, CP host only; the API tool needs no manual install:
+**3b is a PRODUCTION CHANGE: a `sudo install` of three root-owned files on the Control Plane host** (`/usr/local/sbin/aicc-rotate-webhook-secret`, `/usr/local/lib/aicc/webhook-probe.php`, `/usr/local/lib/aicc/outbox-snapshot.php`). It is covered by the approval sentence of section 9 and by nothing else; it changes no running service and no secret. The three files are copied **one by one, each installed only if its SHA-256 on the host equals the hash computed here** (the bundle push mirrors with `--delete` and would roll forward unrelated tooling; the P38 update did the same targeted copy). Owner or coordinator, CP host only; the API tool needs no manual install:
 
 ```bash
 pssh() { ssh -i ~/.ssh/aicc_cp_prod_operator -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts_aicc_prod" aicc@157.230.110.211 "$@"; }
 SCP() { scp -i ~/.ssh/aicc_cp_prod_operator -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts_aicc_prod" "$@"; }
 pssh 'mkdir -p -m 700 ~/p42-incoming'
 for f in aicc-rotate-webhook-secret webhook-probe.php outbox-snapshot.php; do SCP infra/provision/host/$f aicc@157.230.110.211:p42-incoming/; done
-for f in aicc-rotate-webhook-secret webhook-probe.php outbox-snapshot.php; do shasum -a 256 infra/provision/host/$f; pssh "sha256sum ~/p42-incoming/$f"; done      # each pair must be equal
-pssh 'sudo install -o root -g root -m 0755 ~/p42-incoming/aicc-rotate-webhook-secret /usr/local/sbin/aicc-rotate-webhook-secret'
-pssh 'sudo install -o root -g root -m 0644 ~/p42-incoming/webhook-probe.php /usr/local/lib/aicc/webhook-probe.php'
-pssh 'sudo install -o root -g root -m 0644 ~/p42-incoming/outbox-snapshot.php /usr/local/lib/aicc/outbox-snapshot.php'
+# install ONLY when the host's SHA-256 equals the Mac's (a mismatch installs nothing and says so)
+inst() { local f="$1" mode="$2" dest="$3" h; h="$(shasum -a 256 "infra/provision/host/$f" | cut -d' ' -f1)"; pssh "[ \"\$(sha256sum ~/p42-incoming/$f | cut -d' ' -f1)\" = $h ] && sudo install -o root -g root -m $mode ~/p42-incoming/$f $dest" && echo "installed (hash verified): $dest" || echo "NOT INSTALLED (hash mismatch or error): $f"; }
+inst aicc-rotate-webhook-secret 0755 /usr/local/sbin/aicc-rotate-webhook-secret
+inst webhook-probe.php 0644 /usr/local/lib/aicc/webhook-probe.php
+inst outbox-snapshot.php 0644 /usr/local/lib/aicc/outbox-snapshot.php
 pssh 'sudo aicc-rotate-webhook-secret status --expect-stage-id 3e897286ce82e55f4d866acf0d526a5f'     # prints the host's rotation state: no rotation yet
 ```
 
@@ -124,9 +127,9 @@ pssh 'sudo aicc-wp eval '"'"'global $wpdb; echo (int) $wpdb->get_var("SELECT COU
 
 ## 9. The approval sentence
 
-The owner sends this (changing wording is fine) BEFORE step 2 of section 4. It authorizes exactly one rotation by `infra/provision/rotate-webhook-secret.sh` and nothing else:
+The owner sends this (changing wording is fine) BEFORE section 3b. It authorizes the tool install and exactly one rotation by `infra/provision/rotate-webhook-secret.sh`, and nothing else:
 
-> "I approve rotating AICC_ENTITLEMENT_WEBHOOK_SECRET with infra/provision/rotate-webhook-secret.sh from branch feat/p42-site-readiness on the Control Plane 157.230.110.211 (release 20261119T224150Z-90da3713) and the API host 139.59.157.231 (Backend image aicc-backend:launch-p37-32db289) in the next deploy window, outside UTC hours 02 and 03: one aicc-backend restart, entitlement deliveries answered 401 and retried by the outbox for a short, measured time (not atomic), nourishvik-care read only, nothing deleted, the old secret kept as a retired backup, rollback puts the exposed secret back and is a pause only. I will run finalize after reading the run output and commit the retired fingerprint line. Public signup stays closed until this is finalized."
+> "I approve (1) the one-time hash-verified `sudo install` of the three root-owned tool files aicc-rotate-webhook-secret, webhook-probe.php and outbox-snapshot.php on the Control Plane 157.230.110.211 (section 3b of the package; removable with its rollback line), and (2) rotating AICC_ENTITLEMENT_WEBHOOK_SECRET with infra/provision/rotate-webhook-secret.sh from branch feat/p42-site-readiness on the Control Plane 157.230.110.211 (release 20261119T224150Z-90da3713) and the API host 139.59.157.231 (Backend image aicc-backend:launch-p37-32db289), BUT ONLY after `plan` has printed exactly these identities (the Control Plane release, the stage id 3e897286..., the Backend image and `mode=enforced`; if `plan` prints anything different, this approval does not apply and I will be asked again), in the next deploy window, outside UTC hours 02 and 03: one aicc-backend restart, entitlement deliveries answered 401 and retried by the outbox for a short, measured time (not atomic), nourishvik-care read only, nothing deleted, the old secret kept as a retired backup, rollback puts the exposed secret back and is a pause only. I will run finalize after reading the run output and commit the retired fingerprint line. Public signup stays closed until this is finalized."
 
 ## 10. What could not be verified, and deviations
 

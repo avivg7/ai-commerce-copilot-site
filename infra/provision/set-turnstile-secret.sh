@@ -120,23 +120,33 @@ fi
 
 # ---- install / rotate: the hidden prompt -----------------------------------------------------------------------------------------------------------------------------------------------------------
 KEY_RE='^[!-~]+$'     # printable ASCII, no space (the {8,256} length bound is checked below: bash regex repetition is capped at 255)
-sha8() { printf '%s' "$1" | shasum -a 256 | cut -c1-8; }
+fp16() { printf 'aicc-turnstile-secret-fingerprint-v1\n%s' "$1" | shasum -a 256 | cut -c1-16; }      # domain-tagged, like the host tool and the webhook rotation tool
+# Cloudflare's PUBLISHED dummy keys (1x0... / 2x0... / 3x0...) always pass, always block or force interaction: never for production. Real keys start 0x4.
+is_cf_test() { case "$1" in 1x0*|2x0*|3x0*) return 0 ;; *) return 1 ;; esac; }
+# the terminal state: `read -s` switches the echo off; a signal at the prompt must not leave the owner's terminal silent. The saved state is restored on EVERY exit path.
+TTY_SAVED="$(stty -g </dev/tty 2>/dev/null || true)"
+restore_tty() { [ -z "${TTY_SAVED:-}" ] || stty "$TTY_SAVED" </dev/tty 2>/dev/null || true; }
+trap 'restore_tty' EXIT
+trap 'restore_tty; exit 130' INT
+trap 'restore_tty; exit 143' TERM
+trap 'restore_tty; exit 129' HUP
 printf 'Turnstile SECRET key (input hidden; paste once, then Enter): ' >/dev/tty
 IFS= read -rs k1 </dev/tty || k1=""; printf '\n' >/dev/tty
 if ! [[ "$k1" =~ $KEY_RE ]] || [ "${#k1}" -lt 8 ] || [ "${#k1}" -gt 256 ]; then n=${#k1}; k1=""; die "the entry does not have the shape of a Turnstile secret key (8-256 printable characters, no space; yours has $n). Nothing was sent."; fi
+if is_cf_test "$k1"; then k1=""; die "Cloudflare test credentials are for tests only: create a real widget (the Turnstile secret must be the real one of YOUR widget; test keys start with 1x0 / 2x0 / 3x0, real keys with 0x4). Nothing was sent."; fi
 printf 'Paste the same secret again to confirm (input hidden): ' >/dev/tty
 IFS= read -rs k2 </dev/tty || k2=""; printf '\n' >/dev/tty
 if [ "$(printf '%s' "$k1" | shasum -a 256)" != "$(printf '%s' "$k2" | shasum -a 256)" ]; then k1=""; k2=""; die "the two entries differ (compared by SHA-256, nothing shown). Nothing was sent."; fi
 k2=""
-case "$k1" in 0x4*|1x0*|2x0*|3x0*) ;; *) echo "note: the value does not start with 0x4 / 1x0 / 2x0 / 3x0 (the usual Turnstile key prefixes); accepted because the shape is valid." ;; esac
-LOCAL_FP="$(sha8 "$k1")"
+case "$k1" in 0x4*) ;; *) echo "note: the value does not start with 0x4 (real Turnstile secret keys do); accepted because the shape is valid." ;; esac
+LOCAL_FP="$(fp16 "$k1")"
 echo "sending on the SSH connection's standard input (the remote command has no secret): $REMOTE_CMD"
 out="$(printf '%s\n' "$k1" | rssh "$REMOTE_CMD" 2>&1)" && rc=0 || rc=$?
 k1=""
 printf '%s\n' "$out" | redact
 [ "$rc" = 0 ] || { echo "the host reported a failure or the connection dropped (exit $rc). STATE UNKNOWN: the host may have committed the key before the failure. Run \`$0 status\` (it never shows the key) before you retry or rotate." >&2; exit 1; }
-REMOTE_FP="$(printf '%s\n' "$out" | sed -n 's/^fingerprint: sha256:\([0-9a-f]\{8\}\).*/\1/p' | head -1)"
-if [ "$REMOTE_FP" = "$LOCAL_FP" ]; then echo "fingerprint matches what you typed: sha256:$LOCAL_FP (first 8 hex)"; else echo "WARNING: the fingerprint on the host (${REMOTE_FP:-none}) differs from the one computed here ($LOCAL_FP). Do not continue; run status and re-run rotate." >&2; exit 1; fi
+REMOTE_FP="$(printf '%s\n' "$out" | sed -n 's/^fingerprint: \([0-9a-f]\{16\}\) .*/\1/p' | head -1)"
+if [ "$REMOTE_FP" = "$LOCAL_FP" ]; then echo "fingerprint matches what you typed: $LOCAL_FP (first 16 hex, domain-tagged)"; else echo "WARNING: the fingerprint on the host (${REMOTE_FP:-none}) differs from the one computed here ($LOCAL_FP). Do not continue; run status and re-run rotate." >&2; exit 1; fi
 [ "$MODE" != rotate ] || echo "NOW: the previous secret is GONE from the host (no copy is kept) but is STILL VALID in Cloudflare until you invalidate it there (Turnstile, the widget, Rotate secret key)."
 [ "$THEN_CHECK" = 1 ] || { echo "Done. Next: docs/cutover/p42-activation-steps.md (re-run with --then-check, or the activation runbook)."; exit 0; }
 

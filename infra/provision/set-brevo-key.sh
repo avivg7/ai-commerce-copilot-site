@@ -125,6 +125,13 @@ fi
 # ---- install / rotate: the hidden prompt -----------------------------------------------------------------------------------------------------------------------------------------------------------
 KEY_RE='^[A-Za-z0-9_-]{20,200}$'
 sha8() { printf '%s' "$1" | shasum -a 256 | cut -c1-8; }
+# the terminal state: `read -s` switches the echo off; a signal at the prompt must not leave the owner's terminal silent. The saved state is restored on EVERY exit path (P42 review).
+TTY_SAVED="$(stty -g </dev/tty 2>/dev/null || true)"
+restore_tty() { [ -z "${TTY_SAVED:-}" ] || stty "$TTY_SAVED" </dev/tty 2>/dev/null || true; }
+trap 'restore_tty' EXIT
+trap 'restore_tty; exit 130' INT
+trap 'restore_tty; exit 143' TERM
+trap 'restore_tty; exit 129' HUP
 printf 'Brevo API key (input hidden; paste once, then Enter): ' >/dev/tty
 IFS= read -rs k1 </dev/tty || k1=""; printf '\n' >/dev/tty
 if [[ "$k1" == xsmtpsib-* ]]; then k1=""; die "this is an SMTP key (xsmtpsib-...): an API key is needed (Brevo: SMTP & API -> API Keys -> Generate a new API key). Nothing was sent."; fi

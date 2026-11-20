@@ -22,6 +22,7 @@ die() { printf 'aicc-set-brevo-key: %s\n' "$*" >&2; exit 1; }
 case "$-" in *x*) die "REFUSED: shell tracing (set -x) is on; the key could be traced" ;; esac
 [ -z "${BASH_XTRACEFD:-}" ] || die "REFUSED: BASH_XTRACEFD is set; the key could be traced"
 case ":${SHELLOPTS:-}:" in *:xtrace:*) die "REFUSED: SHELLOPTS contains xtrace" ;; esac
+ulimit -c 0 2>/dev/null || true       # no core dump (P42 review); the python writer sets it again itself
 umask 0077       # the python writer sets umask 0277 itself before it creates the temp file
 HARNESS=0; PREFIX=""
 # under_tmp <dir>: is the real path of an existing directory below the system temp dir ($TMPDIR, /tmp, /var/tmp, macOS /private/var/folders)?
@@ -62,7 +63,16 @@ if [ -n "$EXPECT_ID" ] || [ "$MODE" != status ]; then
 fi
 
 read -r -d '' PYSRC <<'PYEOF' || true
-import grp, hashlib, os, re, signal, stat, sys
+import ctypes, grp, hashlib, os, re, resource, signal, stat, sys
+
+try:
+    resource.setrlimit(resource.RLIMIT_CORE, (0, 0))       # no core dump of the process that holds the key (P42 review, like the rotation tools)
+except Exception:
+    pass
+try:
+    ctypes.CDLL(None).prctl(4, 0, 0, 0, 0)                 # PR_SET_DUMPABLE = 4 (Linux; a no-op elsewhere)
+except Exception:
+    pass
 
 mode, maildir, logical, owner_want, harness, expect_kill, short_write = sys.argv[1:8]
 NAME = "brevo-api.key"

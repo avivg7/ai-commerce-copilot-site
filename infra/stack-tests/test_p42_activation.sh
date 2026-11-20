@@ -155,4 +155,48 @@ printf '%s\n' "$TSSECRET" > "$MAILD/turnstile.secret"; chmod 600 "$MAILD/turnsti
 refuses "a Turnstile secret file with mode 0600 (PHP could not read it) is refused" "0640"
 chmod 640 "$MAILD/turnstile.secret"
 t_ok "(control) the complete stage-2 set renders again" R
+
+echo "== RV. review fixes: the facts tool refuses a change that would BREAK the render rules; Cloudflare's PUBLIC TEST keys are never accepted =="
+ts_on
+refused_change() { # <name> <text the refusal must contain> <owner-facts args...>; the facts file must be byte-identical afterwards
+  local n="$1" want="$2"; shift 2; local b a o rc=0
+  b="$(shasum -a 256 "$OFF" | cut -d' ' -f1)"; o="$(T "$@" 2>&1 </dev/null)" || rc=$?; a="$(shasum -a 256 "$OFF" | cut -d' ' -f1)"
+  if [ "$rc" = 1 ] && [ "$a" = "$b" ] && printf '%s' "$o" | grep -qF -- "$want"; then t_pass "$n"; else t_bad "$n" "rc=$rc unchanged=$([ "$a" = "$b" ] && echo yes || echo NO) out=$(printf '%s' "$o" | tail -2 | tr '\n' '|' | cut -c1-240)"; fi
+}
+for k in AICC_LEGAL_REVIEW_APPROVED AICC_NOTIFY_ENABLED AICC_TURNSTILE_SITE_KEY AICC_TURNSTILE_ENABLED AICC_TRIAL_SELF_SERVICE_CAP; do
+  facts_from "$FIX/owner-facts.production.p42-stage2.env"
+  refused_change "unset $k while the signup switch is set is REFUSED (nothing written)" "would break the render rules" unset "$k"
+done
+facts_from "$FIX/owner-facts.production.p42-stage1.env"
+refused_change "set AICC_TRIAL_SELF_SERVICE_ENABLED without cap and legal approval is REFUSED (set)" "AICC_LEGAL_REVIEW_APPROVED" set AICC_TRIAL_SELF_SERVICE_ENABLED true
+b="$(shasum -a 256 "$OFF" | cut -d' ' -f1)"; o="$(printf 'true\n' | T set-stdin AICC_TRIAL_SELF_SERVICE_ENABLED 2>&1)"; rc=$?
+t_eq "...and set-stdin is REFUSED the same way, nothing written" "$rc/$([ "$(shasum -a 256 "$OFF" | cut -d' ' -f1)" = "$b" ] && echo same)/$(printf '%s' "$o" | grep -c 'REFUSED')" "1/same/1"
+facts_from "$FIX/owner-facts.production.p42-stage-legal.env"
+refused_change "the switch before the cap is REFUSED even with the legal approval set" "AICC_TRIAL_SELF_SERVICE_CAP" set AICC_TRIAL_SELF_SERVICE_ENABLED true
+t_rc "the ladder works: the cap first (accepted)" 0 T set AICC_TRIAL_SELF_SERVICE_CAP 25
+t_rc "...then the switch (accepted: every prerequisite is already in the facts)" 0 T set AICC_TRIAL_SELF_SERVICE_ENABLED true
+t_ok "...and the file equals the stage-2 fixture (as a set)" bash -c "diff <(grep -v '^#' '$OFF' | sort) <(grep -v '^#' '$FIX/owner-facts.production.p42-stage2.env' | sort)"
+t_rc "backing out in the right order works: the switch first" 0 T unset AICC_TRIAL_SELF_SERVICE_ENABLED
+t_rc "...then the cap" 0 T unset AICC_TRIAL_SELF_SERVICE_CAP
+t_rc "...then the legal approval" 0 T unset AICC_LEGAL_REVIEW_APPROVED
+t_rc "...then the site key (a facts change never needs the host state)" 0 T unset AICC_TURNSTILE_SITE_KEY
+facts_from "$FIX/owner-facts.production.p42-stage2.env"; sed -i.bak '/^AICC_NOTIFY_ENABLED=/d' "$OFF"; rm -f "$OFF.bak"
+t_rc "a file that is ALREADY inconsistent can still be REPAIRED (a change that adds no new problem is allowed): the switch is removed" 0 T unset AICC_TRIAL_SELF_SERVICE_ENABLED
+# Cloudflare's published dummy credentials (always-pass / always-block / forced-interaction) must never be installable for production
+for dk in 1x00000000000000000000AA 2x00000000000000000000AB 3x00000000000000000000FF 1x00000000000000000000BB; do
+  facts_from "$FIX/owner-facts.production.p42-stage1.env"
+  refused_change "the Cloudflare TEST site key $dk is REFUSED at set time" "Cloudflare test credentials are for tests only: create a real widget" set AICC_TURNSTILE_SITE_KEY "$dk"
+done
+facts_from "$FIX/owner-facts.production.p42-stage1.env"
+t_rc "a real-shaped site key (0x4AAAAAAA...) is accepted" 0 T set AICC_TURNSTILE_SITE_KEY 0x4AAAAAAAbCdEfGhIjKlMnO
+t_rc "...and so is a real site key that merely CONTAINS x0 later in the string" 0 T set AICC_TURNSTILE_SITE_KEY 0x4AAAAAAAx0x0x0x0x0x0
+facts_from "$FIX/owner-facts.production.p42-stage1.env"; sed -i.bak "s/^AICC_TURNSTILE_SITE_KEY=.*/AICC_TURNSTILE_SITE_KEY=1x00000000000000000000AA/" "$OFF"; rm -f "$OFF.bak"; KEEP="$(shasum -a 256 "$OUT" | cut -d' ' -f1)"
+refuses "a HAND-EDITED test site key in the facts file is refused by the renderer" "Cloudflare test credentials"
+facts_from "$FIX/owner-facts.production.p42-stage1.env"
+for ds in 1x0000000000000000000000000000000AA 2x0000000000000000000000000000000AA 3x0000000000000000000000000000000AA; do
+  printf '%s\n' "$ds" > "$MAILD/turnstile.secret"; chmod 640 "$MAILD/turnstile.secret"
+  refuses "a secret FILE holding the Cloudflare test secret $ds is refused by the renderer" "Cloudflare test credentials"
+done
+ts_on
+t_ok "(control) with the real-shaped secret file the stage-1 set renders" R
 t_summary

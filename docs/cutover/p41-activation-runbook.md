@@ -80,7 +80,7 @@ Checked against the p40 Control Plane source. "Reads" is how the Control Plane i
 |---|---|---|
 | `AICC_TRIAL_SELF_SERVICE_ENABLED` `true` | `AICC_TRIAL_SELF_SERVICE_ENABLED` `true` | `true ===` (`class-aicc-lm-trial.php` `switch_enabled`, line 53) |
 | `AICC_TRIAL_SELF_SERVICE_CAP` `25` | `AICC_TRIAL_SELF_SERVICE_CAP` integer `25` | integer only; a string reads 0 (`class-aicc-lm-trial.php` `cap`, line 58) |
-| `AICC_TURNSTILE_SITE_KEY` `<public key>` | `AICC_TURNSTILE_SITE_KEY` | `^[A-Za-z0-9_-]{8,64}$` (`class-aicc-lm-ea-requests-turnstile.php` `site_key`, line 39) |
+| `AICC_TURNSTILE_SITE_KEY` `<public key>` | `AICC_TURNSTILE_SITE_KEY` | `^[A-Za-z0-9_-]{8,64}$` (`class-aicc-lm-ea-requests-turnstile.php` `site_key`, line 39); additionally (P42) keys starting `1x0`, `2x0` or `3x0` are Cloudflare's public TEST keys and are refused: `Cloudflare test credentials are for tests only: create a real widget` (test keys are for non-production fixtures only; real keys start `0x4`) |
 | (the file `/etc/aicc-mail/turnstile.secret`) | `AICC_TURNSTILE_SECRET_FILE` = that path | regular file, readable by PHP, no "other" bit (`...-turnstile.php` `read_secret`, line 63) |
 | **`AICC_TURNSTILE_ENABLED` `true`** | **no constant**: it appends `challenges.cloudflare.com` to `WP_ACCESSIBLE_HOSTS` | the Control Plane has NO `AICC_TURNSTILE_ENABLED` constant; "Turnstile on" = site key + secret file + the host allowed (`AICC_LM_Signup::turnstile_ready()`, blocker `turnstile_blocked`) |
 | (never set) | `AICC_TRIAL_TURNSTILE` is NOT rendered | production always requires Turnstile (`class-aicc-lm-signup.php` `turnstile_mode`) |
@@ -130,7 +130,7 @@ pssh 'sudo aicc-render-wp-config --env production --confirm-production && sudo s
 ```
 
 Verify: `pssh 'sudo aicc-wp aicc-notify status'` -> JSON with `"enabled": true` and `"mail_ready": true`; `pssh 'sudo aicc-wp aicc-notify run'` -> `{"ran":true,...}` (a tick with nothing queued). The system timer runs the tick every 5-7 minutes (`docs/notify-scheduling.md`).
-Rollback: `unset AICC_NOTIFY_ENABLED` (refused while the signup switch is still set: that is the rule) + render.
+Rollback: `unset AICC_NOTIFY_ENABLED` (refused by `aicc-owner-facts` itself while the signup switch is still set: that is the rule; the renderer refuses the same file) + render.
 
 ### Step 3. Milestone scheduling (the Backend onboarding milestones mirrored into the owner funnel; optional for issuance, needed for the journey view)
 
@@ -254,7 +254,7 @@ Brevo (your browser): the message shows requests + delivered; SPF/DKIM/DMARC pas
 | Resume | `pssh 'sudo aicc-wp aicc-trial resume --reason="<why>"'` -> `Success: Resumed. Mode is now open.` | open again (if no blocker) |
 | Close it in the configuration | `pssh 'sudo aicc-owner-facts unset AICC_TRIAL_SELF_SERVICE_ENABLED'`, `--compare` (removed: that constant), render, reload | mode `off` |
 | Roll back the P41 Control Plane release itself (coordinator, `rollback-release.sh`) | the code returns to the P40 release; the database keeps schema 10 (two nullable journey columns and a `created_at` index on the plan-records table: additive, the P40 code ignores them). If the older code or a re-deploy needs the migration to run again: `pssh 'sudo aicc-wp option update aicc_lm_db_schema_version 9'`. **NEVER drop the columns or the index** (journey data lives in them; the migration is idempotent and re-runs on the next load) | the signup status keeps answering from whichever code is live |
-| Everything back to the live state of today | `unset` the facts of steps 1-4 and 7, remove `/etc/aicc-mail/turnstile.secret`, render: `--compare` must then say IDENTICAL to the P38 state | the five P35 constants and Brevo stay (they are facts) |
+| Everything back to the live state of today | `unset` the facts of steps 1-4 and 7 (the signup switch first, then the facts it needs; the site key before you remove the secret file, because a render with a site key and no secret file is refused), remove `/etc/aicc-mail/turnstile.secret`, render: `--compare` must then say IDENTICAL to the P38 state | the five P35 constants and Brevo stay (they are facts) |
 
 Verify a pause: `pssh 'sudo aicc-wp aicc-trial status' | grep -E 'paused|public mode'` -> `PAUSED` and `paused`.
 

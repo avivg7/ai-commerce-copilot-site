@@ -1,6 +1,6 @@
 # P42: the verified activation procedure (Turnstile, notify, milestone, owner-ops, then the signup switch)
 
-Written 2026-11-20 (UTC), P42 builder R. **Nothing in this document was run against production.** The wp-config part is proved by `bash infra/stack-tests/test_p42_activation.sh` (62 checks, golden renders of the live state and of each activation stage), the Turnstile secret installer by `bash infra/stack-tests/test_p42_turnstile_key.sh` (274 checks on a fake host with a pseudo-terminal leak scan), both on SYNTHETIC data. This document supersedes the step order of `docs/cutover/p41-activation-runbook.md` where they differ (that file keeps the full gate table).
+Written 2026-11-20 (UTC), P42 builder R. **Nothing in this document was run against production.** The wp-config part is proved by `bash infra/stack-tests/test_p42_activation.sh` (98 checks, golden renders of the live state and of each activation stage, the facts-tool refusals and the Cloudflare test-key refusals), the Turnstile secret installer by `bash infra/stack-tests/test_p42_turnstile_key.sh` (306 checks on a fake host with a pseudo-terminal leak scan, the terminal-restore proof, the process hardening and the sudo I/O log warning), both on SYNTHETIC data. This document supersedes the step order of `docs/cutover/p41-activation-runbook.md` where they differ (that file keeps the full gate table).
 
 ## 1. The live state this was verified against (read-only facts gathered by the coordinator, 2026-11-19; not re-read here)
 
@@ -71,7 +71,7 @@ Cloudflare dashboard, your account, **Turnstile** (left menu), **Add widget** (l
 2. **Hostnames: add `www.copilt.org`.** The Control Plane accepts a solved token only when Cloudflare reports the page's own host, which is `home_url()`'s host `www.copilt.org`. Add `copilt.org` (the apex) ONLY if the apex serves `/start/` itself rather than redirecting to `www`; if it redirects, the widget is only ever solved on `www.copilt.org`. No other hostname.
 3. Widget mode **Managed**. No pre-clearance needed.
 4. Create. Cloudflare then shows a **Site key** (PUBLIC, goes into an owner fact) and a **Secret key** (PRIVATE, goes only into the host file through the tool in step B). Do not paste either into chat or into a file; the secret never appears anywhere but the hidden prompt.
-5. The widget's action (`signup`) is set by the page, nothing to configure. The widget works only on the registered hostname; local tests use Cloudflare's published test keys, which are never production protection.
+5. The widget's action (`signup`) is set by the page, nothing to configure. The widget works only on the registered hostname; local tests use Cloudflare's published TEST keys (site keys `1x00...AA`, `2x00...AB`, `3x00...FF`, secrets `1x00...AA`, `2x00...AA`, `3x00...AA`: anything starting `1x0`, `2x0` or `3x0`), which are for NON-PRODUCTION fixtures only: they always pass, always block or force interaction, so they protect nothing. Every tool here refuses them for production (the host tool and the Mac script at install with `Cloudflare test credentials are for tests only: create a real widget`, `aicc-owner-facts set AICC_TURNSTILE_SITE_KEY`, and the renderer for a hand-edited fact or a secret file that holds one). Real keys start `0x4`.
 
 ## 6. Step B: install the secret (owner, Mac, interactive Terminal; no render yet)
 
@@ -81,9 +81,9 @@ bash infra/provision/set-turnstile-secret.sh --dry-run     # local gates + the e
 bash infra/provision/set-turnstile-secret.sh               # hidden prompt, twice: paste the SECRET key (not the site key)
 ```
 
-Expected: `host identity verified: production, www.copilt.org, stage id 3e897286...`, then `installed: /etc/aicc-mail/turnstile.secret root:aicc-cp 640 <size>`, `fingerprint: sha256:<8 hex> (first 8 hex of the key's SHA-256: a rotation fingerprint, not the key)` and `fingerprint matches what you typed`. Check: `pssh 'sudo aicc-set-turnstile-secret status'` prints `present: /etc/aicc-mail/turnstile.secret root:aicc-cp 640 <n> bytes; mode/owner ok; shape: ok`.
+Expected: `host identity verified: production, www.copilt.org, stage id 3e897286...`, then `installed: /etc/aicc-mail/turnstile.secret root:aicc-cp 640 <size>`, `fingerprint: <16 hex> (first 16 hex of the SHA-256 over a fixed domain tag + the key: a rotation fingerprint, not the key)` and `fingerprint matches what you typed: <16 hex>`. If sudoers enables I/O logging for this tool the host prints `WARN: sudo I/O logging (log_input / log_output / iolog) is configured in sudoers file ...`: a root-only I/O log would hold the secret; remove the setting or accept it knowingly. Check: `pssh 'sudo aicc-set-turnstile-secret status'` prints `present: /etc/aicc-mail/turnstile.secret root:aicc-cp 640 <n> bytes; mode/owner ok; shape: ok`.
 
-What the tool guarantees (all tested): the secret travels on the stdin of ONE pinned SSH connection (the remote command has no secret); the host writes a 0400 temp file in `/etc/aicc-mail`, sets root:aicc-cp 0640, fsyncs, renames atomically (a crash leaves the old secret or nothing); it keeps no copy of a previous secret; it touches no other file; it journals `aicc-turnstile-secret action=... fingerprint_prefix=<8 hex>` only. **It refuses a value equal to the public site key** once `AICC_TURNSTILE_SITE_KEY` is set (the classic slip), and the renderer refuses the same slip either way round. `rotate` replaces the secret (then invalidate the old one in Cloudflare; use its grace period if offered); `revoke` removes the file (the signup then reads `paused`, blocker `turnstile`).
+What the tool guarantees (all tested): the secret travels on the stdin of ONE pinned SSH connection (the remote command has no secret); the host writes a 0400 temp file in `/etc/aicc-mail`, sets root:aicc-cp 0640, fsyncs, renames atomically (a crash leaves the old secret or nothing); it keeps no copy of a previous secret; it touches no other file; it journals `aicc-turnstile-secret action=... fingerprint_prefix=<16 hex>` only; it runs with core dumps off and the process not dumpable; the Mac script restores your terminal (echo) when you press Ctrl-C or the connection drops at the hidden prompt. **It refuses a value equal to the public site key** once `AICC_TURNSTILE_SITE_KEY` is set (the classic slip), and the renderer refuses the same slip either way round. `rotate` replaces the secret (then invalidate the old one in Cloudflare; use its grace period if offered); `revoke` removes the file (the signup then reads `paused`, blocker `turnstile`). **A render after `revoke` is REFUSED while `AICC_TURNSTILE_SITE_KEY` is a fact** (the widget would render and every verification would fail), so the live wp-config keeps its constants (pointing at a missing file) until you change the facts: `unset AICC_TRIAL_SELF_SERVICE_ENABLED` first (if set), then `unset AICC_TURNSTILE_SITE_KEY`, then render. To restore the live state of today see the table in section 10.
 
 **Do NOT use `--then-check` for the first install:** it offers a render right after the secret, before the facts exist, and that render would add `AICC_TURNSTILE_SECRET_FILE` alone (verified). Do the facts first (step C).
 
@@ -131,7 +131,7 @@ pssh 'sudo aicc-wp cron event list --fields=hook,next_run_relative | grep aicc_l
 pssh 'sudo aicc-wp aicc-ops milestones sync'                 # first mirror: a counts table, exit 0 (clears the "mirror never ran" warning)
 ```
 
-Rollback: `pssh 'sudo aicc-owner-facts unset <KEY>'` for each, `--compare` (the names under `removed:` are the rollback preview), render, reload. Unsetting `AICC_NOTIFY_ENABLED` is refused while the signup switch is still set (that is the rule). The secret file may stay.
+Rollback: `pssh 'sudo aicc-owner-facts unset <KEY>'` for each, `--compare` (the names under `removed:` are the rollback preview), render, reload. Unsetting `AICC_NOTIFY_ENABLED` (or the Turnstile facts, the cap or the legal approval) is REFUSED by `aicc-owner-facts` itself while the signup switch is still set (nothing is written; the renderer refuses the same file again): unset the switch first. The secret file may stay.
 
 ## 8. Step D: the Plugin (blocker `plugin_release`)
 
@@ -151,7 +151,7 @@ pssh 'sudo aicc-wp aicc-trial status'     # (new release) the line "legal review
 curl -s https://www.copilt.org/privacy/ | grep -c 'Being finalized'            # expect 0 once the pages are re-rendered (check Terms, Refund and DPA too)
 ```
 
-Rollback: `unset AICC_LEGAL_REVIEW_APPROVED` + render + reload (the banners return; the signup, if open, pauses on the new release). **The render refuses step F without this fact:** `AICC_TRIAL_SELF_SERVICE_ENABLED needs AICC_LEGAL_REVIEW_APPROVED=true (P42) ...` (nothing written), so the order cannot be skipped by accident, and `unset AICC_LEGAL_REVIEW_APPROVED` while the switch is set is refused the same way.
+Rollback: `unset AICC_LEGAL_REVIEW_APPROVED` + render + reload (the banners return; the signup, if open, pauses on the new release). **The render refuses step F without this fact:** `AICC_TRIAL_SELF_SERVICE_ENABLED needs AICC_LEGAL_REVIEW_APPROVED=true (P42) ...` (nothing written), so the order cannot be skipped by accident, and `unset AICC_LEGAL_REVIEW_APPROVED` while the switch is set is refused the same way, already by `aicc-owner-facts unset` (nothing written); likewise `set`/`set-stdin` of the switch before its prerequisites (cap, legal approval, notify, Turnstile facts) is refused. Only the signup-switch rules are enforced when a fact is edited; the other render rules (for example the Brevo provider before its sender) keep the any-order editing and are judged at render time.
 
 ## 9. Step F: open, at the very end (explicit owner authorization)
 
@@ -177,7 +177,7 @@ Then the owner's first live self-test with the owner's own mailbox (runbook step
 | Stop new signups now (no deploy) | `pssh 'sudo aicc-wp aicc-trial pause --reason="owner stop: <8-300 characters, no e-mail address>"'` -> `Success: Paused. Mode is now paused.` | public mode `paused`; existing accounts and trials untouched |
 | Resume | `pssh 'sudo aicc-wp aicc-trial resume --reason="<why>"'` | open again (if no blocker) |
 | Close it in the configuration | `unset AICC_TRIAL_SELF_SERVICE_ENABLED`, `--compare` (removed: that constant), render, reload | mode `off` |
-| Remove the Turnstile secret | `bash infra/provision/set-turnstile-secret.sh revoke` (then roll the secret in Cloudflare) | signup `paused` (blocker `turnstile`) |
+| Remove the Turnstile secret | `bash infra/provision/set-turnstile-secret.sh revoke` (then roll the secret in Cloudflare) | signup `paused` (blocker `turnstile`). The next render is REFUSED while `AICC_TURNSTILE_SITE_KEY` is set: to also drop the constants, `unset AICC_TRIAL_SELF_SERVICE_ENABLED` (if set), `unset AICC_TURNSTILE_SITE_KEY`, then render |
 
 ## 11. What could not be verified, and deviations
 

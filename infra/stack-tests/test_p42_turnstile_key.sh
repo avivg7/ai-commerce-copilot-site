@@ -19,7 +19,7 @@ mode() { stat -f '%Lp' "$1" 2>/dev/null || stat -c '%a' "$1"; }
 sha() { shasum -a 256 "$1" | cut -d' ' -f1; }
 KEY1='0x4AAAAAAA-TEST-NOT-REAL-SECRET-'; KEY2='0x4AAAAAAA-TEST-NOT-REAL-ROT2-SECRET9'; SITEKEY='0x4AAAAAAApubLICsitekey01'
 OFU="$(id -un):$(id -gn)"; STAGEID="3e897286ce82e55f4d866acf0d526a5f"
-fp8() { printf '%s' "$1" | shasum -a 256 | cut -c1-8; }
+fp8() { printf 'aicc-turnstile-secret-fingerprint-v1\n%s' "$1" | shasum -a 256 | cut -c1-16; }      # domain-tagged, 16 hex (like the webhook rotation tool); the name is kept
 
 # ---- the fake host (a prefix) ------------------------------------------------------------------------------------------------------------------------------------------------------------------
 PFX="$TMP/host"; FAKEBIN="$TMP/fakebin"; RECBIN="$TMP/recbin"; DRV="$TMP/drv"; HOMED="$TMP/home"
@@ -112,7 +112,7 @@ fresh_dir; SM0="$(UNRELATED_SHA)"
 OUTI="$(HOSTIN "$KEY1" install --expect-stage-id "$STAGEID" 2>&1)"; rc=$?
 t_eq "install exits 0" "$rc" "0"
 t_contains "...prints exactly the documented line: installed: <path> owner mode size" "$OUTI" "installed: /etc/aicc-mail/turnstile.secret $OFU 640 33"
-t_contains "...prints the fingerprint: the first 8 hex of the SHA-256" "$OUTI" "fingerprint: sha256:$(fp8 "$KEY1") "
+t_contains "...prints the fingerprint: the first 16 hex of the SHA-256 over a fixed domain tag + the secret (not a plain hash)" "$OUTI" "fingerprint: $(fp8 "$KEY1") "
 t_not_contains "...and never the key" "$OUTI" "$KEY1"
 t_eq "the file holds the key and one newline" "$(cat "$KF")" "$KEY1"
 t_eq "...mode 0640 (whatever the caller's umask)" "$(mode "$KF")" "640"
@@ -133,7 +133,7 @@ SM1="$(UNRELATED_SHA)"
 OUTR="$(HOSTIN "$KEY2" rotate 2>&1)"; rc=$?
 t_eq "rotate exits 0" "$rc" "0"
 t_eq "...the file holds the NEW key" "$(cat "$KF")" "$KEY2"
-t_contains "...the fingerprint is the new one" "$OUTR" "fingerprint: sha256:$(fp8 "$KEY2") "
+t_contains "...the fingerprint is the new one" "$OUTR" "fingerprint: $(fp8 "$KEY2") "
 t_contains "...and it prints the reminder that the old secret is still valid in Cloudflare" "$OUTR" "STILL VALID in Cloudflare until you invalidate it"
 t_not_contains "...no key printed" "$OUTR" "$KEY2"
 t_eq "...NO copy of the previous key is kept anywhere in the directory" "$(mailstate)" "brevo-api.key smtp.env turnstile.secret "
@@ -271,7 +271,7 @@ t_contains "a custom PS4 is REFUSED (a trace prompt can run commands)" "$("${MAC
 t_ok "...and the PS4 command did not run" test ! -e /tmp/ap38-ps4-pwned
 t_contains "BASH_ENV set is REFUSED" "$("${MAC_ENV[@]}" "BASH_ENV=$TMP/none" bash "$MACSCRIPT" install </dev/null 2>&1 || true)" "BASH_ENV"
 t_eq "the script clears its history file and sets umask 077 and no core dump (source checks)" "$(grep -c "unset HISTFILE\|^umask 077\|ulimit -c 0" "$MACSCRIPT")" "3"
-t_eq "the key variable is never an argument of any command in the script (source check: no rssh/ssh/echo line contains \$k1 or \$k2 outside printf pipes and local tests)" "$(grep -n '\$k[12]' "$MACSCRIPT" | grep -v 'printf' | grep -v '^[0-9]*:[[:space:]]*#' | grep -v 'k1=""\|k2=""\|=~\|== xsmtpsib\|== xkeysib\|${#k1}\|\[ -n\|sha8\|case "$k1" in' | wc -l | tr -d ' ')" "0"
+t_eq "the key variable is never an argument of any command in the script (source check: no rssh/ssh/echo line contains \$k1 or \$k2 outside printf pipes and local tests)" "$(grep -n '\$k[12]' "$MACSCRIPT" | grep -v 'printf' | grep -v '^[0-9]*:[[:space:]]*#' | grep -v 'k1=""\|k2=""\|=~\|== xsmtpsib\|== xkeysib\|${#k1}\|\[ -n\|fp16\|case "$k1" in' | wc -l | tr -d ' ')" "0"
 
 echo "== D. the whole install flow on a pseudo terminal: nothing leaks =="
 drive() { # drive <result-name> <steps-json> <secret> -- args...
@@ -292,7 +292,7 @@ drive d1 "$STEPS" "$KEY1" -- install
 t_eq "install on a pty: exit 0" "$(res d1 .exit)" "0"
 t_contains "...the terminal shows the identity verification" "$(res d1 .output)" "host identity verified: production, www.copilt.org"
 t_contains "...and the installed line from the host" "$(res d1 .output)" "installed: /etc/aicc-mail/turnstile.secret"
-t_contains "...and that the fingerprint matches what was typed" "$(res d1 .output)" "fingerprint matches what you typed: sha256:$(fp8 "$KEY1")"
+t_contains "...and that the fingerprint matches what was typed" "$(res d1 .output)" "fingerprint matches what you typed: $(fp8 "$KEY1")"
 t_eq "...the key file on the fake host holds the key" "$(cat "$KF")" "$KEY1"
 t_eq "...mode 0640, owner as expected" "$(mode "$KF")/$(stat -f '%Su:%Sg' "$KF" 2>/dev/null || stat -c '%U:%G' "$KF")" "640/$OFU"
 t_eq "the terminal output NEVER contained the key (not even echoed by the pty)" "$(res d1 '.leaks|map(select(startswith("TERMINAL")))|length')" "0"
@@ -432,6 +432,87 @@ kill "$LOCKPID" 2>/dev/null; wait "$LOCKPID" 2>/dev/null
 t_ok "after the lock is released the install succeeds" bash -c "printf '%s\n' '$KEY1' | env AICC_TEST_HARNESS=1 AICC_ROOT_PREFIX='$PFX' AICC_TEST_OWNER='$OFU' PATH='$FAKEBIN:$BASEPATH' bash '$HOSTSCRIPT' install >/dev/null 2>&1 && [ \"\$(cat '$KF')\" = '$KEY1' ]"
 # (11) rotation says plainly what remains to be done
 t_contains "rotate: the old secret is gone from the host but STILL VALID in Cloudflare until invalidated" "$(res r1 .output)" "STILL VALID in Cloudflare"
+
+echo "== H. review fixes: Cloudflare's PUBLIC TEST keys, the tty echo, process hardening, the sudo I/O log warning =="
+REALSEC='0x4AAAAAAAcEf-realShapedSecretKey0123456789abcdX0'
+for ds in 1x0000000000000000000000000000000AA 2x0000000000000000000000000000000AA 3x0000000000000000000000000000000AA 1x00000000000000000000AA; do
+  fresh_dir; OUTD="$(HOSTIN "$ds" install 2>&1)"; rc=$?
+  if [ "$rc" != 0 ] && printf '%s' "$OUTD" | grep -qF "Cloudflare test credentials are for tests only: create a real widget" && [ ! -e "$KF" ] && ! printf '%s' "$OUTD" | grep -qF "$ds"; then t_pass "host: the Cloudflare test credential $ds is REFUSED (rc $rc, the reason named, nothing written, the value not echoed)"; else t_bad "host: test credential $ds" "rc=$rc file=$([ -e "$KF" ] && echo yes || echo no) out=$(printf '%s' "$OUTD" | tail -2 | tr '\n' '|' | cut -c1-200)"; fi
+done
+fresh_dir; HOSTIN "$KEY1" install >/dev/null 2>&1; OUTD="$(HOSTIN 1x0000000000000000000000000000000AA rotate 2>&1)"; rc=$?
+t_eq "host: ROTATE to a test secret is REFUSED too, the real secret stays" "$rc/$(cat "$KF")" "1/$KEY1"
+fresh_dir; t_ok "host: a real-shaped 0x4AAAAAAA... secret (even one containing x0 later on) is accepted" bash -c "printf '%s\n' '$REALSEC' | env AICC_TEST_HARNESS=1 AICC_ROOT_PREFIX='$PFX' AICC_TEST_OWNER='$OFU' PATH='$FAKEBIN:$BASEPATH' bash '$HOSTSCRIPT' install >/dev/null 2>&1 && [ \"\$(cat '$KF')\" = '$REALSEC' ]"
+fresh_dir; printf '1x0000000000000000000000000000000AA\n' > "$KF"; chmod 640 "$KF"
+t_contains "host: status flags a planted test secret as WRONG KIND (never printing it)" "$(HOSTRUN status 2>&1)" "WRONG KIND (a Cloudflare test credential"
+t_not_contains "...and does not print it" "$(HOSTRUN status 2>&1)" "1x0000000000000000000000000000000AA"
+# the Mac script: refused at the hidden prompt, before anything is sent
+fresh_dir; reset_identity; : > "$REC"
+TS1="$(jq -nc '[{expect:"Turnstile SECRET key (input hidden", send:"1x0000000000000000000000000000000AA\n", hidden:true}]')"
+drive h1 "$TS1" "1x0000000000000000000000000000000AA" -- install
+t_eq "Mac script: a Cloudflare test secret typed at the prompt is REFUSED (exit 1)" "$(res h1 .exit)" "1"
+t_contains "...with the plain reason" "$(res h1 .output)" "Cloudflare test credentials are for tests only: create a real widget"
+t_ok "...nothing sent: the install command never reached the host, no file" bash -c "! grep -q 'aicc-set-turnstile-secret install' '$REC' && [ ! -e '$KF' ]"
+t_eq "...and the value never leaked (terminal, process list)" "$(res h1 '.leaks|length')" "0"
+fresh_dir; : > "$REC"
+STH="$(jq -nc --arg k "$REALSEC" '[{expect:"Turnstile SECRET key (input hidden", send:($k+"\n"), hidden:true},{expect:"confirm (input hidden", send:($k+"\n"), hidden:true}]')"
+drive h2 "$STH" "$REALSEC" -- install
+t_eq "Mac script: a real-shaped 0x4AAAAAAA... secret passes (exit 0, installed)" "$(res h2 .exit)/$(cat "$KF" 2>/dev/null)" "0/$REALSEC"
+t_not_contains "...with no 'unusual prefix' note" "$(res h2 .output)" "does not start with"
+fresh_dir; ODD='abcdefgh-not-the-usual-prefix-secret'
+STO="$(jq -nc --arg k "$ODD" '[{expect:"Turnstile SECRET key (input hidden", send:($k+"\n"), hidden:true},{expect:"confirm (input hidden", send:($k+"\n"), hidden:true}]')"
+drive h3 "$STO" "$ODD" -- install
+t_eq "Mac script: another shape-valid key is accepted with a note that real secrets start with 0x4" "$(res h3 .exit)/$(printf '%s' "$(res h3 .output)" | grep -c 'does not start with 0x4')" "0/1"
+# tty echo: the saved terminal state is restored on EVERY exit path (a stty stub records the calls; read -s alone leaves the terminal silent after a kill)
+STTYLOG="$TMP/stty.log"
+cat > "$FAKEBIN/stty" <<EOF
+#!/bin/bash
+printf 'STTY %s\n' "\$*" >> "$STTYLOG"
+[ "\$1" = "-g" ] && echo "SAVED:TTY:STATE"
+exit 0
+EOF
+chmod 755 "$FAKEBIN/stty"
+fresh_dir; : > "$STTYLOG"; : > "$REC"
+drive h4 "$STH" "$REALSEC" -- install
+t_eq "tty: a normal run saves the state (stty -g) once and restores it (stty <saved>) on exit" "$(grep -c '^STTY -g$' "$STTYLOG")/$(grep -c '^STTY SAVED:TTY:STATE$' "$STTYLOG")" "1/1"
+fresh_dir; : > "$STTYLOG"; : > "$REC"
+SINT="$(jq -nc '[{expect:"Turnstile SECRET key (input hidden", send:"\u0003", hidden:true}]')"
+drive h5 "$SINT" "never-typed-secret" -- install
+t_ok "tty: Ctrl-C at the hidden prompt ends the script (non-zero exit) ..." test "$(res h5 .exit)" != 0
+t_ok "...and the saved terminal state was restored (stty <saved> ran at least once)" test "$(grep -c '^STTY SAVED:TTY:STATE$' "$STTYLOG")" -ge 1
+t_eq "...and nothing was sent to the host" "$(grep -c 'aicc-set-turnstile-secret install' "$REC" || true)" "0"
+t_ok "...(four traps: EXIT, INT, TERM, HUP)" bash -c "for sig in EXIT INT TERM HUP; do grep -qE \"^trap '.*restore_tty.*' \$sig\" '$MACSCRIPT' || exit 1; done"
+t_ok "the Brevo owner script has the same four traps (same defect, same fix)" bash -c "for sig in EXIT INT TERM HUP; do grep -qE \"^trap '.*restore_tty.*' \$sig\" '$PROV/set-brevo-key.sh' || exit 1; done"
+rm -f "$FAKEBIN/stty"
+# the host tool: no core dump, not dumpable, and the sudo I/O log warning
+ULBIN="$TMP/ulbin"; mkdir -p "$ULBIN"; ULLOG="$TMP/ulimit.log"
+cat > "$ULBIN/python3" <<EOF
+#!/bin/bash
+ulimit -c >> "$ULLOG"
+exec "$(command -v python3)" "\$@"
+EOF
+chmod 755 "$ULBIN/python3"
+fresh_dir; : > "$ULLOG"; ( ulimit -c unlimited 2>/dev/null; printf '%s\n' "$KEY1" | env AICC_TEST_HARNESS=1 AICC_ROOT_PREFIX="$PFX" AICC_TEST_OWNER="$OFU" PATH="$ULBIN:$FAKEBIN:$BASEPATH" bash "$HOSTSCRIPT" install >/dev/null 2>&1 )
+t_eq "host: the core-dump limit is 0 when the python writer starts (even if the caller allowed core dumps)" "$(head -1 "$ULLOG")" "0"
+t_ok "source: the python writer also sets RLIMIT_CORE 0 and PR_SET_DUMPABLE 0 (prctl 4) itself, like the rotation tools" bash -c "grep -q 'setrlimit(resource.RLIMIT_CORE, (0, 0))' '$HOSTSCRIPT' && grep -q 'prctl(4, 0, 0, 0, 0)' '$HOSTSCRIPT'"
+mkdir -p "$PFX/etc/sudoers.d"; : > "$PFX/etc/sudoers"
+fresh_dir; OUTS="$(HOSTIN "$KEY1" install 2>&1)"
+t_not_contains "sudo I/O log: no sudoers setting, no warning" "$OUTS" "WARN: sudo I/O logging"
+printf 'Defaults log_input\n' > "$PFX/etc/sudoers.d/90-iolog"
+fresh_dir; OUTS="$(HOSTIN "$KEY1" install 2>&1)"; rc=$?
+t_eq "sudo I/O log: 'Defaults log_input' prints the WARN naming the file, and the install still succeeds (a warning, not a gate)" "$rc/$(printf '%s' "$OUTS" | grep -c 'WARN: sudo I/O logging.*90-iolog')/$(cat "$KF")" "0/1/$KEY1"
+t_not_contains "...the warning holds no key" "$OUTS" "$KEY1"
+t_not_contains "sudo I/O log: status (no secret passes through sudo) prints no warning" "$(HOSTRUN status 2>&1)" "WARN: sudo I/O logging"
+printf 'Defaults log_input\nDefaults !log_input\n' > "$PFX/etc/sudoers.d/90-iolog"
+fresh_dir; t_not_contains "sudo I/O log: a later '!log_input' wins (no warning)" "$(HOSTIN "$KEY1" install 2>&1)" "WARN: sudo I/O logging"
+printf 'aicc ALL=(root) LOG_INPUT: /usr/local/sbin/aicc-set-turnstile-secret\n' > "$PFX/etc/sudoers.d/90-iolog"
+fresh_dir; t_contains "sudo I/O log: a LOG_INPUT: rule tag warns" "$(HOSTIN "$KEY1" install 2>&1)" "WARN: sudo I/O logging"
+printf 'Defaults iolog_dir=/var/log/sudo-io\n' > "$PFX/etc/sudoers.d/90-iolog"
+fresh_dir; t_contains "sudo I/O log: iolog_dir warns" "$(HOSTIN "$KEY1" install 2>&1)" "WARN: sudo I/O logging"
+rm -rf "$PFX/etc/sudoers.d" "$PFX/etc/sudoers"
+# revoke: the message must be true (a render is REFUSED while the site key is a fact)
+fresh_dir; HOSTIN "$KEY1" install >/dev/null 2>&1; OUTV="$(HOSTRUN revoke 2>&1)"
+t_contains "revoke: the message says the next render is REFUSED while the site key is set, and what to unset first" "$OUTV" "unset AICC_TURNSTILE_SITE_KEY"
+t_not_contains "...and no longer promises that 'render again' drops the constant" "$OUTV" "to also drop the constant: render again"
 
 echo "== F. script hygiene (source checks) =="
 t_eq "the Mac script refuses every address but 157.230.110.211 (the address is a constant; no --host option)" "$(grep -c -- '--host\|--ip\|--stage-ip' "$MACSCRIPT" || true)/$(grep -c 'HOSTIP="157.230.110.211"' "$MACSCRIPT")" "0/1"
