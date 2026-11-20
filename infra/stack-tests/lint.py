@@ -54,7 +54,7 @@ SH = [p for p in files(".sh")]
 # files that are sourced libraries or test runners (tests deliberately continue after a failing command, so they use `set -uo pipefail`)
 EXEMPT_SET_E = {
     "lib/common.sh": "sourced library", "lib/ip-guard.sh": "sourced library", "lib/ssh-session.sh": "sourced library", "lib/release-common.sh": "sourced library", "lib/backup-common.sh": "sourced library", "lib/t.sh": "sourced test harness", "lib/tw_release.sh": "sourced test library", "verify-published-fixture.sh": "disposable fixture driver (every step is checked explicitly; `down` must run to completion)",
-    "test_provision.sh": "test runner (must continue after a failing assertion)", "test_p37_wpconfig.sh": "test runner (must continue after a failing assertion)", "test_p38_brevo.sh": "test runner (must continue after a failing assertion)", "test_p38_key.sh": "test runner (must continue after a failing assertion)", "test_p38_rotation.sh": "test runner (must continue after a failing assertion)", "test_promote.sh": "test runner (must continue after a failing assertion)", "test_plugin_publish.sh": "test runner (must continue after a failing assertion)", "test_p41_lineage.sh": "test runner (must continue after a failing assertion)", "test_verify_published.sh": "test runner (must continue after a failing assertion)", "test_verify_published_fixture.sh": "test runner (cleans up through a trap, must report every failure)", "test_release.sh": "test runner (must continue after a failing assertion)",
+    "test_provision.sh": "test runner (must continue after a failing assertion)", "test_p37_wpconfig.sh": "test runner (must continue after a failing assertion)", "test_p38_brevo.sh": "test runner (must continue after a failing assertion)", "test_p38_key.sh": "test runner (must continue after a failing assertion)", "test_p38_rotation.sh": "test runner (must continue after a failing assertion)", "test_p42_turnstile_key.sh": "test runner (must continue after a failing assertion)", "test_p42_activation.sh": "test runner (must continue after a failing assertion)", "test_promote.sh": "test runner (must continue after a failing assertion)", "test_plugin_publish.sh": "test runner (must continue after a failing assertion)", "test_p41_lineage.sh": "test runner (must continue after a failing assertion)", "test_verify_published.sh": "test runner (must continue after a failing assertion)", "test_verify_published_fixture.sh": "test runner (cleans up through a trap, must report every failure)", "test_release.sh": "test runner (must continue after a failing assertion)",
     "test_backup.sh": "test runner (must continue after a failing assertion)", "test_lint.sh": "test runner (must continue after a failing assertion)", "run-all.sh": "runs every suite even when one fails", "test_ubuntu.sh": "test runner (cleans up through a trap, must report every failure)", "ubuntu-inner.sh": "test runner inside the container (must continue after a failing assertion)",
     "verify-droplet.sh": "pre-existing stage-1 script (read-only verifier that reports every failure), not changed here",
     "aicc-security-updates.sh": "records the exit code of each step (list refresh, upgrade) and ALWAYS writes the status file for AICC Ops, then fails the unit itself; -e would skip the status write",
@@ -373,6 +373,31 @@ oexpect("provision/host/aicc-set-brevo-key" in isr3 and "aicc-set-brevo-key" in 
 if not os.environ.get("AICC_LINT_INFRA"):      # the negative tests lint a copy of infra/ only (no docs/)
     for d3 in ("docs/cutover/p38-brevo-host-update.md", "docs/cutover/p38-brevo-owner-steps.md"):
         oexpect(os.path.exists(os.path.join(ROOT, d3)), os.path.join(ROOT, d3), "the P38 procedure must be documented")
+print("== P42 Turnstile secret file tool (owner-run on the Mac, root tool on the host): structure; what they DO is proved by test_p42_turnstile_key.sh ==")
+ths = os.path.join(INFRA, "provision/host/aicc-set-turnstile-secret")
+if not os.path.exists(ths):
+    fail(ths, "the host-side Turnstile secret tool must exist")
+else:
+    tht = read(ths)
+    for needle, why in (("set -euo pipefail", "strict mode"), ("must run as root", "the non-root refusal"), ("os.replace(tmp, target)", "atomic rename"), ("os.O_EXCL", "exclusive temp file"), ("logger -t aicc-turnstile-secret", "the audit line"),
+                        ("0o750", "the directory mode check"), ("shell tracing", "tracing refusal"), ("fcntl.flock", "the directory lock"), ("os.fstat(fd).st_size", "the short-write check"), ("STATE UNKNOWN", "post-commit failure wording"), ("under_tmp", "seam gate"),
+                        ("AICC_TURNSTILE_SITE_KEY", "the site key pasted as the secret is refused")):
+        oexpect(needle in tht, ths, "Turnstile tool lost: %s (%s)" % (needle, why))
+    oexpect(not re.search(r"(?m)^\s*(set -x|bash -x|curl |wget |eval )", tht), ths, "the host Turnstile tool must never trace, fetch or eval")
+    oexpect("O_NOFOLLOW" in tht and "S_ISREG" in tht, ths, "the host Turnstile tool must refuse symlinks and special files")
+tms = os.path.join(INFRA, "provision/set-turnstile-secret.sh")
+if not os.path.exists(tms):
+    fail(tms, "the owner-run Mac Turnstile script must exist")
+else:
+    tmt = read(tms)
+    for needle, why in (("read -rs", "hidden prompt"), ("/dev/tty", "prompt from the terminal"), ("unset HISTFILE", "no history"), ("umask 077", "private files"), ('HOSTIP="157.230.110.211"', "only the production host"),
+                        ("StrictHostKeyChecking=yes", "pinned host key"), ("BatchMode=yes", "no password prompts"), ("IdentitiesOnly=yes", "only the named identity"), ("aicc_cp_prod_operator", "the production operator identity"),
+                        ("--dry-run", "dry run"), ("BASH_XTRACEFD", "tracing refusal"), ("-F /dev/null", "ssh isolated from the owner's config"), ("ClearAllForwardings=yes", "no forwarding"), ("ProxyJump=none", "no jump host"),
+                        ("STATE UNKNOWN", "post-failure wording"), ("TEST HARNESS ACTIVE", "seam banner"), ("shasum -a 256", "SHA-256 confirmation"), ("ulimit -c 0", "no core dump")):
+        oexpect(needle in tmt, tms, "Turnstile owner script lost: %s (%s)" % (needle, why))
+    oexpect(not re.search(r"(?m)^\s*(set -x|bash -x)\b", tmt), tms, "the owner Turnstile script must never trace")
+    oexpect(not re.search(r"aicc_digitalocean_prod|aicc_cp_stage|--host\b|--stage-ip", tmt), tms, "the owner Turnstile script reaches the production host only, with the production operator identity only")
+oexpect("provision/host/aicc-set-turnstile-secret" in isr3 and "aicc-set-turnstile-secret" in isr3, os.path.join(INFRA, "provision/install-stack.sh"), "must install the Turnstile secret tool (aicc-set-turnstile-secret)")
 print("== P38 webhook-secret rotation: the three scripts and the probe (presence / structure; what they DO is proved by test_p38_rotation.sh) ==")
 import ast as _ast
 rot_sh = os.path.join(INFRA, "provision/rotate-webhook-secret.sh")

@@ -348,6 +348,8 @@ step_scripts() {
   ensure_symlink "$LIB_DIR/provision/owner-facts.sh" "$SBIN/aicc-owner-facts"
   # the owner-run Brevo API key tool (P38): places / rotates / revokes /etc/aicc-mail/brevo-api.key (root:aicc-cp 0640) from the key on STDIN; the owner starts it from the Mac with infra/provision/set-brevo-key.sh. It touches no other file and installs no key itself
   install_file "$INFRA/provision/host/aicc-set-brevo-key" "$SBIN/aicc-set-brevo-key" 0755 root:root
+  # the owner-run Turnstile SECRET file tool (P42): places / rotates / revokes /etc/aicc-mail/turnstile.secret (root:aicc-cp 0640) from the secret on STDIN; the owner starts it from the Mac with infra/provision/set-turnstile-secret.sh
+  install_file "$INFRA/provision/host/aicc-set-turnstile-secret" "$SBIN/aicc-set-turnstile-secret" 0755 root:root
   # the webhook-secret rotation tool (Control Plane half) and its non-mutating Backend probe (run by `wp eval-file` as aicc-cp): docs/cutover/p38-webhook-rotation.md. The API half is delivered over ssh by rotate-webhook-secret.sh (that host has no installer)
   install_file "$INFRA/provision/host/aicc-rotate-webhook-secret" "$SBIN/aicc-rotate-webhook-secret" 0755 root:root
   install_file "$INFRA/provision/host/webhook-probe.php" "$LIB_DIR/webhook-probe.php" 0644 root:root
