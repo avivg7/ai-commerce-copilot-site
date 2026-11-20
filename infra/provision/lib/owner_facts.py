@@ -728,6 +728,8 @@ def p37_problems(facts, env, ctx=None):
             out.append("AICC_TRIAL_SELF_SERVICE_ENABLED needs AICC_TURNSTILE_SITE_KEY: without the Turnstile site key the signup reads `paused` (blocker `turnstile`)")
         if "AICC_TURNSTILE_ENABLED" not in facts:
             out.append("AICC_TRIAL_SELF_SERVICE_ENABLED needs AICC_TURNSTILE_ENABLED=true: it puts challenges.cloudflare.com on WP_ACCESSIBLE_HOSTS; without it every submission is refused by WordPress itself (blocker `turnstile_blocked`)")
+        if "AICC_LEGAL_REVIEW_APPROVED" not in facts:
+            out.append("AICC_TRIAL_SELF_SERVICE_ENABLED needs AICC_LEGAL_REVIEW_APPROVED=true (P42): the Control Plane keeps the public signup `paused` (blocker `legal_review`) unless that constant is the boolean true. Set it ONLY after counsel has approved and the documents were re-published; it also removes the `Being finalized` banners from the Control Plane legal pages")
         if not notify:
             out.append("AICC_TRIAL_SELF_SERVICE_ENABLED needs AICC_NOTIFY_ENABLED=true: a self-service trial is promised its welcome, reminder and expiry mail, and the notification center that sends them is OFF while that switch is unset")
         if ctx is not None and not ctx.get("turnstile_secret"):

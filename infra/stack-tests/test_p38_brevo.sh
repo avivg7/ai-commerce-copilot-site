@@ -76,7 +76,7 @@ if git -C "$REPO" cat-file -e "$BASEC^{commit}" 2>/dev/null; then
   same_as_base "BASE-EQUAL: no mail file, no facts"
   mail_on; same_as_base "BASE-EQUAL: a safe smtp.env, no facts (the existing SMTP region)"
   facts "AICC_LEGAL_ENTITY_NAME Acme" "AICC_LEGAL_SUPPORT_EMAIL support@copilt.org" "AICC_EXTRA_ACCESSIBLE_HOSTS pay.example.com"; same_as_base "BASE-EQUAL: owner facts and an extra outbound host (SMTP on)"
-  ts_file; for kv in "AICC_NOTIFY_ENABLED true" "AICC_TURNSTILE_ENABLED true" "AICC_TURNSTILE_SITE_KEY $SITEKEY" "AICC_TRIAL_SELF_SERVICE_CAP 25" "AICC_TRIAL_SELF_SERVICE_ENABLED true" "AICC_MAIL_MAX_PER_HOUR 100" "AICC_MAIL_MAX_PER_DAY 300"; do T set $kv >/dev/null; done
+  ts_file; for kv in "AICC_NOTIFY_ENABLED true" "AICC_TURNSTILE_ENABLED true" "AICC_TURNSTILE_SITE_KEY $SITEKEY" "AICC_TRIAL_SELF_SERVICE_CAP 25" "AICC_LEGAL_REVIEW_APPROVED true" "AICC_TRIAL_SELF_SERVICE_ENABLED true" "AICC_MAIL_MAX_PER_HOUR 100" "AICC_MAIL_MAX_PER_DAY 300"; do T set $kv >/dev/null; done
   same_as_base "BASE-EQUAL: the full P37 self-service set on the SMTP layer"
   mail_off; same_as_base "BASE-EQUAL: the same facts without mail (both refuse identically, nothing is written)"
   reset_facts; ts_off; same_as_base "BASE-EQUAL: back to nothing"

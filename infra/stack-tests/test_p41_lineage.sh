@@ -36,7 +36,7 @@ GOLD_LIVE="$HERE/golden/wp-config.production.p41-live.php"; GOLD_ACT="$HERE/gold
 TPL="$PROV/wp-config.production.template.php"
 FIVE="AICC_EA_LAUNCH_OFFER_MODE AICC_OWNER_DASHBOARD_USER_IDS AICC_OWNER_METRICS_BASE AICC_OWNER_METRICS_TOKEN_FILE AICC_OWNER_OPS_SNAPSHOT_FILE"
 BREVOC="AICC_MAIL_ALLOWED_FROM_DOMAINS AICC_MAIL_API_KEY_FILE AICC_MAIL_DAILY_BUDGET AICC_MAIL_ENABLED AICC_MAIL_FROM_ADDRESS AICC_MAIL_FROM_NAME AICC_MAIL_PROVIDER AICC_MAIL_REPLY_TO"
-ACTC="AICC_FUNNEL_COUNTERS_ENABLED AICC_MILESTONE_SYNC_SCHEDULED AICC_NOTIFY_ENABLED AICC_NOTIFY_EXCLUDED_CUSTOMERS AICC_OWNER_OPS_SECTION_ENABLED AICC_TRIAL_SELF_SERVICE_CAP AICC_TRIAL_SELF_SERVICE_ENABLED AICC_TURNSTILE_SECRET_FILE AICC_TURNSTILE_SITE_KEY"
+ACTC="AICC_LEGAL_REVIEW_APPROVED AICC_FUNNEL_COUNTERS_ENABLED AICC_MILESTONE_SYNC_SCHEDULED AICC_NOTIFY_ENABLED AICC_NOTIFY_EXCLUDED_CUSTOMERS AICC_OWNER_OPS_SECTION_ENABLED AICC_TRIAL_SELF_SERVICE_CAP AICC_TRIAL_SELF_SERVICE_ENABLED AICC_TURNSTILE_SECRET_FILE AICC_TURNSTILE_SITE_KEY"
 sorted() { printf '%s\n' $1 | sort | tr '\n' ' '; }
 
 echo "== L. lineage: both infra ancestries are in this tree, one template carries every region =="
@@ -87,7 +87,7 @@ t_eq "...the switches are the exact boolean true (the Control Plane reads === tr
 t_eq "...Turnstile: the public site key and the secret FILE path (never the secret); the excluded customer is the owner's test account (2)" "$(echo "$AV" | jq -c '[.AICC_TURNSTILE_SITE_KEY,.AICC_TURNSTILE_SECRET_FILE,.AICC_NOTIFY_EXCLUDED_CUSTOMERS]')" '["0x4AAAAAAApubLICsitekey01","/etc/aicc-mail/turnstile.secret","2"]'
 t_eq "...the outbound hosts are api.copilt.org, challenges.cloudflare.com (Turnstile siteverify) AND api.brevo.com, in that order" "$(echo "$AV" | jq -r .WP_ACCESSIBLE_HOSTS)" "api.copilt.org,challenges.cloudflare.com,api.brevo.com"
 t_eq "...Brevo is still on, and the things that must stay closed are absent: no turnstile bypass, no commerce, no plan change" "$(echo "$AV" | jq -c '[.AICC_MAIL_PROVIDER,.AICC_MAIL_ENABLED,.AICC_TRIAL_TURNSTILE,.AICC_COMMERCE_OPEN,.AICC_PLAN_CHANGE_ENABLED]')" '["brevo_api",true,null,null,null]'
-t_eq "relative to the LIVE render the activation ADDS exactly the nine documented constants" "$(sorted "$(comm -13 <(defnames "$TMP/live-render.php") <(defnames "$OUT") | tr '\n' ' ')")" "$(sorted "$ACTC")"
+t_eq "relative to the LIVE render the activation ADDS exactly the ten documented constants" "$(sorted "$(comm -13 <(defnames "$TMP/live-render.php") <(defnames "$OUT") | tr '\n' ' ')")" "$(sorted "$ACTC")"
 t_eq "...removes NONE, and every live constant keeps its value (the only changed define is WP_ACCESSIBLE_HOSTS, extended)" "$(comm -23 <(defnames "$TMP/live-render.php") <(defnames "$OUT") | wc -l | tr -d ' ')/$(comm -23 <(deflines "$TMP/live-render.php") <(deflines "$OUT") | sed -n "s/^define( '\([A-Z_]*\)'.*/\1/p" | tr '\n' ' ')" "0/WP_ACCESSIBLE_HOSTS "
 t_eq "...the five hand-appended P35 constants are all still there with their live values" "$(cst "$OUT" $FIVE | jq -c '[.AICC_OWNER_METRICS_TOKEN_FILE,.AICC_OWNER_METRICS_BASE,.AICC_OWNER_DASHBOARD_USER_IDS,.AICC_EA_LAUNCH_OFFER_MODE,.AICC_OWNER_OPS_SNAPSHOT_FILE]')" '["/srv/aicc/shared/owner-metrics.token","https://api.copilt.org","1","announce","/srv/aicc/shared/owner-ops-snapshot.json"]'
 t_not_contains "no secret is in the activation render (Turnstile secret, Brevo key)" "$(cat "$OUT")" "$TSSECRET"
@@ -121,7 +121,7 @@ t_not_contains "...nor a secret" "$CMP" "$BREVOKEY"
 t_eq "...and the live file is STILL untouched after the DIFFERENT run" "$(shasum -a 256 "$LIVEF" | cut -d' ' -f1)" "$H0"
 facts_from "$FIX/owner-facts.production.p41-activation.env"; ts_on
 CMP="$(R --compare --out "$LIVEF" 2>&1)"; crc=$?
-t_eq "the ACTIVATION facts compared with the live file: DIFFERENT (exit 4); 'added' = the nine activation constants, 'removed' = none" "$crc/$(printf '%s' "$CMP" | sed -n 's/^  removed: //p')" "4/-"
+t_eq "the ACTIVATION facts compared with the live file: DIFFERENT (exit 4); 'added' = the ten activation constants, 'removed' = none" "$crc/$(printf '%s' "$CMP" | sed -n 's/^  removed: //p')" "4/-"
 t_eq "...(the added names)" "$(sorted "$(printf '%s' "$CMP" | sed -n 's/^  added  : //p' | tr -d ',')")" "$(sorted "$ACTC")"
 t_eq "...(the changed name: only WP_ACCESSIBLE_HOSTS)" "$(printf '%s' "$CMP" | sed -n 's/^  changed: //p')" "WP_ACCESSIBLE_HOSTS"
 t_eq "...the live file is still untouched" "$(shasum -a 256 "$LIVEF" | cut -d' ' -f1)" "$H0"

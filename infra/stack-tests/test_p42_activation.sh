@@ -6,7 +6,8 @@
 #   L  the live render (p42-live) equals its golden; the values the coordinator listed are exactly what the render holds
 #   S1 ONE owner-facts update (Turnstile enabled + site key + the secret FILE, notify, milestone scheduling, owner-ops) renders EXACTLY the intended constants: +5 names, none removed, every live value and the five P35 constants kept,
 #      WP_ACCESSIBLE_HOSTS extended with challenges.cloudflare.com and NOTHING else; the signup switch and cap stay absent (public signup stays closed)
-#   S2 at the very end the cap 25 (integer) and the switch (boolean true) are the only additions
+#   SL the LEGAL step (after counsel approved): AICC_LEGAL_REVIEW_APPROVED=true is the only addition (the Control Plane blocker `legal_review`; it also removes the "Being finalized" banners)
+#   S2 at the very end the cap 25 (integer) and the switch (boolean true) are the only additions; the render REFUSES them unless the legal approval is already in the facts
 #   C  --compare at each step names exactly those constants (never a value) and writes nothing
 #   R  refusals: the signup switch without notify / the Turnstile site key / the secret FILE / AICC_TURNSTILE_ENABLED / a cap; a cap outside 25, 50, 100; a Turnstile SECRET as a fact; the site key pasted as the secret
 # Regenerate the goldens deliberately: AICC_UPDATE_GOLDEN=1 bash infra/stack-tests/test_p42_activation.sh   (review the diff!)
@@ -34,10 +35,11 @@ BREVOKEY='xkeysib-TEST-NOT-A-REAL-KEY-0000'; TSSECRET='0x4AAAAAAATSsecretVALUE01
 brevo_on() { printf '%s\n' "$BREVOKEY" > "$MAILD/brevo-api.key"; chmod 640 "$MAILD/brevo-api.key"; }
 ts_on() { printf '%s\n' "$TSSECRET" > "$MAILD/turnstile.secret"; chmod 640 "$MAILD/turnstile.secret"; }
 ts_off() { rm -f "$MAILD/turnstile.secret"; }
-GOLD_LIVE="$HERE/golden/wp-config.production.p42-live.php"; GOLD_S1="$HERE/golden/wp-config.production.p42-stage1.php"; GOLD_S2="$HERE/golden/wp-config.production.p42-stage2.php"
+GOLD_LIVE="$HERE/golden/wp-config.production.p42-live.php"; GOLD_S1="$HERE/golden/wp-config.production.p42-stage1.php"; GOLD_SL="$HERE/golden/wp-config.production.p42-stage-legal.php"; GOLD_S2="$HERE/golden/wp-config.production.p42-stage2.php"
 FIVE="AICC_EA_LAUNCH_OFFER_MODE AICC_OWNER_DASHBOARD_USER_IDS AICC_OWNER_METRICS_BASE AICC_OWNER_METRICS_TOKEN_FILE AICC_OWNER_OPS_SNAPSHOT_FILE"
 S1C="AICC_MILESTONE_SYNC_SCHEDULED AICC_NOTIFY_ENABLED AICC_OWNER_OPS_SECTION_ENABLED AICC_TURNSTILE_SECRET_FILE AICC_TURNSTILE_SITE_KEY"
 S2C="AICC_TRIAL_SELF_SERVICE_CAP AICC_TRIAL_SELF_SERVICE_ENABLED"
+SLC="AICC_LEGAL_REVIEW_APPROVED"
 TRIALC="AICC_TRIAL_SELF_SERVICE_ENABLED AICC_TRIAL_SELF_SERVICE_CAP AICC_TRIAL_TURNSTILE AICC_MAIL_MAX_PER_HOUR AICC_MAIL_MAX_PER_DAY AICC_NOTIFY_EXCLUDED_CUSTOMERS AICC_FUNNEL_COUNTERS_ENABLED AICC_PLAN_CHANGE_ENABLED AICC_PAY_RECONCILE_ENABLED AICC_PRIVACY_REQUESTS_ENABLED AICC_LEGAL_REVIEW_APPROVED AICC_COMMERCE_OPEN"
 
 echo "== L. the LIVE render (2026-11-19 facts) =="
@@ -80,16 +82,28 @@ t_not_contains "...no secret in the render (the Turnstile secret, the Brevo key)
 t_not_contains "...nor the Brevo key" "$(cat "$OUT")" "$BREVOKEY"
 cp "$OUT" "$TMP/s1.php"
 
+echo "== SL. the LEGAL step: AICC_LEGAL_REVIEW_APPROVED=true, only after counsel approved and the documents were re-published =="
+facts_from "$FIX/owner-facts.production.p42-stage-legal.env"
+t_ok "the legal stage renders" R
+t_ok "...php -l clean" php -l "$OUT"
+if [ "${AICC_UPDATE_GOLDEN:-0}" = 1 ]; then hexnorm "$OUT" > "$GOLD_SL"; echo "golden regenerated: $GOLD_SL"; fi
+t_ok "...equals golden/wp-config.production.p42-stage-legal.php byte for byte" bash -c "diff <(sed -E 's/[0-9a-f]{64}/HEX64/g' '$OUT') '$GOLD_SL'"
+t_eq "relative to stage 1 it ADDS exactly AICC_LEGAL_REVIEW_APPROVED, removes none, changes none" "$(sorted "$(comm -13 <(defnames "$TMP/s1.php") <(defnames "$OUT") | tr '\n' ' ')")/$(comm -23 <(deflines "$TMP/s1.php") <(deflines "$OUT") | wc -l | tr -d ' ')" "$(sorted "$SLC")/0"
+t_eq "...it is the boolean true (the Control Plane reads === true: 'true', 1 and 'yes' do not count) and the signup switch and cap are STILL absent" "$(cst "$OUT" AICC_LEGAL_REVIEW_APPROVED AICC_TRIAL_SELF_SERVICE_ENABLED AICC_TRIAL_SELF_SERVICE_CAP | jq -c '[.AICC_LEGAL_REVIEW_APPROVED,.AICC_TRIAL_SELF_SERVICE_ENABLED,.AICC_TRIAL_SELF_SERVICE_CAP]')" "[true,null,null]"
+t_rc "AICC_LEGAL_REVIEW_APPROVED accepts only the value true (false is refused: leave it unset)" 1 T set AICC_LEGAL_REVIEW_APPROVED false
+t_rc "...'yes' and '1' are refused too" 1 T set AICC_LEGAL_REVIEW_APPROVED yes
+cp "$OUT" "$TMP/sl.php"
+
 echo "== S2. at the very end: the cap 25 and the signup switch =="
 facts_from "$FIX/owner-facts.production.p42-stage2.env"
 t_ok "stage 2 renders" R
 t_ok "...php -l clean" php -l "$OUT"
 if [ "${AICC_UPDATE_GOLDEN:-0}" = 1 ]; then hexnorm "$OUT" > "$GOLD_S2"; echo "golden regenerated: $GOLD_S2"; fi
 t_ok "...equals golden/wp-config.production.p42-stage2.php byte for byte" bash -c "diff <(sed -E 's/[0-9a-f]{64}/HEX64/g' '$OUT') '$GOLD_S2'"
-t_eq "relative to stage 1 it ADDS exactly the cap and the switch, removes none, changes none" "$(sorted "$(comm -13 <(defnames "$TMP/s1.php") <(defnames "$OUT") | tr '\n' ' ')")/$(comm -23 <(deflines "$TMP/s1.php") <(deflines "$OUT") | wc -l | tr -d ' ')" "$(sorted "$S2C")/0"
+t_eq "relative to the legal stage it ADDS exactly the cap and the switch, removes none, changes none" "$(sorted "$(comm -13 <(defnames "$TMP/sl.php") <(defnames "$OUT") | tr '\n' ' ')")/$(comm -23 <(deflines "$TMP/sl.php") <(deflines "$OUT") | wc -l | tr -d ' ')" "$(sorted "$S2C")/0"
 t_eq "...the cap is the INTEGER 25 and the switch the boolean true (the Control Plane reads === true and is_int)" "$(cst "$OUT" AICC_TRIAL_SELF_SERVICE_CAP AICC_TRIAL_SELF_SERVICE_ENABLED | jq -c '[.AICC_TRIAL_SELF_SERVICE_CAP,.AICC_TRIAL_SELF_SERVICE_ENABLED]')" "[25,true]"
 t_eq "...AICC_TRIAL_TURNSTILE (the bypass) and AICC_COMMERCE_OPEN stay absent" "$(cst "$OUT" AICC_TRIAL_TURNSTILE AICC_COMMERCE_OPEN | jq -c '[.[]|select(.!=null)]|length')" "0"
-t_eq "...the total set of constants versus live is exactly the seven (5 + 2) and the hosts list only grew by challenges.cloudflare.com" "$(sorted "$(comm -13 <(defnames "$TMP/live.php") <(defnames "$OUT") | tr '\n' ' ')")" "$(sorted "$S1C $S2C")"
+t_eq "...the total set of constants versus live is exactly eight (5 + legal + 2) and the hosts list only grew by challenges.cloudflare.com" "$(sorted "$(comm -13 <(defnames "$TMP/live.php") <(defnames "$OUT") | tr '\n' ' ')")" "$(sorted "$S1C $SLC $S2C")"
 
 echo "== C. --compare at each step: names only, nothing written =="
 facts_from "$FIX/owner-facts.production.p42-stage1.env"; H0="$(shasum -a 256 "$TMP/live.php" | cut -d' ' -f1)"; cp "$TMP/live.php" "$TMP/live-file.php"; chmod 640 "$TMP/live-file.php"
@@ -102,9 +116,13 @@ t_eq "...the live file is untouched" "$(shasum -a 256 "$TMP/live-file.php" | cut
 cp "$TMP/s1.php" "$TMP/s1-file.php"; chmod 640 "$TMP/s1-file.php"
 CMP="$(R --compare --out "$TMP/s1-file.php" 2>&1)"; crc=$?
 t_eq "stage 1 facts vs the stage-1 file: IDENTICAL (exit 0) (the state right after the render and the reload)" "$crc" "0"
-facts_from "$FIX/owner-facts.production.p42-stage2.env"
+facts_from "$FIX/owner-facts.production.p42-stage-legal.env"
 CMP="$(R --compare --out "$TMP/s1-file.php" 2>&1)"; crc=$?
-t_eq "stage 2 facts vs the stage-1 file: DIFFERENT; added = the cap and the switch; removed -; changed -" "$crc/$(sorted "$(printf '%s' "$CMP" | sed -n 's/^  added  : //p' | tr -d ',')")/$(printf '%s' "$CMP" | sed -n 's/^  removed: //p')/$(printf '%s' "$CMP" | sed -n 's/^  changed: //p')" "4/$(sorted "$S2C")/-/-"
+t_eq "legal-stage facts vs the stage-1 file: DIFFERENT; added = AICC_LEGAL_REVIEW_APPROVED only; removed -; changed -" "$crc/$(sorted "$(printf '%s' "$CMP" | sed -n 's/^  added  : //p' | tr -d ',')")/$(printf '%s' "$CMP" | sed -n 's/^  removed: //p')/$(printf '%s' "$CMP" | sed -n 's/^  changed: //p')" "4/$(sorted "$SLC")/-/-"
+cp "$TMP/sl.php" "$TMP/sl-file.php"; chmod 640 "$TMP/sl-file.php"
+facts_from "$FIX/owner-facts.production.p42-stage2.env"
+CMP="$(R --compare --out "$TMP/sl-file.php" 2>&1)"; crc=$?
+t_eq "stage 2 facts vs the legal-stage file: DIFFERENT; added = the cap and the switch; removed -; changed -" "$crc/$(sorted "$(printf '%s' "$CMP" | sed -n 's/^  added  : //p' | tr -d ',')")/$(printf '%s' "$CMP" | sed -n 's/^  removed: //p')/$(printf '%s' "$CMP" | sed -n 's/^  changed: //p')" "4/$(sorted "$S2C")/-/-"
 grep -v '^AICC_OWNER_METRICS\|^AICC_OWNER_DASHBOARD\|^AICC_OWNER_OPS_SNAPSHOT\|^AICC_EA_LAUNCH' "$FIX/owner-facts.production.p42-stage1.env" > "$OFF"; chmod 600 "$OFF"
 CMP="$(R --compare --out "$TMP/s1-file.php" 2>&1)"; crc=$?
 t_eq "THE TRAP: the stage-1 facts WITHOUT the five P35 facts vs the live-shaped file: exit 4 and 'removed' names exactly the five" "$crc/$(sorted "$(printf '%s' "$CMP" | sed -n 's/^  removed: //p' | tr -d ',')")" "4/$(sorted "$FIVE")"
@@ -113,6 +131,7 @@ echo "== R. refusals: the Control Plane's own readiness rules (nothing is writte
 ts_on; facts_from "$FIX/owner-facts.production.p42-stage2.env"; R >/dev/null 2>&1; KEEP="$(shasum -a 256 "$OUT" | cut -d' ' -f1)"
 refuses() { local n="$1" needle="$2"; shift 2; local o rc=0; o="$(R "$@" 2>&1)" || rc=$?; if [ "$rc" != 0 ] && printf '%s' "$o" | grep -qi -- "$needle" && [ "$(shasum -a 256 "$OUT" | cut -d' ' -f1)" = "$KEEP" ]; then t_pass "$n"; else t_bad "$n" "rc=$rc; $(printf '%s' "$o" | tail -2 | tr '\n' '|')"; fi; }
 drop() { grep -v "^$1=" "$FIX/owner-facts.production.p42-stage2.env" > "$OFF"; chmod 600 "$OFF"; }
+drop AICC_LEGAL_REVIEW_APPROVED; refuses "the signup switch + cap WITHOUT AICC_LEGAL_REVIEW_APPROVED=true is refused (P42: the Control Plane blocker legal_review; counsel approval and re-published documents first)" "AICC_LEGAL_REVIEW_APPROVED"
 drop AICC_NOTIFY_ENABLED;        refuses "the signup switch WITHOUT AICC_NOTIFY_ENABLED is refused" "AICC_NOTIFY_ENABLED"
 drop AICC_TURNSTILE_SITE_KEY;    refuses "the signup switch WITHOUT the Turnstile site key is refused" "AICC_TURNSTILE_SITE_KEY"
 drop AICC_TURNSTILE_ENABLED;     refuses "the signup switch WITHOUT AICC_TURNSTILE_ENABLED (the outbound host) is refused" "AICC_TURNSTILE_ENABLED"

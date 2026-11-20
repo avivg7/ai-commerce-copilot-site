@@ -21,8 +21,9 @@ The committed fixtures `infra/stack-tests/fixtures/owner-facts.production.p42-li
 |---|---|
 | ONE owner-facts update (Turnstile enabled + site key + the secret FILE, notify, milestone scheduling, owner-ops section) renders EXACTLY five new constants: `AICC_TURNSTILE_SITE_KEY`, `AICC_TURNSTILE_SECRET_FILE` (a path, never the secret), `AICC_NOTIFY_ENABLED`, `AICC_MILESTONE_SYNC_SCHEDULED`, `AICC_OWNER_OPS_SECTION_ENABLED`; none removed; the only live define whose value changes is `WP_ACCESSIBLE_HOSTS` | `test_p42_activation.sh` S1 (golden + set arithmetic) |
 | `WP_ACCESSIBLE_HOSTS` gains `challenges.cloudflare.com` and NOTHING else (no wildcard, nothing lost): `api.copilt.org,challenges.cloudflare.com,api.brevo.com` | S1 (set difference is exactly that host) |
+| The LEGAL step (`AICC_LEGAL_REVIEW_APPROVED=true`) renders exactly ONE new constant and nothing else; the cap + switch stage is REFUSED by the renderer unless that fact is already present (mirrors the Control Plane's `legal_review` blocker) | SL and R (golden `p42-stage-legal`, refusal test) |
 | Every live value, Brevo, the empty trusted-proxy array and the five P35 constants are kept byte for byte; the signup switch, the cap, `AICC_TRIAL_TURNSTILE`, commerce and the legal approval stay absent | L and S1 |
-| At the very end the cap (integer `25`) and the switch (boolean `true`) are the only additions | S2 |
+| At the very end, after the legal step, the cap (integer `25`) and the switch (boolean `true`) are the only additions | S2 |
 | `--compare` names exactly those constants at each step, prints no value, writes nothing; the trap (facts without the five P35 facts) is caught | C |
 | Inconsistent sets are refused and nothing is written: switch without notify, without the site key, without `AICC_TURNSTILE_ENABLED`, without a cap, without the secret file; a cap outside 25/50/100 (at `set` time and hand-edited); the secret as a fact, the secret-file path as a fact, the bypass `AICC_TRIAL_TURNSTILE` and a trusted-proxy list as facts (all unknown keys); the SECRET pasted as the site key; a secret file with mode 0600 | R |
 | The Turnstile secret is installed only through the secure file mechanism, never in an argument, environment, file, log or terminal; the public SITE key pasted as the secret is refused by the host tool | `test_p42_turnstile_key.sh` (A-G) |
@@ -31,13 +32,16 @@ The committed fixtures `infra/stack-tests/fixtures/owner-facts.production.p42-li
 
 ## 3. Order, and the blockers `wp aicc-trial status` shows after each step
 
+**New code-enforced blocker `legal_review` (Control Plane branch `feat/p42-cp-readiness`, in test, not deployed):** the public mode stays `paused` unless the constant `AICC_LEGAL_REVIEW_APPROVED` is the boolean `true` (strict: `'false'`, `'true'`, `1`, `'yes'` do NOT count); `wp aicc-trial status` then shows the line `legal review approved (AICC_LEGAL_REVIEW_APPROVED === true)` and lists `legal_review` among the blockers until the owner fact is set. **The Control Plane release that carries this blocker and the fix for the `no_trusted_proxy` CLI false positive is `<ID: the coordinator fills in later>`; until it is deployed, the baseline `status` may still show `no_trusted_proxy` and will not show `legal_review`** (the legal approval is then only a process item on the live release, but the renderer here already refuses the switch without it).
+
 The deployed Control Plane (release `20261119T224150Z-90da3713`, source `635ad8c`) blocks the public mode in code on: `turnstile`, `turnstile_blocked`, `notify`, `plugin_release`, `mail*`, `legal_documents`, `no_trusted_proxy` (a CLI false positive: see the note below the table).
 
 | After | Blockers row (public mode stays `off` until the switch exists) |
 |---|---|
-| Today (baseline) | `turnstile`, `turnstile_blocked`, `notify`, `plugin_release` (+ `no_trusted_proxy` while the CLI false positive is flagged) |
-| Steps A-C (widget, secret file, ONE facts update, render, reload) | `plugin_release` (+ the false positive) |
-| Plugin signed and published (`docs/cutover/p41-plugin-publication.md`) | none (+ the false positive) |
+| Today (baseline) | `turnstile`, `turnstile_blocked`, `notify`, `plugin_release` (+ `legal_review` once the new release is deployed; + `no_trusted_proxy` while the CLI false positive is flagged, i.e. until that release) |
+| Steps A-C (widget, secret file, ONE facts update, render, reload) | `plugin_release` (+ `legal_review` on the new release; + the false positive until it) |
+| Plugin signed and published (`docs/cutover/p41-plugin-publication.md`) | (`legal_review` on the new release) (+ the false positive until it) |
+| Step E, the LEGAL step (`AICC_LEGAL_REVIEW_APPROVED=true`, after counsel approved and the documents were re-published) | none (+ the false positive until the new release); public mode still `off` (no switch yet) |
 | Step F (cap 25, then the switch) | `none`; public mode `open` |
 
 **`no_trusted_proxy` is not an owner action.** It is reported by the CLI because any request that reaches PHP from a loopback or private address (a deploy warm-up, a smoke check, a tunnel request) leaves a 15-minute flag that WP-CLI reads. It is being fixed in the Control Plane; **fixed in CP release `<ID: the coordinator fills in>`**. Do not define `AICC_LM_TRUSTED_PROXIES`. To tell noise from real: read the public route (`curl -s https://www.copilt.org/wp-json/aicc/v1/signup/status`) and re-run `status` after 15 quiet minutes.
@@ -133,6 +137,22 @@ Rollback: `pssh 'sudo aicc-owner-facts unset <KEY>'` for each, `--compare` (the 
 
 Sign offline and publish as in `docs/cutover/p41-plugin-publication.md`, then `pssh 'sudo aicc-wp aicc-trial status'` must no longer list `plugin_release` and `pssh 'sudo aicc-wp aicc-ops journeys blockers'` must print `Success: No journey blocker: ...`.
 
+## 8b. Step E: the LEGAL step (owner, ONLY after counsel's approval and the re-published documents), BEFORE the cap and the switch
+
+`AICC_LEGAL_REVIEW_APPROVED` is the owner's declaration that counsel has approved the legal documents. **Set it only after counsel approves and the Terms, Privacy, Refund and DPA have been re-published** (a signup records the versions it accepted: republishing mid-flight splits the records). It does two things: (1) the Control Plane blocker `legal_review` clears (public mode can leave `paused`); (2) **the "Being finalized" banners disappear from the Control Plane legal pages** (they are shown while the constant is not true). The memo of counsel's approval stays a process item the owner keeps; no code reads it.
+
+```bash
+pssh 'sudo aicc-owner-facts set AICC_LEGAL_REVIEW_APPROVED true'            # only the value true is accepted (false, yes, 1 are refused: leave it unset instead)
+pssh 'sudo aicc-render-wp-config --env production --confirm-production --compare'
+#   expect (exit 4): added: AICC_LEGAL_REVIEW_APPROVED; removed: -; changed: -
+pssh 'sudo aicc-render-wp-config --env production --confirm-production && sudo systemctl reload php8.3-fpm'
+pssh 'sudo aicc-render-wp-config --env production --confirm-production --compare'      # IDENTICAL
+pssh 'sudo aicc-wp aicc-trial status'     # (new release) the line "legal review approved (AICC_LEGAL_REVIEW_APPROVED === true)" is true and `legal_review` is gone from the blockers
+curl -s https://www.copilt.org/privacy/ | grep -c 'Being finalized'            # expect 0 once the pages are re-rendered (check Terms, Refund and DPA too)
+```
+
+Rollback: `unset AICC_LEGAL_REVIEW_APPROVED` + render + reload (the banners return; the signup, if open, pauses on the new release). **The render refuses step F without this fact:** `AICC_TRIAL_SELF_SERVICE_ENABLED needs AICC_LEGAL_REVIEW_APPROVED=true (P42) ...` (nothing written), so the order cannot be skipped by accident, and `unset AICC_LEGAL_REVIEW_APPROVED` while the switch is set is refused the same way.
+
 ## 9. Step F: open, at the very end (explicit owner authorization)
 
 ```bash
@@ -142,6 +162,7 @@ pssh 'sudo aicc-render-wp-config --env production --confirm-production --compare
 pssh 'sudo aicc-render-wp-config --env production --confirm-production && sudo systemctl reload php8.3-fpm'
 pssh 'sudo aicc-render-wp-config --env production --confirm-production --compare'      # IDENTICAL
 pssh 'sudo aicc-wp aicc-trial status'
+#   legal review approved (AICC_LEGAL_REVIEW_APPROVED === true) | yes     (new release)
 #   switch (AICC_TRIAL_SELF_SERVICE_ENABLED) | ON ; cap (AICC_TRIAL_SELF_SERVICE_CAP) | 25 ; paused | no ; policy mode | open ; public mode | open ; turnstile mode | required ; blockers | none
 curl -s https://www.copilt.org/wp-json/aicc/v1/signup/status     # "open":true,"mode":"open", a coarse cap_bucket, never an exact number
 curl -s -o /dev/null -w '%{http_code}\n' https://www.copilt.org/start/       # 200

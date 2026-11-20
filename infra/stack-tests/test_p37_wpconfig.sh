@@ -98,10 +98,10 @@ t_eq "the secret file alone (no site key fact) renders only the FILE PATH consta
 ts_off; mail_off
 # the full self-service set
 mail_on; ts_file; reset_facts
-for kv in "AICC_NOTIFY_ENABLED true" "AICC_TURNSTILE_ENABLED true" "AICC_TURNSTILE_SITE_KEY $SITEKEY" "AICC_TRIAL_SELF_SERVICE_CAP 25" "AICC_TRIAL_SELF_SERVICE_ENABLED true"; do T set $kv >/dev/null; done
+for kv in "AICC_NOTIFY_ENABLED true" "AICC_TURNSTILE_ENABLED true" "AICC_TURNSTILE_SITE_KEY $SITEKEY" "AICC_TRIAL_SELF_SERVICE_CAP 25" "AICC_LEGAL_REVIEW_APPROVED true" "AICC_TRIAL_SELF_SERVICE_ENABLED true"; do T set $kv >/dev/null; done
 t_ok "the full self-service set (switch, cap 25, key, secret file, turnstile host, notify, mail) renders" R
 FULL="$TMP/full.php"; cp "$OUT" "$FULL"
-t_eq "...the added code lines are EXACTLY the five self-service constants, in the fixed order" "$(added "$MAIL_BASE" "$FULL" | grep -v WP_ACCESSIBLE | tr '\n' ' ')" "define( 'AICC_TRIAL_SELF_SERVICE_ENABLED', true ); define( 'AICC_TRIAL_SELF_SERVICE_CAP', 25 ); define( 'AICC_TURNSTILE_SITE_KEY', '$SITEKEY' ); define( 'AICC_NOTIFY_ENABLED', true ); define( 'AICC_TURNSTILE_SECRET_FILE', '/etc/aicc-mail/turnstile.secret' ); "
+t_eq "...the added code lines are EXACTLY the legal approval the switch now requires (P42) and the five self-service constants, in the fixed order" "$(added "$MAIL_BASE" "$FULL" | grep -v WP_ACCESSIBLE | tr '\n' ' ')" "define( 'AICC_LEGAL_REVIEW_APPROVED', true ); define( 'AICC_TRIAL_SELF_SERVICE_ENABLED', true ); define( 'AICC_TRIAL_SELF_SERVICE_CAP', 25 ); define( 'AICC_TURNSTILE_SITE_KEY', '$SITEKEY' ); define( 'AICC_NOTIFY_ENABLED', true ); define( 'AICC_TURNSTILE_SECRET_FILE', '/etc/aicc-mail/turnstile.secret' ); "
 t_eq "...plus the Turnstile host on the outbound allow-list (the existing AICC_TURNSTILE_ENABLED machinery)" "$(grep -c "define( 'WP_ACCESSIBLE_HOSTS', 'api.copilt.org,challenges.cloudflare.com' );" "$FULL")" "1"
 CF="$(cst "$FULL" AICC_TRIAL_SELF_SERVICE_ENABLED AICC_TRIAL_SELF_SERVICE_CAP AICC_NOTIFY_ENABLED AICC_MAIL_ENABLED)"
 t_eq "...PHP: switch === true, cap === 25 (an integer: a string reads as 0), notify === true, mail enabled === true" "$(echo "$CF" | jq -c '[.AICC_TRIAL_SELF_SERVICE_ENABLED,.AICC_TRIAL_SELF_SERVICE_CAP,.AICC_NOTIFY_ENABLED,.AICC_MAIL_ENABLED]')" "[true,25,true,true]"
@@ -131,7 +131,7 @@ refused() { # refused <name> <expected-text-in-message>   (the facts/secret file
   if [ "$rc" = 1 ] && printf '%s' "$out" | grep -qF -- "$want" && [ "$(sha "$OUT")" = "$KEEP" ]; then t_pass "$n"; else t_bad "$n" "rc=$rc want 1 + '$want' + file untouched ($( [ "$(sha "$OUT")" = "$KEEP" ] && echo untouched || echo CHANGED)): $(printf '%s' "$out" | tail -2 | cut -c1-260)"; fi
 }
 facts() { reset_facts; for kv in "$@"; do T set $kv >/dev/null 2>&1 || true; done; }
-full_set() { mail_on; ts_file; facts "AICC_NOTIFY_ENABLED true" "AICC_TURNSTILE_ENABLED true" "AICC_TURNSTILE_SITE_KEY $SITEKEY" "AICC_TRIAL_SELF_SERVICE_CAP 25" "AICC_TRIAL_SELF_SERVICE_ENABLED true"; }
+full_set() { mail_on; ts_file; facts "AICC_NOTIFY_ENABLED true" "AICC_TURNSTILE_ENABLED true" "AICC_TURNSTILE_SITE_KEY $SITEKEY" "AICC_TRIAL_SELF_SERVICE_CAP 25" "AICC_LEGAL_REVIEW_APPROVED true" "AICC_TRIAL_SELF_SERVICE_ENABLED true"; }
 full_set; t_ok "(the complete set is accepted: baseline of the refusal tests)" R; R >/dev/null 2>&1; KEEP="$(sha "$OUT")"
 # one prerequisite removed at a time from a complete set
 full_set; T unset AICC_TRIAL_SELF_SERVICE_CAP >/dev/null; refused "self-service ON without a cap is REFUSED" "needs AICC_TRIAL_SELF_SERVICE_CAP"
@@ -250,7 +250,7 @@ mail_on;                                 t_ok "step 1: smtp.env placed, render: 
 T set AICC_NOTIFY_EXCLUDED_CUSTOMERS 2 >/dev/null; t_ok "step 2: exclusion list first (owner's own test customer), render" R
 T set AICC_MAIL_MAX_PER_HOUR 180 >/dev/null; T set AICC_MAIL_MAX_PER_DAY 300 >/dev/null; t_ok "step 3: mail caps matched to the relay plan, render" R
 T set AICC_NOTIFY_ENABLED true >/dev/null; t_ok "step 4: notification switch (mail is ready), render" R
-T set AICC_TRIAL_SELF_SERVICE_ENABLED true >/dev/null; T set AICC_TRIAL_SELF_SERVICE_CAP 25 >/dev/null
+T set AICC_LEGAL_REVIEW_APPROVED true >/dev/null; T set AICC_TRIAL_SELF_SERVICE_ENABLED true >/dev/null; T set AICC_TRIAL_SELF_SERVICE_CAP 25 >/dev/null
 KEEP="$(sha "$OUT")"; refused "step 5 TOO EARLY: switch + cap before Turnstile is REFUSED (no key, no host, no secret file)" "needs AICC_TURNSTILE_SITE_KEY"
 T set AICC_TURNSTILE_ENABLED true >/dev/null; T set AICC_TURNSTILE_SITE_KEY "$SITEKEY" >/dev/null; refused "step 5 still too early: no secret file yet" "Turnstile secret file"
 ts_file;                                   t_ok "step 5: Turnstile secret file placed, key + host facts set: the whole set renders" R
