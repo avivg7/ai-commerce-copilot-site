@@ -12,8 +12,8 @@
 # built from that commit, not for --version; a ZIP whose SHA-256 or size differs from the manifest or from --sha256; a ZIP whose baked public-key list is not exactly the owner's list; a --primary-fp that is not
 # the first key of that list; an existing signature file (it never overwrites one); a pre-release version.
 # Then: sign (the Plugin tool itself re-checks ZIP vs manifest and that the ZIP carries the signing key's public half); the signature must name --primary-fp (a signature by the standby key is removed:
-# that is for an emergency only); and three verifications with the Plugin repo's own tool, because `verify --pubkeys` never looks at the ZIP and `verify --zip` never looks at the list:
-#   (1) --pubkeys <list>   (2) --zip <ZIP>   (3) --pubkeys <the primary alone>   and a tamper control: the same signature over a manifest whose size is one byte larger must NOT verify.
+# that is for an emergency only); and four verifications with the Plugin repo's own tool (the fixed tool of P44 checks a supplied --zip also with --pubkeys; the --zip-alone form stays for older checkouts):
+#   (1) --pubkeys <list>   (2) --zip <ZIP>   (3) --pubkeys <the primary alone>   (4) --pubkeys <list> AND --zip <ZIP>   and tamper controls: a manifest one byte larger, and a ZIP one byte larger (an old tool that accepts it is refused), must NOT verify.
 # TRUST, stated plainly: this script runs PHP code that lives in --plugin-dir (bin/sign-release.php and includes/class-aicc-release-signature.php) with AICC_RELEASE_SIGNING_KEY_FILE in its environment, so a tampered
 # checkout could read the key. What protects you: the checkout must be CLEAN and at the commit the coordinator gave you over a SECOND channel (--commit), the manifest must have been built from exactly that commit, and
 # --primary-fp is the fingerprint YOU read from keygen (independent of anything in the checkout): a signature by any other key is removed. Use a checkout you fetched yourself (git clone / git fetch from the repository,
@@ -87,7 +87,12 @@ case "$sout" in *"with key $FP "*) ;; *) fail "the signature was NOT made by the
 v1="$(php "$TOOL" verify --manifest "$MAN" --sig "$TMPSIG" --pubkeys "$KEYS" 2>&1)" || fail "verify against the owner's key list failed: $v1"
 v2="$(php "$TOOL" verify --manifest "$MAN" --sig "$TMPSIG" --zip "$ZIP" 2>&1)" || fail "verify against the ZIP's own baked keys failed: $v2"
 v3="$(php "$TOOL" verify --manifest "$MAN" --sig "$TMPSIG" --pubkeys "$PRIMARY" 2>&1)" || fail "the signature does not verify with the primary public key alone: $v3"
+# (4) the zip-aware strict form (needs the fixed Plugin tool, P44): --pubkeys <owner list> AND --zip: the ZIP is checked against the manifest and the owner's list is the trusted set
+v4="$(php "$TOOL" verify --manifest "$MAN" --sig "$TMPSIG" --pubkeys "$KEYS" --zip "$ZIP" 2>&1)" || fail "the zip-aware verify (--pubkeys AND --zip) failed: $v4"
 TD="$(mktemp -d "${TMPDIR:-/tmp}/aicc-sign.XXXXXX")"
+# tool self-test: a Plugin checkout whose sign-release.php ignores --zip when --pubkeys is given (before P44) would let a tampered ZIP through that form: refuse to rely on it
+cp "$ZIP" "$TD/tampered.zip"; printf 'x' >> "$TD/tampered.zip"
+if php "$TOOL" verify --manifest "$MAN" --sig "$TMPSIG" --pubkeys "$KEYS" --zip "$TD/tampered.zip" >/dev/null 2>&1; then fail "this Plugin checkout's bin/sign-release.php accepts a TAMPERED ZIP with --pubkeys AND --zip (it predates the fix): the signature was removed; use a Plugin checkout from the P44 release line (the commit the coordinator announced), not an older one"; fi
 python3 -I - "$MAN" "$TD/m.json" <<'PY'
 import json, sys
 m = json.load(open(sys.argv[1])); m["size"] = int(m["size"]) + 1; json.dump(m, open(sys.argv[2], "w"))
@@ -99,7 +104,8 @@ echo "SIGNED  $VERSION  key $FP  (the primary)"
 echo "  $v1"
 echo "  $v2"
 echo "  $v3"
-echo "  tamper control: a manifest one byte larger is NOT accepted by this signature"
+echo "  $v4"
+echo "  tamper control: a manifest one byte larger is NOT accepted by this signature; a ZIP one byte larger is NOT accepted by the zip-aware verify"
 echo "  signature file (public, not secret): $SIGOUT"
 echo "  sha256 of the signature file: $(shasum -a 256 "$SIGOUT" | cut -d' ' -f1)"
 echo "Next: back up that file; unmount the vault; hand ONLY the .manifest.sig to the coordinator."

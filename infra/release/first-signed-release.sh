@@ -88,6 +88,8 @@ EOF
    ( cd "$PLUG" && php bin/sign-release.php verify --manifest "$MAN" --sig "$SIG" --pubkeys "$PRIMARY_PUB,$STANDBY_PUB" ) | tee "$OUT/verify.txt" || die "the signature does not verify against the owner's public key list"
    grep -q "$PRIMARY_FP" "$OUT/verify.txt" || die "verified, but not by the primary key $PRIMARY_FP (signed with the standby? that is only for an emergency)"
    ( cd "$PLUG" && php bin/sign-release.php verify --manifest "$MAN" --sig "$SIG" --zip "$ZIP" ) | tee -a "$OUT/verify.txt" || die "the signature does not verify against the ZIP (its size/SHA-256 differ from the manifest, or the keys baked into it do not verify the signature)"
+   # P44: the zip-aware strict form (the fixed Plugin tool checks a supplied --zip also with --pubkeys)
+   ( cd "$PLUG" && php bin/sign-release.php verify --manifest "$MAN" --sig "$SIG" --pubkeys "$PRIMARY_PUB,$STANDBY_PUB" --zip "$ZIP" ) | tee -a "$OUT/verify.txt" || die "the signature does not verify against the owner's key list together with this ZIP"
    # the key_id printed above is a hint taken from the .sig file: prove the PRIMARY public key itself verifies it
    ( cd "$PLUG" && php bin/sign-release.php verify --manifest "$MAN" --sig "$SIG" --pubkeys "$PRIMARY_PUB" >/dev/null ) || die "the signature does NOT verify with the primary public key alone (signed with the standby, or the key_id was edited)"
    # tamper control: a flipped bit in a COPY of the manifest must NOT verify

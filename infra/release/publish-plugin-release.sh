@@ -166,6 +166,8 @@ PY
       vout="$("$PHPBIN" "$PLUGDIR/bin/sign-release.php" verify --manifest "$MAN" --sig "$SIGFILE" --pubkeys "$KEYS" 2>&1)" || refuse "the signature does NOT verify against the owner's public key list: ${vout:-no reason}"
       # P41: the --pubkeys form of the verify tool never looks at the ZIP (it uses the ZIP only when --pubkeys is absent), so the ZIP is cross-checked by a second run: the tool re-hashes it against the manifest and verifies with the keys it bakes
       vzip="$("$PHPBIN" "$PLUGDIR/bin/sign-release.php" verify --manifest "$MAN" --sig "$SIGFILE" --zip "$ZIP" 2>&1)" || refuse "the signature does NOT verify against this ZIP and the public keys it bakes: ${vzip:-no reason}"
+      # P44: the fixed Plugin tool also checks a supplied --zip together with --pubkeys (the owner's list is the trusted set, the ZIP must match the manifest): one more strict run
+      vstrict="$("$PHPBIN" "$PLUGDIR/bin/sign-release.php" verify --manifest "$MAN" --sig "$SIGFILE" --pubkeys "$KEYS" --zip "$ZIP" 2>&1)" || refuse "the signature does NOT verify against the owner's public key list together with this ZIP: ${vstrict:-no reason}"
       python3 -I - "$ZIP" "$KEYS" <<'PY' || exit 3
 import base64, re, sys, zipfile
 def fail(m): sys.stderr.write("REFUSED: " + m + "\n"); sys.exit(1)

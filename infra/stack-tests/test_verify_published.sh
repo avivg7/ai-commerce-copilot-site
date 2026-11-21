@@ -54,7 +54,7 @@ t_eq "...nothing left behind" "$(nfiles "$TMP/tw" '*sig*')" "0"
 OUTS="$(SIGN "${S_ARGS[@]}" 2>&1)"; src=$?
 t_eq "the PRIMARY key signs: rc 0" "$src" "0"
 t_contains "...it says SIGNED with the primary fingerprint" "$OUTS" "SIGNED  $V  key $FP"
-t_eq "...three verifications ran and the tamper control was stated" "$(printf '%s\n' "$OUTS" | grep -c '^  verified: ')/$(printf '%s\n' "$OUTS" | grep -c 'tamper control')" "3/1"
+t_eq "...four verifications ran and the tamper controls were stated" "$(printf '%s\n' "$OUTS" | grep -c '^  verified: ')/$(printf '%s\n' "$OUTS" | grep -c 'tamper control')" "4/1"
 t_not_contains "...the secret key is not in the output" "$OUTS" "$(tr -d '\n' < "$KEYS/primary.key")"
 t_ok "the signature file exists, named for the version" test -f "$SIG"
 t_rc "a second run refuses to overwrite the signature (rc 3)" 3 SIGN "${S_ARGS[@]}"
@@ -68,7 +68,7 @@ t_eq "...11 checks ran (R1 R2 R3 R4a R4b R4c R5 R6a R6b R6c R6d)" "$(printf '%s\
 t_ok "...a report was written" test -f "$TMP/out-a/verify-report.json"
 exp_fail() { local n="$1" id="$2"; shift 2; local out rc=0; out="$("$@" 2>&1)" || rc=$?; if [ "$rc" = 1 ] && printf '%s' "$out" | grep -q "^FAIL  $id"; then t_pass "$n"; else t_bad "$n" "rc=$rc; $(printf '%s' "$out" | grep '^FAIL' | head -3 | tr '\n' '|')"; fi; }
 exp_fail "a TAMPERED local ZIP fails R6a (the --pubkeys form of the Plugin tool would not notice)" R6a VPO --local-zip "$TMP/tampered.zip"
-t_ok "...(characterisation) bin/sign-release.php verify --pubkeys ignores a tampered --zip: why the tool runs the --zip form too" bash -c "php '$PD/bin/sign-release.php' verify --manifest '$MAN' --sig '$SIG' --pubkeys '$LIST' --zip '$TMP/tampered.zip' >/dev/null 2>&1; r1=\$?; php '$PD/bin/sign-release.php' verify --manifest '$MAN' --sig '$SIG' --zip '$TMP/tampered.zip' >/dev/null 2>&1; r2=\$?; [ \$r2 -ne 0 ] && echo \"pubkeys+zip rc=\$r1, zip-only rc=\$r2\""
+t_ok "...(P44) bin/sign-release.php verify --pubkeys AND --zip now refuses a tampered --zip (the fixed Plugin tool); the --zip-alone form refuses it too" bash -c "! php '$PD/bin/sign-release.php' verify --manifest '$MAN' --sig '$SIG' --pubkeys '$LIST' --zip '$TMP/tampered.zip' >/dev/null 2>&1 && ! php '$PD/bin/sign-release.php' verify --manifest '$MAN' --sig '$SIG' --zip '$TMP/tampered.zip' >/dev/null 2>&1"
 exp_fail "a wrong SHA-256 from the second channel fails R1" R1 bash "$REL/verify-published-plugin.sh" --mode offline --version "$V" --sha256 "$(printf 'b%.0s' $(seq 64))" --manifest "$MAN" --sig "$SIG" --plugin-dir "$PD" --out "$(fo)"
 exp_fail "a wrong --version fails R1" R1 bash "$REL/verify-published-plugin.sh" --mode offline --version 1.1.9 --sha256 "$SHA" --manifest "$MAN" --sig "$SIG" --plugin-dir "$PD" --out "$(fo)"
 jq '.size = (.size + 1)' "$MAN" > "$TMP/m-size.json"; cp "$SIG" "$TMP/s.sig"
@@ -207,7 +207,7 @@ t_rc "stage 0: preconditions pass on the throwaway checkout (rc 0)" 0 FSR 0
 t_rc "stage 0: a wrong primary public key (not what endpoints.conf holds) is refused (rc 1)" 1 env PLUG="$PD" CPW="$CPDIR" VERSION="$V" PRIMARY_PUB="$ATT" STANDBY_PUB="$STB" PRIMARY_FP="$FP" bash "$REL/first-signed-release.sh" 0
 mkdir -p "$TMP/fsr-out"; cp "$ZIP" "$MAN" "$SIG" "$TMP/fsr-out/"; cp "$ZIP.sha256" "$TMP/fsr-out/" 2>/dev/null || true
 OUT3="$(FSR 3)"; rc=$?
-t_eq "stage 3 with the genuine ZIP: OK (rc 0); the --pubkeys form AND the --zip form ran" "$rc/$(printf '%s\n' "$OUT3" | grep -c '^verified:')" "0/2"
+t_eq "stage 3 with the genuine ZIP: OK (rc 0); the --pubkeys form, the --zip form AND the zip-aware strict form ran" "$rc/$(printf '%s\n' "$OUT3" | grep -c '^verified:')" "0/3"
 cp "$TMP/tampered.zip" "$TMP/fsr-out/$ZN"
 OUT3="$(FSR 3)"; rc=$?
 t_eq "stage 3 with a TAMPERED ZIP next to the genuine manifest+signature: FAILS (rc 1) - before P41 it passed because --pubkeys made the tool ignore the ZIP" "$rc" "1"

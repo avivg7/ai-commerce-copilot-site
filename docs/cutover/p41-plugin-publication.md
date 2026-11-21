@@ -6,6 +6,9 @@ Written 2026-11-18 (UTC), P41 builder R. It replaces `PLUGIN-SIGN-AND-PUBLISH-ST
 
 The procedure is **version-agnostic**: the tools take the version, the ZIP's SHA-256 and the commit as ARGUMENTS and hard-code none of them. **The Plugin candidate is rebuilt by builder P (the hash changes with every rebuild): this document deliberately contains no release hash. Every value comes from the release directory builder P hands over and from the coordinator's hand-over message (section 1).** Publish the version the coordinator hands over, never one you built yourself.
 
+> **P44 update (2026-11-21).** The Plugin's `bin/sign-release.php verify` now checks a supplied `--zip` against the manifest ALSO when `--pubkeys` is given (a tampered ZIP next to a genuine manifest and signature is refused), and `--pubkeys` is exactly the trusted set. `sign-plugin-release.sh` therefore runs a fourth, zip-aware verify (`--pubkeys <list> --zip <ZIP>`), proves with a one-byte-larger ZIP that the Plugin checkout's tool is the fixed one (an older checkout is refused, exit 1, signature removed), and `publish-plugin-release.sh` / `first-signed-release.sh` run the same strict form. The older two-form description below stays valid for checkouts before the fix; use a Plugin checkout from the P44 release line.
+
+
 ## 1. The values for THIS release
 
 Fill these in from TWO sources. The release directory `$F` is the one builder P hands over (it holds `ai-commerce-copilot-<V>.zip`, `.zip.sha256` and `.manifest.json`); the coordinator's hand-over message gives `V`, `SHA` and `COMMIT` over a SECOND channel (never copy `SHA` out of `$F`: the point is that a swapped folder cannot vouch for itself).
