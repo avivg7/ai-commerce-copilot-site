@@ -1,0 +1,68 @@
+TRUST-ANCHOR PLAN (P45): NOTHING HAS BEEN APPLIED. This text only prints commands; run them yourself, one step at a time, after the owner has approved, inside a deploy window.
+
+KEYS (public; validated exactly as the owner-facts tool does; the OLD keys are refused)
+  primary  630d-cd29-66c4-3366  (python hashlib = shell sha256: agree)   AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=
+  standby  ae21-6c2e-f524-7a37  (python hashlib = shell sha256: agree)   AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA=
+  handover file: none
+  value to set (primary first, no blanks): AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=,AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA=
+  CHECK BY EYE: these two fingerprints must be the ones keygen printed for the two new USB keys, in this order.
+
+WINDOW: start only at :18-:26 or :48-:56 UTC; NEVER 02:00-04:00 UTC. Access: P=~/aicc-promotion/pssh (production only; the operator key).
+
+0. PRE-FLIGHT (read-only; every line must match, else STOP)
+P=~/aicc-promotion/pssh
+$P 'grep -E "^AICC_(ENV|HOSTNAME|STAGE_ID)=" /etc/aicc-stage-identity'      # production / www.copilt.org / 3e897286ce82e55f4d866acf0d526a5f
+$P 'sudo aicc-owner-facts check'                                             # ok: N value(s) valid for production
+$P 'sudo aicc-owner-facts list | cut -d= -f1 | grep -c SIGNING_PUBKEYS'     # 0
+$P 'sudo aicc-render-wp-config --env production --confirm-production --compare'   # IDENTICAL, else STOP
+
+0b. OPTIONAL backup of the rendered configuration (root-only copy; it holds secrets: never print it)
+$P "sudo bash -c 'umask 077; cp -p /srv/aicc/shared/wp-config.php /srv/aicc/backups/wp-config.php.pre-trustanchor-\$(date -u +%Y%m%dT%H%M%SZ)'"
+
+1. SET THE ONE FACT
+$P "sudo aicc-owner-facts set AICC_LM_PLUGIN_SIGNING_PUBKEYS 'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=,AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA='"
+$P 'sudo aicc-owner-facts check'
+
+2. COMPARE (read-only). MUST be exactly this, exit 4; anything else: STOP and roll back (step 7)
+$P 'sudo aicc-render-wp-config --env production --confirm-production --compare'
+#   DIFFERENT from /srv/aicc/shared/wp-config.php: a render would change it. Constants by NAME only (values are never shown):
+#     added  : AICC_LM_PLUGIN_SIGNING_PUBKEYS
+#     removed: -
+#     changed: -
+
+3. DRY RUN (writes nothing)
+$P 'sudo aicc-render-wp-config --env production --confirm-production --dry-run'
+
+4. RENDER AND RELOAD
+$P 'sudo aicc-render-wp-config --env production --confirm-production'
+$P 'sudo systemctl reload php8.3-fpm'
+
+5. COMPARE AGAIN: must say IDENTICAL (exit 0)
+$P 'sudo aicc-render-wp-config --env production --confirm-production --compare'
+
+6. HOSTKEYS VERIFICATION (read-only; prints only the entry count, fingerprints and PRESENT/ABSENT; never the constant)
+SNIP=$(cat <<'PHP'
+$want = array_map( "trim", explode( ",", "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=,AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA=" ) );
+if ( ! defined( "AICC_LM_PLUGIN_SIGNING_PUBKEYS" ) || ! is_string( AICC_LM_PLUGIN_SIGNING_PUBKEYS ) || "" === trim( AICC_LM_PLUGIN_SIGNING_PUBKEYS ) ) { echo "HOSTKEYS not-defined\n"; return; }
+$have = array_values( array_filter( array_map( "trim", explode( ",", AICC_LM_PLUGIN_SIGNING_PUBKEYS ) ), "strlen" ) );
+$fp = function ( $b64 ) { $raw = base64_decode( $b64, true ); return ( false !== $raw && 32 === strlen( $raw ) ) ? implode( "-", str_split( substr( hash( "sha256", $raw ), 0, 16 ), 4 ) ) : "unusable"; };
+echo "HOSTKEYS defined entries=" . count( $have ) . " fingerprints=" . implode( ",", array_map( $fp, $have ) ) . "\n";
+foreach ( $want as $i => $k ) { echo "HOSTKEYS " . ( 0 === $i ? "primary" : "standby" ) . " " . $fp( $k ) . " " . ( in_array( $k, $have, true ) ? "PRESENT" : "ABSENT" ) . "\n"; }
+PHP
+)
+B=$(printf '%s' "$SNIP" | base64 | tr -d '\n')
+$P "sudo aicc-wp eval \"\$(echo $B | base64 -d)\""
+#   expected:
+#   HOSTKEYS defined entries=2 fingerprints=630d-cd29-66c4-3366,ae21-6c2e-f524-7a37
+#   HOSTKEYS primary 630d-cd29-66c4-3366 PRESENT
+#   HOSTKEYS standby ae21-6c2e-f524-7a37 PRESENT
+
+7. ROLLBACK (restores today's file; safe at any time while nothing is published)
+$P 'sudo aicc-owner-facts unset AICC_LM_PLUGIN_SIGNING_PUBKEYS'
+$P 'sudo aicc-render-wp-config --env production --confirm-production --compare'    # rc=4; removed: AICC_LM_PLUGIN_SIGNING_PUBKEYS only
+$P 'sudo aicc-render-wp-config --env production --confirm-production'
+$P 'sudo systemctl reload php8.3-fpm'
+$P 'sudo aicc-render-wp-config --env production --confirm-production --compare'    # IDENTICAL
+
+NOTE: this sets only the Control Plane's trust anchor. A release must ALSO be built with these same two keys baked in (Plugin release/endpoints.conf UPDATE_PUBLIC_KEYS) and signed by the primary:
+the launch gate refuses a release whose signing key is not in BOTH the host list and the shipped build.
