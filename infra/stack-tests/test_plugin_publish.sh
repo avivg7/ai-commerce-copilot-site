@@ -15,6 +15,13 @@ case "\$cmd" in
   "cat /etc/aicc-stage-identity") printf 'AICC_ENV=%s\nAICC_HOSTNAME=%s\nAICC_STAGE_ID=%s\n' "\${STUB_ENV:-staging}" "\${STUB_HOSTNAME:-stage.copilt.org}" "\${STUB_ID:-$SID}" ;;
   *sha256sum\ -c*) exit "\${STUB_SHA_RC:-0}" ;;
   *"sudo cat "*"/current") echo "\${STUB_CURRENT:-}" ;;
+  *"base64_decode"*) case "\${STUB_HOSTKEYS:-present}" in
+      present) printf 'HOSTKEYS defined entries=2 fingerprints=9d49-041f-0ced-13ac,be7f-3dda-cddd-d781\nHOSTKEYS primary 9d49-041f-0ced-13ac PRESENT\nHOSTKEYS standby be7f-3dda-cddd-d781 PRESENT\n' ;;
+      undefined) printf 'HOSTKEYS not-defined\n' ;;
+      wrong) printf 'HOSTKEYS defined entries=1 fingerprints=1111-2222-3333-4444\nHOSTKEYS primary 9d49-041f-0ced-13ac ABSENT\nHOSTKEYS standby be7f-3dda-cddd-d781 ABSENT\n' ;;
+      standbyonly) printf 'HOSTKEYS defined entries=1 fingerprints=be7f-3dda-cddd-d781\nHOSTKEYS primary 9d49-041f-0ced-13ac ABSENT\nHOSTKEYS standby be7f-3dda-cddd-d781 PRESENT\n' ;;
+      nothing) ;;
+    esac ;;
   *"sudo aicc-wp eval"*) printf '%s' "\${STUB_PROBLEM:-}" ;;
   *"sudo bash "*) exit "\${STUB_INSTALL_RC:-0}" ;;
   *) exit 0 ;;
@@ -281,6 +288,28 @@ t_eq "every production ssh call pins the host key (StrictHostKeyChecking=yes + t
 : > "$CALLS"
 STUB_ENV=production STUB_HOSTNAME=www.copilt.org STUB_CURRENT=1.1.0 t_ok "production rollback: --point-at 1.1.0 --confirm-production 1.1.0 --apply" P --point-at 1.1.0 --confirm-production 1.1.0 --apply
 t_contains "...pointer move only" "$(cat "$CALLS")" "--point-at 1.1.0"
+t_contains "...the trust-anchor gate ran first (a read-only host query, no value printed)" "$(grep -c 'base64_decode' "$CALLS")" "1"
+echo "== P44 production trust-anchor gate: --apply (publish, --set-current, --point-at) REFUSES while the host's AICC_LM_PLUGIN_SIGNING_PUBKEYS is absent or wrong =="
+for mode in undefined wrong standbyonly nothing; do
+  : > "$CALLS"
+  GOUT="$(STUB_ENV=production STUB_HOSTNAME=www.copilt.org STUB_CURRENT=$V STUB_HOSTKEYS=$mode PV --confirm-production $V --apply --set-current "${ZM[@]}" 2>&1)"; GRC=$?
+  t_eq "gate ($mode): production --apply --set-current is REFUSED (exit 3)" "$GRC" "3"
+  t_contains "gate ($mode): ...with a clear message pointing to TRUST-ANCHOR-OWNER-FACT.md" "$GOUT" "TRUST-ANCHOR-OWNER-FACT.md"
+  t_contains "gate ($mode): ...saying nothing was uploaded or changed" "$GOUT" "Nothing was uploaded or changed"
+  t_eq "gate ($mode): ...no rsync, no 'sudo bash' installer call, no upload directory created" "$(grep -cE '^rsync|sudo bash|mkdir -p ~/plugin-incoming' "$CALLS" || true)" "0"
+done
+: > "$CALLS"
+STUB_ENV=production STUB_HOSTNAME=www.copilt.org STUB_HOSTKEYS=undefined t_rc "gate (undefined): a production --apply WITHOUT --set-current (staging the release) is REFUSED too (3)" 3 PV --confirm-production $V --apply "${ZM[@]}"
+STUB_ENV=production STUB_HOSTNAME=www.copilt.org STUB_HOSTKEYS=wrong t_rc "gate (wrong key): production --point-at --apply is REFUSED (3)" 3 P --point-at 1.1.0 --confirm-production 1.1.0 --apply
+t_eq "gate: ...and none of those runs sent anything (no rsync, no installer call)" "$(grep -cE '^rsync|sudo bash' "$CALLS" || true)" "0"
+: > "$CALLS"
+STUB_ENV=production STUB_HOSTNAME=www.copilt.org STUB_HOSTKEYS=undefined t_ok "gate: a production DRY RUN (no --apply) still works with an undefined constant: it is offline" PV --confirm-production $V --set-current "${ZM[@]}"
+t_eq "gate: ...and the dry run made no ssh call at all" "$(grep -c '^ssh' "$CALLS" || true)" "0"
+STUB_CURRENT=$V STUB_HOSTKEYS=undefined t_ok "gate: staging --apply is not gated (the trust anchor rule is the production host's)" S --set-current "${ZM[@]}"
+: > "$CALLS"
+STUB_ENV=production STUB_HOSTNAME=www.copilt.org STUB_CURRENT=$V STUB_HOSTKEYS=present t_ok "gate: the primary key PRESENT => production --apply --set-current proceeds" PV --confirm-production $V --apply --set-current "${ZM[@]}"
+t_contains "gate: ...the installer was run" "$(cat "$CALLS")" "sudo bash"
+t_contains "gate: ...and the gate said OK" "$(STUB_ENV=production STUB_HOSTNAME=www.copilt.org STUB_CURRENT=$V PV --confirm-production $V --apply --set-current "${ZM[@]}" 2>&1)" "trust-anchor gate OK"
 echo "== compatibility with the REAL host-side installer of the Control Plane (the launch-secfix worktree is the contract; run locally against a temp release dir; skipped when absent) =="
 CPI="${AICC_CP_INSTALLER:-/Users/avivgerman/Local Sites/woo-recommendation-qa/aicc-control-plane-worktrees/release-1.1.0-prep-docs/scripts/plugin-release/install-plugin-release.sh}"
 if [ -f "$CPI" ]; then

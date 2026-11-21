@@ -85,7 +85,8 @@ TMPSIG="$SIGOUT.tmp.$$"
 sout="$(php "$TOOL" sign --manifest "$MAN" --zip "$ZIP" --sig-out "$TMPSIG" 2>&1)" || fail "the Plugin signing tool refused: ${sout##*sign-release: }"
 case "$sout" in *"with key $FP "*) ;; *) fail "the signature was NOT made by the primary key $FP (the tool said: ${sout%% ->*}): removed. Signing with the standby is an emergency step."; esac
 v1="$(php "$TOOL" verify --manifest "$MAN" --sig "$TMPSIG" --pubkeys "$KEYS" 2>&1)" || fail "verify against the owner's key list failed: $v1"
-v2="$(php "$TOOL" verify --manifest "$MAN" --sig "$TMPSIG" --zip "$ZIP" 2>&1)" || fail "verify against the ZIP's own baked keys failed: $v2"
+# the --zip-alone form prints a stderr WARNING (integrity only, not authenticity: the owner's list is checked by forms 1, 3 and 4): keep it out of the printed result
+v2="$(php "$TOOL" verify --manifest "$MAN" --sig "$TMPSIG" --zip "$ZIP" 2>/dev/null)" || fail "verify against the ZIP's own baked keys failed: $(php "$TOOL" verify --manifest "$MAN" --sig "$TMPSIG" --zip "$ZIP" 2>&1 | tail -2)"
 v3="$(php "$TOOL" verify --manifest "$MAN" --sig "$TMPSIG" --pubkeys "$PRIMARY" 2>&1)" || fail "the signature does not verify with the primary public key alone: $v3"
 # (4) the zip-aware strict form (needs the fixed Plugin tool, P44): --pubkeys <owner list> AND --zip: the ZIP is checked against the manifest and the owner's list is the trusted set
 v4="$(php "$TOOL" verify --manifest "$MAN" --sig "$TMPSIG" --pubkeys "$KEYS" --zip "$ZIP" 2>&1)" || fail "the zip-aware verify (--pubkeys AND --zip) failed: $v4"

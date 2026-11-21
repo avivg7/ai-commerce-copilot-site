@@ -8,7 +8,8 @@
 #        [--allow-unsigned (STAGING ONLY)] [--set-current] [--key K] [--user aicc] [--dry-run] [--check-only]
 #   infra/release/publish-plugin-release.sh --point-at <version> --installer <install-plugin-release.sh> --stage-host H --stage-ip IPV4 --stage-id ID [--key K]      (roll back / forward; nothing uploaded but the installer)
 #   PRODUCTION (--env production): --stage-host www.copilt.org, --key ~/.ssh/aicc_cp_prod*, --known-hosts <pinned file>, --confirm-production <the version>, and --apply.
-#        WITHOUT --apply a production run is a DRY RUN (local verification + the plan; no network).
+#        WITHOUT --apply a production run is a DRY RUN (local verification + the plan; no network). WITH --apply the production TRUST-ANCHOR GATE runs first (P44): read-only, the host's
+#        AICC_LM_PLUGIN_SIGNING_PUBKEYS must hold the PRIMARY key of the owner's list (check-host-signing-keys.sh), else REFUSED (exit 3) before anything is uploaded.
 #
 # SIGNED UPDATE CHANNEL (docs/launch/update-signing.md in the Plugin repo): the release must come with the owner's OFFLINE Ed25519 signature, ai-commerce-copilot-<version>.manifest.sig (made by the
 # Plugin's `php bin/sign-release.php sign`; found next to the manifest or given with --signature). It is checked here as far as possible, uploaded next to the ZIP and the manifest, and passed to the
@@ -252,6 +253,23 @@ echo "$ident" | grep -q "^AICC_HOSTNAME=${SHOST}\$" || refuse "host identity AIC
 echo "$ident" | grep -q "^AICC_STAGE_ID=${SID}\$" || refuse "host identity AICC_STAGE_ID does not match --stage-id: not the host this command was meant for"
 echo "host identity OK ($SHOST, id matches)"
 [ "$CHECK_ONLY" = 0 ] || { echo "check-only: nothing uploaded"; exit 0; }
+
+# ---- P44 trust-anchor GATE (production only, before ANY write): the Control Plane serves a release only if its AICC_LM_PLUGIN_SIGNING_PUBKEYS holds the signing key, so publishing (or moving
+#      `current`) while that owner fact is missing would store a release the host then refuses to serve. This runs the read-only host check of check-host-signing-keys.sh (it prints no key value)
+#      with the SAME owner public list the host installer is given: the PRIMARY key must be PRESENT in the constant, otherwise the publisher refuses here, with nothing uploaded. A dry run
+#      (production without --apply) never reaches this point: it stays fully offline.
+if [ "$ENVN" = production ]; then
+  GATE="$HERE/check-host-signing-keys.sh"
+  [ -f "$GATE" ] || refuse "the production trust-anchor gate script is missing ($GATE): not publishing without it"
+  [ -n "${KEYS:-}" ] || refuse "no owner public key list for the production trust-anchor gate: pass --pubkeys <primary,standby> or --plugin-dir"
+  grc=0
+  gate_out="$(bash "$GATE" --pubkeys "$KEYS" --stage-host "$SHOST" --stage-ip "$SIP" --stage-id "$SID" --key "$KEY" --known-hosts "$KNOWN_HOSTS" --env production --user "$USER_NAME" 2>&1)" || grc=$?
+  if [ "$grc" != 0 ]; then
+    printf '%s\n' "$gate_out" | sed 's/^/  gate: /' >&2
+    refuse "production trust-anchor gate FAILED (check-host-signing-keys.sh exit $grc): the host's AICC_LM_PLUGIN_SIGNING_PUBKEYS is not defined or does not hold the primary signing key, so the Control Plane would refuse to serve this release. Nothing was uploaded or changed. Do the owner fact first (TRUST-ANCHOR-OWNER-FACT.md, cp-dark/p44: aicc-owner-facts set AICC_LM_PLUGIN_SIGNING_PUBKEYS), then run this again."
+  fi
+  echo "trust-anchor gate OK: $(printf '%s\n' "$gate_out" | grep -E '^OK:' | head -1)"
+fi
 
 # ---- upload, verify the installer on the host, run it ---------------------------------------------------------------------------------------
 "${SSH[@]}" "umask 077; rm -rf ~/$INC && mkdir -p ~/$INC" || { echo "cannot create the incoming directory" >&2; exit 1; }
