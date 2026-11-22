@@ -199,7 +199,7 @@ def parse_signing_pubkeys(key, v):
             raise OwnerFactsError("%s: each key must decode to exactly 32 bytes" % key)
         canon = base64.b64encode(rawkey).decode("ascii")
         if canon in RETIRED_SIGNING_PUBKEYS:
-            raise OwnerFactsError("%s: that public key (fingerprint %s) is RETIRED (P45: the passphrase of its vault was lost and the pair was replaced): it must never be a trust anchor" % (key, RETIRED_SIGNING_PUBKEYS[canon]))
+            raise OwnerFactsError("%s: that public key (fingerprint %s) is an OLD key and is RETIRED (P45: the passphrase of its vault was lost and the pair was replaced): it must never be a trust anchor" % (key, RETIRED_SIGNING_PUBKEYS[canon]))
         if canon in out:
             raise OwnerFactsError("%s lists the same key twice" % key)
         out.append(canon)
