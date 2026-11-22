@@ -38,7 +38,7 @@ fail()   { echo "FAILED: $*" >&2; exit 1; }
 [[ "$VERSION" =~ ^[0-9]{1,4}\.[0-9]{1,4}\.[0-9]{1,4}$ ]] || refuse "--version must be X.Y.Z with no -dev/-rc suffix (a pre-release is never signed for customers)"
 [[ "$SHA" =~ ^[0-9a-f]{64}$ ]] || refuse "--sha256 must be 64 lowercase hex characters"
 [[ "$COMMIT" =~ ^[0-9a-f]{7,40}$ ]] || refuse "--commit must be 7-40 hex characters"
-[[ "$FP" =~ ^[0-9a-f]{4}(-[0-9a-f]{4}){3}$ ]] || refuse "--primary-fp must look like 9d49-041f-0ced-13ac"
+[[ "$FP" =~ ^[0-9a-f]{4}(-[0-9a-f]{4}){3}$ ]] || refuse "--primary-fp must look like 5a8f-1d62-ac6e-ce00"
 command -v php >/dev/null 2>&1 && php -r 'exit(function_exists("sodium_crypto_sign_detached")?0:1);' || refuse "php with ext-sodium is required"
 KEYFILE="${AICC_RELEASE_SIGNING_KEY_FILE:-}"
 [ -n "$KEYFILE" ] || refuse "set AICC_RELEASE_SIGNING_KEY_FILE to the vault key file (an environment variable, never an argument)"

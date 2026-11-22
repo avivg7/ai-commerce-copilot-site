@@ -1,5 +1,7 @@
 # P42 OWNER ACTION PACKAGE: the only things engineering cannot do for you
 
+> **HISTORICAL for Package B (signing). Superseded by the P45 key replacement (2026-11-22).** Package B below describes signing 1.1.2 with the 2026-11-18 key pair (`9d49-041f-0ced-13ac` / `be7f-3dda-cddd-d781`), whose vault passphrases were lost: that pair is retired and must never be signed with, trusted by the host, or installed as `AICC_LM_PLUGIN_SIGNING_PUBKEYS`. The 1.1.2 ZIP bakes the retired keys and must not be published. Use the rekeyed release and the P45 runbooks (`cp-dark/p45/`: key values 5a8f-1d62-ac6e-ce00 / 8179-a77e-3b93-1f58). Packages A, C-F are unaffected.
+
 Everything else is done, deployed (default OFF) and verified: Control Plane `20261120T075105Z-6884e0fc`, Site `20261119T220531Z-8db27c52`. Nothing below was run for you. No step asks for a secret in chat: secrets go through the hidden-prompt tools only. After each package, tell me "done A", "done B", ... and I run the coordinator part. Detailed, copy-pasteable versions with every flag verified are in the files named in each package.
 
 ## Package A: Cloudflare Turnstile (about 15 minutes; Cloudflare dashboard + your Mac Terminal)
