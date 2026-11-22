@@ -1,5 +1,7 @@
 # Official Plugin publication: sign offline, publish, verify, roll back (owner and coordinator steps)
 
+> **KEY REPLACEMENT (P45, 2026-11-22).** The owner lost the passphrases of the two signing vaults made on 2026-11-18, so those key pairs are RETIRED (public keys `yCsFX6176Ue5ZTdi4Dr99J9LFM43jXrN6Kbp13KF04Y=` fingerprint `9d49-041f-0ced-13ac`, and `5p50qA1SYMTV7MXeDAWfMnNqLKVuTRDVS4FREuKuQwM=` fingerprint `be7f-3dda-cddd-d781`): they must NEVER be installed as the production trust anchor, and `infra/release/trust-anchor-plan.sh` refuses them. Every key value and fingerprint below is the NEW pair from the 2026-11-22 key ceremony (primary `5a8f-1d62-ac6e-ce00`, standby `8179-a77e-3b93-1f58`). Sample output blocks keep their original timestamps (illustrative only). The current runbooks are `cp-dark/p45/TRUST-ANCHOR-ACTIVATION-RUNBOOK-FINAL.md` and `PUBLICATION-RUNBOOK-FINAL.md`.
+
 Written 2026-11-18 (UTC), P41 builder R. It replaces `PLUGIN-SIGN-AND-PUBLISH-STEPS.md` of the P37 evidence folder (that file named the wrong Control Plane worktree, passed `--pubkeys` AND `--zip` to a verify that then ignored the ZIP, and had no post-publication check).
 
 **Nothing in this document has been run against production.** Every command below was run for real in dry-run or fixture mode (section 9 lists what, with the counts), with THROWAWAY keys and a build of an earlier candidate commit (1.1.1, `abdcda2`) that bakes a throwaway public key. No real signing key, vault or production host was touched.
@@ -27,18 +29,18 @@ jq -r '.version, .sha256, .built_from_commit' "$F/ai-commerce-copilot-$V.manifes
 PLUG=<a CLEAN checkout YOU fetched, at $COMMIT>   # git -C "$PLUG" rev-parse HEAD (starts with $COMMIT) ; git -C "$PLUG" status --short (prints nothing)
 SITE=~/self_projects/ai_copilot_site-worktrees/p41-release-tools     # any Site worktree that contains infra/release/sign-plugin-release.sh (the merged P41 Site line once the coordinator has merged it)
 CP="$HOME/Local Sites/woo-recommendation-qa/aicc-control-plane-worktrees/p40-pricing"   # the DEPLOYED Control Plane line; after the coordinator deploys the merged P41 CP, that worktree. NOT p37-integrated.
-PRIMARY_FP=9d49-041f-0ced-13ac            # the primary key's fingerprint (you read it from keygen; it is also in the plugin's release/endpoints.conf comment)
+PRIMARY_FP=5a8f-1d62-ac6e-ce00            # the primary key's fingerprint (you read it from keygen; it is also in the plugin's release/endpoints.conf comment)
 SSHK=~/.ssh/aicc_cp_prod_operator; KNOWN=~/.ssh/known_hosts_aicc_prod; HOSTIP=157.230.110.211; STAGEID=3e897286ce82e55f4d866acf0d526a5f
 ```
 
 The CP worktree is used for ONE file only, `scripts/plugin-release/install-plugin-release.sh`, which the publisher uploads and runs as root on the host; that file has the same SHA-256 (`aec6f188...`) in the p37, p40 and p41 CP worktrees today. The publisher prints its SHA-256 and re-checks it on the host before running it.
 
-Baked update-signing PUBLIC keys of the release builds so far (`release/endpoints.conf` `UPDATE_PUBLIC_KEYS`, primary FIRST):
+Baked update-signing PUBLIC keys of the release builds from the P45 rekey on (`release/endpoints.conf` `UPDATE_PUBLIC_KEYS`, primary FIRST):
 
 | Public key | Fingerprint | Role |
 |---|---|---|
-| `yCsFX6176Ue5ZTdi4Dr99J9LFM43jXrN6Kbp13KF04Y=` | `9d49-041f-0ced-13ac` | primary: sign with this one |
-| `5p50qA1SYMTV7MXeDAWfMnNqLKVuTRDVS4FREuKuQwM=` | `be7f-3dda-cddd-d781` | standby, kept offline, for rotation or an emergency |
+| `KKKOl3WRPbwRaaNt5HUDzV7aecCnE+Wz24CkrUb6UNs=` | `5a8f-1d62-ac6e-ce00` | primary: sign with this one |
+| `PJy7lnXPX//ZZssuACOrE2tyuflW1iRjKQj90KukEW8=` | `8179-a77e-3b93-1f58` | standby, kept offline, for rotation or an emergency |
 
 Every later build must carry the same two keys; the wrapper below refuses a ZIP that bakes anything else than the list in the checkout's `release/endpoints.conf`.
 
@@ -61,10 +63,10 @@ hdiutil detach /Volumes/AICCKEYS-PRIMARY
 Expected output (the times differ):
 
 ```
-SIGNED  <V>  key 9d49-041f-0ced-13ac  (the primary)
-  verified: <V> signed 2026-11-18T19:58:27Z by key 9d49-041f-0ced-13ac
-  verified: <V> signed 2026-11-18T19:58:27Z by key 9d49-041f-0ced-13ac
-  verified: <V> signed 2026-11-18T19:58:27Z by key 9d49-041f-0ced-13ac
+SIGNED  <V>  key 5a8f-1d62-ac6e-ce00  (the primary)
+  verified: <V> signed 2026-11-18T19:58:27Z by key 5a8f-1d62-ac6e-ce00
+  verified: <V> signed 2026-11-18T19:58:27Z by key 5a8f-1d62-ac6e-ce00
+  verified: <V> signed 2026-11-18T19:58:27Z by key 5a8f-1d62-ac6e-ce00
   tamper control: a manifest one byte larger is NOT accepted by this signature
   signature file (public, not secret): .../ai-commerce-copilot-<V>.manifest.sig
   sha256 of the signature file: ...
@@ -86,9 +88,9 @@ The raw equivalent, if you ever need it without the wrapper (run from `$PLUG`):
 
 ```bash
 php bin/sign-release.php sign   --manifest "$F/ai-commerce-copilot-$V.manifest.json" --zip "$F/ai-commerce-copilot-$V.zip"        # key via AICC_RELEASE_SIGNING_KEY_FILE
-php bin/sign-release.php verify --manifest "$F/ai-commerce-copilot-$V.manifest.json" --sig "$F/ai-commerce-copilot-$V.manifest.sig" --pubkeys 'yCsFX6176Ue5ZTdi4Dr99J9LFM43jXrN6Kbp13KF04Y=,5p50qA1SYMTV7MXeDAWfMnNqLKVuTRDVS4FREuKuQwM='
+php bin/sign-release.php verify --manifest "$F/ai-commerce-copilot-$V.manifest.json" --sig "$F/ai-commerce-copilot-$V.manifest.sig" --pubkeys 'KKKOl3WRPbwRaaNt5HUDzV7aecCnE+Wz24CkrUb6UNs=,PJy7lnXPX//ZZssuACOrE2tyuflW1iRjKQj90KukEW8='
 php bin/sign-release.php verify --manifest "$F/ai-commerce-copilot-$V.manifest.json" --sig "$F/ai-commerce-copilot-$V.manifest.sig" --zip "$F/ai-commerce-copilot-$V.zip"       # NOT combined with --pubkeys
-# expected, both: verified: <V> signed <UTC time> by key 9d49-041f-0ced-13ac
+# expected, both: verified: <V> signed <UTC time> by key 5a8f-1d62-ac6e-ce00
 ```
 
 Recommended one-line hardening for the Plugin repo (builder P; not done here because this builder does not edit the Plugin): in the `verify` branch run `srl_check_zip` whenever `--zip` is given and, when `--pubkeys` is also given, require the baked keys to be a subset of that list.
@@ -106,9 +108,9 @@ Expected:
 
 ```
 host identity OK (www.copilt.org, id matches)
-HOSTKEYS defined entries=2 fingerprints=9d49-041f-0ced-13ac,be7f-3dda-cddd-d781
-HOSTKEYS primary 9d49-041f-0ced-13ac PRESENT
-HOSTKEYS standby be7f-3dda-cddd-d781 PRESENT
+HOSTKEYS defined entries=2 fingerprints=5a8f-1d62-ac6e-ce00,8179-a77e-3b93-1f58
+HOSTKEYS primary 5a8f-1d62-ac6e-ce00 PRESENT
+HOSTKEYS standby 8179-a77e-3b93-1f58 PRESENT
 OK: the primary signing key is configured on the host's AICC_LM_PLUGIN_SIGNING_PUBKEYS (the value itself was not printed).
 ```
 
@@ -140,7 +142,7 @@ bash "$SITE/infra/release/publish-plugin-release.sh" --env production \
 Expected (verified on the throwaway release; the hashes differ for yours):
 
 ```
-signature verified locally (verified: <V> signed <time> by key 9d49-041f-0ced-13ac)
+signature verified locally (verified: <V> signed <time> by key 5a8f-1d62-ac6e-ce00)
 DRY-RUN plan (production; local verification passed; nothing sent):
   1. ssh aicc@157.230.110.211 ...: read /etc/aicc-stage-identity, require production + www.copilt.org + 3e897286...
   2. rsync the installer (sha256 aec6f188...), the ZIP and the manifest, the signature ai-commerce-copilot-<V>.manifest.sig -> ~aicc/plugin-incoming/<V>/ (0700)
@@ -182,7 +184,7 @@ ssh -i "$SSHK" -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHo
   'sudo env AICC_PRODUCTION=1 aicc-wp eval-file /var/lib/aicc-cp/seed/check-launch-blockers.php' | grep -i -E 'plugin (download|release)|update-signing|signature|release store'
 ```
 
-Expected notes (no matching blocker): `Plugin download: current release <V>, <bytes> bytes, sha256 <$SHA> (verified now).` and `Plugin release <V> is signed (key 9d49-041f-0ced-13ac, <time>), verifies against AICC_LM_PLUGIN_SIGNING_PUBKEYS on this host and against the key baked into the shipped build.` Then the two Control Plane signup checks (P41 builds): `ssh ... 'sudo aicc-wp aicc-trial status'` must no longer list `plugin_release` among the blockers, and `ssh ... 'sudo aicc-wp aicc-ops journeys blockers'` must print `Success: No journey blocker: a signed plugin release is published and the Backend mirror is fresh.` (exit 0). A `WARNING:` line about the Backend milestone mirror is not a publication problem: run `sudo aicc-wp aicc-ops milestones sync` (activation runbook step 3). A `BLOCKER:` line (`No signed plugin release is published: ...`) means the store does not serve a signed release: go back to section 3 or 7.
+Expected notes (no matching blocker): `Plugin download: current release <V>, <bytes> bytes, sha256 <$SHA> (verified now).` and `Plugin release <V> is signed (key 5a8f-1d62-ac6e-ce00, <time>), verifies against AICC_LM_PLUGIN_SIGNING_PUBKEYS on this host and against the key baked into the shipped build.` Then the two Control Plane signup checks (P41 builds): `ssh ... 'sudo aicc-wp aicc-trial status'` must no longer list `plugin_release` among the blockers, and `ssh ... 'sudo aicc-wp aicc-ops journeys blockers'` must print `Success: No journey blocker: a signed plugin release is published and the Backend mirror is fresh.` (exit 0). A `WARNING:` line about the Backend milestone mirror is not a publication problem: run `sudo aicc-wp aicc-ops milestones sync` (activation runbook step 3). A `BLOCKER:` line (`No signed plugin release is published: ...`) means the store does not serve a signed release: go back to section 3 or 7.
 
 A blocker line mentioning `AICC_LM_PLUGIN_SIGNING_PUBKEYS`, an unsigned release or a failed integrity check means: roll back (section 7) and fix.
 
@@ -275,7 +277,7 @@ NOT run, by design: anything against `www.copilt.org` or the Droplet; any real s
 
 | Where | Before publication (today: nothing published) | After step 5 and 6 pass |
 |---|---|---|
-| Account, Plans & Stores, customer with an active (or expired) plan | A "Get the AICC plugin" box that says "The plugin download is not available right now. If this continues, write to <support> from your account email." | The same box shows Current version, File size, Needs (WordPress, WooCommerce, PHP minimums), SHA-256, "Signed with key 9d49-041f-0ced-13ac (<UTC time>)", a button "Download AICC plugin <V>", the four install steps, "Check that the file is intact" (the `shasum -a 256` / `certutil` lines), and "Updates and older versions" (older non-yanked releases, up to two before current) |
+| Account, Plans & Stores, customer with an active (or expired) plan | A "Get the AICC plugin" box that says "The plugin download is not available right now. If this continues, write to <support> from your account email." | The same box shows Current version, File size, Needs (WordPress, WooCommerce, PHP minimums), SHA-256, "Signed with key 5a8f-1d62-ac6e-ce00 (<UTC time>)", a button "Download AICC plugin <V>", the four install steps, "Check that the file is intact" (the `shasum -a 256` / `certutil` lines), and "Updates and older versions" (older non-yanked releases, up to two before current) |
 | Account, a registered account that never had a plan, a revoked or suspended plan | nothing (the box is not rendered) | nothing (unchanged: revoked and suspended plans can no longer download) |
 | A connected store of an active plan running an OLDER version | no update offer | WordPress shows the update under Dashboard, Updates; the offer carries the signature, which the store verifies against the key baked into its build before it installs; nothing updates by itself |
 | A store already on this version, an expired/revoked/suspended plan, an unconnected store | no offer | no offer (uniform `{"update":false}`) |

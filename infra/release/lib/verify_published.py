@@ -711,7 +711,7 @@ def main():
     if not os.path.isfile(os.path.join(a.plugin_dir, "bin", "sign-release.php")):
         die(2, "--plugin-dir has no bin/sign-release.php (the Plugin repo's verify tool)")
     if a.expect_key_id and not re.fullmatch(r"[0-9a-f]{4}(-[0-9a-f]{4}){3}", a.expect_key_id):
-        die(2, "--expect-key-id must look like 9d49-041f-0ced-13ac")
+        die(2, "--expect-key-id must look like 5a8f-1d62-ac6e-ce00")
     tool = Tool(a.php, a.plugin_dir)
     workdir = prepare_workdir(a.out)
     print("verify-published-plugin  mode=%s  version=%s  sha256=%s...  work=%s" % (a.mode, a.version, a.sha256[:16], workdir))

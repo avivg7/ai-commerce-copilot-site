@@ -5,7 +5,7 @@
 #   verify-published-plugin.sh --mode production|stage|fixture|offline
 #        --version X.Y.Z --sha256 <64 hex, from the build machine's .sha256 file> --manifest <...X.manifest.json> --sig <...X.manifest.sig> --plugin-dir <Plugin repo or build dir with bin/sign-release.php>
 #        [--pubkeys <b64[,b64]>]            the owner's PUBLIC key list (default: release/endpoints.conf UPDATE_PUBLIC_KEYS of --plugin-dir)
-#        [--expect-key-id 9d49-041f-0ced-13ac]   the primary key's fingerprint the owner read from keygen
+#        [--expect-key-id 5a8f-1d62-ac6e-ce00]   the primary key's fingerprint the owner read from keygen
 #        [--previous-version X.Y.Z]         the release that was current before: the new one must be strictly newer
 #        [--local-zip <ZIP>]                the ZIP as built/signed on this Mac (cross-checked against the manifest and, by the verify tool's --zip, against its own baked keys)
 #        [--base-url https://www.copilt.org]   production: exactly that origin; stage: https://stage.copilt.org; fixture: a loopback origin

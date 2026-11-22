@@ -185,10 +185,10 @@ Follow `docs/cutover/p41-plugin-publication.md` sections 1 to 6 for the release 
 
 ```bash
 bash "$SITE/infra/release/verify-published-plugin.sh" --mode production --base-url https://www.copilt.org --version <V> --sha256 <SHA> \
-  --manifest <...manifest.json> --sig <...manifest.sig> --plugin-dir <Plugin checkout> --expect-key-id 9d49-041f-0ced-13ac --local-zip <ZIP> --credentials-file ~/aicc-verify-creds.env --out ~/aicc-verify-<V>
+  --manifest <...manifest.json> --sig <...manifest.sig> --plugin-dir <Plugin checkout> --expect-key-id 5a8f-1d62-ac6e-ce00 --local-zip <ZIP> --credentials-file ~/aicc-verify-creds.env --out ~/aicc-verify-<V>
 #   expect: ... verify-published-plugin: 30 checks, 30 passed, 0 FAILED   (exit 0; 31 with --previous-version; every line PASS)
 pssh 'sudo env AICC_PRODUCTION=1 aicc-wp eval-file /var/lib/aicc-cp/seed/check-launch-blockers.php' | grep -i -E 'plugin (download|release)'
-#   expect: "Plugin download: current release <V>, <bytes> bytes, sha256 ... (verified now)." and "Plugin release <V> is signed (key 9d49-041f-0ced-13ac, ...) ..."
+#   expect: "Plugin download: current release <V>, <bytes> bytes, sha256 ... (verified now)." and "Plugin release <V> is signed (key 5a8f-1d62-ac6e-ce00, ...) ..."
 ```
 
 With a P41 Control Plane the publication is also CODE-checked: `sudo aicc-wp aicc-trial status` must no longer list `plugin_release` among the blockers, and
