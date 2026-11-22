@@ -155,10 +155,7 @@ def run(cmd, timeout=30):
 
 def tmp_roots():
     roots = set(["/private/tmp", "/tmp", "/private/var/folders", "/var/folders"])
-    t = os.environ.get("TMPDIR")
-    if t:
-        roots.add(os.path.realpath(t).rstrip("/"))
-        roots.add(t.rstrip("/"))
+    # deliberately NOT derived from $TMPDIR: an environment variable must not be able to widen the harness seam
     return sorted(r for r in roots if r and r != "/")
 
 

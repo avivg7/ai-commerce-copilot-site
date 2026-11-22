@@ -4,15 +4,17 @@
 #
 #   sign-plugin-release-usb.sh --usb /Volumes/<STICK> --role primary --plugin-dir <clean Plugin checkout at the release commit> \
 #        --zip <ai-commerce-copilot-X.zip> --manifest <...X.manifest.json> --version X.Y.Z --sha256 <64 hex, second channel> --commit <release commit> \
-#        --primary-fp <xxxx-xxxx-xxxx-xxxx> --expect-volume-uuid <the stick's volume UUID from the handover>
+#        --primary-fp <xxxx-xxxx-xxxx-xxxx> --expect-volume-uuid <the stick's volume UUID from the handover: REQUIRED>
 #        [--pubkeys <b64,b64>]  (default: release/endpoints.conf UPDATE_PUBLIC_KEYS of --plugin-dir, primary FIRST)  [--sig-out <file>]  [--eject]
-#   Emergency only (documented in the threat model): --role standby --emergency-standby --standby-fp <fp> --emergency-reason "<why the primary cannot sign>"; it has its own confirmation phrase.
+#   Emergency only (documented in the threat model): --role standby --emergency-standby --standby-fp <fp> --emergency-reason "<why the primary cannot sign>" --expect-volume-uuid <U>; it has its own confirmation phrase.
+#   The standby key signs ONLY a rotation (or emergency) release; its key is accepted in ANY position of the trusted list (after a rotation the old standby may be listed first or second). A normal release is signed with --role primary: the primary is always the FIRST key of the list.
 #
 # What it proves BEFORE it signs (any failure: exit 3, nothing written):
 #   the volume is a PHYSICAL removable USB stick (diskutil: USB bus, not internal, not a disk image, not network/cloud/repo path), judged by the device and NOT by its label; the volume UUID equals the one in the stick's
-#   identity file AND the one you pass (--expect-volume-uuid: a duplicate label or a copied folder fails); the key file is at the fixed path, a regular file, not a symlink; the PUBLIC key derived from the private key
+#   identity file AND the one you pass (--expect-volume-uuid, REQUIRED: a duplicate label or a copied folder fails; both catch MISTAKES, the stick is identified by the KEY on it); the key file is at the fixed path, a regular file, not a symlink; the PUBLIC key derived from the private key
 #   (a fresh computation in PHP/libsodium, not the stored half) equals the PRIMARY key of the trusted list, its fingerprint equals the identity file and --primary-fp (the standby key never signs a normal release);
-#   the Plugin checkout is clean at exactly --commit; the manifest is dirty:false, for --version, built from that commit, with --sha256; the ZIP's size/SHA-256 equal the manifest's and it bakes exactly the trusted list;
+#   the key FOLDER is a real directory on the stick itself (a symlinked folder pointing at a Mac folder is refused);
+#   the Plugin checkout is clean at exactly --commit (git status, ignored files, assume-unchanged and skip-worktree entries all checked); the manifest is dirty:false, for --version, built from that commit, with --sha256; the ZIP's size/SHA-256 equal the manifest's and it bakes exactly the trusted list;
 #   no signature exists yet; where the filesystem enforces permissions the key file is 0600 and yours (FAT32 does not: you get a WARNING that possession is the only protection).
 # Then: the typed phrase  SIGN <version> <first 8 of the ZIP's sha256>;  sign;  verify with the zip-aware strict form (--pubkeys AND --zip) and the others; the tamper controls (manifest, ZIP) and a WRONG-KEY negative control.
 # The stick is only READ (this script writes nothing to it). The secret is read inside PHP, zeroed, never printed, never copied, never an argument or environment value; umask 077, ulimit -c 0, no xtrace, no history;
@@ -53,8 +55,10 @@ fi
 [[ "$SHA" =~ ^[0-9a-f]{64}$ ]] || usb_refuse "--sha256 must be 64 lowercase hex characters"
 [[ "$COMMIT" =~ ^[0-9a-f]{7,40}$ ]] || usb_refuse "--commit must be 7-40 hex characters"
 [[ "$FP" =~ ^[0-9a-f]{4}(-[0-9a-f]{4}){3}$ ]] || usb_refuse "the key fingerprint must look like 9d49-041f-0ced-13ac"
-[ -z "$EXPUUID" ] || [[ "$EXPUUID" =~ ^[0-9A-Fa-f]{8}(-[0-9A-Fa-f]{4}){3}-[0-9A-Fa-f]{12}$ ]] || usb_refuse "--expect-volume-uuid must look like XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX"
+[ -n "$EXPUUID" ] || usb_refuse "--expect-volume-uuid is required: pass the volume UUID of the stick from the key handover file (the stick is pinned by it; the label proves nothing)"
+[[ "$EXPUUID" =~ ^[0-9A-Fa-f]{8}(-[0-9A-Fa-f]{4}){3}-[0-9A-Fa-f]{12}$ ]] || usb_refuse "--expect-volume-uuid must look like XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX"
 usb_need_tools
+php -r 'exit(class_exists("ZipArchive")?0:1);' || usb_refuse "the PHP zip extension is required (php -m must list zip)"
 
 # ---- (a) the device, not the label
 usb_classify "$USB"
@@ -62,13 +66,10 @@ MP="$U_mount_point"
 echo "== USB signing: $VERSION, role $ROLE =="
 echo "  stick: physical USB (diskutil: $U_bus_protocol), label '$U_volume_name' (NOT trusted), volume UUID $U_volume_uuid, device $U_device_node, filesystem $U_fs_name"
 IDF="$(usb_idfile "$MP" "$ROLE")"; KF="$(usb_keyfile "$MP" "$ROLE")"
+usb_check_keydir "$MP" || usb_refuse "the key folder $(usb_keydir "$MP") is missing, or is not a real directory on the stick (a symlink, or a path that leaves the stick): a key that is not on the stick is never used"
 [ -f "$IDF" ] && [ ! -L "$IDF" ] || usb_refuse "the stick has no identity file at $IDF: this is not a stick made by usb-key-ceremony.sh for the $ROLE key"
 [ "$("${USB_PY[@]}" jget "$IDF" volume_uuid)" = "$U_volume_uuid" ] || usb_refuse "the identity file says this key belongs to volume '$("${USB_PY[@]}" jget "$IDF" volume_uuid)', but this volume is $U_volume_uuid: another stick (or a copy of the folder, or a reformatted stick). The label proves nothing."
-if [ -n "$EXPUUID" ]; then
-  [ "$(printf '%s' "$EXPUUID" | tr '[:lower:]' '[:upper:]')" = "$(printf '%s' "$U_volume_uuid" | tr '[:lower:]' '[:upper:]')" ] || usb_refuse "this volume's UUID $U_volume_uuid is not the expected $EXPUUID (--expect-volume-uuid, from the handover): wrong stick"
-else
-  echo "  WARNING: no --expect-volume-uuid given: the stick is identified only by its own identity file. Pass the volume UUID from the handover."
-fi
+[ "$(printf '%s' "$EXPUUID" | tr '[:lower:]' '[:upper:]')" = "$(printf '%s' "$U_volume_uuid" | tr '[:lower:]' '[:upper:]')" ] || usb_refuse "this volume's UUID $U_volume_uuid is not the expected $EXPUUID (--expect-volume-uuid, from the handover): wrong stick"
 [ "$("${USB_PY[@]}" jget "$IDF" role)" = "$ROLE" ] || usb_refuse "the identity file's role is '$("${USB_PY[@]}" jget "$IDF" role)', not $ROLE"
 # ---- (b) the key file
 [ -f "$KF" ] && [ ! -L "$KF" ] || usb_refuse "the key file $KF is missing, a symlink or not a regular file"
@@ -86,16 +87,21 @@ TOOL="$PLUG/bin/sign-release.php"
 git -C "$PLUG" rev-parse --git-dir >/dev/null 2>&1 || usb_refuse "--plugin-dir is not a git checkout"
 HEADSHA="$(git -C "$PLUG" rev-parse HEAD)"
 case "$HEADSHA" in "$COMMIT"*) ;; *) usb_refuse "the Plugin checkout is at ${HEADSHA:0:12}, not at the release commit $COMMIT" ;; esac
-[ -z "$(git -C "$PLUG" status --porcelain)" ] || usb_refuse "the Plugin checkout is not clean (git status shows changes): sign only a clean checkout of the release commit"
+why="$(usb_git_pristine "$PLUG")" || usb_refuse "$why"
 if [ -z "$KEYS" ]; then KEYS="$(sed -n 's/^UPDATE_PUBLIC_KEYS=//p' "$PLUG/release/endpoints.conf" | head -1 | tr -d ' \r')"; fi
 [[ "$KEYS" =~ ^[A-Za-z0-9+/]{43}=(,[A-Za-z0-9+/]{43}=)?$ ]] || usb_refuse "the public key list is not one or two base64 32-byte keys"
 PRIMARY="${KEYS%%,*}"; STANDBY=""; case "$KEYS" in *,*) STANDBY="${KEYS#*,}" ;; esac
-if [ "$ROLE" = primary ]; then WANT="$PRIMARY"; else WANT="$STANDBY"; [ -n "$WANT" ] || usb_refuse "the trusted list has no standby key"; fi
 # ---- (c) the key proves itself: derive the public key from the private key, in process
 usb_derive "$KF"
-if [ "$K_PUB" != "$WANT" ]; then
-  if [ "$ROLE" = primary ] && [ -n "$STANDBY" ] && [ "$K_PUB" = "$STANDBY" ]; then usb_refuse "the key on this stick is the STANDBY key ($K_FP), not the primary: the standby never signs a normal release"; fi
-  usb_refuse "the public key derived from the key on this stick ($K_FP) is NOT the $ROLE key of the trusted list: wrong stick or wrong key"
+if [ "$ROLE" = primary ]; then
+  WANT="$PRIMARY"
+  if [ "$K_PUB" != "$WANT" ]; then
+    if [ -n "$STANDBY" ] && [ "$K_PUB" = "$STANDBY" ]; then usb_refuse "the key on this stick is the STANDBY key ($K_FP), not the primary: the standby never signs a normal release"; fi
+    usb_refuse "the public key derived from the key on this stick ($K_FP) is NOT the primary key of the trusted list: wrong stick or wrong key"
+  fi
+else
+  # emergency / rotation: the standby's position in the list is not fixed (after a rotation it may be first or second), so the derived key must simply BE in the list
+  case ",$KEYS," in *",$K_PUB,"*) WANT="$K_PUB" ;; *) usb_refuse "the key on this stick ($K_FP) is not in the trusted list: wrong stick or wrong key" ;; esac
 fi
 [ "$K_FP" = "$FP" ] || usb_refuse "the fingerprint of the key on this stick ($K_FP) is not the expected fingerprint $FP (--primary-fp / --standby-fp)"
 [ "$("${USB_PY[@]}" jget "$IDF" public_key)" = "$K_PUB" ] && [ "$("${USB_PY[@]}" jget "$IDF" fingerprint)" = "$K_FP" ] || usb_refuse "the identity file's public key/fingerprint differ from the key's: the stick was tampered with or mixed up"
@@ -122,7 +128,10 @@ h = hashlib.sha256(); n = 0
 with open(zp, "rb") as f:
     for c in iter(lambda: f.read(1 << 20), b""): h.update(c); n += len(c)
 if h.hexdigest() != sha or n != m.get("size"): no("the ZIP's SHA-256 or size differs from the manifest / the coordinator's value")
-d = zipfile.ZipFile(zp).read("ai-commerce-copilot/includes/aicc-release-defaults.php").decode("utf-8", "replace")
+zf = zipfile.ZipFile(zp)
+names = zf.namelist()
+if len(set(names)) != len(names): no("the ZIP has a duplicate member name (PHP and Python could read different bytes): refusing")
+d = zf.read("ai-commerce-copilot/includes/aicc-release-defaults.php").decode("utf-8", "replace")
 k = re.search(r"const PUBLIC_KEYS = '([^']*)';", d)
 if not k or k.group(1) != keys: no("the ZIP bakes the public keys '%s', not exactly the trusted list" % (k.group(1) if k else "(none)"))
 PY
@@ -134,6 +143,7 @@ else
   echo "  EMERGENCY: signing with the STANDBY key. Reason you gave: $REASON"
   usb_confirm "SIGN $VERSION ${SHA:0:8} WITH THE STANDBY KEY"
 fi
+[ ! -e "$SIGOUT" ] || usb_refuse "$SIGOUT appeared while this run waited for the confirmation: the first signature is preserved"
 # ---- (h) sign (in process; the key is read by PHP from the stick and zeroed), then verify
 TD="$(mktemp -d "${TMPDIR:-/tmp}/aicc-usbsign.XXXXXX")"; chmod 700 "$TD"
 TMPSIG="$SIGOUT.tmp.$$"
@@ -144,19 +154,24 @@ v3="$(php "$TOOL" verify --manifest "$MAN" --sig "$TMPSIG" --pubkeys "$WANT" 2>&
 v4="$(php "$TOOL" verify --manifest "$MAN" --sig "$TMPSIG" --pubkeys "$KEYS" --zip "$ZIP" 2>&1)" || usb_fail "the zip-aware verify (--pubkeys AND --zip) failed: $v4"
 # the signature must name this key
 case "$(cat "$TMPSIG")" in *"\"key_id\": \"$FP\""*) ;; *) usb_fail "the signature does not name key $FP: removed" ;; esac
-# tamper controls and the Plugin tool's own fix check
+# tamper controls and the Plugin tool's own fix check: each must FAIL for the RIGHT reason (an exit code alone could be any error)
 cp "$ZIP" "$TD/tampered.zip"; printf 'x' >> "$TD/tampered.zip"
-if php "$TOOL" verify --manifest "$MAN" --sig "$TMPSIG" --pubkeys "$KEYS" --zip "$TD/tampered.zip" >/dev/null 2>&1; then usb_fail "this Plugin checkout's bin/sign-release.php accepts a TAMPERED ZIP with --pubkeys AND --zip (it predates the P44 fix): the signature was removed; use the P44-line checkout the coordinator announced"; fi
+if tz="$(php "$TOOL" verify --manifest "$MAN" --sig "$TMPSIG" --pubkeys "$KEYS" --zip "$TD/tampered.zip" 2>&1)"; then usb_fail "this Plugin checkout's bin/sign-release.php accepts a TAMPERED ZIP with --pubkeys AND --zip (it predates the P44 fix): the signature was removed; use the P44-line checkout the coordinator announced"; fi
+case "$tz" in *"does not match the manifest"*) ;; *) usb_fail "the tampered-ZIP control failed for an unexpected reason: ${tz:0:200}" ;; esac
 python3 -I - "$MAN" "$TD/m.json" <<'PY'
 import json, sys
 m = json.load(open(sys.argv[1])); m["size"] = int(m["size"]) + 1; json.dump(m, open(sys.argv[2], "w"))
 PY
-if php "$TOOL" verify --manifest "$TD/m.json" --sig "$TMPSIG" --pubkeys "$KEYS" >/dev/null 2>&1; then usb_fail "a TAMPERED manifest verified with this signature: stop and investigate"; fi
+if tm="$(php "$TOOL" verify --manifest "$TD/m.json" --sig "$TMPSIG" --pubkeys "$KEYS" 2>&1)"; then usb_fail "a TAMPERED manifest verified with this signature: stop and investigate"; fi
+case "$tm" in *"NOT VERIFIED"*) ;; *) usb_fail "the tampered-manifest control failed for an unexpected reason: ${tm:0:200}" ;; esac
 # WRONG-KEY negative control: a signature by a throwaway in-memory key (never written anywhere) must NOT verify against the trusted list
 php "$USB_PHP" wrong-key-sig --plugin-dir "$PLUG" --manifest "$MAN" --out "$TD/wrong.sig" >/dev/null 2>&1 || usb_fail "could not run the wrong-key negative control"
-if php "$TOOL" verify --manifest "$MAN" --sig "$TD/wrong.sig" --pubkeys "$KEYS" >/dev/null 2>&1; then usb_fail "a signature by a THROWAWAY key verified against the trusted list: stop and investigate"; fi
+if tw="$(php "$TOOL" verify --manifest "$MAN" --sig "$TD/wrong.sig" --pubkeys "$KEYS" 2>&1)"; then usb_fail "a signature by a THROWAWAY key verified against the trusted list: stop and investigate"; fi
+case "$tw" in *"NOT VERIFIED"*) ;; *) usb_fail "the wrong-key control failed for an unexpected reason: ${tw:0:200}" ;; esac
 rm -rf "$TD"; TD=""
-mv "$TMPSIG" "$SIGOUT"; TMPSIG=""
+# atomic NO-OVERWRITE publish: a hard link fails when the name exists, so a concurrent run's signature is never replaced
+ln "$TMPSIG" "$SIGOUT" 2>/dev/null || usb_refuse "a signature for this release appeared while this run was working: the first one is preserved and this run's signature was discarded"
+rm -f "$TMPSIG"; TMPSIG=""
 chmod 0644 "$SIGOUT" 2>/dev/null || true   # the signature is PUBLIC (umask 077 made it 0600; the publisher and the coordinator must be able to read it)
 # ---- (i) the public result
 if [ "$ROLE" = primary ]; then echo "SIGNED  $VERSION  key $FP  (the primary, from the USB stick)"; else echo "SIGNED  $VERSION  key $FP  (the STANDBY, EMERGENCY: $REASON)"; fi

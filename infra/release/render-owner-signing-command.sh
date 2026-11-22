@@ -50,13 +50,21 @@ if [ -n "$HOS" ]; then
 fi
 FD="$(cd "$(dirname "$ZIP")" && pwd)"
 cat <<EOF
-# ===== AI Commerce Copilot $V: sign with the PRIMARY USB stick (generated from facts; passwordless; nothing to type except one confirmation phrase) =====
-# Facts (all public): version $V, ZIP $SIZE bytes, plugin commit $PC
-#   primary key  fingerprint $FP   public $PUB
-$( [ -z "$SPUB" ] || echo "#   standby key  fingerprint $SFP   public $SPUB   (volume UUID $SVU; emergency only: do NOT use it)" )
-#   primary stick volume UUID $VU   (label '$VN' is only a label: the command checks the UUID)
+AI Commerce Copilot $V: sign with the PRIMARY USB stick (generated from facts; passwordless; the only thing you type is one confirmation phrase)
 
-# ---- paste 1: variables and the clean checkout (bash; keep this window for paste 2)
+FIRST: open a bash shell. Type  bash  and press Enter (the Mac's default zsh does not accept the comment lines and some constructs below). Keep that SAME window for all the pastes.
+
+Facts (all public): version $V, ZIP $SIZE bytes, plugin commit $PC
+  primary key  fingerprint $FP   public $PUB
+$( [ -z "$SPUB" ] || echo "  standby key  fingerprint $SFP   public $SPUB   (volume UUID $SVU; emergency only: do NOT use it)" )
+  primary stick volume UUID $VU  (the label '$VN' is only a label: the command checks the UUID)
+
+PASTE 1: GitHub access check (its own paste). It must say you are logged in; if not, run  gh auth login  (choose HTTPS) and repeat. Never put a token in a command.
+
+gh auth status
+
+PASTE 2: variables, then the clean checkout of the pinned commit (its own paste: a prompt for credentials here must not swallow other lines).
+
 F='$FD'
 V=$V
 SHA=$SHA
@@ -65,25 +73,30 @@ PRIMARY_FP=$FP
 VOLUME_UUID=$VU
 SITE='$SITE'
 PLUG="\$HOME/aicc-sign-plugin-\$COMMIT"
-git -C "\$SITE" rev-parse HEAD                     # must print: $SITEC
-git -C "\$SITE" status --short                     # must print nothing
+
 if [ -d "\$PLUG/.git" ]; then git -C "\$PLUG" fetch --tags origin; else git clone https://github.com/avivg7/ai-commerce-copilot-plugin.git "\$PLUG"; fi
+
 git -C "\$PLUG" checkout --detach "\$COMMIT"
-[ "\$(git -C "\$PLUG" rev-parse HEAD)" = "\$COMMIT" ] && echo "HEAD is the pinned commit (correct)" || echo "STOP: HEAD is not the pinned commit: do NOT sign"
-git -C "\$PLUG" status --short                     # must print nothing
-shasum -a 256 "\$F/ai-commerce-copilot-\$V.zip" | cut -d' ' -f1     # must equal \$SHA above, character for character
-ls "\$F"/*.sig 2>/dev/null && echo "STOP: a .sig already exists" || echo "no signature yet (correct)"
 
-# ---- paste 2: plug in the PRIMARY stick ONLY (the standby stick stays where it is), then find its mount path
-ls /Volumes                                         # the stick's name; use it below as /Volumes/<NAME>
-diskutil info "/Volumes/<NAME>" | grep -E 'Volume UUID|Protocol'    # Volume UUID must equal $VU ; Protocol: USB
+PASTE 3: the checks. Every line prints OK or STOP; on any STOP, do not continue.
 
-# ---- paste 3: THE signing command (you type only the confirmation phrase it prints: SIGN $V ${SHA:0:8})
-bash "\$SITE/infra/release/sign-plugin-release-usb.sh" \\
-  --usb "/Volumes/<NAME>" --role primary --plugin-dir "\$PLUG" \\
-  --zip "\$F/ai-commerce-copilot-\$V.zip" --manifest "\$F/ai-commerce-copilot-\$V.manifest.json" \\
-  --version "\$V" --sha256 "\$SHA" --commit "\$COMMIT" \\
-  --primary-fp "\$PRIMARY_FP" --expect-volume-uuid "\$VOLUME_UUID" --eject
+[ "\$(git -C "\$SITE" rev-parse HEAD)" = "$SITEC" ] && echo "OK: Site tools commit" || echo "STOP: the Site tools are not at $SITEC"
+[ -z "\$(git -C "\$SITE" status --short)" ] && echo "OK: Site checkout clean" || echo "STOP: the Site checkout is not clean"
+[ "\$(git -C "\$PLUG" rev-parse HEAD)" = "\$COMMIT" ] && echo "OK: HEAD is the pinned commit" || echo "STOP: HEAD is not the pinned commit"
+[ -z "\$(git -C "\$PLUG" status --short --ignored)" ] && echo "OK: the Plugin checkout is clean" || echo "STOP: the Plugin checkout is not clean"
+[ "\$(shasum -a 256 "\$F/ai-commerce-copilot-\$V.zip" | cut -d' ' -f1)" = "\$SHA" ] && echo "OK: ZIP SHA-256" || echo "STOP: the ZIP SHA-256 differs"
+ls "\$F"/*.sig >/dev/null 2>&1 && echo "STOP: a .sig already exists" || echo "OK: no signature yet"
 
-# ---- afterwards: unplug the stick, put it back in its place. Send ONLY the public file:  \$F/ai-commerce-copilot-\$V.manifest.sig
+PASTE 4: plug in the PRIMARY stick ONLY (the standby stick stays where it is), then find it.
+
+ls /Volumes
+diskutil info "/Volumes/<NAME>" | grep -E 'Volume UUID|Protocol'
+
+Replace <NAME> with the stick's name from the list. The Volume UUID must be $VU and the protocol USB.
+
+PASTE 5: THE signing command (you type only the confirmation phrase it prints: SIGN $V ${SHA:0:8}). Replace <NAME> as above.
+
+bash "\$SITE/infra/release/sign-plugin-release-usb.sh" --usb "/Volumes/<NAME>" --role primary --plugin-dir "\$PLUG" --zip "\$F/ai-commerce-copilot-\$V.zip" --manifest "\$F/ai-commerce-copilot-\$V.manifest.json" --version "\$V" --sha256 "\$SHA" --commit "\$COMMIT" --primary-fp "\$PRIMARY_FP" --expect-volume-uuid "\$VOLUME_UUID" --eject
+
+AFTERWARDS: unplug the stick and put it back in its place. Send ONLY the public file  \$F/ai-commerce-copilot-\$V.manifest.sig
 EOF

@@ -50,7 +50,8 @@ usb_preflight() {
   mp="$U_mount_point"
   echo "== preflight: $mp (role: $role) =="
   echo "  physical USB, removable        : yes (diskutil: protocol $U_bus_protocol, internal=$U_internal, removable=$U_removable, ejectable=$U_ejectable)"
-  echo "  not a disk image / network / cloud / repo path : yes (checked)"
+  if [ "$U_harness" = yes ]; then echo "  TEST HARNESS: a disk image stands in for the stick (never accepted for a real stick)"; else echo "  not a disk image / network / cloud / repo path : yes (checked)"; fi
+  echo "  identity: the stick is identified by the KEY on it; the label, the volume UUID and the device only catch mistakes (a wrong or look-alike stick), they do not authenticate anyone"
   echo "  volume name (a LABEL: never trusted): $U_volume_name"
   echo "  volume UUID                    : $U_volume_uuid"
   echo "  device                         : $U_device_node (whole disk $U_whole_disk), media name: ${U_media_name:-(none)}"
@@ -76,29 +77,43 @@ usb_preflight() {
     echo "  NOTE: this stick already holds AICC-SIGNING-BACKUP / vault copies (old ENCRYPTED vaults). They are NOT touched by this tool and they confer NO trust any more."
   fi
   kd="$(usb_keydir "$mp")"
+  if [ -e "$kd" ] || [ -L "$kd" ]; then usb_check_keydir "$mp" || usb_refuse "$kd is not a real directory on the stick (a symlink, or a path that leaves the stick): the key folder must live on the stick itself"; fi
   if [ "$mode" = fresh ]; then
+    other="$(other_role "$role")"
+    [ ! -e "$(usb_keyfile "$mp" "$other")" ] || usb_refuse "this stick holds the $other key: primary and standby must NEVER share a device"
     if [ -d "$kd" ]; then
       local keys; keys="$(find "$kd" -mindepth 1 -maxdepth 1 -name '*.key' -exec basename {} \; 2>/dev/null || true)"
       [ -z "$keys" ] || usb_refuse "$kd already holds a key ($(printf '%s' "$keys" | tr '\n' ' ')): this tool never overwrites or deletes a key. Use another stick, or move the key yourself if you are certain."
     fi
-    other="$(other_role "$role")"
-    [ ! -e "$(usb_keyfile "$mp" "$other")" ] || usb_refuse "this stick holds the $other key: primary and standby must NEVER share a device"
   fi
-  echo "PREFLIGHT OK: nothing was formatted, erased or changed (the temporary probe file was deleted)."
+  echo "PREFLIGHT OK: nothing was formatted, erased or changed (the one temporary probe file this check creates at the stick's root was deleted again)."
 }
 
 # ======================================================================================================================================================================================================
+GEN_KEY=""; GEN_ID=""; GEN_HF=""; GEN_DIR=""; GEN_DONE=0
+gen_cleanup() {  # EXIT trap of generate: undo only what THIS run created
+  local rc=$? did=""
+  trap - EXIT INT TERM HUP
+  if [ "$GEN_DONE" != 1 ]; then
+    if [ -n "$GEN_KEY" ] && [ -f "$GEN_KEY" ]; then rm -f "$GEN_KEY"; did=1; fi
+    [ -z "$GEN_ID" ] || rm -f "$GEN_ID"
+    [ -z "$GEN_HF" ] || rm -f "$GEN_HF"
+    [ -z "$GEN_DIR" ] || rmdir "$GEN_DIR" 2>/dev/null || true
+    [ -z "$did" ] || echo "CLEANUP: removed the key this run created (and only what this run created): the stick is as it was before and can be used for a new ceremony." >&2
+  fi
+  exit "$rc"
+}
 cmd_generate() {
   [ -n "$USB" ] || { echo "usage: generate --usb /Volumes/<X> --role primary|standby --plugin-dir D --plugin-commit SHA [--expect-handover-dir DIR]" >&2; exit 2; }
   role_ok
   [ -n "$PLUG" ] && [ -n "$PLUGCOMMIT" ] || { echo "generate needs --plugin-dir (a CLEAN checkout of the Plugin) and --plugin-commit (its pinned commit): the Plugin's code makes the key" >&2; exit 2; }
   [[ "$PLUGCOMMIT" =~ ^[0-9a-f]{7,40}$ ]] || usb_refuse "--plugin-commit must be 7-40 hex characters"
-  local tool="$PLUG/bin/sign-release.php" head
+  local tool="$PLUG/bin/sign-release.php" head why
   [ -f "$tool" ] && [ -f "$PLUG/includes/class-aicc-release-signature.php" ] || usb_refuse "--plugin-dir is not a Plugin checkout (no bin/sign-release.php)"
   git -C "$PLUG" rev-parse --git-dir >/dev/null 2>&1 || usb_refuse "--plugin-dir is not a git checkout"
   head="$(git -C "$PLUG" rev-parse HEAD)"
   case "$head" in "$PLUGCOMMIT"*) ;; *) usb_refuse "the Plugin checkout is at ${head:0:12}, not at the pinned commit $PLUGCOMMIT" ;; esac
-  [ -z "$(git -C "$PLUG" status --porcelain)" ] || usb_refuse "the Plugin checkout is not clean: the key is made by code from it, use a clean checkout of the pinned commit"
+  why="$(usb_git_pristine "$PLUG")" || usb_refuse "$why (the key is made by code from it)"
   usb_need_tools
   usb_preflight "$USB" "$ROLE" fresh
   local mp="$U_mount_point" kd kf idf hf
@@ -110,26 +125,30 @@ cmd_generate() {
   echo "About to create the $(usb_upper "$ROLE") signing key ON THIS STICK ($U_volume_name, UUID $U_volume_uuid), UNENCRYPTED, with no password."
   echo "Anyone who holds this stick will be able to sign releases. It is not backed up anywhere. Nothing is written anywhere else except the non-secret handover file $hf."
   usb_confirm "GENERATE $(usb_upper "$ROLE") KEY ON $(usb_uuid8 "$U_volume_uuid")"
-  # ---- create the folder and the key, directly on the stick
-  ( umask 077; mkdir -p "$kd" ) || usb_fail "cannot create $kd"
+  # ---- from here until the handover is written, an interruption or a failure removes ONLY what THIS run created (never a pre-existing file), so the stick never keeps an unrevealed key
+  trap gen_cleanup EXIT; trap 'exit 130' INT; trap 'exit 143' TERM; trap 'exit 129' HUP
+  if [ ! -e "$kd" ]; then ( umask 077; mkdir "$kd" ) || usb_fail "cannot create $kd"; GEN_DIR="$kd"; fi
   chmod 700 "$kd" 2>/dev/null || true
+  usb_check_keydir "$mp" || usb_fail "the key folder is not a real directory on the stick"
+  [ ! -e "$kf" ] && [ ! -L "$kf" ] || usb_fail "a key file appeared at $kf: nothing was overwritten"
   local kout krc=0
+  GEN_KEY="$kf"
   kout="$(php "$tool" keygen --secret-out "$kf" 2>&1)" || krc=$?
   if [ "$krc" != 0 ] || [ ! -f "$kf" ]; then
-    [ ! -f "$kf" ] || rm -f "$kf"
     usb_fail "the Plugin's keygen failed: ${kout%%$'\n'*}"
   fi
   local pub fp
   pub="$(printf '%s\n' "$kout" | sed -n 's/^public key.*: //p')"; fp="$(printf '%s\n' "$kout" | sed -n 's/^fingerprint: //p')"
-  [[ "$pub" =~ ^[A-Za-z0-9+/]{43}=$ ]] && [[ "$fp" =~ ^[0-9a-f]{4}(-[0-9a-f]{4}){3}$ ]] || { rm -f "$kf"; usb_fail "keygen printed no usable public key: the key file was removed"; }
+  [[ "$pub" =~ ^[A-Za-z0-9+/]{43}=$ ]] && [[ "$fp" =~ ^[0-9a-f]{4}(-[0-9a-f]{4}){3}$ ]] || usb_fail "keygen printed no usable public key"
   chmod 0600 "$kf" 2>/dev/null || true
-  [ "$(usb_size_of "$kf")" = 89 ] || { rm -f "$kf"; usb_fail "the key file has an unexpected size: it was removed"; }
+  [ "$(usb_size_of "$kf")" = 89 ] || usb_fail "the key file has an unexpected size"
   # ---- independent verification of the public key
   usb_derive "$kf" --independent
-  [ "$K_PUB" = "$pub" ] && [ "$K_FP" = "$fp" ] || { rm -f "$kf"; usb_fail "the public key derived from the key file differs from the one keygen printed: the key file was removed"; }
-  php "$USB_PHP" smoke --key-file "$kf" >/dev/null || { rm -f "$kf"; usb_fail "the offline signing smoke test failed: the key file was removed"; }
+  [ "$K_PUB" = "$pub" ] && [ "$K_FP" = "$fp" ] || usb_fail "the public key derived from the key file differs from the one keygen printed"
+  php "$USB_PHP" smoke --key-file "$kf" >/dev/null || usb_fail "the offline signing smoke test failed"
   # ---- public identity file on the stick (NO secret)
   local created; created="$(usb_utc)"
+  [ ! -e "$idf" ] && GEN_ID="$idf"
   "${USB_PY[@]}" jwrite "$idf" "schema=1" "kind=aicc-release-signing-key-identity" "role=$ROLE" "public_key=$pub" "fingerprint=$fp" "created_utc=$created" "volume_uuid=$U_volume_uuid" \
     "volume_name=$U_volume_name" "filesystem=$U_fs_name" "device_media_name=$U_media_name" "usb_identity=$U_usb_identity" "tool=usb-key-ceremony.sh (P45) with Plugin bin/sign-release.php keygen @ ${head:0:12}" \
     "note=PUBLIC file: no secret. Possession of the stick is the authority to sign." || usb_fail "could not write the identity file"
@@ -138,9 +157,11 @@ cmd_generate() {
   local sc; sc="$(usb_sidecars_list "$mp")"
   [ -z "$sc" ] || usb_fail "AppleDouble sidecar files remain on the stick: $(printf '%s' "$sc" | tr '\n' ' ')"
   # ---- non-secret handover file (outside any git repo / cloud path)
+  GEN_HF="$hf"
   "${USB_PY[@]}" jwrite "$hf" "schema=1" "kind=aicc-release-signing-key-handover" "role=$ROLE" "public_key=$pub" "fingerprint=$fp" "volume_uuid=$U_volume_uuid" "volume_name=$U_volume_name" \
     "created_utc=$created" "ceremony_verified_after_replug=null" "ceremony_replug_evidence=null" "session_io_marker=$U_io_marker" "session_device_node=$U_device_node" "session_boot_time=$U_boot_time" \
     "note=NON-SECRET: public key, fingerprint, volume UUID. Send this to engineering; it contains no key material." || usb_fail "could not write the handover file"
+  GEN_DONE=1; trap - EXIT INT TERM HUP
   sync
   echo
   echo "GENERATED: the $ROLE key is on the stick; it was not printed and not copied anywhere."
@@ -169,6 +190,7 @@ cmd_verify() {
   usb_classify "$USB" --serial
   local mp="$U_mount_point" kf idf bad="" other hf rep="unknown" evidence=""
   kf="$(usb_keyfile "$mp" "$ROLE")"; idf="$(usb_idfile "$mp" "$ROLE")"; other="$(other_role "$ROLE")"
+  if [ -e "$(usb_keydir "$mp")" ] || [ -L "$(usb_keydir "$mp")" ]; then usb_check_keydir "$mp" || usb_refuse "$(usb_keydir "$mp") is not a real directory on the stick (a symlink, or a path that leaves the stick): a key that is not on the stick is never used"; fi
   echo "== verify: $mp (role: $ROLE) =="
   echo "  physical USB stick: yes ($U_bus_protocol); label '$U_volume_name' (not trusted); volume UUID $U_volume_uuid; device $U_device_node; filesystem $U_fs_name"
   chk() { if [ "$2" = ok ]; then echo "  [ ok ] $1"; else echo "  [FAIL] $1: $3"; bad="$bad;$1"; fi; }
@@ -266,6 +288,18 @@ OFFLINE BACKUP OPTIONS for an unencrypted signing key (printed only; nothing is 
 EOF
 }
 
+BK_KEY=""; BK_ID=""; BK_DIR=""; BK_DONE=0
+bk_cleanup() {  # EXIT trap of backup: undo only what THIS run created
+  local rc=$? did=""
+  trap - EXIT INT TERM HUP
+  if [ "$BK_DONE" != 1 ]; then
+    if [ -n "$BK_KEY" ] && [ -f "$BK_KEY" ]; then rm -f "$BK_KEY"; did=1; fi
+    [ -z "$BK_ID" ] || rm -f "$BK_ID"
+    [ -z "$BK_DIR" ] || rmdir "$BK_DIR" 2>/dev/null || true
+    [ -z "$did" ] || echo "CLEANUP: removed the key copy this run created (and only what this run created)." >&2
+  fi
+  exit "$rc"
+}
 cmd_backup() {
   [ -n "$FROM" ] && [ -n "$TO" ] || { echo "usage: backup --from-usb /Volumes/<A> --to-usb /Volumes/<B> --role primary|standby [--handover-dir DIR]" >&2; exit 2; }
   role_ok
@@ -273,6 +307,7 @@ cmd_backup() {
   local fmp skey dkey fuuid fwhole fpub ffp dmp
   usb_classify "$FROM"; fmp="$U_mount_point"; fuuid="$U_volume_uuid"; fwhole="$U_whole_disk"
   skey="$(usb_keyfile "$fmp" "$ROLE")"
+  usb_check_keydir "$fmp" || usb_refuse "the source's key folder is not a real directory on the stick"
   [ -f "$skey" ] && [ ! -L "$skey" ] || usb_refuse "the source stick has no $ROLE key at $skey (or it is a symlink)"
   usb_derive "$skey" --independent; fpub="$K_PUB"; ffp="$K_FP"
   [ ! -e "$(usb_keyfile "$fmp" "$(other_role "$ROLE")")" ] || usb_refuse "the source stick holds the other role's key too: primary and standby must never share a device; fix that first"
@@ -283,6 +318,8 @@ cmd_backup() {
   usb_classify "$TO"; dmp="$U_mount_point"
   [ "$dmp" != "$fres" ] || usb_refuse "--from-usb and --to-usb are the same volume"
   [ "$U_volume_uuid" != "$fuuid" ] && [ "$U_whole_disk" != "$fwhole" ] || usb_refuse "--from-usb and --to-usb are the same device"
+  local ddir; ddir="$(usb_keydir "$dmp")"
+  if [ -e "$ddir" ] || [ -L "$ddir" ]; then usb_check_keydir "$dmp" || usb_refuse "the destination's key folder is not a real directory on the stick"; fi
   local duuid="$U_volume_uuid" dname="$U_volume_name" dmedia="$U_media_name" dfs="$U_fs_name" dfree="$U_free_bytes" dwr="$U_writable"
   [ "$dwr" = yes ] || usb_refuse "the destination is read-only"
   [ "${dfree:-0}" -ge 1048576 ] 2>/dev/null || usb_refuse "the destination has less than 1 MiB free"
@@ -293,15 +330,22 @@ cmd_backup() {
   echo "== backup: $ROLE key  $fres ($fuuid)  ->  $dmp ($duuid, '$dname', $dfs) =="
   echo "  The copy is UNENCRYPTED, like the original. It is another stick that can be lost or stolen. Keep it in a DIFFERENT place from the original."
   usb_confirm "COPY $(usb_upper "$ROLE") KEY FROM $(usb_uuid8 "$fuuid") TO $(usb_uuid8 "$duuid")"
-  ( umask 077; mkdir -p "$(usb_keydir "$dmp")" ) || usb_fail "cannot create the folder on the destination"
-  ( umask 077; set -C; cat "$skey" > "$dkey" ) || { rm -f "$dkey"; usb_fail "the copy failed (nothing is left behind)"; }
+  # from here a failure or an interrupt removes ONLY what THIS run created (a key created exclusively by this run, its identity file, a folder it made)
+  trap bk_cleanup EXIT; trap 'exit 130' INT; trap 'exit 143' TERM; trap 'exit 129' HUP
+  if [ ! -e "$ddir" ]; then ( umask 077; mkdir "$ddir" ) || usb_fail "cannot create the folder on the destination"; BK_DIR="$ddir"; fi
+  usb_check_keydir "$dmp" || usb_fail "the destination's key folder is not a real directory on the stick"
+  ( umask 077; set -C; : > "$dkey" ) 2>/dev/null || usb_refuse "the destination key file already exists or cannot be created: nothing was changed or deleted"
+  BK_KEY="$dkey"
+  ( umask 077; cat "$skey" >| "$dkey" ) || usb_fail "the copy failed"
   chmod 0600 "$dkey" 2>/dev/null || true
   usb_derive "$dkey" --independent
-  if [ "$K_PUB" != "$fpub" ] || [ "$K_FP" != "$ffp" ]; then rm -f "$dkey"; usb_fail "the copy's fingerprint differs from the source's: the copy was removed"; fi
+  if [ "$K_PUB" != "$fpub" ] || [ "$K_FP" != "$ffp" ]; then usb_fail "the copy's fingerprint differs from the source's"; fi
+  [ ! -e "$(usb_idfile "$dmp" "$ROLE")" ] && BK_ID="$(usb_idfile "$dmp" "$ROLE")"
   "${USB_PY[@]}" jwrite "$(usb_idfile "$dmp" "$ROLE")" "schema=1" "kind=aicc-release-signing-key-identity" "role=$ROLE" "public_key=$fpub" "fingerprint=$ffp" "created_utc=$(usb_utc)" "volume_uuid=$duuid" "volume_name=$dname" \
     "filesystem=$dfs" "device_media_name=$dmedia" "is_backup=true" "backup_of_volume_uuid=$fuuid" "tool=usb-key-ceremony.sh backup (P45)" "note=PUBLIC file: no secret. A BACKUP COPY of the $ROLE key." || usb_fail "could not write the destination's identity file"
   sync; usb_sidecars_remove_ours "$dmp"; sync
   local sc; sc="$(usb_sidecars_list "$dmp")"; [ -z "$sc" ] || usb_fail "sidecar files remain on the destination: $(printf '%s' "$sc" | tr '\n' ' ')"
+  BK_DONE=1; trap - EXIT INT TERM HUP
   echo "BACKUP DONE: fingerprint $ffp is identical on both sticks (re-derived from the copy; the key was not printed)."
   echo "  destination volume UUID: $duuid. Record it. Eject, re-plug and run: verify --usb <destination> --role $ROLE --expect-pubkey '$fpub'"
   echo "  Store the destination in a DIFFERENT place from the source."

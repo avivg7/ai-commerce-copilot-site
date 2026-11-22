@@ -83,13 +83,31 @@ usb_uuid8()   { printf '%s' "$1" | tr -d '-' | cut -c1-8 | tr '[:lower:]' '[:upp
 usb_utc()     { date -u '+%Y-%m-%dT%H:%M:%SZ'; }
 usb_size_of() { stat -f '%z' "$1" 2>/dev/null || stat -c '%s' "$1"; }
 
-# `._*` AppleDouble sidecars directly in the key folder or named for our files at the stick root
+# AppleDouble (`._*`) sidecars that are OURS: anything in our own key folder, `._AICC-RELEASE-SIGNING` at the stick root, and the probe file's sidecar. A legacy `._aicc-keys-*.dmg` (or any other `._*` at the
+# root) belongs to the old vault files: it is never counted, never removed.
 usb_sidecars_list() {  # <mount>
-  { "${USB_PY[@]}" sidecars --dir "$(usb_keydir "$1")" | sed "s#^#$USB_FOLDER/#"; "${USB_PY[@]}" sidecars --dir "$1" | grep -E '^\._(AICC-RELEASE-SIGNING|aicc-|\.aicc-probe)' || true; } 2>/dev/null
+  { "${USB_PY[@]}" sidecars --dir "$(usb_keydir "$1")" | sed "s#^#$USB_FOLDER/#"; "${USB_PY[@]}" sidecars --dir "$1" | grep -E '^\._(AICC-RELEASE-SIGNING$|\.aicc-probe\.)' || true; } 2>/dev/null
 }
-usb_sidecars_remove_ours() {  # <mount>: only ours (the key folder's own `._*`, and `._AICC-RELEASE-SIGNING` at the root); other files of the stick are never touched
+usb_sidecars_remove_ours() {  # <mount>: only ours; every other file of the stick is never touched
   local mp="$1" f
-  for f in "$(usb_keydir "$mp")"/._* "$mp/._$USB_FOLDER"; do [ -e "$f" ] && rm -f "$f"; done
+  for f in "$(usb_keydir "$mp")"/._* "$mp/._$USB_FOLDER" "$mp"/._.aicc-probe.*; do [ -e "$f" ] && rm -f "$f"; done
+  return 0
+}
+
+# the key folder must be a REAL directory on the stick itself: no symlink at or above it inside the mount, and its resolved path must be exactly <mount>/AICC-RELEASE-SIGNING
+usb_check_keydir() {  # <mount>; returns 0 when fine
+  local mp="$1" kd; kd="$(usb_keydir "$mp")"
+  [ -d "$kd" ] && [ ! -L "$kd" ] || return 1
+  [ "$(cd "$kd" && pwd -P)" = "$(cd "$mp" && pwd -P)/$USB_FOLDER" ]
+}
+
+# a Plugin checkout that git cannot see through: clean status INCLUDING ignored files, and no assume-unchanged / skip-worktree entries (plain `git status` is fooled by both)
+usb_git_pristine() {  # <dir> echoes the reason and returns 1 when not pristine
+  local d="$1" n
+  [ -z "$(git -C "$d" status --porcelain 2>/dev/null)" ] || { echo "the Plugin checkout is not clean (git status shows changes): use a clean checkout of the pinned commit"; return 1; }
+  n="$(git -C "$d" ls-files -v 2>/dev/null | grep -c '^[a-zS]' || true)"
+  [ "$n" = 0 ] || { echo "the Plugin checkout has $n file(s) hidden from git status (assume-unchanged / skip-worktree): use a fresh clone of the pinned commit"; return 1; }
+  [ -z "$(git -C "$d" status --porcelain --ignored 2>/dev/null)" ] || { echo "the Plugin checkout has ignored files hidden from git status: use a fresh clone of the pinned commit"; return 1; }
   return 0
 }
 
