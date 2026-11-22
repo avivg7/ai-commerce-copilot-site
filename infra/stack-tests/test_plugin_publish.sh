@@ -294,7 +294,9 @@ for mode in undefined wrong standbyonly nothing; do
   : > "$CALLS"
   GOUT="$(STUB_ENV=production STUB_HOSTNAME=www.copilt.org STUB_CURRENT=$V STUB_HOSTKEYS=$mode PV --confirm-production $V --apply --set-current "${ZM[@]}" 2>&1)"; GRC=$?
   t_eq "gate ($mode): production --apply --set-current is REFUSED (exit 3)" "$GRC" "3"
-  t_contains "gate ($mode): ...with a clear message pointing to TRUST-ANCHOR-OWNER-FACT.md" "$GOUT" "TRUST-ANCHOR-OWNER-FACT.md"
+  t_contains "gate ($mode): ...with a clear message pointing to the FINAL activation runbook (new keys)" "$GOUT" "TRUST-ANCHOR-ACTIVATION-RUNBOOK-FINAL.md"
+  t_contains "gate ($mode): ...saying plainly that the OLD keys are retired" "$GOUT" "9d49-041f-0ced-13ac / be7f-3dda-cddd-d781 are RETIRED and must never be installed"
+  t_not_contains "gate ($mode): ...and no longer pointing at the old p44 fact file (it carries the retired keys)" "$GOUT" "TRUST-ANCHOR-OWNER-FACT.md"
   t_contains "gate ($mode): ...saying nothing was uploaded or changed" "$GOUT" "Nothing was uploaded or changed"
   t_eq "gate ($mode): ...no rsync, no 'sudo bash' installer call, no upload directory created" "$(grep -cE '^rsync|sudo bash|mkdir -p ~/plugin-incoming' "$CALLS" || true)" "0"
 done
@@ -305,6 +307,10 @@ t_eq "gate: ...and none of those runs sent anything (no rsync, no installer call
 : > "$CALLS"
 STUB_ENV=production STUB_HOSTNAME=www.copilt.org STUB_HOSTKEYS=undefined t_ok "gate: a production DRY RUN (no --apply) still works with an undefined constant: it is offline" PV --confirm-production $V --set-current "${ZM[@]}"
 t_eq "gate: ...and the dry run made no ssh call at all" "$(grep -c '^ssh' "$CALLS" || true)" "0"
+DRYOUT="$(STUB_ENV=production STUB_HOSTNAME=www.copilt.org STUB_HOSTKEYS=undefined PV --confirm-production $V --set-current "${ZM[@]}" 2>&1)"
+t_contains "gate: the production dry run says plainly that the host trust anchor is NOT checked" "$DRYOUT" "the host trust anchor (AICC_LM_PLUGIN_SIGNING_PUBKEYS) is NOT checked in a dry run"
+t_contains "gate: ...and tells the operator to run check-host-signing-keys.sh by hand first" "$DRYOUT" "run check-host-signing-keys.sh by hand first"
+t_not_contains "gate: a staging dry run does not print that line (staging is not gated)" "$(S --dry-run --set-current "${ZM[@]}" 2>&1)" "NOT checked in a dry run"
 STUB_CURRENT=$V STUB_HOSTKEYS=undefined t_ok "gate: staging --apply is not gated (the trust anchor rule is the production host's)" S --set-current "${ZM[@]}"
 : > "$CALLS"
 STUB_ENV=production STUB_HOSTNAME=www.copilt.org STUB_CURRENT=$V STUB_HOSTKEYS=present t_ok "gate: the primary key PRESENT => production --apply --set-current proceeds" PV --confirm-production $V --apply --set-current "${ZM[@]}"

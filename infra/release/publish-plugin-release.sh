@@ -241,6 +241,7 @@ DRY-RUN plan ($ENVN; local verification passed; nothing sent):
   action: $TARGET_DESC
 $([ -z "$POINT" ] && echo "  signature: $SIGNOTE")
 $([ "$ENVN" = production ] && [ "$APPLY" != 1 ] && echo "  (production: add --apply to run it)")
+$([ "$ENVN" = production ] && [ "$APPLY" != 1 ] && echo "  NOTE: the host trust anchor (AICC_LM_PLUGIN_SIGNING_PUBKEYS) is NOT checked in a dry run (it is offline by design): run check-host-signing-keys.sh by hand first; --apply refuses if the host does not hold the primary key.")
 EOT
   exit 0
 fi
@@ -266,7 +267,7 @@ if [ "$ENVN" = production ]; then
   gate_out="$(bash "$GATE" --pubkeys "$KEYS" --stage-host "$SHOST" --stage-ip "$SIP" --stage-id "$SID" --key "$KEY" --known-hosts "$KNOWN_HOSTS" --env production --user "$USER_NAME" 2>&1)" || grc=$?
   if [ "$grc" != 0 ]; then
     printf '%s\n' "$gate_out" | sed 's/^/  gate: /' >&2
-    refuse "production trust-anchor gate FAILED (check-host-signing-keys.sh exit $grc): the host's AICC_LM_PLUGIN_SIGNING_PUBKEYS is not defined or does not hold the primary signing key, so the Control Plane would refuse to serve this release. Nothing was uploaded or changed. Do the owner fact first (TRUST-ANCHOR-OWNER-FACT.md, cp-dark/p44: aicc-owner-facts set AICC_LM_PLUGIN_SIGNING_PUBKEYS), then run this again."
+    refuse "production trust-anchor gate FAILED (check-host-signing-keys.sh exit $grc): the host's AICC_LM_PLUGIN_SIGNING_PUBKEYS is not defined or does not hold the primary signing key, so the Control Plane would refuse to serve this release. Nothing was uploaded or changed. Do the owner fact first, with the NEW keys, exactly as TRUST-ANCHOR-ACTIVATION-RUNBOOK-FINAL.md (AICC-launch-evidence/execution-reset/cp-dark/p45) says (aicc-owner-facts set AICC_LM_PLUGIN_SIGNING_PUBKEYS), then run this again. The old signing keys 9d49-041f-0ced-13ac / be7f-3dda-cddd-d781 are RETIRED and must never be installed."
   fi
   echo "trust-anchor gate OK: $(printf '%s\n' "$gate_out" | grep -E '^OK:' | head -1)"
 fi
