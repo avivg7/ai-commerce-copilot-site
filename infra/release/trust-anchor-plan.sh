@@ -3,13 +3,15 @@
 # The owner lost the passphrases of both OLD signing vaults, so the OLD key pairs are retired and NEW Ed25519 keys are generated on two USB sticks. This helper takes the two NEW PUBLIC keys
 # (the 44-character `public key ...` lines `php bin/sign-release.php keygen` printed), checks them, and prints the exact owner-gated command block with the real values.
 #
-#   trust-anchor-plan.sh <primary_pub> <standby_pub> [--handover-file F] [--local-proof]
+#   trust-anchor-plan.sh <primary_pub> <standby_pub> [--handover-file F [--handover-file F2]] [--local-proof]
 #
 #   Validation = exactly the owner-facts tool's rule (lib/owner_facts.py parse_signing_pubkeys: standard base64, 44 chars ending in '=', exactly 32 raw bytes, no duplicates), PLUS:
 #     * the OLD public keys (and their fingerprints) are REFUSED, in either position, in the arguments and in a handover file: they must never become the production trust anchor;
 #     * identical keys, an argument that carries two keys, a secret-key shape (64 bytes) are refused; each argument is ONE key;
-#     * --handover-file F (a small text file of public values: PRIMARY_PUBKEY=, PRIMARY_FP=, STANDBY_PUBKEY=, STANDBY_FP=; `#` comments) says which key is the primary: the arguments must match it
-#       (WRONG ORDER is refused), every fingerprint in it must equal the key's computed fingerprint, and a file that looks like it holds a secret key is refused.
+#     * --handover-file F (give it once per file, at most two) says which key is the primary. F is either a key ceremony's JSON handover (kind aicc-release-signing-key-handover, schema 1, role
+#       primary|standby, public_key, fingerprint: one file per key, exactly what the ceremony wrote) or a small text file of public values (PRIMARY_PUBKEY=, PRIMARY_FP=, STANDBY_PUBKEY=, STANDBY_FP=;
+#       `#` comments). The arguments must match it (WRONG ORDER is refused), every fingerprint in it must equal the key's computed fingerprint, two files may not disagree, and a file that looks
+#       like it holds a secret key (a private-key marker, a secret/private field name, any base64 value longer than a public key) is refused.
 #   Both fingerprints are computed two ways (python hashlib and the shell's sha256 over the base64-decoded bytes) and must agree.
 #   --local-proof: renders the live-SHAPED synthetic facts (fixtures/owner-facts.production.p45-live-shape.env) in a scratch directory with and without the one new fact and prints the
 #     renderer's --compare (expected: added = AICC_LM_PLUGIN_SIGNING_PUBKEYS, removed -, changed -). Scratch only; removed on exit; no host is read.
@@ -17,11 +19,11 @@
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"; INFRA="$(cd "$HERE/.." && pwd)"; LIB="$INFRA/provision/lib/owner_facts.py"
 refuse() { echo "REFUSED: $*" >&2; exit 3; }
-usage() { sed -n 2,3p "${BASH_SOURCE[0]}" | cut -c3- >&2; echo "usage: $(basename "$0") <primary_pub> <standby_pub> [--handover-file F] [--local-proof]" >&2; exit 2; }
-PRIMARY=""; STANDBY=""; HANDOVER=""; PROOF=0; NPOS=0
+usage() { sed -n 2,3p "${BASH_SOURCE[0]}" | cut -c3- >&2; echo "usage: $(basename "$0") <primary_pub> <standby_pub> [--handover-file F [--handover-file F2]] [--local-proof]" >&2; exit 2; }
+PRIMARY=""; STANDBY=""; HANDOVERS=(); PROOF=0; NPOS=0
 while [ $# -gt 0 ]; do
   case "$1" in
-    --handover-file) [ $# -ge 2 ] || usage; HANDOVER="$2"; shift 2 ;;
+    --handover-file) [ $# -ge 2 ] || usage; [ "${#HANDOVERS[@]}" -lt 2 ] || usage; HANDOVERS+=("$2"); shift 2 ;;
     --local-proof) PROOF=1; shift ;;
     -h|--help) sed -n 2,19p "${BASH_SOURCE[0]}" | cut -c3-; exit 0 ;;
     -*) echo "unknown option: $1" >&2; usage ;;
@@ -33,9 +35,9 @@ command -v python3 >/dev/null 2>&1 || { echo "need python3" >&2; exit 1; }
 [ -f "$LIB" ] || { echo "cannot find $LIB" >&2; exit 1; }
 
 # ---- validation (python, the owner-facts validator itself) ------------------------------------------------------------------------------------------------------
-VOUT="$(python3 -I - "$LIB" "$PRIMARY" "$STANDBY" "${HANDOVER:-}" <<'PY'
+VOUT="$(python3 -I - "$LIB" "$PRIMARY" "$STANDBY" ${HANDOVERS[@]+"${HANDOVERS[@]}"} <<'PY'
 import base64, hashlib, importlib.util, os, re, stat, sys
-lib, primary, standby, handover = sys.argv[1:5]
+lib, primary, standby = sys.argv[1:4]; handovers = sys.argv[4:]
 spec = importlib.util.spec_from_file_location("owner_facts", lib); of = importlib.util.module_from_spec(spec); spec.loader.exec_module(of)
 KEY = "AICC_LM_PLUGIN_SIGNING_PUBKEYS"
 OLD_PUBS = ("yCsFX6176Ue5ZTdi4Dr99J9LFM43jXrN6Kbp13KF04Y=", "5p50qA1SYMTV7MXeDAWfMnNqLKVuTRDVS4FREuKuQwM=")   # the RETIRED public keys of the two lost-passphrase vaults (fingerprints 9d49-041f-0ced-13ac, be7f-3dda-cddd-d781)
@@ -59,22 +61,63 @@ if p == s:
 for label, k in (("primary", p), ("standby", s)):
     if k in OLD_PUBS or fp(k) in OLD_FPS:
         die("the %s key is one of the OLD (retired, lost-vault) public keys: the old keys must never be installed as the production trust anchor" % label)
-if handover:
-    if not os.path.isfile(handover) or os.path.islink(handover):
-        die("--handover-file %s is not a regular file (the handover file is required to exist)" % handover)
-    if os.path.getsize(handover) > 8192:
-        die("the handover file is larger than 8 KiB: it must hold public values only")
-    text = open(handover, encoding="utf-8", errors="replace").read()
-    if re.search(r"PRIVATE KEY|BEGIN [A-Z ]*KEY|SECRET", text, re.I) or any(len(base64.b64decode(t, validate=False)) >= 48 for t in re.findall(r"[A-Za-z0-9+/]{64,}={0,2}", text) if len(t) % 4 == 0):
-        die("the handover file looks like it holds a secret key (a private-key marker, the word secret, or a base64 value longer than a public key): it must hold PUBLIC values only. Remove it from this file and keep the secret offline")
-    h = {}
+B64LONG = re.compile(r"[A-Za-z0-9+/]{64,}={0,2}")
+def long_b64(t):
+    return any(len(t_) % 4 == 0 and len(base64.b64decode(t_, validate=False)) >= 48 for t_ in B64LONG.findall(t))
+def load_handover(path):
+    """-> {PRIMARY_PUBKEY|PRIMARY_FP|STANDBY_PUBKEY|STANDBY_FP: value} from a JSON ceremony handover or the text format."""
+    if not os.path.isfile(path) or os.path.islink(path):
+        die("--handover-file %s is not a regular file (the handover file is required to exist)" % path)
+    if os.path.getsize(path) > 8192:
+        die("the handover file %s is larger than 8 KiB: it must hold public values only" % path)
+    text = open(path, encoding="utf-8", errors="replace").read()
+    if re.search(r"PRIVATE KEY|BEGIN [A-Z ]*KEY", text, re.I):
+        die("the handover file %s looks like it holds a secret (private) key: it must hold PUBLIC values only. Keep the secret offline" % path)
+    out = {}
+    if text.lstrip().startswith("{"):
+        import json
+        try:
+            d = json.loads(text)
+        except ValueError:
+            die("the handover file %s is not valid JSON (and not the text format): check the file the ceremony wrote" % path)
+        if not isinstance(d, dict):
+            die("the handover file %s is not a JSON object" % path)
+        for name, val in d.items():
+            if re.search(r"secret|private|passphrase|password", str(name), re.I):
+                die("the handover file %s has a field named '%s': it looks like it holds a secret; it must hold PUBLIC values only" % (path, name))
+            if isinstance(val, str) and long_b64(val):
+                die("the handover file %s field '%s' holds a base64 value longer than a public key: it looks like a secret key; the file must hold PUBLIC values only" % (path, name))
+        if d.get("kind") != "aicc-release-signing-key-handover" or str(d.get("schema")) != "1":
+            die("the handover file %s is not an aicc-release-signing-key-handover (schema 1): wrong kind/schema" % path)
+        role = d.get("role")
+        if role not in ("primary", "standby"):
+            die("the handover file %s has role '%s': the role must be primary or standby" % (path, role))
+        pk = d.get("public_key")
+        if not isinstance(pk, str) or not pk:
+            die("the handover file %s has no public_key" % path)
+        out[role.upper() + "_PUBKEY"] = pk
+        if d.get("fingerprint"):
+            out[role.upper() + "_FP"] = str(d["fingerprint"])
+        return out
+    if re.search(r"SECRET", text, re.I) or long_b64(text):
+        die("the handover file %s looks like it holds a secret key (the word secret, or a base64 value longer than a public key): it must hold PUBLIC values only. Remove it from this file and keep the secret offline" % path)
     for line in text.splitlines():
         line = line.strip()
         if not line or line.startswith("#"):
             continue
         m = re.fullmatch(r"(PRIMARY_PUBKEY|PRIMARY_FP|STANDBY_PUBKEY|STANDBY_FP)=(\S+)", line)
         if m:
-            h[m.group(1)] = m.group(2)
+            out[m.group(1)] = m.group(2)
+    if not out:
+        die("the handover file %s is neither a ceremony JSON handover nor the PRIMARY_PUBKEY=/STANDBY_PUBKEY= text format" % path)
+    return out
+if handovers:
+    h = {}
+    for path in handovers:
+        for name, val in load_handover(path).items():
+            if name in h and h[name] != val:
+                die("two handover files disagree about %s (both claim the same role with different values): conflict" % name)
+            h[name] = val
     for name, val in h.items():
         if name.endswith("_FP") and val in OLD_FPS:
             die("the handover quotes an OLD fingerprint (%s): the old keys must never be installed as the production trust anchor" % val)
@@ -82,15 +125,17 @@ if handover:
             die("the handover holds an OLD public key (%s): the old keys must never be installed as the production trust anchor" % name)
     hp, hs = h.get("PRIMARY_PUBKEY"), h.get("STANDBY_PUBKEY")
     if hp is None and hs is None:
-        die("the handover file names no PRIMARY_PUBKEY / STANDBY_PUBKEY: it cannot say which key is the primary")
+        die("the handover file(s) name no PRIMARY_PUBKEY / STANDBY_PUBKEY: they cannot say which key is the primary")
+    if hp is not None and hs is not None and hp == hs:
+        die("the handover files give the same key for primary and standby: conflict")
     if (hp is not None and hp == s) or (hs is not None and hs == p):
         die("WRONG ORDER: the handover says the primary is the key you passed as the standby (and the other way round): pass the primary first")
     if (hp is not None and hp != p) or (hs is not None and hs != s):
-        die("the keys passed do not match the handover file (PRIMARY_PUBKEY / STANDBY_PUBKEY): check you are using the owner's handover for these keys")
+        die("the keys passed do not match the handover file(s) (PRIMARY_PUBKEY / STANDBY_PUBKEY): check you are using the owner's handover for these keys")
     for label, k in (("PRIMARY", p), ("STANDBY", s)):
         if label + "_FP" in h and h[label + "_FP"] != fp(k):
             die("the handover's %s_FP (%s) is not the fingerprint of the %s key (%s): a typo or the wrong key" % (label, h[label + "_FP"], label.lower(), fp(k)))
-print("%s %s" % (p, fp(p))); print("%s %s" % (s, fp(s))); print("handover=%s" % ("checked" if handover else "none"))
+print("%s %s" % (p, fp(p))); print("%s %s" % (s, fp(s))); print("handover=%s" % ("checked (%d)" % len(handovers) if handovers else "none"))
 PY
 )" || exit $?
 P="$(printf '%s\n' "$VOUT" | sed -n 1p | cut -d' ' -f1)"; PFP="$(printf '%s\n' "$VOUT" | sed -n 1p | cut -d' ' -f2)"
@@ -106,7 +151,7 @@ TRUST-ANCHOR PLAN (P45): NOTHING HAS BEEN APPLIED. This text only prints command
 KEYS (public; validated exactly as the owner-facts tool does; the OLD keys are refused)
   primary  $PFP  (python hashlib = shell sha256: agree)   $P
   standby  $SFP  (python hashlib = shell sha256: agree)   $S
-  handover file: $HSTATE
+  handover file(s): $HSTATE
   value to set (primary first, no blanks): $VALUE
   CHECK BY EYE: these two fingerprints must be the ones keygen printed for the two new USB keys, in this order.
 
@@ -185,6 +230,7 @@ if [ "$PROOF" = 1 ]; then
   R() { env AICC_TEST_HARNESS=1 bash "$INFRA/provision/render-wp-config.sh" --env production --confirm-production --out "$OUT" --secrets-dir "$SEC" --mail-dir "$MAILD" --plugin-release-dir "$REL" --owner-facts-file "$OFF" --owner "$OFU" "$@"; }
   cp "$FIXF" "$OFF"; chmod 600 "$OFF"
   R >/dev/null 2>&1 || { echo "LOCAL PROOF FAILED: the live-shaped facts did not render" >&2; exit 1; }
+  cp "$OUT" "$W/before.php"
   echo
   echo "LOCAL PROOF (scratch only; synthetic live-shaped facts = the 16 production names + the ONE new fact; no host read; values never shown)"
   env AICC_TEST_HARNESS=1 bash "$INFRA/provision/owner-facts.sh" --file "$OFF" --env production set AICC_LM_PLUGIN_SIGNING_PUBKEYS "$VALUE" >/dev/null
@@ -193,6 +239,9 @@ if [ "$PROOF" = 1 ]; then
   printf '%s\n' "$CMP" | grep -E '^  (added  |removed|changed): '
   [ "$rc" = 4 ] || { echo "LOCAL PROOF FAILED: expected compare exit 4" >&2; exit 1; }
   R >/dev/null 2>&1 || { echo "LOCAL PROOF FAILED: the render with the new fact failed" >&2; exit 1; }
+  KEEP=""; for c in AICC_TURNSTILE_SITE_KEY AICC_TURNSTILE_SECRET_FILE AICC_NOTIFY_ENABLED; do for f in "$W/before.php" "$OUT"; do grep -q "^define( '$c'" "$f" || { echo "LOCAL PROOF FAILED: $c is missing from a render" >&2; exit 1; }; done; KEEP="$KEEP $c"; done
+  for f in "$W/before.php" "$OUT"; do grep -E "^define\( 'WP_ACCESSIBLE_HOSTS'.*challenges\.cloudflare\.com" "$f" >/dev/null || { echo "LOCAL PROOF FAILED: challenges.cloudflare.com is missing from WP_ACCESSIBLE_HOSTS in a render (Turnstile enabled)" >&2; exit 1; }; done
+  echo "preserved in BOTH renders:$KEEP (+ challenges.cloudflare.com in WP_ACCESSIBLE_HOSTS: Turnstile enabled)"
   rc2=0; CMP2="$(R --compare 2>&1)" || rc2=$?
   if [ "$rc2" = 0 ] && printf '%s' "$CMP2" | grep -q IDENTICAL; then echo "second compare: IDENTICAL (exit 0)"; else echo "LOCAL PROOF FAILED: second compare was not IDENTICAL" >&2; exit 1; fi
 fi

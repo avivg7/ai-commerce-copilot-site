@@ -3,7 +3,7 @@ TRUST-ANCHOR PLAN (P45): NOTHING HAS BEEN APPLIED. This text only prints command
 KEYS (public; validated exactly as the owner-facts tool does; the OLD keys are refused)
   primary  630d-cd29-66c4-3366  (python hashlib = shell sha256: agree)   AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=
   standby  ae21-6c2e-f524-7a37  (python hashlib = shell sha256: agree)   AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA=
-  handover file: none
+  handover file(s): none
   value to set (primary first, no blanks): AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=,AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA=
   CHECK BY EYE: these two fingerprints must be the ones keygen printed for the two new USB keys, in this order.
 

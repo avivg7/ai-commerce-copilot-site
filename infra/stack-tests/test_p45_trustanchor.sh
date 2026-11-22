@@ -62,6 +62,44 @@ refused "a missing handover file is refused" "handover" "$A" "$B" --handover-fil
 H "PRIMARY_PUBKEY=$A" "STANDBY_PUBKEY=$B"
 t_rc "a handover with the keys only (no fingerprints) is accepted" 0 P "$A" "$B" --handover-file "$TMP/handover.txt"
 
+echo "== J. the JSON handover files the key ceremony writes (one file per key; kind aicc-release-signing-key-handover) =="
+# the real ceremony shape (the two files the owner's ceremony wrote): {kind, schema "1", role, public_key, fingerprint, volume_*, session_*, note "NON-SECRET ..."}; one file per role, given with one --handover-file each
+jh() { local f="$1" role="$2" key="$3" fp="$4"; python3 -c 'import json,sys; json.dump({"kind":"aicc-release-signing-key-handover","schema":"1","role":sys.argv[2],"public_key":sys.argv[3],"fingerprint":sys.argv[4],"volume_name":"KEY_X","volume_uuid":"00000000-0000-0000-0000-000000000000","session_device_node":"/dev/disk9s1","created_utc":"2026-11-22T07:42:26Z","note":"NON-SECRET: public key, fingerprint, volume UUID. Send this to engineering; it contains no key material."}, open(sys.argv[1],"w"), indent=2, sort_keys=True)' "$f" "$role" "$key" "$fp"; chmod 600 "$f"; }
+jh "$TMP/hp.json" primary "$A" "$AFP"; jh "$TMP/hs.json" standby "$B" "$BFP"
+t_rc "two JSON handover files (primary + standby) matching the keys are accepted (the note says NON-SECRET: that word alone is not a secret)" 0 P "$A" "$B" --handover-file "$TMP/hp.json" --handover-file "$TMP/hs.json"
+t_contains "...the plan says the handover was checked" "$(P "$A" "$B" --handover-file "$TMP/hp.json" --handover-file "$TMP/hs.json" 2>&1)" "handover file(s): checked (2)"
+t_rc "one JSON file (the primary's) alone is accepted" 0 P "$A" "$B" --handover-file "$TMP/hp.json"
+refused "a SWAPPED order against the JSON handovers is refused" "order" "$B" "$A" --handover-file "$TMP/hp.json" --handover-file "$TMP/hs.json"
+jh "$TMP/hp-badfp.json" primary "$A" "$BFP"
+refused "a JSON fingerprint that is not the key's fingerprint is refused" "fingerprint" "$A" "$B" --handover-file "$TMP/hp-badfp.json" --handover-file "$TMP/hs.json"
+jh "$TMP/hp-old.json" primary "$NP" "$OP_FP"
+refused "a JSON handover holding the OLD primary is refused" "old" "$A" "$B" --handover-file "$TMP/hp-old.json" --handover-file "$TMP/hs.json"
+jh "$TMP/hp-oldfp.json" primary "$A" "$OP_FP"
+refused "a JSON handover quoting an OLD fingerprint is refused" "old" "$A" "$B" --handover-file "$TMP/hp-oldfp.json"
+jh "$TMP/hs-primary.json" primary "$B" "$BFP"
+refused "two JSON files that both claim to be the primary are refused" "conflict\|twice\|both" "$A" "$B" --handover-file "$TMP/hp.json" --handover-file "$TMP/hs-primary.json"
+jh "$TMP/hp-other.json" primary "$C" "$(fpr "$C")"
+refused "a JSON handover for a different key than the one passed is refused" "handover" "$A" "$B" --handover-file "$TMP/hp-other.json"
+printf '{ not json' > "$TMP/bad.json"; refused "a file that is not valid JSON (and not the text format) is refused" "handover" "$A" "$B" --handover-file "$TMP/bad.json"
+python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); d["kind"]="something-else"; json.dump(d,open(sys.argv[2],"w"))' "$TMP/hp.json" "$TMP/wrongkind.json"; refused "a JSON file of another kind is refused" "kind" "$A" "$B" --handover-file "$TMP/wrongkind.json"
+python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); d["role"]="owner"; json.dump(d,open(sys.argv[2],"w"))' "$TMP/hp.json" "$TMP/wrongrole.json"; refused "a JSON role other than primary/standby is refused" "role" "$A" "$B" --handover-file "$TMP/wrongrole.json"
+python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); d["secret_key"]=sys.argv[3]; json.dump(d,open(sys.argv[2],"w"))' "$TMP/hp.json" "$TMP/withsecret.json" "$S64"; refused "a JSON file with a secret-key field/value is refused" "secret" "$A" "$B" --handover-file "$TMP/withsecret.json"
+python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); d["extra"]=sys.argv[3]; json.dump(d,open(sys.argv[2],"w"))' "$TMP/hp.json" "$TMP/longb64.json" "$S64"; refused "a JSON file with a secret-length base64 value under any name is refused" "secret" "$A" "$B" --handover-file "$TMP/longb64.json"
+python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); del d["public_key"]; json.dump(d,open(sys.argv[2],"w"))' "$TMP/hp.json" "$TMP/nokey.json"; refused "a JSON file without public_key is refused" "public_key" "$A" "$B" --handover-file "$TMP/nokey.json"
+t_rc "a third --handover-file is a usage error" 2 P "$A" "$B" --handover-file "$TMP/hp.json" --handover-file "$TMP/hs.json" --handover-file "$TMP/hp.json"
+echo "-- the REAL public pair of the ceremony (public values; fingerprints recomputed independently)"
+RP='KKKOl3WRPbwRaaNt5HUDzV7aecCnE+Wz24CkrUb6UNs='; RS='PJy7lnXPX//ZZssuACOrE2tyuflW1iRjKQj90KukEW8='
+t_eq "real primary fingerprint" "$(fpr "$RP")" "5a8f-1d62-ac6e-ce00"
+t_eq "real standby fingerprint" "$(fpr "$RS")" "8179-a77e-3b93-1f58"
+jh "$TMP/rp.json" primary "$RP" 5a8f-1d62-ac6e-ce00; jh "$TMP/rs.json" standby "$RS" 8179-a77e-3b93-1f58
+RPLAN="$(P "$RP" "$RS" --handover-file "$TMP/rp.json" --handover-file "$TMP/rs.json" 2>&1)"; rrc=$?
+t_eq "the real pair with its two handover files is accepted" "$rrc" "0"
+t_contains "...the exact set command with the real values" "$RPLAN" "sudo aicc-owner-facts set AICC_LM_PLUGIN_SIGNING_PUBKEYS '$RP,$RS'"
+t_contains "...HOSTKEYS expectation names both real fingerprints" "$RPLAN" "HOSTKEYS defined entries=2 fingerprints=5a8f-1d62-ac6e-ce00,8179-a77e-3b93-1f58"
+t_not_contains "...no OLD key or fingerprint in the real plan" "$RPLAN" "$NP"
+refused "the real pair SWAPPED against its handovers is refused" "order" "$RS" "$RP" --handover-file "$TMP/rp.json" --handover-file "$TMP/rs.json"
+refused "the real primary with the OLD standby is refused" "old" "$RP" "$NS"
+
 echo "== P. the plan =="
 ST0="$(git -C "$REPO" status --porcelain 2>/dev/null | shasum -a 256)"
 OUT="$(P "$A" "$B" 2>&1)"; rc=$?
@@ -88,6 +126,7 @@ t_contains "...--compare exit 4 (a render would change the live-shaped file)" "$
 t_eq "...added = the constant only" "$(printf '%s' "$LP" | sed -n 's/^  added  : //p')" "AICC_LM_PLUGIN_SIGNING_PUBKEYS"
 t_eq "...removed -" "$(printf '%s' "$LP" | sed -n 's/^  removed: //p')" "-"
 t_eq "...changed -" "$(printf '%s' "$LP" | sed -n 's/^  changed: //p')" "-"
+t_contains "...Turnstile (site key, secret file path, the host allowance) and notify are preserved in BOTH renders" "$LP" "preserved in BOTH renders: AICC_TURNSTILE_SITE_KEY AICC_TURNSTILE_SECRET_FILE AICC_NOTIFY_ENABLED (+ challenges.cloudflare.com in WP_ACCESSIBLE_HOSTS: Turnstile enabled)"
 t_contains "...a re-compare after the render is IDENTICAL" "$LP" "second compare: IDENTICAL"
 t_not_contains "...no key value in the proof output beyond the command block" "$(printf '%s' "$LP" | sed -n '/^LOCAL PROOF/,$p')" "$A"
 t_eq "...no scratch directory is left behind" "$(ls -d "${TMPDIR:-/tmp}"/aicc-trust-plan.* 2>/dev/null | wc -l | tr -d ' ')" "0"
