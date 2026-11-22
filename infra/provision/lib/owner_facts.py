@@ -171,6 +171,14 @@ def _date(key, v):
     return v
 
 
+# P45: the owner lost the passphrases of the two encrypted signing vaults made in P44; those key pairs are RETIRED and must never be a production trust anchor
+# (fingerprints 9d49-041f-0ced-13ac and be7f-3dda-cddd-d781). PUBLIC values; the same pair is refused by infra/release/trust-anchor-plan.sh and the Plugin's release/retired-public-keys.txt.
+RETIRED_SIGNING_PUBKEYS = {
+    "yCsFX6176Ue5ZTdi4Dr99J9LFM43jXrN6Kbp13KF04Y=": "9d49-041f-0ced-13ac",
+    "5p50qA1SYMTV7MXeDAWfMnNqLKVuTRDVS4FREuKuQwM=": "be7f-3dda-cddd-d781",
+}
+
+
 def parse_signing_pubkeys(key, v):
     """'<base64>[,<base64>]' -> canonical list: PUBLIC Ed25519 keys only, i.e. standard base64 of exactly 32 raw bytes (what AICC_LM_Release_Signature::parse_keys
     accepts), at most two, no duplicates. A 64-byte secret key or anything else is refused. Returned canonically re-encoded so the PHP side reads exactly this."""
@@ -190,6 +198,8 @@ def parse_signing_pubkeys(key, v):
         if len(rawkey) != 32:
             raise OwnerFactsError("%s: each key must decode to exactly 32 bytes" % key)
         canon = base64.b64encode(rawkey).decode("ascii")
+        if canon in RETIRED_SIGNING_PUBKEYS:
+            raise OwnerFactsError("%s: that public key (fingerprint %s) is RETIRED (P45: the passphrase of its vault was lost and the pair was replaced): it must never be a trust anchor" % (key, RETIRED_SIGNING_PUBKEYS[canon]))
         if canon in out:
             raise OwnerFactsError("%s lists the same key twice" % key)
         out.append(canon)

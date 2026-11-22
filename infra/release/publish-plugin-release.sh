@@ -129,7 +129,7 @@ if [ "$ENVN" = production ]; then
   esac
 fi
 # ---- the owner's signature (A-02): present, sane, named for this version, verified against the owner's public key list where possible ----------------
-SIGFILE=""; SIGNAME=""; SIGVERIFIED=0; SIGNOTE=""
+SIGFILE=""; SIGNAME=""; SIGVERIFIED=0; SIGNOTE=""; SIGNER_FP=""
 if [ -z "$POINT" ]; then
   if [ "$ALLOW_UNSIGNED" = 1 ]; then
     echo "WARNING: publishing $VERSION WITHOUT a signature (--allow-unsigned, staging only): no merchant's updater will ever be offered it, and the Control Plane launch gate fails while it is current." >&2
@@ -181,7 +181,14 @@ baked = {k.strip() for k in (m.group(1) if m else "").split(",") if k.strip()}
 if not baked: fail("the ZIP carries no update-signing public key: a build that cannot verify its own updates is never published")
 if not baked <= keys: fail("the ZIP bakes a public key that is not on the owner's list (UPDATE_PUBLIC_KEYS): refusing")
 PY
-      SIGVERIFIED=1; SIGNOTE="signature verified locally ($vout)"
+      # P45 review S7: WHICH key signed it, derived by verifying against each owner key alone (the signature's key_id is only a hint and could claim the primary); the production gate needs THAT key on the host
+      for k in $(printf '%s' "$KEYS" | tr ',' ' '); do
+        if "$PHPBIN" "$PLUGDIR/bin/sign-release.php" verify --manifest "$MAN" --sig "$SIGFILE" --pubkeys "$k" >/dev/null 2>&1; then
+          SIGNER_FP="$(python3 -I -c 'import base64, hashlib, sys; h = hashlib.sha256(base64.b64decode(sys.argv[1])).hexdigest()[:16]; print("-".join(h[i:i + 4] for i in range(0, 16, 4)))' "$k")"; break
+        fi
+      done
+      [ -n "$SIGNER_FP" ] || refuse "no single key of the owner's list verifies the signature on its own: cannot tell which key signed it"
+      SIGVERIFIED=1; SIGNOTE="signature verified locally ($vout; signed by key $SIGNER_FP)"
       echo "$SIGNOTE"
     else
       if [ "$ENVN" = production ]; then
@@ -264,10 +271,11 @@ if [ "$ENVN" = production ]; then
   [ -f "$GATE" ] || refuse "the production trust-anchor gate script is missing ($GATE): not publishing without it"
   [ -n "${KEYS:-}" ] || refuse "no owner public key list for the production trust-anchor gate: pass --pubkeys <primary,standby> or --plugin-dir"
   grc=0
-  gate_out="$(bash "$GATE" --pubkeys "$KEYS" --stage-host "$SHOST" --stage-ip "$SIP" --stage-id "$SID" --key "$KEY" --known-hosts "$KNOWN_HOSTS" --env production --user "$USER_NAME" 2>&1)" || grc=$?
+  GATE_EXTRA=(); [ -z "$SIGNER_FP" ] || GATE_EXTRA=(--signer-fp "$SIGNER_FP")
+  gate_out="$(bash "$GATE" --pubkeys "$KEYS" ${GATE_EXTRA[@]+"${GATE_EXTRA[@]}"} --stage-host "$SHOST" --stage-ip "$SIP" --stage-id "$SID" --key "$KEY" --known-hosts "$KNOWN_HOSTS" --env production --user "$USER_NAME" 2>&1)" || grc=$?
   if [ "$grc" != 0 ]; then
     printf '%s\n' "$gate_out" | sed 's/^/  gate: /' >&2
-    refuse "production trust-anchor gate FAILED (check-host-signing-keys.sh exit $grc): the host's AICC_LM_PLUGIN_SIGNING_PUBKEYS is not defined or does not hold the primary signing key, so the Control Plane would refuse to serve this release. Nothing was uploaded or changed. Do the owner fact first, with the NEW keys, exactly as TRUST-ANCHOR-ACTIVATION-RUNBOOK-FINAL.md (AICC-launch-evidence/execution-reset/cp-dark/p45) says (aicc-owner-facts set AICC_LM_PLUGIN_SIGNING_PUBKEYS), then run this again. The old signing keys 9d49-041f-0ced-13ac / be7f-3dda-cddd-d781 are RETIRED and must never be installed."
+    refuse "production trust-anchor gate FAILED (check-host-signing-keys.sh exit $grc): the host's AICC_LM_PLUGIN_SIGNING_PUBKEYS is not defined, does not hold the primary signing key (and the key that signed this release), or holds an entry outside the owner's list or more than two entries, so the Control Plane would refuse to serve this release (see the gate lines above). Nothing was uploaded or changed. Do the owner fact first, with the NEW keys, exactly as TRUST-ANCHOR-ACTIVATION-RUNBOOK-FINAL.md (AICC-launch-evidence/execution-reset/cp-dark/p45) says (aicc-owner-facts set AICC_LM_PLUGIN_SIGNING_PUBKEYS), then run this again. The old signing keys 9d49-041f-0ced-13ac / be7f-3dda-cddd-d781 are RETIRED and must never be installed."
   fi
   echo "trust-anchor gate OK: $(printf '%s\n' "$gate_out" | grep -E '^OK:' | head -1)"
 fi

@@ -15,7 +15,7 @@ case "\$cmd" in
   "cat /etc/aicc-stage-identity") printf 'AICC_ENV=%s\nAICC_HOSTNAME=%s\nAICC_STAGE_ID=%s\n' "\${STUB_ENV:-staging}" "\${STUB_HOSTNAME:-stage.copilt.org}" "\${STUB_ID:-$SID}" ;;
   *sha256sum\ -c*) exit "\${STUB_SHA_RC:-0}" ;;
   *"sudo cat "*"/current") echo "\${STUB_CURRENT:-}" ;;
-  *"base64_decode"*) case "\${STUB_HOSTKEYS:-present}" in
+  *"base64_decode"*) if [ -n "\${STUB_CONST+x}" ]; then bash "$STUB/hostphp.sh" "\$cmd"; exit 0; fi; case "\${STUB_HOSTKEYS:-present}" in
       present) printf 'HOSTKEYS defined entries=2 fingerprints=9d49-041f-0ced-13ac,be7f-3dda-cddd-d781\nHOSTKEYS primary 9d49-041f-0ced-13ac PRESENT\nHOSTKEYS standby be7f-3dda-cddd-d781 PRESENT\n' ;;
       undefined) printf 'HOSTKEYS not-defined\n' ;;
       wrong) printf 'HOSTKEYS defined entries=1 fingerprints=1111-2222-3333-4444\nHOSTKEYS primary 9d49-041f-0ced-13ac ABSENT\nHOSTKEYS standby be7f-3dda-cddd-d781 ABSENT\n' ;;
@@ -31,7 +31,14 @@ cat > "$STUB/rsync" <<EOS
 #!/usr/bin/env bash
 echo "rsync \$*" >> "$CALLS"
 EOS
-chmod +x "$STUB/ssh" "$STUB/rsync"
+# STUB_CONST set: the host query runs the REAL snippet in php against that constant (the P45 strict gate / signer checks); otherwise the canned STUB_HOSTKEYS answers are used
+cat > "$STUB/hostphp.sh" <<'EOS'
+#!/usr/bin/env bash
+b64="$(printf '%s' "$1" | sed -n "s/.*base64_decode('\([^']*\)').*/\1/p")"
+code="$(printf '%s' "$b64" | base64 -d)"
+php -r 'define("AICC_LM_PLUGIN_SIGNING_PUBKEYS", getenv("STUB_CONST")); eval($argv[1]);' "$code"
+EOS
+chmod +x "$STUB/ssh" "$STUB/rsync" "$STUB/hostphp.sh"
 KEY="$TMP/aicc_cp_stage"; printf -- '-----BEGIN %s-----\nDUMMY\n-----END %s-----\n' "OPENSSH PRIVATE KEY" "OPENSSH PRIVATE KEY" > "$KEY"; chmod 600 "$KEY"
 PKEY="$TMP/aicc_cp_prod_operator"; cp "$KEY" "$PKEY"; PRODKEY="$TMP/aicc_digitalocean_prod"; cp "$KEY" "$PRODKEY"
 KH="$TMP/known_hosts_prod"; echo "203.0.113.9 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAItestonlytestonlytestonlytestonlytestonlytest" > "$KH"
@@ -311,6 +318,41 @@ DRYOUT="$(STUB_ENV=production STUB_HOSTNAME=www.copilt.org STUB_HOSTKEYS=undefin
 t_contains "gate: the production dry run says plainly that the host trust anchor is NOT checked" "$DRYOUT" "the host trust anchor (AICC_LM_PLUGIN_SIGNING_PUBKEYS) is NOT checked in a dry run"
 t_contains "gate: ...and tells the operator to run check-host-signing-keys.sh by hand first" "$DRYOUT" "run check-host-signing-keys.sh by hand first"
 t_not_contains "gate: a staging dry run does not print that line (staging is not gated)" "$(S --dry-run --set-current "${ZM[@]}" 2>&1)" "NOT checked in a dry run"
+# ---- P45 review S7: the SIGNER's key must be on the host too (the key that verifies the signature is derived by the publisher, not trusted from key_id) ----
+if [ "$HAVE_SIGN" = 1 ]; then
+  php "$PDIR/bin/sign-release.php" keygen --secret-out "$TMP/keys/standby.key" > "$TMP/keys/standby.out" 2>&1
+  STBP="$(sed -n 's/^public key.*: //p' "$TMP/keys/standby.out")"; STBFP="$(sed -n 's/^fingerprint: //p' "$TMP/keys/standby.out")"; PRIFP="$(sed -n 's/^fingerprint: //p' <(php "$PDIR/bin/sign-release.php" keygen --secret-out "$TMP/keys/unused.key" 2>&1) )"
+  V2=1.2.1; B2="$TMP/dist2"; mkdir -p "$B2"
+  python3 - "$B2" "$V2" "$PUBKEY,$STBP" <<'PY'
+import hashlib, json, sys, zipfile, os
+d, v, pk = sys.argv[1:4]
+zp = os.path.join(d, "ai-commerce-copilot-%s.zip" % v)
+with zipfile.ZipFile(zp, "w") as z:
+    z.writestr("ai-commerce-copilot/ai-commerce-copilot.php", "<?php\n/*\n * Plugin Name: AI Commerce Copilot\n * Version: %s\n */\n" % v)
+    z.writestr("ai-commerce-copilot/includes/aicc-release-defaults.php", "<?php\nclass AICC_Release_Keys { const PUBLIC_KEYS = '%s'; }\n" % pk)
+data = open(zp, "rb").read(); h = hashlib.sha256(data).hexdigest()
+json.dump({"slug": "ai-commerce-copilot", "version": v, "filename": os.path.basename(zp), "sha256": h, "size": len(data), "requires_wp": "6.0", "requires_php": "7.4", "requires_wc": "7.0", "dirty": False, "built_from_commit": "b" * 40, "changelog": "x"}, open(zp[:-4] + ".manifest.json", "w"))
+open(zp + ".sha256", "w").write("%s  %s\n" % (h, os.path.basename(zp)))
+PY
+  AICC_RELEASE_SIGNING_KEY_FILE="$TMP/keys/standby.key" php "$PDIR/bin/sign-release.php" sign --manifest "$B2/ai-commerce-copilot-$V2.manifest.json" >/dev/null 2>&1
+  Z2=(--zip "$B2/ai-commerce-copilot-$V2.zip" --manifest "$B2/ai-commerce-copilot-$V2.manifest.json" --sha256-file "$B2/ai-commerce-copilot-$V2.zip.sha256" --pubkeys "$PUBKEY,$STBP")
+  : > "$CALLS"
+  S7OUT="$(STUB_ENV=production STUB_HOSTNAME=www.copilt.org STUB_CONST="$PUBKEY" STUB_CURRENT=$V2 PV --confirm-production $V2 --apply --set-current "${Z2[@]}" 2>&1)"; S7RC=$?
+  t_eq "S7: a STANDBY-signed release against a primary-only host constant is REFUSED by the gate (exit 3)" "$S7RC" "3"
+  t_contains "S7: ...the message names the signer that is missing on the host" "$S7OUT" "$STBFP"
+  t_contains "S7: ...and says the Control Plane would not serve it" "$S7OUT" "would not serve it"
+  t_eq "S7: ...nothing was uploaded (no rsync, no installer call)" "$(grep -cE '^rsync|sudo bash' "$CALLS" || true)" "0"
+  : > "$CALLS"
+  STUB_ENV=production STUB_HOSTNAME=www.copilt.org STUB_CONST="$PUBKEY,$STBP" STUB_CURRENT=$V2 t_ok "S7: the same standby-signed release with BOTH keys on the host passes the gate" PV --confirm-production $V2 --apply --set-current "${Z2[@]}"
+  : > "$CALLS"
+  STUB_ENV=production STUB_HOSTNAME=www.copilt.org STUB_CONST="$PUBKEY" STUB_CURRENT=$V t_ok "S7: a PRIMARY-signed release against a primary-only host constant passes (the standby is optional)" PV --confirm-production $V --apply --set-current "${ZM[@]}"
+  : > "$CALLS"
+  S1OUT="$(STUB_ENV=production STUB_HOSTNAME=www.copilt.org STUB_CONST="yCsFX6176Ue5ZTdi4Dr99J9LFM43jXrN6Kbp13KF04Y=,$PUBKEY" STUB_CURRENT=$V PV --confirm-production $V --apply --set-current "${ZM[@]}" 2>&1)"; S1RC=$?
+  t_eq "S1: a host constant OLD(retired),NEW is REFUSED by the publisher's gate (exit 3), nothing uploaded" "$S1RC/$(grep -cE '^rsync|sudo bash' "$CALLS" || true)" "3/0"
+  t_contains "S1: ...with the unexpected entry named" "$S1OUT" "HOSTKEYS unexpected 9d49-041f-0ced-13ac"
+else
+  t_skip "S7/S1 publisher gate tests" "no Plugin signing tool on this machine"
+fi
 STUB_CURRENT=$V STUB_HOSTKEYS=undefined t_ok "gate: staging --apply is not gated (the trust anchor rule is the production host's)" S --set-current "${ZM[@]}"
 : > "$CALLS"
 STUB_ENV=production STUB_HOSTNAME=www.copilt.org STUB_CURRENT=$V STUB_HOSTKEYS=present t_ok "gate: the primary key PRESENT => production --apply --set-current proceeds" PV --confirm-production $V --apply --set-current "${ZM[@]}"

@@ -183,7 +183,25 @@ OUTH="$(STUB_CONST="$PRI" CHK)"; rc=$?; t_eq "host list = primary only: OK with 
 OUTH="$(STUB_CONST="$STB" CHK)"; rc=$?; t_eq "host list = the STANDBY only: NOT OK (rc 1)" "$rc" "1"
 OUTH="$(STUB_CONST="$ATT" CHK)"; rc=$?; t_eq "host list = another key: NOT OK (rc 1)" "$rc" "1"
 OUTH="$(CHK)"; rc=$?; t_eq "constant NOT defined: NOT OK (rc 1)" "$rc/$(printf '%s' "$OUTH" | grep -c 'not-defined')" "1/1"
-OUTH="$(STUB_CONST="not-a-key,also-not" CHK)"; rc=$?; t_eq "an unusable constant: NOT OK (rc 1), entries shown as unusable" "$rc/$(printf '%s' "$OUTH" | grep -c 'unusable')" "1/1"
+# P45 review S1: the gate is STRICT. Rule: the host list must be a SUBSET of the owner's list and contain the PRIMARY (either order); anything else is refused. Entries outside the list print
+# `HOSTKEYS unexpected <fp>`, more than two entries print `HOSTKEYS too-many`; both make the check exit 1 (a retired key co-trusted, or a list the Control Plane treats as invalid, must not pass).
+OLDP='yCsFX6176Ue5ZTdi4Dr99J9LFM43jXrN6Kbp13KF04Y='; OLDS='5p50qA1SYMTV7MXeDAWfMnNqLKVuTRDVS4FREuKuQwM='
+OUTH="$(STUB_CONST="$OLDP,$PRI" CHK)"; rc=$?; t_eq "S1: host list OLD(retired),NEW-primary: NOT OK (rc 1): the retired key would stay co-trusted" "$rc/$(printf '%s' "$OUTH" | grep -c '^HOSTKEYS unexpected 9d49-041f-0ced-13ac$')" "1/1"
+t_contains "S1: ...and the message says the list holds a key that is not the owner's" "$OUTH" "NOT OK"
+OUTH="$(STUB_CONST="$PRI,$STB,$OLDS" CHK)"; rc=$?; t_eq "S1: host list NEW1,NEW2,OLD (3 entries): NOT OK (rc 1), too-many AND unexpected" "$rc/$(printf '%s' "$OUTH" | grep -c '^HOSTKEYS too-many$')/$(printf '%s' "$OUTH" | grep -c '^HOSTKEYS unexpected be7f-3dda-cddd-d781$')" "1/1/1"
+OUTH="$(STUB_CONST="$PRI,$STB,$ATT" CHK)"; rc=$?; t_eq "S1: three entries (the two owner keys plus a stranger): NOT OK (rc 1)" "$rc/$(printf '%s' "$OUTH" | grep -c '^HOSTKEYS too-many$')" "1/1"
+OUTH="$(STUB_CONST="$OLDP,$OLDS" CHK)"; rc=$?; t_eq "S1: the retired OLD pair: NOT OK (rc 1), both entries unexpected" "$rc/$(printf '%s' "$OUTH" | grep -c '^HOSTKEYS unexpected ')" "1/2"
+OUTH="$(STUB_CONST="" CHK)"; rc=$?; t_eq "S1: an EMPTY constant: NOT OK (rc 1), not-defined" "$rc/$(printf '%s' "$OUTH" | grep -c 'not-defined')" "1/1"
+OUTH="$(STUB_CONST="${PRI:0:30}" CHK)"; rc=$?; t_eq "S1: a truncated key: NOT OK (rc 1), shown as an unexpected unusable entry" "$rc/$(printf '%s' "$OUTH" | grep -c '^HOSTKEYS unexpected unusable$')" "1/1"
+OUTH="$(STUB_CONST="$STB,$PRI" CHK)"; rc=$?; t_eq "S1: the NEW pair in the OTHER order (standby first): OK (rc 0): the primary is present and nothing else" "$rc" "0"
+OUTH="$(STUB_CONST="$LIST" CHK)"; rc=$?; t_eq "S1: the new pair in the owner's order: OK (rc 0), no unexpected, no too-many" "$rc/$(printf '%s' "$OUTH" | grep -cE '^HOSTKEYS (unexpected|too-many)')" "0/0"
+# P45 review S7: with --signer-fp (the key that actually SIGNED the release) that fingerprint must be PRESENT in the host constant, else the Control Plane would not serve the release
+OUTH="$(STUB_CONST="$PRI" CHK --signer-fp "$FPS")"; rc=$?; t_eq "S7: a STANDBY-signed release against a primary-only host constant: NOT OK (rc 1)" "$rc/$(printf '%s' "$OUTH" | grep -c "^HOSTKEYS signer $FPS ABSENT$")" "1/1"
+t_contains "S7: ...with a clear message naming the signer" "$OUTH" "signer"
+OUTH="$(STUB_CONST="$LIST" CHK --signer-fp "$FPS")"; rc=$?; t_eq "S7: the standby signer with the full pair on the host: OK (rc 0)" "$rc/$(printf '%s' "$OUTH" | grep -c "^HOSTKEYS signer $FPS PRESENT$")" "0/1"
+OUTH="$(STUB_CONST="$PRI" CHK --signer-fp "$FP")"; rc=$?; t_eq "S7: the primary signer with a primary-only host constant: OK (rc 0)" "$rc" "0"
+t_rc "S7: a malformed --signer-fp is refused (rc 3)" 3 env STUB_CONST="$LIST" PATH="$STUB:$PATH" bash "$REL/check-host-signing-keys.sh" --pubkeys "$LIST" --signer-fp 'x";phpinfo();//' --stage-host www.copilt.org --stage-ip 203.0.113.9 --stage-id "$SID" --key "$PKEY" --known-hosts "$KH"
+OUTH="$(STUB_CONST="not-a-key,also-not" CHK)"; rc=$?; t_eq "an unusable constant: NOT OK (rc 1), entries shown as unusable (the entries line and one unexpected line per entry, P45)" "$rc/$(printf '%s' "$OUTH" | grep -c 'unusable')" "1/3"
 t_rc "a host whose stage id differs is refused before anything is asked (rc 3)" 3 env STUB_ID=ffffffffffffffffffffffffffffffff STUB_CONST="$LIST" PATH="$STUB:$PATH" bash "$REL/check-host-signing-keys.sh" --pubkeys "$LIST" --stage-host www.copilt.org --stage-ip 203.0.113.9 --stage-id "$SID" --key "$PKEY" --known-hosts "$KH"
 t_rc "a staging host answering as production target is refused (rc 3)" 3 env STUB_ENV=staging PATH="$STUB:$PATH" bash "$REL/check-host-signing-keys.sh" --pubkeys "$LIST" --stage-host www.copilt.org --stage-ip 203.0.113.9 --stage-id "$SID" --key "$PKEY" --known-hosts "$KH"
 t_rc "production with another host name is refused (rc 3)" 3 env PATH="$STUB:$PATH" bash "$REL/check-host-signing-keys.sh" --pubkeys "$LIST" --stage-host stage.copilt.org --stage-ip 203.0.113.9 --stage-id "$SID" --key "$PKEY" --known-hosts "$KH"

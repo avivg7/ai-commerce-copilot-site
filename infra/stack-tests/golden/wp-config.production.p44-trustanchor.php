@@ -128,7 +128,7 @@ define( 'AICC_ENTITLEMENT_WEBHOOK_SECRET', 'WEBHOOK-test-0123456789-0123456789-a
 // _ENTITY_ADDRESS, _SUPPORT_EMAIL, _GOVERNING_LAW, _JURISDICTION, _PAYMENT_PROCESSOR, _VAT_DETAILS, AICC_LEGAL_REVIEW_APPROVED, AICC_LEGAL_SUBPROCESSORS_VERIFIED, AICC_STRUCTURED_DATA_OFFERS, AICC_COMMERCE_OPEN (the ONE fail-closed switch for "commercial checkout is open": only the value true is accepted, unset = closed, refused unless every launch fact is present; see docs/cutover/pre-commercial.md), AICC_LM_PAID_GATEWAYS (the runtime payment
 // gate: exact gateway ids), AICC_LAUNCH_REAL_GATEWAYS (the launch gate), AICC_LM_PLUGIN_SIGNING_PUBKEYS (PUBLIC Ed25519 update-signing keys, primary + standby: the Control Plane re-verifies each Plugin release when serving it). An owner-set extra outbound host for a payment gateway is appended to WP_ACCESSIBLE_HOSTS above by the renderer, never here. Nothing in this region is a secret.
 define( 'AICC_LEGAL_SUPPORT_EMAIL', 'support@copilt.org' );
-define( 'AICC_LM_PLUGIN_SIGNING_PUBKEYS', 'yCsFX6176Ue5ZTdi4Dr99J9LFM43jXrN6Kbp13KF04Y=,5p50qA1SYMTV7MXeDAWfMnNqLKVuTRDVS4FREuKuQwM=' );
+define( 'AICC_LM_PLUGIN_SIGNING_PUBKEYS', 'ZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXp7fH1+f4CBgoM=,jI2Oj5CRkpOUlZaXmJmam5ydnp+goaKjpKWmp6ipqqs=' );
 // AICC_LM_ALLOW_DEV_SECRET_BOOTSTRAP and AICC_LM_TEST_FIXTURE are intentionally NOT defined.
 
 // ---- Owner Dashboard (P35 gate B2, 2026-11-13): the Backend token is read server-side from this root-owned file (never sent to a browser), the Backend base is fixed, only the listed administrator may open the page ----

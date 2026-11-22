@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # P44 trust anchor: the ONE owner-facts update that gives the production Control Plane its Plugin-release trust anchor, AICC_LM_PLUGIN_SIGNING_PUBKEYS (the owner's two PUBLIC Ed25519 keys, primary first).
-# SYNTHETIC fixtures only (infra/stack-tests/fixtures/), no host read. The keys are PUBLIC: the same two values as release/endpoints.conf UPDATE_PUBLIC_KEYS in the Plugin repo (fingerprints 9d49-041f-0ced-13ac, be7f-3dda-cddd-d781).
+# SYNTHETIC fixtures only (infra/stack-tests/fixtures/), no host read. The keys are THROWAWAY public test values (deterministic bytes 100..131 and 140..171, fingerprints e3e1-6780-becf-601d, c494-7fda-ceb8-8f1e), NOT any real signing key; the RETIRED P44 pair is only used by the refusal tests in group R (P45).
 #   F  the two fingerprints are recomputed here with an independent implementation (python hashlib; the Control Plane's rule: first 16 hex of SHA-256 over the 32 raw bytes, groups of four)
 #   L  the live-shaped facts (p42-live) render WITHOUT the constant (equal to the p42-live golden); with the one new fact the render equals golden/wp-config.production.p44-trustanchor.php byte for byte
 #   C  --compare of the new facts against the live-shaped file: exit 4, added = AICC_LM_PLUGIN_SIGNING_PUBKEYS, removed -, changed -; no value printed; nothing written; IDENTICAL after the render
@@ -32,13 +32,13 @@ BREVOKEY='xkeysib-TEST-NOT-A-REAL-KEY-0000'; TSSECRET='0x4AAAAAAATSsecretVALUE01
 FIVE="AICC_EA_LAUNCH_OFFER_MODE AICC_OWNER_DASHBOARD_USER_IDS AICC_OWNER_METRICS_BASE AICC_OWNER_METRICS_TOKEN_FILE AICC_OWNER_OPS_SNAPSHOT_FILE"
 brevo_on() { printf '%s\n' 'xkeysib-TEST-NOT-A-REAL-KEY-0000' > "$MAILD/brevo-api.key"; chmod 640 "$MAILD/brevo-api.key"; }
 GOLD_LIVE="$HERE/golden/wp-config.production.p42-live.php"; GOLD_TA="$HERE/golden/wp-config.production.p44-trustanchor.php"
-PRIMARY='yCsFX6176Ue5ZTdi4Dr99J9LFM43jXrN6Kbp13KF04Y='; STANDBY='5p50qA1SYMTV7MXeDAWfMnNqLKVuTRDVS4FREuKuQwM='; CONST=AICC_LM_PLUGIN_SIGNING_PUBKEYS
+PRIMARY='ZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXp7fH1+f4CBgoM='; STANDBY='jI2Oj5CRkpOUlZaXmJmam5ydnp+goaKjpKWmp6ipqqs='; CONST=AICC_LM_PLUGIN_SIGNING_PUBKEYS
 cmp_field() { printf '%s' "$1" | sed -n "s/^  $2 *: //p" | tr -d ','; }
 fpr() { python3 -c 'import base64,hashlib,sys; r=base64.b64decode(sys.argv[1],validate=True); assert len(r)==32; h=hashlib.sha256(r).hexdigest()[:16]; print("-".join(h[i:i+4] for i in range(0,16,4)))' "$1"; }
 
 echo "== F. the fingerprints, recomputed independently =="
-t_eq "primary fingerprint" "$(fpr "$PRIMARY")" "9d49-041f-0ced-13ac"
-t_eq "standby fingerprint" "$(fpr "$STANDBY")" "be7f-3dda-cddd-d781"
+t_eq "primary fingerprint" "$(fpr "$PRIMARY")" "e3e1-6780-becf-601d"
+t_eq "standby fingerprint" "$(fpr "$STANDBY")" "c494-7fda-ceb8-8f1e"
 t_eq "the fixture holds exactly primary,standby (primary first)" "$(sed -n "s/^$CONST=//p" "$FIX/owner-facts.production.p44-trustanchor.env")" "$PRIMARY,$STANDBY"
 t_eq "the new fixture is the p42-live fixture plus that ONE line (nothing else differs)" "$(diff <(grep -v '^#' "$FIX/owner-facts.production.p42-live.env") <(grep -v '^#' "$FIX/owner-facts.production.p44-trustanchor.env") | grep -c '^[<>]')/$(diff <(grep -v '^#' "$FIX/owner-facts.production.p42-live.env") <(grep -v '^#' "$FIX/owner-facts.production.p44-trustanchor.env") | grep '^>' | cut -c3-32)" "1/$CONST"
 
@@ -104,6 +104,15 @@ rc_keep "three keys are REFUSED (the Control Plane reads at most two)" 1 T set $
 rc_keep "the same key twice is REFUSED" 1 T set $CONST "$PRIMARY,$PRIMARY"
 rc_keep "non-base64 text is REFUSED" 1 T set $CONST "not-a-key-not-a-key-not-a-key-not-a-key-12="
 rc_keep "a value with a quote and PHP is REFUSED" 1 T set $CONST "$PRIMARY');phpinfo();//"
+OLDP='yCsFX6176Ue5ZTdi4Dr99J9LFM43jXrN6Kbp13KF04Y='; OLDS='5p50qA1SYMTV7MXeDAWfMnNqLKVuTRDVS4FREuKuQwM='     # the RETIRED (P45) lost-vault PUBLIC keys: refused, never accepted as a trust anchor
+retired_refused() { local n="$1"; shift; local h1 h2 o rc=0; h1="$(shasum -a 256 "$OFF" | cut -d' ' -f1)"; o="$(T "$@" 2>&1)" || rc=$?; h2="$(shasum -a 256 "$OFF" | cut -d' ' -f1)"
+  if [ "$rc" = 1 ] && printf '%s' "$o" | grep -qi "retired" && [ "$h1" = "$h2" ]; then t_pass "$n"; else t_bad "$n" "rc=$rc, wanted 1 + 'retired' + facts file unchanged: $(printf '%s' "$o" | tail -2 | tr '\n' '|')"; fi; }
+retired_refused "the RETIRED old primary alone is REFUSED, naming it retired (P45)" set $CONST "$OLDP"
+retired_refused "the RETIRED old standby alone is REFUSED" set $CONST "$OLDS"
+retired_refused "the retired old PAIR (the exact P44 value) is REFUSED" set $CONST "$OLDP,$OLDS"
+retired_refused "a retired key beside a NEW key is REFUSED (OLD+NEW would keep the retired key co-trusted)" set $CONST "$PRIMARY,$OLDP"
+retired_refused "a NEW key beside the retired old standby is REFUSED (either position)" set $CONST "$OLDS,$PRIMARY"
+t_contains "the refusal message names the retired fingerprint and the date of the rule" "$(T set $CONST "$OLDP" 2>&1)" "9d49-041f-0ced-13ac"
 rc_keep "ONE key (the primary alone) is ACCEPTED (the Control Plane serves with one key; the standby is optional)" 0 T set $CONST "$PRIMARY"
 t_eq "...stored as given" "$(T list | sed -n "s/^$CONST=//p")" "$PRIMARY"
 rc_keep "the REVERSED order (standby first) is ACCEPTED: the tool does not know which key is the primary; the order is the owner's to get right (the Control Plane tries every key, so it is not a security issue, but it is wrong for the records)" 0 T set $CONST "$STANDBY,$PRIMARY"

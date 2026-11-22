@@ -43,7 +43,7 @@ Do these in this order; the first two take minutes and stop new damage. The whol
 6. **Publish it:** first set `AICC_LM_PLUGIN_SIGNING_PUBKEYS` to `<new primary>,<old standby>` (the publisher's gate checks that the FIRST key of the build's list is on the host), then publish and verify with `verify-published-plugin.sh`. Installed stores update through the standby-signed release and from then on no longer trust the lost key.
 7. **After the rotation, how the sticks sign:** nothing is promoted or renamed. The NEW stick is the PRIMARY and signs every normal release with `--role primary` (its own handover file makes `render-owner-signing-command.sh` work as before). The old standby stays the STANDBY on its own stick in its own place and is used only on the emergency path. The lost key and its stick are out of every list; keep its handover file out of use (move it to an `archived-` name).
 8. **Residual window:** until a store has applied the rotation release it still trusts the lost key. Mitigation is step 1 (the Control Plane no longer serves it) and communication: tell customers to update promptly; for a store that cannot wait, set `AICC_UPDATE_PUBLIC_KEYS` in its `wp-config.php` to the new list (this constant replaces the baked list).
-9. **Retire the lost key** in the records (the handover file, the owner package, the trust-anchor documentation), update the stick inventory (which sticks exist, where), and write the incident down.
+9. **Retire the lost key** in the records (the handover file, the owner package, the trust-anchor documentation), update the stick inventory (which sticks exist, where), and write the incident down. **Append the lost or stolen PUBLIC key to `release/retired-public-keys.txt` in the Plugin repository (the denylist) so `set-release-keys` can never re-bake it**, and the production owner-facts tool (`parse_signing_pubkeys`) must be taught the same value (it already refuses the two P44 keys, retired in P45). The Control Plane gate (`check-host-signing-keys.sh`) is strict: the host constant must contain only the owner's keys, at most two, with the primary present, and with the key that signed the release present.
 
 ### 4.2 The STANDBY stick is lost, stolen or suspected copied (the primary is intact)
 
@@ -75,6 +75,12 @@ A backup is another copy of the same unencrypted key: more sticks that can be lo
 ## 7. The old encrypted vaults
 
 The P44 encrypted vaults (`aicc-keys-primary.dmg`, `aicc-keys-standby.dmg`, and their copies in `AICC-SIGNING-BACKUP` on the old sticks) stay where they are, untouched, as LEGACY ARTIFACTS. The owner lost both passphrases; the keys inside are being replaced. **They confer no trust any more:** the old public keys must not appear in any new trust anchor, new Plugin build or new handover, and a signature by an old key must be rejected (the test suite proves a build that bakes the new keys rejects an old-key signature). Do not search for the passphrases, do not delete the vault files in a hurry (the owner may want them later for forensics or auditing), and do not reuse an old stick's old-vault folder for anything.
+
+## 7b. The standby key is exactly as powerful as the primary
+
+Installed stores and the Control Plane accept a signature by EITHER key of the trusted list. "The standby signs only in an emergency" is a PROCEDURAL rule, enforced by the signing script (`--role standby` needs `--emergency-standby`, a reason and its own typed phrase) and by custody, NOT by cryptography: whoever holds the standby stick can sign a release that every store and the Control Plane accept, exactly like the primary. The two sticks must be protected equally, and a lost standby is a trust-chain event too (section 4.2).
+
+**The key alone does not reach stores.** A thief with a signing key still needs a DELIVERY PATH to get a malicious release to merchant stores: a file in the Control Plane's private release store (server access), or a network position on the update endpoint (and TLS to the Control Plane stands in the way). That makes the Control Plane's own access control and the trust-anchor gate part of the defence, and it is why section 4 starts by removing the lost key from the Control Plane's trust anchor. It does not make the key harmless: stores that still trust it accept anything signed by it that reaches them.
 
 ## 8. Residual risks, in order of likelihood
 

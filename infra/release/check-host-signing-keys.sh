@@ -3,7 +3,10 @@
 # One ssh call runs a tiny PHP snippet through `sudo aicc-wp eval`; the snippet prints ONLY: defined / not defined, how many entries, the fingerprint of each entry, and whether each key of the owner's list is among them.
 # It never prints the constant, never prints wp-config.php, never changes anything. The keys it compares with are the owner's PUBLIC keys (release/endpoints.conf UPDATE_PUBLIC_KEYS of --plugin-dir, or --pubkeys).
 #
-#   check-host-signing-keys.sh (--plugin-dir <Plugin repo or build dir> | --pubkeys <primary[,standby]>) --stage-host H --stage-ip IPV4 --stage-id <32 hex> --key K [--known-hosts F] [--env production|stage] [--user aicc]
+#   check-host-signing-keys.sh (--plugin-dir <Plugin repo or build dir> | --pubkeys <primary[,standby]>) --stage-host H --stage-ip IPV4 --stage-id <32 hex> --key K [--known-hosts F] [--env production|stage] [--user aicc] [--signer-fp xxxx-xxxx-xxxx-xxxx]
+#     STRICT (P45 review): the host constant must be a SUBSET of the owner's list and contain the PRIMARY (either order; the standby is optional). An entry that is not on the owner's list prints `HOSTKEYS unexpected <fp>` (a retired key must
+#     never stay co-trusted), more than two entries print `HOSTKEYS too-many` (the Control Plane treats a longer list as invalid): both exit 1. --signer-fp (the key that actually SIGNED the release: the publisher derives it) must
+#     be PRESENT in the constant too (`HOSTKEYS signer <fp> PRESENT|ABSENT`), otherwise the Control Plane would not serve a standby-signed release against a primary-only constant: exit 1.
 #     production: --stage-host www.copilt.org, --key named aicc_cp_prod*, --known-hosts <pinned file with an entry for the IP>. The host identity (/etc/aicc-stage-identity) must match before anything else is asked.
 # Exit codes: 0 the PRIMARY key (first of the list) is configured on the host; 1 it is not (or the constant is not defined / not usable); 2 usage; 3 refused by a safety rule.
 # What a mismatch means: the store would refuse to serve the release (a signed release verifies only against THIS list) and the launch gate blocks. Fix: `sudo aicc-owner-facts set AICC_LM_PLUGIN_SIGNING_PUBKEYS '<primary>,<standby>'`,
@@ -11,11 +14,11 @@
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$HERE/../provision/lib/ip-guard.sh"
-PLUGDIR=""; KEYS=""; SHOST=""; SIP=""; SID=""; KEY=""; KH=""; ENVN="production"; USER_NAME="aicc"
+PLUGDIR=""; SIGNERFP=""; KEYS=""; SHOST=""; SIP=""; SID=""; KEY=""; KH=""; ENVN="production"; USER_NAME="aicc"
 while [ $# -gt 0 ]; do
   case "$1" in
     --plugin-dir) PLUGDIR="${2:-}"; shift 2 ;; --pubkeys) KEYS="${2:-}"; shift 2 ;; --stage-host) SHOST="${2:-}"; shift 2 ;; --stage-ip) SIP="${2:-}"; shift 2 ;; --stage-id) SID="${2:-}"; shift 2 ;;
-    --key) KEY="${2:-}"; shift 2 ;; --known-hosts) KH="${2:-}"; shift 2 ;; --env) ENVN="${2:-}"; shift 2 ;; --user) USER_NAME="${2:-}"; shift 2 ;;
+    --key) KEY="${2:-}"; shift 2 ;; --known-hosts) KH="${2:-}"; shift 2 ;; --env) ENVN="${2:-}"; shift 2 ;; --user) USER_NAME="${2:-}"; shift 2 ;; --signer-fp) SIGNERFP="${2:-}"; shift 2 ;;
     -h|--help) sed -n 2,12p "${BASH_SOURCE[0]}"; exit 0 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
@@ -25,6 +28,7 @@ case "$ENVN" in production|stage) ;; *) echo "--env must be production or stage"
 [ -n "$SHOST" ] && [ -n "$SIP" ] && [ -n "$SID" ] && [ -n "$KEY" ] || { echo "usage: --stage-host H --stage-ip IP --stage-id ID --key K (--plugin-dir D | --pubkeys LIST)" >&2; exit 2; }
 if [ -z "$KEYS" ] && [ -n "$PLUGDIR" ] && [ -f "$PLUGDIR/release/endpoints.conf" ]; then KEYS="$(sed -n 's/^UPDATE_PUBLIC_KEYS=//p' "$PLUGDIR/release/endpoints.conf" | head -1 | tr -d ' \r')"; fi
 [[ "$KEYS" =~ ^[A-Za-z0-9+/]{43}=(,[A-Za-z0-9+/]{43}=)?$ ]] || { echo "need the owner's public key list: --pubkeys <primary[,standby]> or --plugin-dir with release/endpoints.conf UPDATE_PUBLIC_KEYS" >&2; exit 2; }
+[ -z "$SIGNERFP" ] || [[ "$SIGNERFP" =~ ^[0-9a-f]{4}(-[0-9a-f]{4}){3}$ ]] || refuse "--signer-fp must look like 5a8f-1d62-ac6e-ce00"
 [[ "$SIP" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]] || refuse "--stage-ip must be a literal IPv4 address"
 [[ "$USER_NAME" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]] || refuse "--user must match ^[a-z_][a-z0-9_-]*$ (it is put in front of the host name on an ssh command line: a leading - would be an ssh option)"
 aicc_ip_guard "$SIP" "--stage-ip " || exit 3
@@ -57,10 +61,22 @@ if ( ! defined( "AICC_LM_PLUGIN_SIGNING_PUBKEYS" ) || ! is_string( AICC_LM_PLUGI
 $have = array_values( array_filter( array_map( "trim", explode( ",", AICC_LM_PLUGIN_SIGNING_PUBKEYS ) ), "strlen" ) );
 $fp = function ( $b64 ) { $raw = base64_decode( $b64, true ); return ( false !== $raw && 32 === strlen( $raw ) ) ? implode( "-", str_split( substr( hash( "sha256", $raw ), 0, 16 ), 4 ) ) : "unusable"; };
 echo "HOSTKEYS defined entries=" . count( $have ) . " fingerprints=" . implode( ",", array_map( $fp, $have ) ) . "\n";
+foreach ( $have as $h ) { if ( ! in_array( $h, $want, true ) ) { echo "HOSTKEYS unexpected " . $fp( $h ) . "\n"; } }
+if ( count( $have ) > 2 ) { echo "HOSTKEYS too-many\n"; }
+$signer = "'"$SIGNERFP"'";
+if ( "" !== $signer ) { $present = false; foreach ( $have as $h ) { if ( $fp( $h ) === $signer ) { $present = true; } } echo "HOSTKEYS signer " . $signer . " " . ( $present ? "PRESENT" : "ABSENT" ) . "\n"; }
 foreach ( $want as $i => $k ) { echo "HOSTKEYS " . ( 0 === $i ? "primary" : "standby" ) . " " . $fp( $k ) . " " . ( in_array( $k, $have, true ) ? "PRESENT" : "ABSENT" ) . "\n"; }'
 B64="$(printf '%s' "$SNIP" | base64 | tr -d '\n')"
 out="$(ssh "${SSH_OPTS[@]}" -- "$USER_NAME@$SIP" "sudo aicc-wp eval \"eval(base64_decode('$B64'));\"" 2>/dev/null)" || { echo "the host query failed (aicc-wp eval)" >&2; exit 1; }
 printf '%s\n' "$out" | grep '^HOSTKEYS' || { echo "the host answered nothing usable" >&2; exit 1; }
+if printf '%s\n' "$out" | grep -qE '^HOSTKEYS (unexpected|too-many)'; then
+  echo "NOT OK: the host's AICC_LM_PLUGIN_SIGNING_PUBKEYS holds an entry that is not on the owner's list, or more than two entries (see the HOSTKEYS lines above): a retired or foreign key must never be co-trusted and the Control Plane treats a longer list as invalid. It must contain only the owner's keys (primary required)." >&2
+  exit 1
+fi
+if printf '%s\n' "$out" | grep -qE '^HOSTKEYS signer .* ABSENT$'; then
+  echo "NOT OK: the key that SIGNED this release (${SIGNERFP}) is not in the host's AICC_LM_PLUGIN_SIGNING_PUBKEYS: the Control Plane would not serve it (a standby-signed release needs the standby on the host too)." >&2
+  exit 1
+fi
 if printf '%s\n' "$out" | grep -q '^HOSTKEYS primary .* PRESENT$'; then
   printf '%s\n' "$out" | grep -q '^HOSTKEYS standby .* ABSENT$' && echo "NOTE: the standby key is not configured on the host (allowed; add it before a rotation)."
   echo "OK: the primary signing key is configured on the host's AICC_LM_PLUGIN_SIGNING_PUBKEYS (the value itself was not printed)."
