@@ -11,6 +11,8 @@ The procedure is **version-agnostic**: the tools take the version, the ZIP's SHA
 > **P44 review round (2026-11-21).** (1) The Plugin's `verify` now FAILS CLOSED with `--pubkeys` AND `--zip` when the signature does not also verify against the public keys baked into that ZIP (that release could not verify its own update), and `--zip` alone prints a stderr WARNING that it proves integrity only, not authenticity; `sign-plugin-release.sh` keeps that warning out of its printed result (the owner's list is checked by its other three forms). (2) **The production trust-anchor gate is now ENFORCED, not only documented:** `publish-plugin-release.sh --env production --apply` (publish, `--set-current` and `--point-at` alike) first runs the read-only `check-host-signing-keys.sh` check with the same owner public list; if the host's `AICC_LM_PLUGIN_SIGNING_PUBKEYS` is not defined or its PRIMARY key is absent it REFUSES (exit 3, "production trust-anchor gate FAILED ... Nothing was uploaded or changed", pointing to `TRUST-ANCHOR-OWNER-FACT.md`) before anything is uploaded. A production dry run (no `--apply`) and staging runs do not run it: the dry run stays fully offline. Section 3 below remains the way to look at the host yourself first; the publisher now also refuses on its own.
 
 
+> **P45 update (2026-11-22): key custody changed.** The encrypted-vault signing of section 2 is **SUPERSEDED for custody of the signing keys** (the owner lost both vault passphrases; both keys are being replaced). Release signing is now possession-based and passwordless: the key is an unencrypted file on a dedicated USB stick, made by `infra/release/usb-key-ceremony.sh` and used only through `infra/release/sign-plugin-release-usb.sh`. Read `docs/release/usb-signing-threat-model.md` (what that does and does not protect, loss/theft rotation), `docs/release/OWNER-SIGNING-COMMAND-USB.md` (the single approved command) and `docs/release/p45-superseded-p44-vault-signing.md`. `sign-plugin-release.sh` stays for legacy/throwaway use and cannot be used with a FAT32 stick. Sections 3 to 11 (trust-anchor check, publication, verification, rollback) are unchanged: they verify the signature and the trust anchor, not how the signature was made.
+
 ## 1. The values for THIS release
 
 Fill these in from TWO sources. The release directory `$F` is the one builder P hands over (it holds `ai-commerce-copilot-<V>.zip`, `.zip.sha256` and `.manifest.json`); the coordinator's hand-over message gives `V`, `SHA` and `COMMIT` over a SECOND channel (never copy `SHA` out of `$F`: the point is that a swapped folder cannot vouch for itself).
@@ -40,7 +42,7 @@ Baked update-signing PUBLIC keys of the release builds so far (`release/endpoint
 
 Every later build must carry the same two keys; the wrapper below refuses a ZIP that bakes anything else than the list in the checkout's `release/endpoints.conf`.
 
-## 2. Sign offline (owner, vault Mac) - the minimal safe procedure
+## 2. Sign offline (owner, vault Mac) - the minimal safe procedure (P44 vault path: SUPERSEDED for custody, see the P45 update above)
 
 ```bash
 # 1. the artifacts are exactly what the coordinator announced (second channel)
